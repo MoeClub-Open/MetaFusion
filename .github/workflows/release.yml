@@ -76,6 +76,7 @@ jobs:
           POSTGRES_DB: mf_v2_test
         ports: ["5432:5432"]
         options: >-
+          --shm-size=256m
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
       opensearch:
@@ -92,6 +93,7 @@ jobs:
     env:
       MF_V2_TEST_DSN: postgres://postgres:test-only-password@127.0.0.1:5432/mf_v2_test?sslmode=disable
       MF_OPENSEARCH_TEST_URL: http://127.0.0.1:9200
+      MF_REQUIRE_INTEGRATION_TESTS: "1"
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_USER: postgres
