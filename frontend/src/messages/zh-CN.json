@@ -2050,5 +2050,19 @@
   "admin.console.previewMerge": "预览合并",
   "admin.console.mergeConfirm": "源实体将重定向到目标实体，历史修订保留。请核对方向、名称和标识。",
   "admin.console.disabled": "未部署",
-  "developer.mcp.manage": "MCP 授权管理"
+  "developer.mcp.manage": "MCP 授权管理",
+  "developer.credentials.title": "API 与 MCP",
+  "developer.mcp.subtitle": "把此地址添加到 Agent 客户端或 ChatGPT 插件，选择 OAuth，使用 MetaFusion 账号登录并授权。连接后在这里管理权限。",
+  "developer.mcp.endpoint": "MCP 连接地址",
+  "developer.mcp.permissionsHint": "MCP 与 API 使用相同的业务权限。这里可缩减已授予权限；增加权限请在客户端重新授权。",
+  "developer.mcp.read": "读取平台数据",
+  "developer.mcp.empty": "暂无 MCP 客户端授权。连接并登录后会显示在这里。",
+  "developer.mcp.save": "保存权限",
+  "developer.mcp.saved": "权限已更新。",
+  "developer.mcp.revokedDone": "MCP 授权已撤销，后续请求将被拒绝。",
+  "developer.mcp.cleanupPending": "MCP 授权已更新，但底层 API 凭据清理尚未完成，请在 API Key 列表核查。",
+  "developer.mcp.failed": "MCP 授权读取失败，请刷新重试。",
+  "developer.mcp.writeFailed": "未能确认操作结果，已重新读取授权状态；请核查后再操作。",
+  "developer.mcp.revokeTitle": "撤销 MCP 授权",
+  "developer.mcp.revokeConfirm": "撤销「{name}」的 MCP 授权？后续请求将被拒绝，正在执行的请求可能完成。"
 }

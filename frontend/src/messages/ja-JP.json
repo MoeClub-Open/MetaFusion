@@ -2050,5 +2050,19 @@
   "admin.console.previewMerge": "統合を確認",
   "admin.console.mergeConfirm": "統合元は統合先へ転送され、変更履歴は保持されます。方向、名前、IDを確認してください。",
   "admin.console.disabled": "未デプロイ",
-  "developer.mcp.manage": "MCP 権限管理"
+  "developer.mcp.manage": "MCP 権限管理",
+  "developer.credentials.title": "API と MCP",
+  "developer.mcp.subtitle": "このアドレスを Agent クライアントまたは ChatGPT プラグインに追加し、OAuth を選択して MetaFusion アカウントでログイン・許可してください。接続後はここで権限を管理できます。",
+  "developer.mcp.endpoint": "MCP サーバー URL",
+  "developer.mcp.permissionsHint": "MCP と API は同じ業務権限を使用します。ここでは許可済みの権限を減らせます。追加するにはクライアントで再認証してください。",
+  "developer.mcp.read": "プラットフォームのデータを読み取る",
+  "developer.mcp.empty": "MCP クライアントの許可はまだありません。接続してログインすると、ここに表示されます。",
+  "developer.mcp.save": "権限を保存",
+  "developer.mcp.saved": "権限を更新しました。",
+  "developer.mcp.revokedDone": "MCP の許可を取り消しました。以降のリクエストは拒否されます。",
+  "developer.mcp.cleanupPending": "MCP の許可は更新されましたが、内部 API 認証情報の削除が未完了です。API Key 一覧を確認してください。",
+  "developer.mcp.failed": "MCP の許可を読み込めませんでした。再読み込みしてください。",
+  "developer.mcp.writeFailed": "操作結果を確認できませんでした。許可の状態を再取得しました。再操作の前に確認してください。",
+  "developer.mcp.revokeTitle": "MCP の許可を取り消す",
+  "developer.mcp.revokeConfirm": "「{name}」の MCP の許可を取り消しますか？以降のリクエストは拒否されます。実行中のリクエストは完了する場合があります。"
 }

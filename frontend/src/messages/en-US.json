@@ -2050,5 +2050,19 @@
   "admin.console.previewMerge": "Preview merge",
   "admin.console.mergeConfirm": "The source will redirect to the target. Revision history is preserved. Check the direction, names and IDs.",
   "admin.console.disabled": "Not deployed",
-  "developer.mcp.manage": "MCP permissions"
+  "developer.mcp.manage": "MCP permissions",
+  "developer.credentials.title": "API & MCP",
+  "developer.mcp.subtitle": "Add this address to your agent client or ChatGPT plugin, choose OAuth, then sign in with MetaFusion and authorize access. Manage permissions here after connecting.",
+  "developer.mcp.endpoint": "MCP server URL",
+  "developer.mcp.permissionsHint": "MCP and API share business permissions. You can reduce granted permissions here; authorize again in your client to add permissions.",
+  "developer.mcp.read": "Read platform data",
+  "developer.mcp.empty": "No MCP clients are authorized yet. Connect and sign in to see them here.",
+  "developer.mcp.save": "Save permissions",
+  "developer.mcp.saved": "Permissions updated.",
+  "developer.mcp.revokedDone": "MCP authorization revoked. Further requests will be rejected.",
+  "developer.mcp.cleanupPending": "MCP authorization updated, but cleanup of the underlying API credential is pending. Check the API Key list.",
+  "developer.mcp.failed": "Could not load MCP authorizations. Refresh to retry.",
+  "developer.mcp.writeFailed": "The operation outcome could not be confirmed. Authorization status has been reloaded; check it before acting again.",
+  "developer.mcp.revokeTitle": "Revoke MCP authorization",
+  "developer.mcp.revokeConfirm": "Revoke MCP access for “{name}”? Further requests will be rejected; requests already running may complete."
 }

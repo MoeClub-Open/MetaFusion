@@ -49,6 +49,7 @@ import {
 } from "@/lib/developer";
 import { AppFormModal, type AppFormOutcome } from "./components/AppFormModal";
 import { ApiKeysPanel } from "@/components/developer/ApiKeysPanel";
+import { McpGrantsPanel } from "@/components/developer/McpGrantsPanel";
 import { AuditLogsCard } from "./components/AuditLogsCard";
 import { RequestLogsCard } from "./components/RequestLogsCard";
 
@@ -80,7 +81,7 @@ export default function DeveloperPage() {
   // 左侧选项、右侧切换：四个自助区共用一页，窄屏时侧栏横排置顶。
   const TABS = [
     { key: "apps", label: t("developer.apps.title"), icon: AppWindow },
-    { key: "keys", label: t("developer.apiKeys.title"), icon: KeyRound },
+    { key: "keys", label: t("developer.credentials.title"), icon: KeyRound },
     { key: "audit", label: t("developer.audit.title"), icon: History },
     { key: "logs", label: t("developer.reqlogs.title"), icon: Activity },
   ] as const;
@@ -106,6 +107,10 @@ export default function DeveloperPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (window.location.hash === "#credentials") setTab("keys");
+  }, []);
 
   const copy = async (key: string, value: string) => {
     setCopied((await copyText(value)) ? key : "failed");
@@ -194,9 +199,9 @@ export default function DeveloperPage() {
             <h1 className="text-xl sm:text-2xl font-semibold text-text-strong">{t("developer.title")}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <a href="/mcp/manage" className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors">
+            <button type="button" onClick={() => setTab("keys")} className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors cursor-pointer">
               {t("developer.mcp.manage")}
-            </a>
+            </button>
             <a
               href={`${DOCS_SERVICE_URL}/api-overview`}
               target="_blank"
@@ -384,6 +389,7 @@ export default function DeveloperPage() {
                 </div>
               )}
               {tab === "keys" && (
+              <div className="space-y-4">
               <Card padding="section" className="space-y-3">
                 <SectionTitle
                   icon={<KeyRound className="w-4 h-4 text-primary" />}
@@ -413,6 +419,13 @@ export default function DeveloperPage() {
                 <p className="text-xs text-text-muted leading-relaxed">{t("developer.apiKeys.subtitle")}</p>
                 <ApiKeysPanel modalOpen={keyModalOpen} onModalClose={() => setKeyModalOpen(false)} />
               </Card>
+              <Card padding="section" className="space-y-3">
+                <SectionTitle icon={<KeyRound className="w-4 h-4 text-primary" />}>
+                  {t("developer.mcp.manage")}
+                </SectionTitle>
+                <McpGrantsPanel />
+              </Card>
+              </div>
               )}
               {tab === "audit" && <AuditLogsCard apps={apps} />}
               {tab === "logs" && <RequestLogsCard />}
