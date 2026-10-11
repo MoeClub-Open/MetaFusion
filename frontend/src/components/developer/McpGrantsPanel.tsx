@@ -117,7 +117,10 @@ export function McpGrantsPanel() {
       {notice && <p role="status" className="text-xs text-text-body">{notice}</p>}
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-text-faint">{t("developer.mcp.permissionsHint")}</p>
-        <button type="button" disabled={busy || loading} className={buttonClass} aria-label={t("developer.reload")} onClick={() => setReload((value) => value + 1)}>
+        <button type="button" disabled={busy || loading} className={buttonClass} aria-label={t("developer.reload")} onClick={() => {
+          setError("");
+          setReload((value) => value + 1);
+        }}>
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
