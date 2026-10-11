@@ -16,7 +16,7 @@ func TestPermissionCodesAuthorizeCatalogWrites(t *testing.T) {
 	if err := s.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	sources := []Source{{Kind: "self", Citation: "permission matrix fixture"}}
+	sources := fixtureSources()
 	// 权限集合按账号服务的组展开，角色一律是 member：授权只看码。
 	editor := User{ID: uuid.NewString(), Username: "catalog-editor", Groups: []string{"catalog_editor"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionImportSubmit}}
 	admin := User{ID: uuid.NewString(), Username: "catalog-admin", Groups: []string{"catalog_admin"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionDefinitionsManage, PermissionLifecycleManage, PermissionImportSubmit, PermissionShelvesManage}}

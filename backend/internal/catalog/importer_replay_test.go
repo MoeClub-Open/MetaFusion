@@ -629,7 +629,7 @@ func TestImporterReplayImportMapping(t *testing.T) {
 	}
 
 	// 证据必填等效：importerEvidence 在显式证据齐备时原样透传；
-	// 缺 edit_note 时补默认 note、缺 sources 时回退 self 来源（不断链，Save 层再做严格校验）。
+	// 缺 edit_note 时补默认 note；缺 sources 不制造来源，写入前拒绝。
 	note, sources := importerEvidence(ImporterImportRequest{
 		URLOrID: "https://bgm.tv/person/45638", EditNote: "快照回放证据", SourceURLs: []string{"https://bgm.tv/person/45638"},
 	}, "bangumi")
@@ -637,8 +637,8 @@ func TestImporterReplayImportMapping(t *testing.T) {
 		t.Fatalf("explicit evidence not preserved: %q %+v", note, sources)
 	}
 	autoNote, autoSources := importerEvidence(ImporterImportRequest{URLOrID: "https://bgm.tv/person/45638"}, "bangumi")
-	if !strings.Contains(autoNote, "bangumi") || len(autoSources) != 1 || autoSources[0].Kind != "self" {
-		t.Fatalf("default evidence broken: %q %+v", autoNote, autoSources)
+	if !strings.Contains(autoNote, "bangumi") || len(autoSources) != 0 {
+		t.Fatalf("missing evidence must not manufacture self: %q %+v", autoNote, autoSources)
 	}
 	// Save 层的严格证据校验本身是纯函数，可直接断言（无需 DB）。
 	if err := validateSources("", fixtureSources()); err == nil || err.Error() != "evidence_required" {

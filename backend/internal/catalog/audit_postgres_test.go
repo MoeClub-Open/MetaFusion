@@ -140,12 +140,12 @@ func (f *auditFixture) expect(status int, w *httptest.ResponseRecorder, what str
 func auditEntityBody(kind, status, title string, expected int64) string {
 	entity := map[string]any{"kind": kind, "title": title, "status": status}
 	if status == "published" {
-		entity["translations"] = map[string]any{"en": map[string]any{"title": "audit e2e english"}}
+		entity["translations"] = map[string]any{"en": map[string]any{"title": "audit e2e english " + title}}
 	}
 	body := map[string]any{
 		"entity":    entity,
 		"edit_note": "audit e2e fixture",
-		"sources":   []map[string]string{{"kind": "self", "citation": "audit e2e fixture"}},
+		"sources":   []map[string]string{{"kind": "url", "citation": "audit e2e fixture", "url": "https://example.org/fixture"}},
 	}
 	if expected > 0 {
 		body["expected_version"] = expected
@@ -217,7 +217,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	}
 
 	// 3) 生命周期（删除）：终态留痕
-	lifecycleBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e delete\",\"sources\":[{\"kind\":\"self\",\"citation\":\"audit e2e\"}]}", created.Version+1)
+	lifecycleBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e delete\",\"sources\":[{\"kind\":\"url\",\"citation\":\"audit e2e\",\"url\":\"https://example.org/fixture\"}]}", created.Version+1)
 	w = f.do(engine, http.MethodPost, "/api/catalog/entities/"+created.ID+"/lifecycle", lifecycleBody, "rid-entity-lifecycle")
 	f.expect(200, w, "生命周期删除")
 	row = f.waitRow("rid-entity-lifecycle")
@@ -238,7 +238,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.waitRow("rid-published-create")
-	unpublishBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e unpublish\",\"sources\":[{\"kind\":\"self\",\"citation\":\"audit e2e\"}]}", pub.Version)
+	unpublishBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e unpublish\",\"sources\":[{\"kind\":\"url\",\"citation\":\"audit e2e\",\"url\":\"https://example.org/fixture\"}]}", pub.Version)
 	w = f.do(engine, http.MethodPost, "/api/catalog/entities/"+pub.ID+"/unpublish", unpublishBody, "rid-entity-unpublish")
 	f.expect(200, w, "下架")
 	row = f.waitRow("rid-entity-unpublish")
@@ -278,7 +278,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 			"attributes": map[string]any{"language": "zh-CN"},
 		},
 		"edit_note": "audit e2e relation",
-		"sources":   []map[string]string{{"kind": "self", "citation": "audit e2e"}},
+		"sources":   []map[string]string{{"kind": "url", "citation": "audit e2e", "url": "https://example.org/fixture"}},
 	}
 	b, _ := json.Marshal(relationBody)
 	w = f.do(engine, http.MethodPost, "/api/catalog/relations", string(b), "rid-relation-create")
@@ -304,7 +304,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	if row.action != "relation.updated" || !strings.Contains(row.changes, "\"attributes\"") || !strings.Contains(row.changes, "\"before\": \"zh-CN\"") {
 		t.Fatalf("改关系审计行（要有 before）: %#v", row)
 	}
-	deleteBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e\",\"sources\":[{\"kind\":\"self\",\"citation\":\"audit e2e\"}]}", relation.Version+1)
+	deleteBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e\",\"sources\":[{\"kind\":\"url\",\"citation\":\"audit e2e\",\"url\":\"https://example.org/fixture\"}]}", relation.Version+1)
 	w = f.do(engine, http.MethodDelete, "/api/catalog/relations/"+relation.ID, deleteBody, "rid-relation-delete")
 	f.expect(200, w, "删关系")
 	row = f.waitRow("rid-relation-delete")
@@ -395,7 +395,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 		"document":      current.Document,
 		"expected_etag": current.ETag,
 		"edit_note":     "audit e2e update",
-		"sources":       []map[string]string{{"kind": "self", "citation": "audit e2e"}},
+		"sources":       []map[string]string{{"kind": "url", "citation": "audit e2e", "url": "https://example.org/fixture"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -433,7 +433,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 		},
 		"expected_version": 999,
 		"edit_note":        "audit e2e conflict",
-		"sources":          []map[string]string{{"kind": "self", "citation": "audit e2e"}},
+		"sources":          []map[string]string{{"kind": "url", "citation": "audit e2e", "url": "https://example.org/fixture"}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -339,6 +339,7 @@ func TestImporterImportNormalizesSource(t *testing.T) {
 			URLOrID:    "https://bgm.tv/subject/7",
 			Work:       &ImporterWorkPreview{Title: "来源归一化"},
 			EditNote:   "来源归一化测试",
+			SourceURLs: []string{"https://bgm.tv/subject/7"},
 		}, f.u)
 		if err != nil {
 			t.Fatalf("source=%q 导入失败：%v", source, err)
@@ -379,6 +380,7 @@ func TestImporterImportNormalizesSource(t *testing.T) {
 		ExternalID: "999",
 		Work:       &ImporterWorkPreview{Title: "手工载荷"},
 		EditNote:   "手工载荷来源归一化测试",
+		SourceURLs: []string{"https://bgm.tv/subject/999"},
 	}, f.u)
 	if err != nil {
 		t.Fatalf("手工载荷导入失败：%v", err)

@@ -47,8 +47,8 @@ func TestLocatorAndEvidence(t *testing.T) {
 	if err := d.value(d.Fields["locator"], map[string]any{"relative_to": "track", "no_such_key": float64(1)}, ref, false); err == nil {
 		t.Fatal("undeclared locator key accepted")
 	}
-	if validateSources("本人首次发布", []Source{{Kind: "self", Citation: "作者自述"}}) != nil {
-		t.Fatal("personal source rejected")
+	if err := validateSources("本人首次发布", []Source{{Kind: "self", Citation: "作者自述"}}); err == nil || err.Error() != "source_not_eligible" {
+		t.Fatalf("self source accepted: %v", err)
 	}
 	if validateSources("x", []Source{{Kind: "url", Citation: "x", URL: "javascript:alert(1)"}}) == nil {
 		t.Fatal("unsafe URL accepted")
@@ -109,7 +109,7 @@ func TestPostgresCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := fixtureUser("admin")
-	sources := []Source{{Kind: "self", Citation: "isolated test fixture"}}
+	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
 		if e.Status == "" {
@@ -709,7 +709,7 @@ func TestRolePublishMatrix(t *testing.T) {
 	if err := s.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	sources := []Source{{Kind: "self", Citation: "role matrix fixture"}}
+	sources := fixtureSources()
 	admin, editor, member := fixtureUser("admin"), fixtureUser("editor"), fixtureUser("user")
 
 	mk := func(title string) Entity {
@@ -791,7 +791,7 @@ func TestExpressionDetailsBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := fixtureUser("admin")
-	sources := []Source{{Kind: "self", Citation: "batch fixture"}}
+	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
 		if e.Status == "" {
@@ -874,7 +874,7 @@ func TestOccurrencesScopeByKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := fixtureUser("admin")
-	sources := []Source{{Kind: "self", Citation: "scope fixture"}}
+	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
 		if e.Status == "" {

@@ -207,10 +207,16 @@ func TestRouteLimiterHonoursAccountAndGroupBudgets(t *testing.T) {
 	}
 }
 
-func TestAdminGroupAlwaysBypassesBusinessRateLimit(t *testing.T) {
+func TestAdminDefaultCanBeOverriddenByPolicy(t *testing.T) {
 	p := RateLimitPolicy{DefaultPerMinute: 1, Accounts: map[string]RateLimitRule{"u": {PerMinute: 1}}, Groups: map[string]RateLimitRule{"admin": {PerMinute: 1}}}
-	if _, unlimited := p.Resolve([]string{"u"}, []string{"admin"}, false, 180); !unlimited {
-		t.Fatal("verified admin group must bypass configured business quotas")
+	if limit, unlimited := p.Resolve([]string{"u"}, []string{"admin"}, false, 180); unlimited || limit != 1 {
+		t.Fatal("explicit account quota must restrict the default admin exemption")
+	}
+	if limit, unlimited := p.Resolve([]string{"other"}, []string{"admin"}, false, 180); unlimited || limit != 1 {
+		t.Fatal("explicit admin group quota must restrict the default admin exemption")
+	}
+	if _, unlimited := (RateLimitPolicy{}).Resolve([]string{"u"}, []string{"admin"}, false, 180); !unlimited {
+		t.Fatal("admin remains unlimited when no explicit override exists")
 	}
 	if _, unlimited := p.Resolve([]string{"u"}, []string{"*"}, false, 180); unlimited {
 		t.Fatal("wildcard permission is not admin group identity")

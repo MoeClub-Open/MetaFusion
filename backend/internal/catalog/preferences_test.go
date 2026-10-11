@@ -537,7 +537,7 @@ func TestBangumiInfoboxValues(t *testing.T) {
 		{Key: "放送星期", Value: json.RawMessage(`"星期六"`)},
 	}}
 	got := s.infoboxValues()
-	if got["episodes"] != 24 || got["barcode"] != "978-4-00-000000-0" || got["broadcast_weekday"] != "星期六" {
+	if got["episodes"] != 24 || got["barcode"] != "9784000000000" || got["broadcast_weekday"] != "星期六" {
 		t.Fatalf("got %v", got)
 	}
 	if _, ok := got["isbn"]; ok {

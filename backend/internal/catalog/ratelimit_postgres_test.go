@@ -80,9 +80,9 @@ func TestSaveRateLimitPolicyGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 每次目录写都要带来源与说明（与实体/定义同一口径）。
-	if _, err := f.s.SaveRateLimitPolicy(ctx, RateLimitPolicy{}, base.ETag, f.u, "", nil); err == nil || err.Error() != "evidence_required" {
-		t.Fatalf("缺证据应报 evidence_required，实际 %v", err)
+	// 运维策略需要决策说明；不伪造不存在的事实证据。
+	if _, err := f.s.SaveRateLimitPolicy(ctx, RateLimitPolicy{}, base.ETag, f.u, "", nil); err == nil || err.Error() != "edit_note_required" {
+		t.Fatalf("缺决策说明应报 edit_note_required，实际 %v", err)
 	}
 	// 非法额度只回稳定码 invalid_rate_limit。
 	if _, err := f.s.SaveRateLimitPolicy(ctx, RateLimitPolicy{DefaultPerMinute: -1}, base.ETag, f.u, "非法额度", fixtureSources()); err == nil || err.Error() != "invalid_rate_limit" {

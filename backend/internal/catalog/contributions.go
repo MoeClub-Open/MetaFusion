@@ -18,7 +18,7 @@ import (
 // 用户贡献视图：前端用户主页的 all / revisions / works / releases / artists 五个 tab。
 //
 // 数据只来自目录自己的审计痕迹——catalog.revisions 的 actor 快照列（actor_id/actor_name，
-// 见 store.go 的 audit）加 catalog.entities——**不 JOIN auth / community 的表**：账号表归账号服务、
+// 见 store.go 的 audit）、catalog.entities 与独立的 lifecycle_actions——**不 JOIN auth / community 的表**：账号表归账号服务、
 // 收藏与互动归互动服务，跨 schema 读会让两个系统在数据层重新耦合（同 store.go:401 的边界）。
 // 两个直接后果是刻意的：不判断"用户是否存在"（没有任何修订就是零贡献，不查账号服务），
 // 也不返回昵称与头像（那些字段属于账号服务，前端另行读取）。
@@ -27,8 +27,8 @@ import (
 // catalog.lifecycle.manage 者可见。items 与 stats 都按这一口径过滤，因此匿名访客看到的统计只含
 // 公开条目——既不泄漏草稿的存在，也不会出现"列表为空、统计却有数"。
 //
-// 迁移不动：基线里 catalog.revisions 只有主键（没有 actor_id/target_id 索引），本查询按 actor_id
-// 顺序扫描修订表；贡献页是低频页面，等真有压力再随一次迁移补索引，不为此改迁移。
+// 修订查询按 actor_id 过滤；生命周期动作有独立 actor 索引。027 的修订 target/version
+// 索引用于动作快照关联和上一版回读，不把事件队列作为贡献统计的事实源。
 
 // ContributionDiffEntry 是一个字段改动的前后值；键是字段路径（顶层字段，attributes/translations
 // 下钻一层），值形状与前端 DiffViewer 的输入一致。
@@ -62,7 +62,7 @@ type ContributionItem struct {
 	Diff      map[string]ContributionDiffEntry `json:"diff,omitempty"`
 }
 
-// UserContributionStats 是用户贡献的五个计数，全部来自 actor 快照列（不 JOIN 账号表）：
+// UserContributionStats 是用户贡献的五个计数，全部来自目录 actor 快照列（不 JOIN 账号表）：
 // works/releases/artists_created 是 version=1 的首次修订条数（= 该用户创建的条数，
 // artists 对应骨架里的 agent kind），revisions_count 是可见实体上的修订行数，
 // audit_actions 是生命周期管理动作（删除/合并）的发生次数，不随目标当前状态变化，
@@ -254,7 +254,7 @@ func contributionKindOfTab(tab string) string {
 	return ""
 }
 
-// userContributionStats 统计五个计数，全部落在 actor 快照列上（catalog.revisions.actor_id），
+// userContributionStats 统计五个计数，全部落在目录 actor 快照列上，
 // 不 JOIN 账号表。前四个与列表共用贡献口径（contributionWhere 的可见性过滤）：
 //   - works_created / releases_created / artists_created：version=1 的首次修订条数，即"该用户创建、
 //     且当前可见"的实体数（artists 对应 agent kind）；
@@ -264,8 +264,8 @@ func contributionKindOfTab(tab string) string {
 // （entity.deleted / entity.merged，由 catalog.lifecycle.manage 端点写出；普通保存写 entity.saved，
 // 不计入）。删除与合并在做完的同一刻就把目标移出可见集，若也套可见性过滤，这个数字恒为 0——
 // 管理动作按"发生过"计数，与目标当前状态无关，这是它与前四个的唯一差别（注释写清，免得被当成漏过滤）。
-// 事件与修订行在同一事务写入且 (entity_id, version) 唯一（见 store.go 的 audit），按这两个键 JOIN
-// 不会重复计数；count(DISTINCT r.id) 再兜一层：将来一条修订配多个事件也只算一次。
+// lifecycle_actions 与生命周期事件同事务快照 actor 和动作，按 revision_id 去重；
+// 独立持久表不引用 outbox 或目标实体，队列清理和目标历史变化不减少已发生的管理动作。
 func (s *Store) userContributionStats(ctx context.Context, userID string, u *User) (UserContributionStats, error) {
 	args := []any{userID}
 	where := contributionWhere(u, &args)
@@ -282,10 +282,8 @@ func (s *Store) userContributionStats(ctx context.Context, userID string, u *Use
 		return st, err
 	}
 	err = s.DB.QueryRowContext(ctx, `
-		SELECT count(DISTINCT r.id)
-		`+contributionFrom+`
-		JOIN catalog.outbox o ON o.entity_id = r.target_id AND o.version = r.version
-		WHERE r.actor_id = $1 AND o.type IN ('entity.deleted','entity.merged')`, userID).Scan(&st.AuditActions)
+		SELECT count(*) FROM catalog.lifecycle_actions
+		WHERE actor_id = $1`, userID).Scan(&st.AuditActions)
 	return st, err
 }
 

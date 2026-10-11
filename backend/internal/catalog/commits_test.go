@@ -29,7 +29,11 @@ func fixtureCommit(f fixture, ops ...CommitOperation) CatalogCommit {
 	return CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "commit fixture", Sources: fixtureSources(), Operations: ops}
 }
 func updateCommit(e Entity, patch ...CommitPatch) CommitOperation {
-	return CommitOperation{Target: "entity", Action: "update", ID: e.ID, BaseVersion: e.Version, Patch: patch}
+	op := CommitOperation{Target: "entity", Action: "update", ID: e.ID, BaseVersion: e.Version, Patch: patch}
+	if commitNeedsIdentityReview(op) {
+		op.ReviewedCandidateIDs = []string{}
+	}
+	return op
 }
 
 func TestCommitMergeAndPatchValidation(t *testing.T) {

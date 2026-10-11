@@ -16,7 +16,7 @@ func TestReleaseTableOfContents(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin := fixtureUser("admin")
-	sources := []Source{{Kind: "self", Citation: "release toc fixture"}}
+	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "release toc fixture", Sources: sources}, admin)

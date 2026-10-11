@@ -19,6 +19,10 @@ func TestExchangeAndIdentityQueryFailuresAreServerErrors(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, failure := range []string{"closed database", "cancelled query"} {
 		t.Run(failure, func(t *testing.T) {
+			// Exercise read-handler failures after the budget gate. Shared budget
+			// failures have their own 503 regression coverage.
+			storeRateLimitSnapshot(RateLimitConfig{Policy: RateLimitPolicy{DefaultUnlimited: true}}, nil)
+			t.Cleanup(InvalidateRateLimitPolicyCache)
 			db, err := sql.Open("postgres", "postgres://127.0.0.1:1/nope?sslmode=disable")
 			if err != nil {
 				t.Fatal(err)

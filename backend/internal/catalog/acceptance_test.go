@@ -49,7 +49,7 @@ func (f fixture) save(e Entity) Entity {
 	return out
 }
 func fixtureSources() []Source {
-	return []Source{{Kind: "self", Citation: "isolated acceptance fixture"}}
+	return []Source{{Kind: "url", Citation: "isolated acceptance fixture", URL: "https://example.org/fixture"}}
 }
 func (f fixture) publish(d Definitions, base string) {
 	f.t.Helper()
@@ -227,7 +227,7 @@ func TestPostgresAccountRoutesAreGone(t *testing.T) {
 	}
 	// 写入必须用真实信封（entity + expected_version + edit_note + sources）：
 	// 裸 entity 会被严格解析拒掉，这正是这一条要守住的行为。
-	body := `{"entity":{"kind":"work","title":"验签写入","translations":{"en":{"title":"verified write"}}},"expected_version":0,"edit_note":"acceptance fixture","sources":[{"kind":"self","citation":"acceptance fixture"}]}`
+	body := `{"entity":{"kind":"work","title":"验签写入","translations":{"en":{"title":"verified write"}}},"expected_version":0,"edit_note":"acceptance fixture","sources":[{"kind":"url","citation":"acceptance fixture","url":"https://example.org/fixture"}]}`
 	editToken := signTestToken(t, key, func(c Claims) Claims {
 		c.Permissions = []string{PermissionEntityEdit}
 		return c

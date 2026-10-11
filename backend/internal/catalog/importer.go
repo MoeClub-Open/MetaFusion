@@ -585,7 +585,7 @@ var infoboxFieldKeys = []struct {
 	{"air_network", "text", []string{"播放电视台", "放送局", "播放电视台"}},
 	{"copyright", "text", []string{"Copyright", "©"}},
 	// ISBN 是产品标识，落在发行层的 barcode（书本的条码即 ISBN）。
-	{"barcode", "text", []string{"ISBN"}},
+	{"barcode", "isbn", []string{"ISBN"}},
 	{"author", "text", []string{"作者"}},
 	{"magazine", "text", []string{"连载杂志", "連載雜誌"}},
 	{"imdb", "text", []string{"IMDb", "IMDB", "imdb"}},
@@ -607,6 +607,11 @@ func normalizeInfoboxValue(raw, kind string) any {
 		return nil
 	}
 	switch kind {
+	case "isbn":
+		if barcode, ok := importerISBNBarcode(raw); ok {
+			return barcode
+		}
+		return nil
 	case "number":
 		if m := infoboxIntRE.FindString(raw); m != "" {
 			if n, err := strconv.Atoi(m); err == nil {
@@ -1811,9 +1816,6 @@ func importerEvidence(req ImporterImportRequest, source string) (string, []Sourc
 			sources = append(sources, Source{Kind: "url", Citation: u, URL: u})
 		}
 	}
-	if len(sources) == 0 {
-		sources = []Source{{Kind: "self", Citation: note}}
-	}
 	return note, sources
 }
 
@@ -2799,6 +2801,13 @@ func importerCheckAttrs(defs Definitions, kind string, attrs map[string]any) err
 		}
 		if !set[k] {
 			return fmt.Errorf("unknown_field: %s", k)
+		}
+		if kind == "release" && k == "barcode" {
+			if raw, ok := v.(string); ok {
+				if err := importerBarcodeError(raw); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -4292,6 +4301,9 @@ func (s *Store) Import(ctx context.Context, req ImporterImportRequest, actor Use
 	// 避免先建 work/release/medium 再在某条曲目/关系处失败，留下半成品结构。
 	if pfErr := s.importerPreflight(ctx, actor, req, mode, entityType, source); pfErr != nil {
 		return ImporterImportResponse{}, pfErr
+	}
+	if err := validateSources(note, sources); err != nil {
+		return ImporterImportResponse{}, err
 	}
 	if mode == "append_release_to_work" {
 		target, gerr := s.Get(ctx, strings.TrimSpace(req.TargetWorkID), &actor)

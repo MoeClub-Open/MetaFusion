@@ -49,7 +49,7 @@ func TestExchangeRoutesCarryIdentityMiddleware(t *testing.T) {
 
 	// 1) 带合法令牌提交提案：过闸门、落库、强制 pending_review，created_by 就是令牌主体
 	//    （只有 user(c) 非 nil 才可能成立）。
-	proposal := `{"entity":{"kind":"work","title":"交換提案","original_language":"ja","translations":{"ja":{"title":"交換提案"}}},"expected_version":0,"edit_note":"实例间提案","sources":[{"kind":"self","citation":"exchange fixture"}]}`
+	proposal := `{"entity":{"kind":"work","title":"交換提案","original_language":"ja","translations":{"ja":{"title":"交換提案"}}},"expected_version":0,"edit_note":"实例间提案","sources":[{"kind":"url","citation":"exchange fixture","url":"https://example.org/fixture"}]}`
 	w := do(http.MethodPost, "/api/exchange/proposals", proposal, token)
 	if w.Code != http.StatusOK {
 		t.Fatalf("带合法令牌的提案应 200（不再 401），实际 %d：%s", w.Code, w.Body.String())

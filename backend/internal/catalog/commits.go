@@ -144,7 +144,7 @@ func validateCommit(in CatalogCommit) error {
 			if op.Target == "entity" && op.ReviewedCandidateIDs == nil {
 				return fail(fmt.Errorf("identity_review_required"))
 			}
-			if len(op.ReviewedCandidateIDs) > 1000 {
+			if len(op.ReviewedCandidateIDs) > 1000 || (op.Target == "relation" && op.ReviewedCandidateIDs != nil) {
 				return fail(fmt.Errorf("invalid_identity_review"))
 			}
 		case "update":
@@ -152,8 +152,11 @@ func validateCommit(in CatalogCommit) error {
 			if err != nil || id.String() != op.ID || op.Ref != "" || op.BaseVersion < 1 || len(op.Document) != 0 || len(op.Patch) < 1 || len(op.Patch) > 200 {
 				return fail(fmt.Errorf("invalid_update_operation"))
 			}
-			if op.ReviewedCandidateIDs != nil {
+			if len(op.ReviewedCandidateIDs) > 1000 || (!commitNeedsIdentityReview(op) && op.ReviewedCandidateIDs != nil) {
 				return fail(fmt.Errorf("invalid_identity_review"))
+			}
+			if commitNeedsIdentityReview(op) && op.ReviewedCandidateIDs == nil {
+				return fail(fmt.Errorf("identity_review_required"))
 			}
 			allowed := entityCommitFields
 			if op.Target == "relation" {
@@ -174,6 +177,20 @@ func validateCommit(in CatalogCommit) error {
 			}
 		default:
 			return fail(fmt.Errorf("invalid_commit_action"))
+		}
+		reviewed := map[string]bool{}
+		for _, id := range op.ReviewedCandidateIDs {
+			if reviewed[id] {
+				return fail(fmt.Errorf("invalid_identity_review"))
+			}
+			reviewed[id] = true
+			if strings.HasPrefix(id, "@local:") {
+				if !commitRef.MatchString(strings.TrimPrefix(id, "@local:")) {
+					return fail(fmt.Errorf("invalid_identity_review"))
+				}
+			} else if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
+				return fail(fmt.Errorf("invalid_identity_review"))
+			}
 		}
 		if seen[key] {
 			return fail(fmt.Errorf("duplicate_commit_target"))
@@ -395,49 +412,44 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 				}
 			}
 		}
-		// Serialize creates sharing indexed identity terms, then check reviewed
-		// candidate sets inside this transaction. Unrelated commits stay parallel.
+		// Every entity writer shares these identity locks. Updates lock both their
+		// current and patched identity before definitions, release and row locks.
 		identityKeys := map[string]bool{}
 		for _, op := range in.Operations {
-			if op.Action != "create" || op.Target != "entity" {
+			if op.Target != "entity" {
 				continue
 			}
-			raw, err := resolveCommitRefs(op.Document, out.Refs)
-			if err != nil {
-				return err
-			}
 			var e Entity
-			if err = strictCommitDocument(raw, &e); err != nil {
-				return err
-			}
-			q, docs, _, err := normalizeIdentityCandidateQuery(commitIdentityQuery(e))
-			if err != nil {
-				return err
-			}
-			rows, err := tx.QueryContext(ctx, `SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($1::jsonb)`, encode(docs))
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var term string
-				if err = rows.Scan(&term); err != nil {
-					rows.Close()
+			if op.Action == "create" {
+				raw, err := resolveCommitRefs(op.Document, out.Refs)
+				if err != nil {
 					return err
 				}
-				identityKeys[q.Kind+":"+q.WorkID+":"+q.ReleaseID+":"+q.MediumID+":"+term] = true
+				if err = strictCommitDocument(raw, &e); err != nil {
+					return err
+				}
+			} else {
+				old, err := get(ctx, tx, op.ID)
+				if err != nil {
+					return err
+				}
+				e, err = identityPatchedEntity(old, op.Patch, out.Refs)
+				if err != nil {
+					return err
+				}
+				if !commitNeedsIdentityReview(op) && encode(identityWriteDocument(old)) == encode(identityWriteDocument(e)) {
+					continue
+				}
+				if err = addIdentityWriteKeys(ctx, tx, old, identityKeys); err != nil {
+					return err
+				}
 			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
+			if err := addIdentityWriteKeys(ctx, tx, e, identityKeys); err != nil {
 				return err
 			}
 		}
-		ikeys := keysOf(identityKeys)
-		sort.Strings(ikeys)
-		for _, key := range ikeys {
-			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(740207,hashtext($1))`, key); err != nil {
-				return err
-			}
+		if err := lockIdentityWriteKeys(ctx, tx, identityKeys); err != nil {
+			return err
 		}
 		if err := lockDefinitionsShared(ctx, tx); err != nil {
 			return err
@@ -606,7 +618,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 		item.Merged = op.BaseVersion != version
 		item.Changed = changed
 		item.Version = version
-		if !changed {
+		if !changed && !commitNeedsIdentityReview(op) {
 			return item, nil
 		}
 		raw = []byte(encode(merged))
@@ -616,7 +628,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 		if err := strictCommitDocument(raw, &e); err != nil {
 			return item, err
 		}
-		input := Edit{Entity: e, ExpectedVersion: version, EditNote: in.EditNote, Sources: in.Sources, definitions: defs}
+		input := Edit{Entity: e, ExpectedVersion: version, EditNote: in.EditNote, Sources: in.Sources, definitions: defs, identityLocksHeld: true}
 		if e.Kind == "track" && op.Action == "update" {
 			input.preserveContents = true
 			for _, p := range op.Patch {
@@ -630,45 +642,14 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 				return item, fmt.Errorf("server_fields_forbidden")
 			}
 			input.createID = refs[op.Ref]
-			query, docs, limit, err := normalizeIdentityCandidateQuery(commitIdentityQuery(e))
-			if err != nil {
+		}
+		if commitNeedsIdentityReview(op) {
+			if err := reviewEntityIdentity(ctx, tx, e, op.ReviewedCandidateIDs, u, refs, index); err != nil {
 				return item, err
 			}
-			candidates, err := identityCandidatesFrom(ctx, tx, query, docs, limit, &u)
-			if err != nil {
-				return item, err
-			}
-			if !candidates.Complete {
-				return item, fmt.Errorf("identity_candidates_incomplete")
-			}
-			actual := map[string]bool{}
-			for _, candidate := range candidates.Items {
-				if candidate.Canonical == nil || candidate.ResolutionError != "" {
-					return item, fmt.Errorf("identity_candidate_unresolved")
-				}
-				actual[candidate.Canonical.ID] = true
-			}
-			reviewed := map[string]bool{}
-			for _, id := range op.ReviewedCandidateIDs {
-				if strings.HasPrefix(id, "@local:") {
-					id = refs[strings.TrimPrefix(id, "@local:")]
-				}
-				parsed, err := uuid.Parse(id)
-				if err != nil || parsed.String() != id || reviewed[id] {
-					return item, fmt.Errorf("invalid_identity_review")
-				}
-				reviewed[id] = true
-			}
-			ids := keysOf(actual)
-			sort.Strings(ids)
-			if len(reviewed) != len(actual) {
-				return item, &commitIdentityError{index, ids}
-			}
-			for id := range actual {
-				if !reviewed[id] {
-					return item, &commitIdentityError{index, ids}
-				}
-			}
+		}
+		if !item.Changed {
+			return item, nil
 		}
 		saved, err := s.saveEntityTx(ctx, tx, input, u)
 		if err != nil {

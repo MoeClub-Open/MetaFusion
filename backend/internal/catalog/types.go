@@ -106,10 +106,11 @@ type Entity struct {
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
 type Edit struct {
-	Entity          Entity   `json:"entity"`
-	ExpectedVersion int64    `json:"expected_version"`
-	EditNote        string   `json:"edit_note"`
-	Sources         []Source `json:"sources"`
+	Entity               Entity   `json:"entity"`
+	ExpectedVersion      int64    `json:"expected_version"`
+	EditNote             string   `json:"edit_note"`
+	Sources              []Source `json:"sources"`
+	ReviewedCandidateIDs []string `json:"reviewed_candidate_ids,omitempty"`
 	// internal 标记写入来自导入链路（importer 内部构造），允许新声明内部幂等键
 	// metafusion_import。未导出是有意的：JSON 解码不填充未导出字段，客户端无法伪造
 	//（DisallowUnknownFields 会把同名 JSON 键判为未知字段）。
@@ -122,6 +123,10 @@ type Edit struct {
 	preserveContents bool
 	createID         string
 	definitions      *DefinitionConfig
+	// Public single-entity writes review candidates; internal import writes keep
+	// their own identity contract, while every writer shares identity-term locks.
+	identityReview    bool
+	identityLocksHeld bool
 }
 type Relation struct {
 	ID         string         `json:"id"`

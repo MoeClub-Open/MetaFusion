@@ -23,7 +23,7 @@ func TestUnpublishRouteGateAndBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	lifecycle := &User{ID: "u-life", Permissions: []string{PermissionLifecycleManage}}
 	editor := &User{ID: "u-edit", Permissions: []string{PermissionEntityEdit}}
-	validBody := `{"expected_version":1,"edit_note":"n","sources":[{"kind":"self","citation":"c"}]}`
+	validBody := `{"expected_version":1,"edit_note":"n","sources":[{"kind":"url","citation":"c","url":"https://example.org/fixture"}]}`
 	for _, tc := range []struct {
 		name     string
 		user     *User
@@ -33,7 +33,7 @@ func TestUnpublishRouteGateAndBody(t *testing.T) {
 	}{
 		{"anonymous", nil, validBody, http.StatusUnauthorized, "authentication_required"},
 		{"other catalog code", editor, validBody, http.StatusForbidden, "forbidden"},
-		{"target_id is not part of the contract", lifecycle, `{"expected_version":1,"edit_note":"n","target_id":"00000000-0000-0000-0000-000000000002","sources":[{"kind":"self","citation":"c"}]}`, http.StatusBadRequest, "invalid_payload"},
+		{"target_id is not part of the contract", lifecycle, `{"expected_version":1,"edit_note":"n","target_id":"00000000-0000-0000-0000-000000000002","sources":[{"kind":"url","citation":"c","url":"https://example.org/fixture"}]}`, http.StatusBadRequest, "invalid_payload"},
 		{"malformed json", lifecycle, "{", http.StatusBadRequest, "invalid_payload"},
 	} {
 		w := httptest.NewRecorder()
@@ -156,7 +156,7 @@ func TestUnpublishHTTPStatusMatrix(t *testing.T) {
 	pub := f.save(Entity{Kind: "work", Title: "HTTP 矩阵作品"})
 	call := func(version int64) *httptest.ResponseRecorder {
 		t.Helper()
-		payload := fmt.Sprintf(`{"expected_version":%d,"edit_note":"下架","sources":[{"kind":"self","citation":"HTTP 矩阵"}]}`, version)
+		payload := fmt.Sprintf(`{"expected_version":%d,"edit_note":"下架","sources":[{"kind":"url","citation":"HTTP 矩阵","url":"https://example.org/fixture"}]}`, version)
 		w := httptest.NewRecorder()
 		engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/catalog/entities/"+pub.ID+"/unpublish", strings.NewReader(payload)))
 		return w

@@ -162,7 +162,7 @@ func (s *Store) FindIdentityCandidates(ctx context.Context, in IdentityCandidate
 	return out, nil
 }
 
-func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidateQuery, docs []map[string]any, limit int, u *User) (IdentityCandidateResponse, error) {
+func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidateQuery, docs []map[string]any, limit int, u *User, excludeIDs ...string) (IdentityCandidateResponse, error) {
 	out := IdentityCandidateResponse{Items: []IdentityCandidateMatch{}, Basis: "postgres_repeatable_read"}
 	encoded, err := json.Marshal(docs)
 	if err != nil {
@@ -172,15 +172,26 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 	if u != nil {
 		userID, manage = u.ID, u.Can(PermissionLifecycleManage)
 	}
-	rows, err := q.QueryContext(ctx, `SELECT id::text,count(*) OVER () FROM catalog.entities
+	excludeID := ""
+	if len(excludeIDs) > 0 {
+		excludeID = excludeIDs[0]
+	}
+	rows, err := q.QueryContext(ctx, `WITH RECURSIVE excluded(id) AS (
+            SELECT id FROM catalog.entities WHERE id=NULLIF($9::text,'')::uuid
+            UNION
+            SELECT e.id FROM catalog.entities e JOIN excluded x ON e.document->>'redirect_id'=x.id::text
+                WHERE e.status='merged'
+        )
+        SELECT id::text,count(*) OVER () FROM catalog.entities
         WHERE kind=$1 AND status <> 'deleted'
         AND ($3::boolean OR status='published' OR created_by=$4::uuid)
         AND ($5::text='' OR EXISTS(SELECT 1 FROM catalog.expressions x WHERE x.id=entities.id AND x.work_id::text=$5) OR EXISTS(SELECT 1 FROM catalog.content_units x WHERE x.id=entities.id AND x.work_id::text=$5))
         AND ($7::text='' OR EXISTS(SELECT 1 FROM catalog.mediums m WHERE m.id=entities.id AND m.release_id::text=$7))
         AND ($8::text='' OR EXISTS(SELECT 1 FROM catalog.tracks t WHERE t.id=entities.id AND t.medium_id::text=$8))
+        AND NOT EXISTS(SELECT 1 FROM excluded WHERE excluded.id=entities.id)
         AND catalog.identity_candidate_terms(document) && ARRAY(
             SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($2::jsonb))
-        ORDER BY id LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID)
+        ORDER BY id LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID, excludeID)
 	if err != nil {
 		return out, err
 	}

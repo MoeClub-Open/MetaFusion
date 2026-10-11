@@ -17,6 +17,8 @@
   5. 名称四语：缺语种、某语种仍逐字等于英文（占位）。覆盖 definitions 全部名称
      （类型/字段及嵌套子字段与单位/词表与词项/关系正反名与分组名/模板与分区/场景方案/kinds）
      以及货架、外部权威库；判据与后端写路径同一口径（zh-CN/zh-TW/en-US + ja|ja-JP）。
+  6. ISBN / EAN 校验位：isbn 属性与 openbd / isbndb 编号检查 ISBN-10/13；
+     标准长度 barcode 与 ean_jan 编号检查 GTIN-8/12/13/14，非法值计 P1。
 退出码：0 = 无 P0/P1；1 = 存在 P0/P1（名称问题计 P2，只报告不拦门）。
 """
 
@@ -58,6 +60,64 @@ def all_entities(kind=None, limit=50):
         if len(batch) < page:
             return items
         offset += len(batch)
+
+
+def compact_book_identifier(value):
+    """只去除 ISBN 的空白/连字符；不从任意文字或 URL 中提取数字。"""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if any(ch not in "0123456789Xx- \t\r\n" for ch in value):
+        return None
+    return "".join(ch.upper() for ch in value if ch not in "- \t\r\n")
+
+
+def valid_gtin(compact):
+    """EAN-8、UPC-A、EAN-13/JAN 与 GTIN-14 使用同一加权校验位。"""
+    if not isinstance(compact, str) or len(compact) not in (8, 12, 13, 14):
+        return False
+    if any(ch not in "0123456789" for ch in compact):
+        return False
+    total = sum(int(ch) * (3 if index % 2 == 0 else 1)
+                for index, ch in enumerate(reversed(compact[:-1])))
+    return int(compact[-1]) == (10 - total % 10) % 10
+
+
+def valid_isbn(compact):
+    if not isinstance(compact, str):
+        return False
+    if len(compact) == 13:
+        return compact.startswith(("978", "979")) and valid_gtin(compact)
+    if len(compact) != 10 or any(ch not in "0123456789" for ch in compact[:9]):
+        return False
+    if compact[-1] not in "0123456789X":
+        return False
+    total = sum(int(ch) * (10 - index) for index, ch in enumerate(compact[:9]))
+    total += 10 if compact[-1] == "X" else int(compact[-1])
+    return total % 11 == 0
+
+
+def check_product_identifiers(entity, problems):
+    """已知 ISBN/GTIN 声明查校验位，不猜测任意动态字段或专用文本条码的制式。"""
+    ident = entity.get("id", "?")
+    attributes = entity.get("attributes") or {}
+    isbn = attributes.get("isbn")
+    if isbn not in (None, "") and not valid_isbn(compact_book_identifier(isbn)):
+        problems.append(("P1", "invalid_isbn", ident, "attributes.isbn=%s" % str(isbn)))
+    barcode = attributes.get("barcode")
+    compact = compact_book_identifier(barcode)
+    if compact is not None and len(compact) in (8, 10, 12, 13, 14):
+        valid = valid_isbn(compact) if len(compact) == 10 else valid_gtin(compact)
+        if not valid:
+            problems.append(("P1", "invalid_barcode", ident, "attributes.barcode=%s" % str(barcode)))
+    external_ids = entity.get("external_ids") or {}
+    for code in ("openbd", "isbndb"):
+        value = external_ids.get(code)
+        if value not in (None, "") and not valid_isbn(compact_book_identifier(value)):
+            problems.append(("P1", "invalid_isbn", ident, "external_ids.%s=%s" % (code, value)))
+    value = external_ids.get("ean_jan")
+    if value not in (None, "") and not valid_gtin(compact_book_identifier(value)):
+        problems.append(("P1", "invalid_barcode", ident, "external_ids.ean_jan=%s" % str(value)))
 
 
 # ── 名称四语检查（与后端写路径同一口径，见 backend/internal/catalog/validation.go）──
@@ -153,6 +213,7 @@ def main():
         stats["kind:" + str(e.get("kind"))] += 1
         if e.get("status") == "published" and not (e.get("translations") or {}):
             problems.append(("P1", "published_without_translation", e["id"], e.get("title", "")))
+        check_product_identifiers(e, problems)
     # 2. 结构归属（以 definitions.structure 为准，不写死层级）
     for e in entities:
         rule = structure.get(str(e.get("kind"))) or {}

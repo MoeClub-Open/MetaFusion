@@ -21,7 +21,7 @@ func TestTrackStatusRouteGateAndStrictBody(t *testing.T) {
 	plain := fixtureUser("member")
 	third := fixtureUser("admin")
 	third.IsThirdParty = true
-	valid := `{"status":"pending_review","expected_version":1,"edit_note":"review","sources":[{"kind":"self","citation":"fixture"}]}`
+	valid := `{"status":"pending_review","expected_version":1,"edit_note":"review","sources":[{"kind":"url","citation":"fixture","url":"https://example.org/fixture"}]}`
 	for _, tc := range []struct {
 		name string
 		u    *User

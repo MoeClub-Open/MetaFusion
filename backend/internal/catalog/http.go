@@ -150,7 +150,7 @@ func isReadMethod(m string) bool {
 	return false
 }
 
-// routeBucket 是内存固定窗口计数, key 为 IP+完整路由。账号侧的登录限流归账号服务，
+// routeBucket 仅供未接数据库的单测使用；生产计数在共享数据库中。
 type routeBucket struct {
 	mu       sync.Mutex
 	start    time.Time
@@ -194,9 +194,12 @@ func sweepStaleBuckets(m *sync.Map, janitor *sync.Once) {
 // 命中 unlimited 的主体完全跳过计数（"解除限制"），且不下发 X-RateLimit-* 头——
 // 没有窗口就没有"还剩几次"可言，发一个假上限比不发更容易误导调用方。
 //
-// 计数为每进程内存固定窗口。全体业务请求按主体分别共用读、写预算，
-// 只读 POST 归入读窗口。多实例全局额度需要共享计数。
-func routeLimiter(perMinute int) gin.HandlerFunc {
+// 生产环境的全部业务读写共用 PostgreSQL 固定分钟窗口；多副本共用同一计数。
+func routeLimiter(perMinute int, databases ...*sql.DB) gin.HandlerFunc {
+	var db *sql.DB
+	if len(databases) > 0 {
+		db = databases[0]
+	}
 	sweepStaleBuckets(&routeAttempts, &routeJanitor)
 	return func(c *gin.Context) {
 		u := user(c)
@@ -214,25 +217,31 @@ func routeLimiter(perMinute int) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		category := "write"
-		if isReadMethod(c.Request.Method) || (c.Request.Method == "POST" && contains([]string{"/api/catalog/relationships/query", "/api/catalog/entities/candidates", "/api/catalog/entities/identity", "/api/catalog/expressions/details", "/api/catalog/checkout", "/api/catalog/commits/preview", "/api/importer/preview"}, c.FullPath())) {
-			category = "read"
+		var used, retrySecs int
+		if db != nil {
+			var err error
+			used, retrySecs, err = consumeRateWindow(c.Request.Context(), db, subject)
+			if err != nil {
+				slog.Error("目录服务：共享限流计数失败", "err", err)
+				c.Header("Retry-After", "1")
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "rate_limit_unavailable"})
+				return
+			}
+		} else {
+			now := time.Now()
+			v, _ := routeAttempts.LoadOrStore(subject, &routeBucket{start: now, lastSeen: now})
+			b := v.(*routeBucket)
+			b.mu.Lock()
+			if now.Sub(b.start) > time.Minute {
+				b.start, b.n = now, 0
+			}
+			b.n++
+			b.lastSeen = now
+			used, retrySecs = b.n, int(time.Until(b.start.Add(time.Minute)).Seconds())+1
+			b.mu.Unlock()
 		}
-		key := subject + "|" + category
-		now := time.Now()
-		v, _ := routeAttempts.LoadOrStore(key, &routeBucket{start: now, lastSeen: now})
-		b := v.(*routeBucket)
-		b.mu.Lock()
-		if now.Sub(b.start) > time.Minute {
-			b.start = now
-			b.n = 0
-		}
-		b.n++
-		b.lastSeen = now
-		over := b.n > limit
-		remaining := limit - b.n
-		retrySecs := int(time.Until(b.start.Add(time.Minute)).Seconds()) + 1
-		b.mu.Unlock()
+		over := used > limit
+		remaining := limit - used
 		if retrySecs < 1 {
 			retrySecs = 1
 		}
@@ -311,7 +320,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	// 身份只来自账号服务签发的 RS256 令牌：目录侧**只验签、不查库、不签发**。
 	// 中间件本体与给其它路由组复用的管理员闸门都在 auth_gate.go。
 	api.Use(attachUser(s))
-	api.Use(routeLimiter(DefaultRateLimitPerMinute))
+	api.Use(routeLimiter(DefaultRateLimitPerMinute, s.DB))
 	// 审计留痕（契约 §3）：挂在身份中间件**之后**（草稿里的 actor 要在 c.Next() 之前读得到），
 	// 且在下面所有写路由注册**之前**——gin 的 RouterGroup.Use 只对之后注册的路由生效
 	//（0be8ae9 的回归就是位置放错导致的）。只有 AuditActions 里登记的路由会写行。
@@ -601,12 +610,13 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			return
 		}
 		// R1：幂等声明随请求进 Store 事务（重放/冲突由 Save 判定，见 idempotency.go）。
+		in.identityReview = true
 		in.idempotency = idemClaim(c, IdempotencyOpEntityCreate, in)
 		e, err := s.Save(c.Request.Context(), in, *user(c))
 		if err == nil {
 			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: e.ID, Changes: entityChangeDetail(nil, &e)})
 		}
-		respond(c, e, err)
+		respondEntityWrite(c, e, err)
 	})
 	cat.PUT("/entities/:id", required(""), func(c *gin.Context) {
 		auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
@@ -621,11 +631,12 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			before = &prev
 		}
 		in.Entity.ID = c.Param("id")
+		in.identityReview = true
 		e, err := s.Save(c.Request.Context(), in, *user(c))
 		if err == nil {
 			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: e.ID, Changes: entityChangeDetail(before, &e)})
 		}
-		respond(c, e, err)
+		respondEntityWrite(c, e, err)
 	})
 	// 生命周期只做删除/合并；下架（published → draft）是唯一的状态降级入口，
 	// Save 对降级一律回 use_lifecycle_endpoint（store.go）。两者同档权限：能清退的人才能下架。

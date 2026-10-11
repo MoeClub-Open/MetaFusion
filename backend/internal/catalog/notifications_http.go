@@ -41,8 +41,8 @@ func notificationPaging(c *gin.Context) (int, int) {
 func (h HTTP) registerNotifications(api *gin.RouterGroup) {
 	s := h.Store
 	// 未读数是角标端点：只做一次部分索引聚合，供顶栏每 60 秒级轮询。
-	// 限流给得比别的读端点宽（300/min）：一个 NAT 后可能同时开着几十个标签页。
-	api.GET("/notifications/unread-count", required(""), routeLimiter(300), func(c *gin.Context) {
+	// 与其余业务读写共用外层已验证主体的预算，不重复扣数或覆盖额度响应头。
+	api.GET("/notifications/unread-count", required(""), func(c *gin.Context) {
 		unread, err := s.NotificationUnreadCount(c.Request.Context(), user(c).ID)
 		if err != nil {
 			respond(c, nil, err)

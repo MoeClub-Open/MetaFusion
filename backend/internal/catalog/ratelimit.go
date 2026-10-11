@@ -53,9 +53,6 @@ const rateLimitLockKey = 740206
 //
 // 返回的 unlimited 为真时，调用方必须完全跳过计数（"解除限制"），limit 无意义。
 func (p RateLimitPolicy) Resolve(identities, groups []string, anonymous bool, routeDefault int) (limit int, unlimited bool) {
-	if !anonymous && contains(groups, "admin") {
-		return 0, true
-	}
 	if anonymous {
 		// 匿名只有保留组码可用：它没有账号，也没有组。
 		if r, ok := p.Groups[rateLimitAnonymousGroup]; ok {
@@ -78,6 +75,12 @@ func (p RateLimitPolicy) Resolve(identities, groups []string, anonymous bool, ro
 				if r.PerMinute > 0 {
 					return r.PerMinute, false
 				}
+			}
+		}
+		// 默认管理员无限，但显式账号规则和 admin 组规则可收回该默认。
+		if contains(groups, "admin") {
+			if _, explicit := p.Groups["admin"]; !explicit {
+				return 0, true
 			}
 		}
 		// 组是"授予"的集合：多组命中取最宽松的一项。取交集（或取最小值）会让
@@ -261,8 +264,14 @@ func (s *Store) SaveRateLimitPolicy(ctx context.Context, p RateLimitPolicy, expe
 		if !u.Can(PermissionDefinitionsManage) {
 			return errForbidden
 		}
-		if err := validateSources(note, sources); err != nil {
-			return err
+		// 运行配置记录管理员的决定；没有事实来源时不伪造元数据证据。
+		if strings.TrimSpace(note) == "" {
+			return fmt.Errorf("edit_note_required")
+		}
+		if len(sources) > 0 {
+			if err := validateSources(note, sources); err != nil {
+				return err
+			}
 		}
 		if err := validateRateLimitPolicy(p); err != nil {
 			return err
@@ -315,6 +324,9 @@ func (s *Store) RunRateLimitPolicyRefresher(ctx context.Context) {
 		case <-ticker.C:
 			if _, err := s.RateLimitPolicy(ctx); err != nil {
 				log.Printf("WARNING 目录服务：限流策略刷新失败，继续使用上一版: %v", err)
+			}
+			if err := s.pruneRateWindows(ctx); err != nil {
+				log.Printf("WARNING 目录服务：过期限流窗口清理失败: %v", err)
 			}
 		}
 	}

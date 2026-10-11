@@ -205,6 +205,17 @@ func isEmptyValue(v any) bool {
 	return false
 }
 func validateSources(note string, sources []Source) error {
+	policy := configuredSourcePolicy.Load()
+	if policy == nil {
+		policy = &defaultSourcePolicy
+	}
+	return validateSourcesWithPolicy(note, sources, policy)
+}
+
+// validateSourceShapes accepts historical self sources for read/impact checks.
+// New submissions additionally pass validateSources and changed nested evidence
+// passes validateChangedEntitySources before it is written.
+func validateSourceShapes(note string, sources []Source) error {
 	if strings.TrimSpace(note) == "" || len(sources) == 0 {
 		return fmt.Errorf("evidence_required")
 	}
@@ -1022,7 +1033,7 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 				return fmt.Errorf("invalid_picture_period")
 			}
 		}
-		if err := validateSources("picture", []Source{p.Source}); err != nil {
+		if err := validateSourceShapes("picture", []Source{p.Source}); err != nil {
 			return err
 		}
 		if p.Role != "" {
@@ -1134,7 +1145,7 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 	seenExprLoc := map[string]bool{}
 	for _, c := range e.Contents {
 		if len(c.Sources) > 0 {
-			if err := validateSources("inclusion", c.Sources); err != nil {
+			if err := validateSourceShapes("inclusion", c.Sources); err != nil {
 				return err
 			}
 		}

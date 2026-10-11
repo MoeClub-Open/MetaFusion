@@ -34,6 +34,9 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required for the catalog runtime")
 	}
+	if err := catalog.ConfigureSourcePolicy(os.Getenv("CATALOG_PUBLIC_URL"), os.Getenv("CATALOG_SOURCE_BLOCKED_HOSTS")); err != nil {
+		log.Fatalf("catalog source policy configuration invalid: %v", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -63,6 +66,24 @@ func main() {
 	s.OpenSearch = search
 	go s.RunOpenSearchIndexer(ctx)
 	log.Print("OpenSearch entity search enabled; PostgreSQL supplies authoritative content and authorization")
+	retention, err := catalog.RetentionPolicyFromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("catalog retention configuration invalid: %v", err)
+	}
+	storageURL := strings.TrimSpace(os.Getenv("STORAGE_URL"))
+	storageSecret := strings.TrimSpace(os.Getenv("STORAGE_CATALOG_LIFECYCLE_SECRET"))
+	if storageSecret != "" {
+		if err := catalog.ValidateStorageLifecycleConfig(storageURL, storageSecret); err != nil {
+			log.Fatalf("storage lifecycle configuration invalid: %v", err)
+		}
+	} else {
+		log.Print("storage lifecycle consumer disabled: STORAGE_CATALOG_LIFECYCLE_SECRET is not configured")
+	}
+	if storageURL != "" && storageSecret != "" {
+		retention.RequiredConsumers = append(retention.RequiredConsumers, catalog.StorageLifecycleConsumer)
+		go s.RunStorageLifecycle(ctx, storageURL, storageSecret)
+	}
+	go s.RunRetention(ctx, retention)
 
 	// 审计写入器（跨服务契约 §3）：一个后台 goroutine + 有界队列，挂在 Store 上供
 	// registerGroup 的中间件使用。关停时排空队列——进程直接退会把队列里最后一批行丢掉。

@@ -449,10 +449,15 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 	if err = json.Unmarshal(raw, &e); err != nil {
 		return e, err
 	}
-	err = func() error {
-		if err := validateSources(input.EditNote, input.Sources); err != nil {
-			return err
+	if err = validateSources(input.EditNote, input.Sources); err != nil {
+		return e, err
+	}
+	if !input.identityLocksHeld {
+		if err = lockEntityIdentityWrite(ctx, tx, e, u); err != nil {
+			return e, err
 		}
+	}
+	err = func() error {
 		// M02：定义共享 → 发行，见 definitionsLockKey。
 		if err := lockDefinitionsShared(ctx, tx); err != nil {
 			return err
@@ -586,6 +591,14 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		}
 		if err = validateEntityStructuralReferences(e, ref); err != nil {
 			return err
+		}
+		if err = validateChangedEntitySources(e, old); err != nil {
+			return err
+		}
+		if input.identityReview && !input.internal && entityNeedsIdentityReview(old, e) {
+			if err = reviewEntityIdentity(ctx, tx, e, input.ReviewedCandidateIDs, u, nil, 0); err != nil {
+				return err
+			}
 		}
 		stored := e
 		stored.WorkID = ""
