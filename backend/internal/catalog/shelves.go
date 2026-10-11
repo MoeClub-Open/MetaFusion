@@ -177,31 +177,6 @@ func (s *Store) ListShelves(ctx context.Context, enabledOnly bool) ([]Shelf, err
 	return out, rows.Err()
 }
 
-// ResolveShelf uses the same effective rules as the caller's homepage, including
-// private section overrides. Missing or hidden sections never become an unfiltered list.
-func (s *Store) ResolveShelf(ctx context.Context, slug string, u *User) (Shelf, error) {
-	if !shelfSlugPattern.MatchString(slug) {
-		return Shelf{}, errParam(codeInvalidQueryParam)
-	}
-	shelves, err := s.ListShelves(ctx, true)
-	if err != nil {
-		return Shelf{}, err
-	}
-	prefs := HomePreferences{}
-	if u != nil {
-		prefs, err = s.GetHomePreferences(ctx, u.ID)
-		if err != nil {
-			return Shelf{}, err
-		}
-	}
-	for _, sh := range applyHomePreferences(shelves, prefs) {
-		if sh.Slug == slug {
-			return sh, nil
-		}
-	}
-	return Shelf{}, sql.ErrNoRows
-}
-
 // GetShelf 按 id 读取单个货架规则（含停用项，供后台编辑）。
 func (s *Store) GetShelf(ctx context.Context, id int64) (Shelf, error) {
 	row := s.DB.QueryRowContext(ctx, `SELECT `+shelfColumns+` FROM catalog.shelves WHERE id=$1`, id)
@@ -455,7 +430,7 @@ func (s *Store) CountShelfItems(ctx context.Context, sh Shelf, u *User) (int, er
 // 单独成函数：名称四语覆盖由 names_coverage_test 直接断言，不只依赖启动写库。
 func shelfSeeds() []Shelf {
 	return []Shelf{
-		{Slug: "music", Names: map[string]string{"zh-CN": "音乐", "zh-TW": "音樂", "ja": "音楽", "ja-JP": "音楽", "en-US": "Music"}, Query: ShelfQuery{VocabTerms: map[string][]string{"creation_form": {"music", "song", "single", "original_album", "doujin_album"}}}, Sort: "updated", Icon: "Disc", Enabled: true, SortOrder: 10},
+		{Slug: "music", Names: map[string]string{"zh-CN": "音乐", "zh-TW": "音樂", "ja": "音楽", "ja-JP": "音楽", "en-US": "Music"}, Query: ShelfQuery{Tags: []string{"music", "song", "album"}}, Sort: "updated", Icon: "Disc", Enabled: true, SortOrder: 10},
 		{Slug: "anime", Names: map[string]string{"zh-CN": "动画", "zh-TW": "動畫", "ja": "アニメ", "ja-JP": "アニメ", "en-US": "Anime"}, Query: ShelfQuery{Tags: []string{"animation"}}, Sort: "updated", Icon: "Tv", Enabled: true, SortOrder: 20},
 		{Slug: "films", Names: map[string]string{"zh-CN": "电影", "zh-TW": "電影", "ja": "映画", "ja-JP": "映画", "en-US": "Films"}, Query: ShelfQuery{Tags: []string{"film"}}, Sort: "updated", Icon: "Film", Enabled: true, SortOrder: 30},
 		{Slug: "novels", Names: map[string]string{"zh-CN": "小说", "zh-TW": "小說", "ja": "小説", "ja-JP": "小説", "en-US": "Novels"}, Query: ShelfQuery{Tags: []string{"novel"}}, Sort: "updated", Icon: "BookOpen", Enabled: true, SortOrder: 40},

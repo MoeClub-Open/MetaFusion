@@ -441,14 +441,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		// kinds 支持多次出现或逗号分隔：多值命中在 SQL 侧完成。
 		o.Kinds = queryList(c, "kinds")
-		if slug := c.Query("shelf"); slug != "" {
-			sh, shelfErr := s.ResolveShelf(c.Request.Context(), slug, user(c))
-			if shelfErr != nil {
-				respond(c, nil, shelfErr)
-				return
-			}
-			o.Shelf = &sh.Query
-		}
 		o.TagsMode = c.Query("tags_mode")
 		if o.TagsMode != "" && o.TagsMode != "any" && o.TagsMode != "all" {
 			respond(c, nil, errParam(codeInvalidQueryParam))
@@ -777,10 +769,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	cat.GET("/shelves", func(c *gin.Context) {
 		v, err := s.ListShelves(c.Request.Context(), true)
 		respond(c, gin.H{"items": v}, err)
-	})
-	cat.GET("/shelves/:slug", func(c *gin.Context) {
-		v, err := s.ResolveShelf(c.Request.Context(), c.Param("slug"), user(c))
-		respond(c, v, err)
 	})
 	// /shelves/feed 一次返回每个分区及其求值后的条目，供首页直接渲染。
 	// 规则里的 fields/vocab_terms/relations 只有服务端能判定，放在这里避免前端近似匹配。

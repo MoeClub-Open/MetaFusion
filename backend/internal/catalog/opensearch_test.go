@@ -2,10 +2,7 @@ package catalog
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -176,93 +173,6 @@ func TestOpenSearchTagMatchingModes(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-	}
-}
-
-func TestOpenSearchShelfFiltersAndCursorBinding(t *testing.T) {
-	searchCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/point_in_time") {
-			_, _ = w.Write([]byte(`{"pit_id":"shelf-pit"}`))
-			return
-		}
-		if r.Method == http.MethodDelete {
-			_, _ = w.Write([]byte(`{}`))
-			return
-		}
-		searchCalls++
-		var payload struct {
-			Query struct {
-				Bool struct {
-					Filter []map[string]json.RawMessage `json:"filter"`
-				} `json:"bool"`
-			} `json:"query"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Error(err)
-			return
-		}
-		var kind, tag, form bool
-		for _, filter := range payload.Query.Bool.Filter {
-			if string(filter["term"]) == `{"kind":"work"}` {
-				kind = true
-			}
-			if string(filter["terms"]) == `{"tags":["favorite"]}` {
-				tag = true
-			}
-			if raw := filter["nested"]; raw != nil {
-				var nested struct {
-					Path  string `json:"path"`
-					Query struct {
-						Bool struct {
-							Filter []map[string]map[string]json.RawMessage `json:"filter"`
-						} `json:"bool"`
-					} `json:"query"`
-				}
-				if err := json.Unmarshal(raw, &nested); err != nil {
-					t.Error(err)
-					return
-				}
-				if nested.Path == "fields" && len(nested.Query.Bool.Filter) == 2 &&
-					string(nested.Query.Bool.Filter[0]["term"]["fields.path"]) == `"creation_form"` &&
-					string(nested.Query.Bool.Filter[1]["terms"]["fields.value"]) == `["song","single"]` {
-					form = true
-				}
-			}
-		}
-		if !kind || !tag || !form {
-			t.Errorf("shelf must intersect work, extra tags, and OR creation forms: kind=%t tag=%t form=%t", kind, tag, form)
-		}
-		_, _ = w.Write([]byte(`{"pit_id":"shelf-pit","hits":{"total":{"value":0,"relation":"eq"},"hits":[]}}`))
-	}))
-	defer server.Close()
-	client, err := NewOpenSearchClient(server.URL, "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.ready.Store(true)
-	store := &Store{OpenSearch: client}
-	opts := ListOptions{Query: "music", Limit: 10, Tags: []string{"favorite"}, Shelf: &ShelfQuery{VocabTerms: map[string][]string{"creation_form": {"song", "single"}}}}
-	if _, err := store.Search(context.Background(), opts, nil, ""); err != nil {
-		t.Fatal(err)
-	}
-	// A changed effective rule cannot silently reuse the former PIT query.
-	bound, _ := json.Marshal(struct {
-		Options  ListOptions
-		Identity string
-	}{opts, "anonymous"})
-	cursor, _ := json.Marshal(searchCursor{PIT: "shelf-pit", After: []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"id"`)}, Fingerprint: fmt.Sprintf("%x", sha256.Sum256(bound))})
-	opts.Shelf = &ShelfQuery{VocabTerms: map[string][]string{"creation_form": {"original_album"}}}
-	if _, err := store.Search(context.Background(), opts, nil, base64.RawURLEncoding.EncodeToString(cursor)); err == nil || err.Error() != "invalid_search_cursor" {
-		t.Fatalf("changed shelf cursor: %v", err)
-	}
-	if searchCalls != 1 {
-		t.Fatalf("changed cursor reached search backend: calls=%d", searchCalls)
-	}
-	opts.Shelf = &ShelfQuery{Relations: []string{"authored_by"}}
-	if _, err := store.Search(context.Background(), opts, nil, ""); err == nil || err.Error() != codeInvalidQueryParam {
-		t.Fatalf("relation shelf must not produce a wider text query: %v", err)
 	}
 }
 

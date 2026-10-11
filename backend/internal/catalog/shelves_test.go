@@ -2,16 +2,8 @@ package catalog
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 // 白名单与求值必须一一对应：validateShelf 放行、求值却没人消费的取值就是空承诺
@@ -154,116 +146,5 @@ func TestCountShelfItemsIgnoresLimit(t *testing.T) {
 	}
 	if got != total {
 		t.Fatalf("total=%d，应 %d", got, total)
-	}
-}
-
-func TestPostgresMusicShelfAndBrowseShareRules(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	sh, err := f.s.ResolveShelf(ctx, "music", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var want []string
-	for _, form := range []string{"song", "single", "original_album", "doujin_album", "music"} {
-		e := f.save(Entity{Kind: "work", Title: form, Attributes: map[string]any{"creation_form": form}})
-		want = append(want, e.ID)
-	}
-	for _, form := range []string{"tv_anime", "manga_serialized", "audio_drama"} {
-		f.save(Entity{Kind: "work", Title: form, Attributes: map[string]any{"creation_form": form, "tags": []any{"music", "song", "album"}}})
-	}
-	f.save(Entity{Kind: "collection", Title: "Song collection", Attributes: map[string]any{"tags": []any{"song"}}})
-	items, err := f.s.ListShelfItems(ctx, sh, 100, nil)
-	if err != nil || len(items) != len(want) {
-		t.Fatalf("music shelf: count=%d err=%v", len(items), err)
-	}
-	allowed := map[string]bool{}
-	for _, id := range want {
-		allowed[id] = true
-	}
-	for _, e := range items {
-		if !allowed[e.ID] {
-			t.Fatalf("non-music work entered shelf: %+v", e)
-		}
-	}
-	count, err := f.s.CountShelfItems(ctx, sh, nil)
-	if err != nil || count != len(want) {
-		t.Fatalf("shelf count=%d err=%v", count, err)
-	}
-	engine := gin.New()
-	HTTP{Store: f.s}.Register(engine)
-	all, total := listIDs(t, engine, "/api/catalog/entities?shelf=music&sort=title&limit=100")
-	if total != int64(count) || len(all) != count {
-		t.Fatalf("browse/shelf counts differ: ids=%v total=%d shelf=%d", all, total, count)
-	}
-	for _, id := range all {
-		if !allowed[id] {
-			t.Fatalf("non-music entity entered browse: %s", id)
-		}
-	}
-	first, _ := listIDs(t, engine, "/api/catalog/entities?shelf=music&sort=title&limit=2")
-	second, secondTotal := listIDs(t, engine, "/api/catalog/entities?shelf=music&sort=title&limit=2&page=2")
-	if !reflect.DeepEqual(append(first, second...), all[:4]) || secondTotal != total {
-		t.Fatalf("pagination dropped shelf: first=%v second=%v all=%v total=%d", first, second, all, secondTotal)
-	}
-	if _, total := listIDs(t, engine, "/api/catalog/entities?shelf=music&tags=song"); total != 0 {
-		t.Fatalf("additional tags must intersect the shelf, got %d", total)
-	}
-	if _, total := listIDs(t, engine, "/api/catalog/entities?shelf=music&kind=collection"); total != 0 {
-		t.Fatalf("shelf must restrict kind to work, got %d", total)
-	}
-}
-
-func TestPostgresResolveShelfUsesCallerPreferences(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	anonymous, err := f.s.ResolveShelf(ctx, "music", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prefs := emptyHomePreferences()
-	prefs.Sections = []HomeSection{
-		{Slug: "music", Names: Names{"zh-CN": "我的音乐"}, Query: ShelfQuery{Tags: []string{"favorite"}}},
-		{Slug: "private-shelf", Names: Names{"zh-CN": "自建"}, Query: ShelfQuery{Fields: map[string][]string{"creation_form": {"song"}}}},
-	}
-	if _, err := f.s.SaveHomePreferences(ctx, f.u.ID, prefs); err != nil {
-		t.Fatal(err)
-	}
-	override, err := f.s.ResolveShelf(ctx, "music", &f.u)
-	if err != nil || !reflect.DeepEqual(override.Query.Tags, []string{"favorite"}) || override.Names["zh-CN"] != "我的音乐" {
-		t.Fatalf("caller override: %+v %v", override, err)
-	}
-	unchanged, err := f.s.ResolveShelf(ctx, "music", nil)
-	if err != nil || !reflect.DeepEqual(unchanged.Query, anonymous.Query) {
-		t.Fatalf("private override changed public shelf: %+v %v", unchanged, err)
-	}
-	if custom, err := f.s.ResolveShelf(ctx, "private-shelf", &f.u); err != nil || custom.Source != ShelfSourceCustom {
-		t.Fatalf("custom shelf: %+v %v", custom, err)
-	}
-	if _, err := f.s.ResolveShelf(ctx, "private-shelf", nil); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("anonymous custom shelf: %v", err)
-	}
-	engine := fixtureEngine(f)
-	w := httptest.NewRecorder()
-	engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/catalog/shelves/music", nil))
-	var result Shelf
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &result) != nil || !reflect.DeepEqual(result.Query, override.Query) {
-		t.Fatalf("effective shelf route: %d %s", w.Code, w.Body.String())
-	}
-	w = httptest.NewRecorder()
-	engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/catalog/shelves/feed?per_shelf=1", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("feed must still match static route: %d %s", w.Code, w.Body.String())
-	}
-	prefs.Hidden = []string{"music", "private-shelf"}
-	if _, err := f.s.SaveHomePreferences(ctx, f.u.ID, prefs); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"/api/catalog/shelves/music", "/api/catalog/entities?shelf=music", "/api/catalog/entities?shelf=private-shelf", "/api/catalog/entities?shelf=missing-shelf"} {
-		w := httptest.NewRecorder()
-		engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-		if w.Code != http.StatusNotFound {
-			t.Fatalf("hidden/missing shelf must not become unfiltered browse: %s %d %s", path, w.Code, w.Body.String())
-		}
 	}
 }
