@@ -19,6 +19,9 @@ func useTestSearch(t *testing.T, s *Store) {
 	t.Helper()
 	raw := os.Getenv("MF_OPENSEARCH_TEST_URL")
 	if raw == "" {
+		if os.Getenv("MF_REQUIRE_INTEGRATION_TESTS") == "1" {
+			t.Fatal("MF_REQUIRE_INTEGRATION_TESTS=1 requires MF_OPENSEARCH_TEST_URL for isolated OpenSearch integration tests")
+		}
 		t.Skip("MF_OPENSEARCH_TEST_URL must identify an isolated OpenSearch test server")
 	}
 	u, err := url.Parse(raw)

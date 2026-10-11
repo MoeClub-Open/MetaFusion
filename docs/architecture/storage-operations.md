@@ -42,6 +42,28 @@
 - 媒体分析与预览：存储服务只收原始文件、按权限分发，**不做转码与媒体分析**。
 - BT 种子、分享率治理、零拷贝（对象存储内部拷贝）等仍属未确认需求，不作为前提。
 
+## 绑定生命周期与回收
+
+- 目录配置 `STORAGE_URL` 与双方一致的 `STORAGE_CATALOG_LIFECYCLE_SECRET` 后启用
+  `storage-lifecycle-v1` 消费者；空密钥关闭，启用时无效 URL 在目录启动期明确失败。
+  存储的 `GET /internal/catalog/binding-targets` 只列当前有绑定的实体 UUID，每页至多 100，按 UUID 游标前进。
+  消费者启动先复核该库存，随后消费 `entity.saved/deleted/merged/unpublished`；长期关闭后重新启用不依赖旧事件仍在。
+- 内部 `POST /internal/catalog/lifecycle` 仅接受专用服务凭据，外部网关必须拒绝 `/internal/`。
+  生命周期消费者读取目录当前 canonical、完整 aliases、实体版本与图片资产集合；实际存储应用后才记录独立 delivery ACK。
+  目录 outbox 保留清理等待所有启用消费者 ACK，存储故障不阻断目录主写入。
+- 删除撤 canonical 与历史 aliases 的全部文件绑定；合并迁移全部用途并去重，保留历史别名图片资产。
+  下架回草稿保留文件。TrackContent 只有 Expression 收录引用，替换收录不会撤 Track 或 Expression 文件。
+  普通图片编辑仅撤已移除的 `cover_image` 绑定，不撤其他用途，也不自动创建未经资产所有者授权的绑定。
+- 重复 Bind 保留绑定 ID、创建者与创建时间，并刷新内部确认时间；旧快照只撤确认时间不晚于该次目录写入的封面。
+  存储迁移 `000008` 将存量确认时间从迁移时刻保守起算；旧实体图片绑定在下一次目录新写入后才按新快照撤销。
+  读取身份后、落绑定前实体已合并/删除时，存储返回 `409 binding_target_changed`，客户端重新读取身份再写。
+- 已完成资产从最后解绑（从未绑定则从完成）开始保留，`STORAGE_UNBOUND_RETENTION_DAYS` 默认 **7 天**；
+  重新绑定清空计时，存量无绑定资产从迁移 `000006` 时刻保守起算，禁发或仍有任何绑定的资产不回收。
+  `storage-server worker` 同时处理过期 pending 与到期 complete；需要部署侧定期执行该 worker。
+- 回收共享对象键锁与资产行锁，复检引用并持久登记删除门禁后，最多 15 秒操作对象并删除资产行；共享对象只删当前行。
+  对象失败或删字节后数据库提交失败保留门禁，worker 重试；绑定、续租、完成与禁发返回 `409 asset_reclaiming`，读取不再分发该资产。
+  对账隔离同样共享对象键锁，避免隔离刚被新资产引用的对象。隔离保留字节，不等于物理删除。
+
 ## 变更纪律
 
 - 存储结构由 `internal/store/migrations/*.sql` 的版本化迁移负责，记账到 `storage.schema_migrations`，迁移期取事务级 advisory lock **740204**。目录迁移在 `backend/migrations`，使用锁 **88481001**；目录结构写入锁 **740202** 是不同职责。

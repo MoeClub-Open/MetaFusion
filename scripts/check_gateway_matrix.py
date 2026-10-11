@@ -8,7 +8,8 @@
 检查项（任一不过以非零码退出）：
 1. 结构：花括号配平；每条 location 有 proxy_pass 或 return；proxy_pass 引用的 $变量必须在本块内 set；
    limit_req 用到的 zone 必须有同名 limit_req_zone 定义。
-2. 业务限流：/api/ 路由不能叠加 IP limit_req；额度由验证身份后的服务维护，保留 admin 免限流。
+2. 认证保护：五个未验证凭据的精确路径必须带 auth_limit；其它 /api/ 不能叠加 IP 业务桶。
+   真实 IP 只信任显式单个宿主代理及 Cloudflare 网段；转发 XFF 必须覆盖为还原后的 IP。
 3. 登记：矩阵里每条 location 的路径族必须在文档 §2 表里登记（白名单见下），反向也检查表格里的
    每条路径至少被一条 location 覆盖。
 4. 归属：文档 §2 表把某前缀归给哪个服务（catalog / auth / community / storage），矩阵里该 location
@@ -26,6 +27,7 @@
 用法：python scripts/check_gateway_matrix.py [仓库根目录] [--matrix PATH] [--doc PATH]
 """
 import argparse
+import ipaddress
 import os
 import re
 import sys
@@ -35,6 +37,7 @@ UPSTREAM_RE = re.compile(r'set\s+\$(\w+)\s+"http://([A-Za-z0-9_.-]+)(?::(\d+))?"
 PROXY_VAR_RE = re.compile(r"proxy_pass\s+\$(\w+)")
 LIMIT_RE = re.compile(r"limit_req\s+zone=(\w+)")
 ZONE_RE = re.compile(r"limit_req_zone\s+\S+\s+zone=(\w+):")
+AUTH_ENDPOINTS = {"/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/setup", "/api/oauth/token"}
 # 文档里的路径 token 常带方法前缀（"GET|POST /api/setup"、"POST /api/auth/login|refresh"）。
 # 路径候选本身也用 "|" 分隔，所以先剥掉方法名，再按 "|" 取第一条候选路径。
 METHOD_PREFIX = re.compile(r"^(?:[A-Z]{3,7}\s*\|\s*|[A-Z]{3,7}\s+)+")
@@ -56,6 +59,7 @@ WHITELIST = {
     "/admin": "主前端里的目录控制台：一条 location / 兜底，没有单列前缀",
     "/docs": "文档站前缀",
     "/storage/preview": "退役占位：显式 return 404，不分流到任何上游",
+    "/internal": "内部服务接口只允许容器间调用，公网入口显式 404",
     "/healthz": "网关自身存活探针",
     "/livez": "网关自身存活探针别名",
     "/live": "网关自身存活探针别名",
@@ -129,6 +133,56 @@ def parse_locations(lines):
         blocks.append((start + 1, m.group(1) or "", m.group(2), normalize_path(m.group(2)), "\n".join(lines[start:j])))
         i = j
     return blocks
+
+
+def check_security(raw, blocks):
+    """检查边缘认证桶、代理信任与内部路由；以独立函数给破坏性自测调用。"""
+    clean = strip_comments(raw)
+    problems = []
+    if not re.search(r"limit_req_zone\s+\$binary_remote_addr\s+zone=auth_limit:10m\s+rate=5r/s\s*;", clean):
+        problems.append("认证桶必须用还原后的 binary_remote_addr，auth_limit:10m rate=5r/s")
+    if not re.search(r"limit_req_status\s+429\s*;", clean):
+        problems.append("认证限流必须返回 429")
+    if not re.search(r"real_ip_header\s+CF-Connecting-IP\s*;", clean):
+        problems.append("真实 IP 必须读取前置代理覆盖的 CF-Connecting-IP")
+    trusted = re.findall(r"set_real_ip_from\s+(\S+)\s*;", clean)
+    if not trusted:
+        problems.append("真实 IP 缺少显式可信来源")
+    for value in trusted:
+        try:
+            network = ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            problems.append("真实 IP 信任来源必须为 IP/CIDR：" + value)
+            continue
+        # 宿主代理是特权单点，不能以整个私网或任意来源代替。
+        private_ranges = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7", "::1/128")
+        private = any(network.version == private_net.version and network.overlaps(private_net)
+                      for private_net in map(ipaddress.ip_network, private_ranges))
+        if network.prefixlen == 0 or (private and network.num_addresses != 1):
+            problems.append("真实 IP 不能信任整个私网/回环/任意来源：" + value)
+    protected = set()
+    internal = set()
+    for _ln, modifier, raw_path, family, block in blocks:
+        body = strip_comments(block)
+        limits = LIMIT_RE.findall(body)
+        if modifier == "=" and raw_path in AUTH_ENDPOINTS:
+            protected.add(raw_path)
+            if limits != ["auth_limit"]:
+                problems.append("认证路径 %s 必须且只能使用 auth_limit" % raw_path)
+        elif family.startswith("/api") and limits:
+            problems.append("location %s 使用 IP 业务限流，会覆盖身份策略并合并共享出口" % raw_path)
+        if "proxy_pass" in body:
+            forwarded = re.findall(r"proxy_set_header\s+X-Forwarded-For\s+([^;]+);", body)
+            if family.startswith("/api") and forwarded != ["$remote_addr"]:
+                problems.append("location %s 必须覆盖 X-Forwarded-For 为 $remote_addr" % raw_path)
+        if raw_path in ("/internal", "/internal/"):
+            if (modifier, raw_path) in (("=", "/internal"), ("^~", "/internal/")) and re.search(r"return\s+404\s*;", body) and "proxy_pass" not in body:
+                internal.add(raw_path)
+    for endpoint in sorted(AUTH_ENDPOINTS - protected):
+        problems.append("缺少精确认证保护 location = " + endpoint)
+    if internal != {"/internal", "/internal/"}:
+        problems.append("/internal 与 /internal/ 必须显式 404，不得转发内部生命周期接口")
+    return problems
 
 
 def split_cells(line):
@@ -215,6 +269,7 @@ def main():
     lines = raw.splitlines()
     zones = set(ZONE_RE.findall(clean))
     blocks = parse_locations(lines)
+    problems.extend(check_security(raw, blocks))
     doc_rows = parse_doc_rows(doc_text)
     rel_matrix = os.path.relpath(matrix, root)
     rel_doc = os.path.relpath(doc, root)
@@ -229,8 +284,6 @@ def main():
         for var in PROXY_VAR_RE.findall(body):
             if ("set $%s" % var) not in body:
                 problems.append("%s:%d: proxy_pass 用了本块未 set 的 $%s" % (rel_matrix, lineno, var))
-        if family.startswith("/api") and LIMIT_RE.search(body):
-            problems.append("%s:%d: location %s 使用 IP 业务限流，会覆盖 admin 免限流并把云端 Agent 汇入同一出口桶" % (rel_matrix, lineno, raw_path))
 
         if family in WHITELIST:
             continue
@@ -266,5 +319,39 @@ def main():
     return 1 if problems else 0
 
 
+def selftest():
+    """认证桶和代理边界的负例，避免检查器只对当前配置永远报绿。"""
+    blocks = []
+    for endpoint in sorted(AUTH_ENDPOINTS):
+        blocks.append("location = %s {\n limit_req zone=auth_limit burst=20 nodelay;\n proxy_pass http://auth;\n proxy_set_header X-Forwarded-For $remote_addr;\n}" % endpoint)
+    good = "\n".join([
+        "limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=5r/s;",
+        "limit_req_status 429;", "real_ip_header CF-Connecting-IP;", "set_real_ip_from 172.28.0.1;",
+        *blocks, "location = /internal {\n return 404;\n}", "location ^~ /internal/ {\n return 404;\n}",
+        "location /api/ {\n proxy_pass http://backend;\n proxy_set_header X-Forwarded-For $remote_addr;\n}",
+    ])
+    cases = [
+        ("完整认证保护", good, False),
+        ("缺认证桶", good.replace(" limit_req zone=auth_limit burst=20 nodelay;", "", 1), True),
+        ("全API叠加IP桶", good.replace("location /api/ {", "location /api/ {\n limit_req zone=auth_limit;"), True),
+        ("信任整个私网", good.replace("172.28.0.1", "172.16.0.0/12"), True),
+        ("信任任意来源", good.replace("172.28.0.1", "0.0.0.0/0"), True),
+        ("沿用用户XFF", good.replace("X-Forwarded-For $remote_addr", "X-Forwarded-For $proxy_add_x_forwarded_for"), True),
+        ("误开内部路由", good.replace("location ^~ /internal/ {\n return 404;", "location ^~ /internal/ {\n proxy_pass http://storage;"), True),
+        ("取消真实IP还原", good.replace("real_ip_header CF-Connecting-IP;", ""), True),
+    ]
+    failed = []
+    for label, raw, want_failure in cases:
+        problems = check_security(raw, parse_locations(raw.splitlines()))
+        if bool(problems) != want_failure:
+            failed.append(label + ": " + str(problems))
+    for problem in failed:
+        print("FAIL " + problem)
+    print("check_gateway_matrix --selftest: %d 项，%d 个问题" % (len(cases), len(failed)))
+    return int(bool(failed))
+
+
 if __name__ == "__main__":
+    if "--selftest" in sys.argv[1:]:
+        sys.exit(selftest())
     sys.exit(main())

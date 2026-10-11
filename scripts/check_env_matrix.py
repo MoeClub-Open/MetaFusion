@@ -16,7 +16,7 @@ B. 登记 → 注入：KEYS 里 safe=False 的键，必须在指定编排文件�
    （safe=False = 默认值会带来无上限资源占用或明文链路这类风险）；
 C. 登记 → 代码：KEYS 里每个读者路径必须真实存在且文件里出现该键名，
    防止"登记表说有人读、代码里其实已经删了"的静默漂移。兄弟仓库目录缺席时记
-   "未能校验"并照常退出 0——CI 上它们由前一步按 deploy/versions.lock 检出，因此那里是全量校验。
+   "未能校验"并失败；仅显式 --allow-missing-sources 可做部分校验。
 D. KEYS 里标了 interpolate 的键（数据层隔离的五条服务 DSN），必须在指定编排文件里真的被插值
    （形如 键名加 :- 空默认，或裸键名）。编排只把它注入成容器的 DATABASE_URL，所以 A/B/C 都看不见它：
    没有这条检查，"编排里键名改了、.env 里配的还是老名字"会静默变成"服务退回共用库用户"。
@@ -72,6 +72,7 @@ ALLOWED_INFRA = {
 # safe=False 只用于"缺失/为 0 时行为不安全"的键：无上限的资源占用、明文链路。
 KEYS = {
     "MCP_MIGRATION_DATABASE_URL": {"readers": [("catalog", "../deploy/deploy.sh")], "default": "空 → 迁移前拒绝", "safe": True, "interpolate": ["deploy/docker-compose.yml"]},
+    "AUTH_MIGRATION_DATABASE_URL": {"readers": [("catalog", "../deploy/deploy.sh")], "default": "空 → 迁移前拒绝", "safe": True, "interpolate": ["deploy/docker-compose.yml"], "note": "auth-migrate 独立结构身份，不注入账号 HTTP 运行进程"},
     # DB_* 仅为显式目录迁移作业的管理配置，运行服务不读取。
     "DB_HOST": {"readers": [("catalog", "internal/config/config.go")], "default": "localhost", "safe": True},
     "DB_PORT": {"readers": [("catalog", "internal/config/config.go")], "default": "5432", "safe": True},
@@ -85,6 +86,11 @@ KEYS = {
     "OPENSEARCH_URL": {"readers": [("catalog", "cmd/server/main.go")], "default": "必填，空值拒绝启动", "safe": True},
     "CATALOG_DB_MAX_OPEN_CONNS": {"readers": [("catalog", "internal/catalog/store.go")], "default": "20，限定1–256", "safe": True},
     "CATALOG_DB_MAX_IDLE_CONNS": {"readers": [("catalog", "internal/catalog/store.go")], "default": "min(10,maxOpen)，限定0–maxOpen", "safe": True},
+    "CATALOG_PUBLIC_URL": {"readers": [("catalog", "cmd/server/main.go")], "default": "https://findverse.cc", "safe": True},
+    "CATALOG_SOURCE_BLOCKED_HOSTS": {"readers": [("catalog", "cmd/server/main.go")], "default": "空 = 仅拒绝内置与站点自身来源", "safe": True},
+    "CATALOG_OUTBOX_RETENTION_DAYS": {"readers": [("catalog", "internal/catalog/retention.go")], "default": "7天，0永久保留", "safe": True},
+    "CATALOG_COMMIT_REQUEST_RETENTION_DAYS": {"readers": [("catalog", "internal/catalog/retention.go")], "default": "90天，0永久保留", "safe": True},
+    "CATALOG_RETENTION_INTERVAL_SECONDS": {"readers": [("catalog", "internal/catalog/retention.go")], "default": "3600秒，限定60–86400", "safe": True},
     "OPENSEARCH_USERNAME": {"readers": [("catalog", "cmd/server/main.go")], "default": "空 → 无 Basic Auth", "safe": True},
     "OPENSEARCH_PASSWORD": {"readers": [("catalog", "cmd/server/main.go")], "default": "空 → 无 Basic Auth", "safe": True},
     # ── 数据层隔离：每服务各自的 DSN（编排侧插值键）────────────────────────
@@ -107,6 +113,8 @@ KEYS = {
     "CORS_ALLOWED_ORIGINS": {"readers": [("catalog", "cmd/server/main.go")], "default": "空 = 不注册 CORS 中间件", "safe": True},
     "COMMUNITY_URL": {"readers": [("catalog", "internal/capabilities/registry.go")], "default": "空 = 能力判为未部署", "safe": True},
     "STORAGE_URL": {"readers": [("catalog", "internal/capabilities/registry.go")], "default": "空 = 能力判为未部署", "safe": True},
+    "STORAGE_CATALOG_LIFECYCLE_SECRET": {"readers": [("catalog", "cmd/server/main.go"), ("storage", "internal/config/config.go")], "default": "空 = 内部生命周期投递关闭，两侧非空须同值", "safe": True},
+    "STORAGE_UNBOUND_RETENTION_DAYS": {"readers": [("storage", "internal/config/config.go")], "default": "7天", "safe": True},
     # ── 账号服务（../metafusion-auth）─────────────────────────────────────
     "AUTH_ACCOUNT_URL": {"readers": [("auth", "internal/handler/oauth.go")], "default": "空 = 站点相对路径", "safe": True},
     # ── 互动服务（../metafusion-community）───────────────────────────────
@@ -198,7 +206,7 @@ def repo_dir(root, repo, siblings_root):
     return os.path.normpath(os.path.join(root, rel))
 
 
-def check(root, siblings_root):
+def check(root, siblings_root, allow_missing_sources=False):
     problems, unchecked, notes = [], [], []
     try:
         injected = load_injected(root)
@@ -267,6 +275,8 @@ def check(root, siblings_root):
         print("note " + text)
     if unchecked:
         print("未能校验 %d 项：兄弟仓库目录不在本机（%s）" % (len(unchecked), "、".join(sorted(set(unchecked))[:4])))
+        if not allow_missing_sources:
+            problems.append("来源缺席不能视为全量验证；主仓独立检出仅可显式 --allow-missing-sources")
     for bad in problems:
         print("FAIL " + bad)
     print("check_env_matrix: %d 个键，%d 个问题，%d 项未能校验" % (len(KEYS), len(problems), len(unchecked)))
@@ -316,8 +326,9 @@ def main():
     ap.add_argument("root", nargs="?", default=default_root, help="仓库根目录")
     ap.add_argument("--siblings-root", default=os.environ.get("MF_SIBLINGS_ROOT"),
                     help="兄弟仓库所在根目录（默认按 ../metafusion-* 解析）")
+    ap.add_argument("--allow-missing-sources", action="store_true", help="显式允许缺席的兄弟来源，仅做部分校验")
     args = ap.parse_args()
-    return check(os.path.abspath(args.root), args.siblings_root)
+    return check(os.path.abspath(args.root), args.siblings_root, args.allow_missing_sources)
 
 
 if __name__ == "__main__":

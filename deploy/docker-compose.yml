@@ -187,6 +187,11 @@ services:
       - DATABASE_URL=${CATALOG_DATABASE_URL:?CATALOG_DATABASE_URL must be set}
       - CATALOG_DB_MAX_OPEN_CONNS=${CATALOG_DB_MAX_OPEN_CONNS:-64}
       - CATALOG_DB_MAX_IDLE_CONNS=${CATALOG_DB_MAX_IDLE_CONNS:-32}
+      - CATALOG_PUBLIC_URL=${CATALOG_PUBLIC_URL:-https://findverse.cc}
+      - CATALOG_SOURCE_BLOCKED_HOSTS=${CATALOG_SOURCE_BLOCKED_HOSTS:-}
+      - CATALOG_OUTBOX_RETENTION_DAYS=${CATALOG_OUTBOX_RETENTION_DAYS:-7}
+      - CATALOG_COMMIT_REQUEST_RETENTION_DAYS=${CATALOG_COMMIT_REQUEST_RETENTION_DAYS:-90}
+      - CATALOG_RETENTION_INTERVAL_SECONDS=${CATALOG_RETENTION_INTERVAL_SECONDS:-3600}
       # OpenSearch 是正式文本查询服务；外部集群可覆盖 URL 和认证。
       - OPENSEARCH_URL=${OPENSEARCH_URL:-http://opensearch:9200}
       - OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME:-}
@@ -196,6 +201,7 @@ services:
       # 互动（论坛/短评/收藏/私信）由同一个互动服务承载，因此只有一条 community 声明。
       - COMMUNITY_URL=http://community:8083
       - STORAGE_URL=http://storage:8082
+      - STORAGE_CATALOG_LIFECYCLE_SECRET=${STORAGE_CATALOG_LIFECYCLE_SECRET:-}
       # 目录只验签、不签发：优先静态公钥，其次账号服务的 JWKS；都没有时验签器不可用（fail closed）。
       # 私钥只属于账号服务——目录**不再需要** AUTH_JWT_PRIVATE_KEY，因此这里不再注入。
       # 切换窗口：公钥与 JWKS 都没配时，目录的写接口会一律按未登录处理（fail closed，不会静默放行）。
@@ -269,6 +275,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - metafusion-net
+
+  # 账号 HTTP 启动只读检查；DDL 与用户名冲突检查使用独立结构身份。
+  auth-migrate:
+    logging: *default-logging
+    image: metafusion-auth:${METAFUSION_TAG:-local}
+    profiles: ["tools"]
+    command: ["/app/auth-server", "-migrate"]
+    environment:
+      - DATABASE_URL=${AUTH_MIGRATION_DATABASE_URL:?AUTH_MIGRATION_DATABASE_URL must be set}
     networks:
       - metafusion-net
 
@@ -430,6 +447,8 @@ services:
       - STORAGE_SITE_CONCURRENT_UPLOADS=${STORAGE_SITE_CONCURRENT_UPLOADS:-0}
       - STORAGE_PENDING_TTL_HOURS=${STORAGE_PENDING_TTL_HOURS:-72}
       - STORAGE_ORPHAN_RETENTION_DAYS=${STORAGE_ORPHAN_RETENTION_DAYS:-7}
+      - STORAGE_CATALOG_LIFECYCLE_SECRET=${STORAGE_CATALOG_LIFECYCLE_SECRET:-}
+      - STORAGE_UNBOUND_RETENTION_DAYS=${STORAGE_UNBOUND_RETENTION_DAYS:-7}
       - STORAGE_S3_ENDPOINT=http://rustfs:9000
       - STORAGE_S3_TLS=false
       # 对象存储凭据（RustFS 的 root 用户/口令）的唯一来源；服务侧只认 S3 协议，与具体实现无关。
@@ -586,6 +605,8 @@ services:
   postgres:
     logging: *default-logging
     image: postgres:16-alpine
+    # 并行 VACUUM/查询使用动态共享内存；Docker 默认 64m 在维护时可能耗尽。
+    shm_size: 256m
     command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-512}"]
     container_name: metafusion-postgres
     restart: unless-stopped

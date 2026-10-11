@@ -28,6 +28,7 @@ jobs:
           POSTGRES_DB: mf_v2_test
         ports: ["5432:5432"]
         options: >-
+          --shm-size=256m
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
       opensearch:
@@ -44,6 +45,7 @@ jobs:
     env:
       MF_V2_TEST_DSN: postgres://postgres:test-only-password@127.0.0.1:5432/mf_v2_test?sslmode=disable
       MF_OPENSEARCH_TEST_URL: http://127.0.0.1:9200
+      MF_REQUIRE_INTEGRATION_TESTS: "1"
       # cmd/migrate 读的是 DB_*（不是 MF_V2_TEST_DSN）。服务容器里的用户是 postgres，
       # 而 config 的默认值是 metafusion —— 迁移回滚步骤因为这条不匹配长期失败。
       DB_HOST: 127.0.0.1
@@ -83,7 +85,7 @@ jobs:
             echo "irreversible migration unexpectedly rolled back" >&2
             exit 1
           fi
-          grep -q '000026_catalog_concurrency is irreversible' /tmp/mf-down.log
+          grep -q '000028_catalog_shared_budget is irreversible' /tmp/mf-down.log
           /tmp/mf-migrate up
           /tmp/mf-migrate status
       - name: 悬挂引用体检（check-refs 冒烟）
@@ -134,10 +136,10 @@ jobs:
         # 页面容器不得自写宽度/内边距（外壳只有 PageShell 一处）；纯 node，无需依赖。
         working-directory: .
         run: node scripts/check_page_shell.mjs
-      - name: 契约生成物一致性（权限码 / kinds）
+      - name: 契约生成物部分一致性（本仓来源 / kinds）
         # 生成物由 frontend/scripts/generate-contracts.mjs 从后端与各子系统源码提取；
-        # 兄弟仓库在 CI 里缺席时脚本只告警不失败（主仓库单独检出仍可用）。
-        run: node scripts/generate-contracts.mjs --check
+        # 这里是主仓独立检出，显式选择部分校验；跨仓 job 检查全部来源且缺源失败。
+        run: node scripts/generate-contracts.mjs --check --allow-missing-sources
       - name: 设计令牌守门（源码用到的令牌类名必须产出 CSS）
         # 上一轮的事故：37 个语义令牌类名在源码里写了、产出 CSS 里一条都没有——未注册的颜色
         # Tailwind 直接跳过，而 tsc 与 next build 全绿。脚本用项目自己的 tailwind.config.ts
@@ -161,6 +163,7 @@ jobs:
           DB_PASSWORD: test-only-password
           CATALOG_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           AUTH_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
+          AUTH_MIGRATION_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           COMMUNITY_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           STORAGE_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           RUSTFS_ACCESS_KEY: test-only-user
@@ -174,6 +177,7 @@ jobs:
           DB_PASSWORD: test-only-password
           CATALOG_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           AUTH_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
+          AUTH_MIGRATION_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           COMMUNITY_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           STORAGE_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
         run: docker compose -f deploy/docker-compose.metadata.yml config --quiet
@@ -188,6 +192,7 @@ jobs:
           DB_PASSWORD: test-only-password
           CATALOG_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           AUTH_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
+          AUTH_MIGRATION_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           COMMUNITY_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           STORAGE_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           RUSTFS_ACCESS_KEY: test-only-user
@@ -205,6 +210,7 @@ jobs:
           DB_PASSWORD: test-only-password
           CATALOG_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           AUTH_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
+          AUTH_MIGRATION_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           COMMUNITY_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           STORAGE_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
           RUSTFS_ACCESS_KEY: test-only-user
@@ -219,7 +225,8 @@ jobs:
           which = sys.argv[1]
           doc = yaml.safe_load(sys.stdin) or {}
           svcs = doc.get("services", {}) or {}
-          banned_db = {"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
+          banned_db = {"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
+                       "AUTH_MIGRATION_DATABASE_URL", "MCP_MIGRATION_DATABASE_URL"}
           banned_s3 = {"STORAGE_S3_ACCESS_KEY", "STORAGE_S3_SECRET_KEY",
                        "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"}
           bad = []
@@ -258,7 +265,9 @@ jobs:
       # 下面两个脚本只用标准库，不需要网络与 docker：网关矩阵是唯一入口的“线上真图”，
       # 它与文档 §2 表、与各仓库版本锁的关系只能靠机器守（2026-09 审计 §6）。
       - name: 网关矩阵 ↔ 文档 §2 表一致性
-        run: python3 scripts/check_gateway_matrix.py
+        run: |
+          python3 scripts/check_gateway_matrix.py
+          python3 scripts/check_gateway_matrix.py --selftest
       - name: CI 脚本存在性元检查
         # 本轮出现过"CI 引用了脚本但脚本没入库"，表现是 job 在干净检出上红、本地看不出来。
         # 这里只做检查，不再装依赖（脚本是纯标准库，--selftest 是它自己的离线用例）。

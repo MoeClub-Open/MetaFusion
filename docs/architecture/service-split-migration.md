@@ -52,15 +52,15 @@
 
 community/storage 通过目录 HTTP 解析当前实体身份与可见性，使用 `/api/catalog/entities/{id}/identity` 的 canonical、kind 与别名。404 表示不存在或不可见，超时与上游故障必须明确失败，不能默认公开、返回假空集合或无限重试。capabilities 只声明部署状态，不探活外围服务。
 
-目录合并写入 entity.merged outbox，修订和事件与事实同事务。当前生产消费者是 OpenSearch，以 consumer/event_id 的 deliveries 确认成功；没有跨业务广播消费者，外围合并收敛仍靠同步目录查询。搜索消费与重投细节见[核心实现](./catalog-core-implementation.md#搜索与索引同步)。
+目录合并写入 entity.merged outbox，修订和事件与事实同事务。OpenSearch 与启用的 storage-lifecycle-v1 分别以 consumer/event_id 的 deliveries 确认成功；存储生命周期通过受密钥保护的内部 HTTP 投递，详情见[存储运行约定](./storage-operations.md)。尚无通用跨业务广播消费者。搜索消费与重投细节见[核心实现](./catalog-core-implementation.md#搜索与索引同步)。
 
-目录结构由 `backend/migrations/*.sql` 与显式 `mf-migrate up` 管理，内容种子用 seed，HTTP 启动只读检查。账号仍在启动路径执行 DDL，互动和存储启动应用各仓嵌入迁移并写入自己的 schema_migrations。新增迁移入口须核对锁的作用域和顺序，不能把运行写入锁或共享审计锁当成迁移锁。
+目录结构由 `backend/migrations/*.sql` 与显式 `mf-migrate up` 管理，内容种子用 seed。目录与账号 HTTP 启动只读检查，账号使用独立结构 DSN 的 auth-migrate。互动和存储启动应用各仓嵌入迁移并写入自己的 schema_migrations。新增迁移入口须核对锁的作用域和顺序，不能把运行写入锁或共享审计锁当成迁移锁。
 
 存储不复制作品、专辑或曲目表，目录不保存对象物理路径。binding_role 表示文件用途，TrackContent.locator 表示目录中的区间与位置，两者不能重复存储。资产持久化、鉴权与稳定 URL 只维护于[存储运行约定](./storage-operations.md)。
 
 ## 4. 身份与权限
 
-云端 MCP 在独立 `metafusion-mcp` 仓库维护，只拥有 `mcp` schema，保存客户端、资源绑定令牌、加密的受限 PAT 与不可变提交草稿。通过账号 HTTP 登录与 PAT 权限交集复用既有 API；不接管 Agent 的外部信息获取。运行角色只持本域 CRUD，DDL 由显式 mcp-migrate 完成。业务读写默认各 180 RPM，已验证 admin 组免业务限流；网关不再按共享出口 IP 限业务请求。当前计数为每进程固定窗口，多副本共享额度尚未实现。
+云端 MCP 在独立 `metafusion-mcp` 仓库维护，只拥有 `mcp` schema，保存客户端、资源绑定令牌、加密的受限 PAT 与不可变提交草稿。通过账号 HTTP 登录与 PAT 权限交集复用既有 API；不接管 Agent 的外部信息获取。运行角色只持本域 CRUD，DDL 由显式 mcp-migrate 完成。目录同主体业务读写共用默认180 RPM，PostgreSQL 共享固定分钟窗口；admin 默认无限，显式账号/组策略可覆盖。网关仅在登录、注册、刷新、安装与令牌精确路径保护未验证凭据，不按共享出口 IP 限业务请求。认证失败次数由账号库共享计数。
 
 只有 auth 持签发私钥。目录、互动和存储验签 RS256 JWT，公钥来自静态配置或账号 JWKS；目录不派生签发私钥、不查账号表、不签发令牌。PAT 通过账号服务内省，会话续期由账号服务处理。
 
@@ -74,12 +74,12 @@ auth 将组展开为 permissions，业务服务按权限码判定自己的操作
 
 | 范围 | 当前边界与后续要求 |
 | --- | --- |
-| 迁移与运行权限 | 账号、互动、存储仍在启动执行 DDL。先提供 owner 显式迁移和只读启动检查，验空库安装、存量升级、共享审计归属、新对象授权与受限启动，再撤运行角色 DDL；不能先撤权 |
+| 迁移与运行权限 | 互动、存储仍在启动执行 DDL；目录和账号已有 owner 显式迁移及只读启动。各域须验空库安装、存量升级、共享审计归属、新对象授权与受限启动，再撤运行角色 DDL；不能先撤权 |
 | 协议复用 | 尚未统一接入 metafusion-sdk。仅抽取稳定身份、验签、错误、分页、health 与请求标记；比较 Cookie/PAT/JWT、JWKS 失败、空权限、过期和各服务分页语义，按版本接入并删除被替代实现。业务模型、SQL 与可见性仍归各服务 |
 | 独立发布 | 主仓 backend/frontend/migrator 有固定摘要发布物，兄弟服务与 UI 由锁定检出构建。独立镜像须扩展发布清单、同 SHA 检查及整组回退，不能使用 latest 或来源不明旧镜像 |
 | 普通用户 UI | 管理台和账号登录/初始化应用已独立，其余账号/开发者页及目录内社区/资源区块仍有主仓耦合。先明确设计令牌、四语字典、会话和导航协议，以及区块 locale、身份、entity_id、能力与故障隔离，再按发布需求迁页；不复制业务状态掩盖耦合 |
 | 收藏隐私 | 社区接口仍返回 visible=true，前端开关为只读占位。真正的公开/私有设置应由互动服务定义并验证权限 |
-| 跨业务事件 | 尚无广播消费者。新增时先定义推送/拉取、event_id 幂等、重试/死信、可观测性、重放与 merged 重定向，再接消费者 |
+| 跨业务事件 | 已有存储生命周期定向投递，尚无通用广播。新增消费者先定义推送/拉取、event_id 幂等、重试/死信、可观测性、重放与 merged 重定向 |
 | 物理分库与矩阵迁移 | 独立 DSN 已提供权限边界，物理分库尚未实施，不复制目录身份或引入跨库 SQL。若迁移网关矩阵，须一次切换权威来源、固定版本输入并保留双向检查 |
 
 契约生成与跨仓检查持续覆盖权限码、kind、OpenAPI 和路由；接口变化只同步直接受影响契约。容量基线见[核心实现](./catalog-core-implementation.md#查询规模费用与接口边界)。转码、媒体分析、消息队列和独立库不会因路线描述成为现有能力。

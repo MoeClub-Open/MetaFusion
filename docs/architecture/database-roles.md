@@ -31,7 +31,7 @@ ALTER OWNER 会获取对象锁，存量接管应放在维护窗口。不能仅�
 
 ## 3. 从 DDL 运行角色到纯 CRUD
 
-当前脚本默认 Tier 1：运行角色为本域 owner 的成员，并持库级 CREATE，以支持仍在启动执行 DDL 的账号、互动和存储。它们不能访问别的业务 schema，但仍能改本域结构和新建 schema。目录 HTTP 已只读检查，DDL 与种子通过 mf-migrate 显式执行。
+当前授权脚本默认 Tier 1：运行角色为本域 owner 的成员，并持库级 CREATE，以支持仍在启动执行 DDL 的互动和存储。它们不能访问别的业务 schema，但仍能改本域结构和新建 schema。目录与账号 HTTP 已只读检查；目录 DDL/种子通过 mf-migrate 显式执行，账号 DDL/初始化通过 auth-server -migrate 显式执行。目录、账号可按下面验收顺序撤销运行角色 DDL，不能据代码变化推断目标实例已撤权。
 
 Tier 2 的目标是运行角色仅有 CRUD。按服务实施 owner 迁移与只读启动后，先验空库安装、存量升级、共享审计归属、默认权限和受限启动，再执行脚本第 6 节的 owner 成员与库级 CREATE 撤销。不能先撤权后依赖旧启动路径；测试夹具所需 CREATEDB 也不能授予线上运行角色。
 
@@ -63,6 +63,7 @@ Tier 2 的目标是运行角色仅有 CRUD。按服务实施 owner 迁移与只�
 | --- | --- |
 | CATALOG_DATABASE_URL | 目录运行进程 |
 | AUTH_DATABASE_URL | 账号运行进程 |
+| AUTH_MIGRATION_DATABASE_URL | 一次性 auth-migrate，账号结构 owner 身份 |
 | COMMUNITY_DATABASE_URL | 互动运行进程 |
 | STORAGE_DATABASE_URL | 存储运行进程 |
 | COMMUNITY_MIGRATE_DATABASE_URL | 一次性 community-migrate |

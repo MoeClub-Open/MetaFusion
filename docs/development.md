@@ -15,7 +15,7 @@ Go 版本取 `backend/go.mod`，Bun 版本取 `frontend/package.json` 的 `packa
 | 目录 HTTP | `DATABASE_URL`、`OPENSEARCH_URL` 必填；`PORT` 默认 8080。认证配置见 `backend/cmd/server/main.go`，私钥只归 auth |
 | 目录迁移器 | 读取 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME`、`DB_SSLMODE`，**不读取 `DATABASE_URL`**；使用有迁移权限的独立身份 |
 | Compose | 将 `CATALOG_DATABASE_URL` 等各域 DSN 注入对应容器；迁移器用运维 `DB_*`，不能把其身份交给常驻服务 |
-| 主前端 | 浏览器使用同域 `/api`；Next 开发服务器通过 `BACKEND_ORIGIN` 转发，默认 `http://127.0.0.1:8080`。完整联调时应指向实际网关来源，避免 auth/community/storage 请求落到目录后端 |
+| 主前端 | 浏览器使用同域 `/api`；Next 开发服务器通过 `BACKEND_ORIGIN` 转发，默认 `http://127.0.0.1:8080`。完整联调时应显式指向实际网关来源，开发服务器同时转发 `/login`、`/setup` 与 `/auth-user-assets/*`，让账号页面及其资源保持同源；auth/community/storage 请求也由网关分流 |
 
 ## 启动目录与前端
 
@@ -39,9 +39,11 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-Next 默认使用 3000 端口。检查真实实体回读和 `/health` 的搜索就绪状态；目录 `/ready` 只检查数据库。
+Next 默认使用 3000 端口。只连接目录后端时可联调目录读取，不具备账号登录与初始化功能；账号页面由 `metafusion-auth/user` 维护，完整联调应按上表连接网关。检查真实实体回读和 `/health` 的搜索就绪状态；目录 `/ready` 只检查数据库。
 
-整站开发采用根目录的 `bash deploy/deploy.sh dev`，前提是安装、迁移、种子与权限已经准备好。它挂载目录、主前端和文档源码；目录 Go 代码修改后需 `bash deploy/deploy.sh restart backend` 重新编译，兄弟服务的构建方式以覆盖编排为准。`dev` 与增量 `fast` **不会执行目录迁移、seed 或 check-refs**；涉及结构或协议升级时按部署手册使用 `prod/pull` 或显式迁移流程。
+整站开发采用根目录的 `bash deploy/deploy.sh dev`，前提是目录库的迁移、种子与权限已经准备好。它先显式执行账号迁移，再挂载目录、主前端和文档源码；目录 Go 代码修改后需 `bash deploy/deploy.sh restart backend` 重新编译，兄弟服务的构建方式以覆盖编排为准。`dev` **不会执行目录迁移、seed 或 check-refs**。
+
+增量 `bash deploy/deploy.sh fast` 的全量更新与 `fast backend` 会在启动目录服务前依次执行目录迁移 `up`、`seed` 和 `check-refs`，任何一步失败均保持目录服务停写；其它指定服务的 `fast` 更新不执行目录迁移。涉及结构或协议升级时，按部署手册核对发布组合与停写要求，也可使用 `prod/pull` 或显式迁移流程。
 
 ## 按改动选择检查
 

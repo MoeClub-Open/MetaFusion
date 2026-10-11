@@ -16,6 +16,9 @@ func Database(t *testing.T) *sql.DB {
 	t.Helper()
 	dsn := os.Getenv("MF_V2_TEST_DSN")
 	if dsn == "" {
+		if os.Getenv("MF_REQUIRE_INTEGRATION_TESTS") == "1" {
+			t.Fatal("MF_REQUIRE_INTEGRATION_TESTS=1 requires MF_V2_TEST_DSN for isolated PostgreSQL integration tests")
+		}
 		t.Skip("MF_V2_TEST_DSN must identify an isolated PostgreSQL test server")
 	}
 	u, err := url.Parse(dsn)

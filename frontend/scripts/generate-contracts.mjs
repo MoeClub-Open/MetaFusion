@@ -3,18 +3,19 @@
 //
 //   node scripts/generate-contracts.mjs           写入生成物
 //   node scripts/generate-contracts.mjs --check   只校验（不一致或来源缺失时非 0 退出）
+//   node scripts/generate-contracts.mjs --check --allow-missing-sources  主仓单独检出的部分校验
 //
 // 来源：
 //   backend/internal/catalog/permission.go              目录权限码（本仓库，必需）
 //   backend/migrations/baseline.json 指向的安装基线     实体骨架 kinds（本仓库，必需）
-//   ../metafusion-auth/internal/store/access.go         账号权限码 + 全量码表（兄弟仓库，可选）
-//   ../metafusion-community/internal/auth/permission.go 互动权限码（兄弟仓库，可选）
-//   ../metafusion-storage/internal/auth/permission.go   存储权限码（兄弟仓库，可选）
+//   ../metafusion-auth/internal/store/access.go         账号权限码 + 全量码表（兄弟仓库）
+//   ../metafusion-community/internal/auth/permission.go 互动权限码（兄弟仓库）
+//   ../metafusion-storage/internal/auth/permission.go   存储权限码（兄弟仓库）
 //
-//   ../metafusion-{auth,community,storage}/admin/           三个域管理台登记的权限码（兄弟仓库，可选）
+//   ../metafusion-{auth,community,storage}/admin/           三个域管理台登记的权限码（兄弟仓库）
 //
-// 兄弟仓库缺席时的行为：该服务的码沿用现有生成物里的取值继续生成（所以 --check 在主仓库
-// 单独检出时仍然可用），但会打印"未经来源校验"的告警。CI 里能检出兄弟仓库时应视为失败。
+// 默认所有来源都必需；显式 --check --allow-missing-sources 才可沿用既有生成物做部分校验。
+// 缺少来源时不能写入生成物，跨仓 CI 不使用豁免开关。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -23,6 +24,11 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
 const CHECK = process.argv.includes("--check");
+const ALLOW_MISSING = CHECK && process.argv.includes("--allow-missing-sources");
+if (!CHECK && process.argv.includes("--allow-missing-sources")) {
+  console.error("--allow-missing-sources 仅限 --check 部分校验，不能用于生成");
+  process.exit(1);
+}
 
 const GENERATED_PERMISSIONS = path.join(HERE, "../src/lib/permissions.generated.ts");
 const GENERATED_KINDS = path.join(HERE, "../src/lib/kinds.generated.ts");
@@ -102,8 +108,10 @@ for (const s of SERVICES) {
     codesByService[s.id] = codesFromGenerated(s.prefix);
     if (s.required) {
       problems.push(s.note + " 缺失：本仓库必需来源读不到，无法生成目录权限码");
-    } else {
+    } else if (ALLOW_MISSING) {
       warnings.push(s.id + "：来源 " + s.note + " 不存在，沿用现有生成物里的 " + codesByService[s.id].length + " 个码（未经来源校验）");
+    } else {
+      problems.push(s.note + " 缺失：无法完成跨仓权限来源校验；独立检出仅可显式使用 --check --allow-missing-sources");
     }
   }
 }
@@ -141,7 +149,8 @@ const knownCodes = new Set(uniqueCodes);
 const adminCounts = [];
 for (const app of ADMIN_APPS) {
   if (!fs.existsSync(app.file)) {
-    warnings.push("管理台 " + app.id + "：来源 " + app.note + " 不存在，跳过其权限码校验");
+    if (ALLOW_MISSING) warnings.push("管理台 " + app.id + "：来源 " + app.note + " 不存在，跳过其权限码校验");
+    else problems.push(app.note + " 缺失：无法校验管理台权限码来源");
     continue;
   }
   const text = fs.readFileSync(app.file, "utf8");
@@ -232,7 +241,7 @@ if (CHECK) {
     if (!fs.existsSync(t.file)) problems.push(t.label + " 不存在，请先跑 node scripts/generate-contracts.mjs");
     else if (fs.readFileSync(t.file, "utf8") !== t.content) problems.push(t.label + " 与来源不一致，请重跑生成器");
   }
-} else {
+} else if (!problems.length) {
   for (const t of targets) {
     fs.mkdirSync(path.dirname(t.file), { recursive: true });
     fs.writeFileSync(t.file, t.content);
@@ -248,4 +257,4 @@ if (problems.length) {
   for (const p of problems) console.error("  - " + p);
   process.exit(1);
 }
-console.log(CHECK ? "契约校验通过：生成物与来源一致" : "契约生成完成");
+console.log(CHECK ? (warnings.length ? "部分契约校验通过：缺席来源未经校验，不能视为全量验证" : "契约校验通过：生成物与全部来源一致") : "契约生成完成");

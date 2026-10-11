@@ -12,7 +12,7 @@ python3 scripts/check_release_manifest.py --strict --expect-tag sha-<short-sha> 
   --expect-sha <full-sha> --expect-lock deploy/versions.lock release-manifest.yaml
 ```
 
-清单 v2 必须包含 backend、frontend、migrator 的真实 digest。`deploy.sh pull` 按 digest 拉取三个镜像，从锁定检出构建兄弟服务及其 UI；迁移器必须与后端同源。部署要求四个服务各自的 DSN，运行角色与库 owner 分离，私钥仅归 auth；配置检查不得打印凭据。
+清单 v2 必须包含 backend、frontend、migrator 的真实 digest。`deploy.sh pull` 按 digest 拉取三个镜像，从锁定检出构建兄弟服务及其 UI；迁移器必须与后端同源。部署要求各服务运行 DSN，以及仅交给一次性 `auth-migrate` 的 `AUTH_MIGRATION_DATABASE_URL`。该结构身份不得注入账号 HTTP 服务；私钥仅归 auth，配置检查不得打印凭据。
 
 首次安装先从根目录 `.env.example` 建立本地配置，准备数据库和各域运行身份，按[授权步骤](./database-roles.md#6-授权验收与回退)执行角色脚本并验证隔离。共享审计预建须显式传 `-v audit_bootstrap=1`；普通重跑不会自动收敛其 owner。随后用 `prod/pull` 应用目录迁移与种子、启动服务，验收通过后由 `/setup` 创建首个管理员。不要将未初始化数据库交给 HTTP 进程自动建库。
 
@@ -27,9 +27,9 @@ python3 scripts/check_release_manifest.py --strict --expect-tag sha-<short-sha> 
 IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 ```
 
-源码构建使用 `prod`。`dev` 启动开发覆盖编排，`fast` 增量构建更新；两者均不执行目录迁移、种子和引用检查，只适用于数据库已准备好且契约兼容的环境，详见[开发指南](../development.md)。旧单体的一次性 `cutover/retire` 入口已移除；未完成拆分的实例先使用对应历史发布工具完成搬运与权限验收。
+源码构建使用 `prod`。`dev` 启动开发覆盖编排并先应用账号迁移，目录库仍须事先准备。`fast` 无目标参数表示全量更新，全量或 `backend` 更新依次执行目录 `up`、`seed`、`check-refs`；其它目标不修改目录库，账号更新先应用账号迁移。`dev` 不执行目录迁移、种子或引用检查；首次安装使用 `prod/pull` 完整流程。旧单体的一次性 `cutover/retire` 入口已移除；未完成拆分的实例先使用对应历史发布工具完成搬运与权限验收。
 
-HTTP 启动只做只读兼容检查，不执行 DDL、种子发布或全库回放。手工运维时 `mf-migrate up`、`seed`、`check-refs` 是不同任务；不能通过重启或健康响应推断它们已完成。种子对存量定义、货架和外部库只补缺失项，保留人工配置和停用状态。
+目录与账号 HTTP 启动只做只读兼容检查。账号先构建匹配发布的 `auth` 镜像，再执行 `docker compose -f deploy/docker-compose.yml run --rm --no-deps auth-migrate`；CLI 是 `/app/auth-server -migrate`，无需签发私钥。用户名大小写冲突会阻断迁移并列出冲突标识；先人工确认并修复，不自动重命名或删号。迁移失败时 `deploy.sh` 保持账号入口停止。手工运维时 `mf-migrate up`、`seed`、`check-refs` 是不同任务；不能通过重启或健康响应推断它们已完成。种子对存量定义、货架和外部库只补缺失项，保留人工配置和停用状态。
 
 `mf-migrate` 的操作超时默认 15 分钟；大库应先在备份恢复库测量 022 建索引和 023 引用规范化的耗时，必要时调整。全局 `-timeout` 必须放在命令前，例如 `mf-migrate -timeout 30m up`、`mf-migrate -timeout 30m check-refs -json`，不接受零或负时长。直接使用 Compose 时同样放在命令前：`docker compose -f deploy/docker-compose.yml run --rm --no-deps backend-migrate -timeout 30m up`，并先停写。
 
@@ -48,6 +48,12 @@ HTTP 启动只做只读兼容检查，不执行 DDL、种子发布或全库回�
 网关自检的旧互动表行数检查仅用于数据搬运。普通更新没有搬运时可跳过，并明确记录 SKIP，不记为通过。
 
 网关配置以文件挂载；Git 更新可更换 inode，普通 `up -d` 和旧容器 reload 不保证读到新文件。`deploy.sh` 会先校验候选，再强制重建 gateway 并重载，手工更新也须完成候选校验、重建和 `nginx -t`。
+
+边缘认证保护只覆盖 `/api/auth/login`、`register`、`refresh`、`/api/setup` 与 `/api/oauth/token` 五个精确路径，共用每真实客户端 IP 5 请求/秒、突发20的 `auth_limit`，超限429。账号登录失败次数保存在账号数据库并按账号/IP判定，多副本共享。目录等业务额度由服务验证身份后计数；`/mcp` 共享出口不进入认证 IP 桶，MCP 内部登录/令牌仍到各自认证接口。
+
+真实 IP 链为 Cloudflare → 宿主 OpenResty → 回环发布的 gateway。必须验证实际 Docker bridge 网关与 `set_real_ip_from` 的单个宿主地址一致；不同网段时只替换该单点，不扩大到私网。OpenResty 只允许 Cloudflare 来源并覆盖客户端自带的 CF 头，公网入口伪造 `CF-Connecting-IP`/`X-Forwarded-For` 不能换认证桶。gateway 用还原后的 `$remote_addr` 覆盖上游 XFF。回环发布不能证明宿主调用者是 OpenResty，宿主进程属于特权信任边界。`/internal` 与 `/internal/` 在公网网关直接404。
+
+`scripts/check_gateway_matrix.py` 与 `--selftest` 检查认证路径、业务桶禁止、XFF覆写和可信来源范围。CI 设置 `MF_REQUIRE_INTEGRATION_TESTS=1`，缺 PostgreSQL/OpenSearch 测试地址立即失败；主仓独立前端任务明确使用 `generate-contracts.mjs --check --allow-missing-sources` 做部分检查，跨仓任务必须使用纯 `--check`，缺少权限来源失败。
 
 回退先停受影响写入，再使用上一批已验证清单及其兄弟仓组合。当前结构和 JSON 仍兼容上一版时可仅回退镜像；旧写入端会丢字段时须恢复已验证备份，并处理恢复点之后的写入。`down` 拒绝不可逆迁移，`force` 只清 dirty 标记，不等于执行或撤销 SQL。
 
@@ -77,9 +83,15 @@ HTTP 启动只做只读兼容检查，不执行 DDL、种子发布或全库回�
 
 ## 目录提交迁移与连接预算
 
-025 catalog_commits 新增持久回执和修订关联，先使用同源 migrator 执行 up，再启动后端；启动检查要求 commits 表与 revisions.commit_id。回执与原始请求不得按短期幂等键清理，恢复不能只回滚实体表。旧事实不被迁移改写。Agent 工具须升级到支持 checkout/commits 的技能；旧写结果仍按原身份与键核验，不能重新创建。
+025 catalog_commits 新增持久回执和修订关联；027 新增清理索引及独立生命周期贡献事实，028 新增共享业务额度表。先使用同源 migrator 执行 up，再启动后端。提交回执、幂等键和修订关联永久保留，恢复不能只回滚实体表；提交请求载荷可按下述保留策略清空。旧事实不被迁移改写。Agent 工具须升级到支持 checkout/commits 的技能；旧写结果仍按原身份与键核验，不能重新创建。
 
-CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默认32（0–maxOpen），其他服务与 MCP 默认32/16。PostgreSQL 编排默认 max_connections=512。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.mjs。
+`CATALOG_OUTBOX_RETENTION_DAYS=7`、`CATALOG_COMMIT_REQUEST_RETENTION_DAYS=90`，两项均可设0永久保留，允许0–36500天；`CATALOG_RETENTION_INTERVAL_SECONDS=3600`，允许60–86400秒。清理每轮共享30秒预算，最多20批，每事务最多500事件和500请求载荷；仅清理明确可消费/裁剪且满足保留与确认条件的已知事件，未确认消费者事件保留。删除/合并贡献独立记录，不再依赖队列长期存在。
+
+`CATALOG_PUBLIC_URL` 默认 `https://findverse.cc`，来源校验据此拒绝本站自身链接；`CATALOG_SOURCE_BLOCKED_HOSTS` 可追加逗号分隔的禁止域。自托管须填写实际公网地址，不能用容器 URL 代替。
+
+存储生命周期投递仅在 `STORAGE_URL` 与两侧同值的 `STORAGE_CATALOG_LIFECYCLE_SECRET` 配置后启用；共享密钥默认空，默认安装不自动启用。主编排提供内部存储 URL，metadata-only 则可选接外部存储 URL。内部接口和资产回收验收见[存储运行约定](./storage-operations.md)。
+
+CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默认32（0–maxOpen），其他服务与 MCP 默认32/16。PostgreSQL 编排默认 max_connections=512，两份编排均给 `/dev/shm` 256 MiB，CI PostgreSQL 同值。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.mjs。
 
 ## 云端 MCP 接线
 
@@ -87,4 +99,4 @@ CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默�
 
 首次部署先备份，库 owner 执行 deploy/sql/mcp-role.sql 建角色及默认权限，再运行 mcp-migrate，最后执行 verify-mcp-role.sql。运行服务只持 mcp schema 的 CRUD；不能把迁移 DSN 注入常驻服务。常规部署入口先构建 MCP，再显式迁移，后启动业务服务。公开核验 `/health/mcp`、两份 OAuth 发现文档、未授权 `/mcp` 的401挑战及 `/mcp/manage`。
 
-账号旧显式 auth_rate_limit_per_minute=15 不会随代码默认值自动改变；升级时按已批准配置改为180。目录旧显式策略同样保留，须通过管理 API 核对实际全局、组和账号规则。admin 组免业务额度由已验证身份判断，不依据调用方传入的 role 或通配 scope。
+账号旧显式 auth_rate_limit_per_minute=15 不会随代码默认值自动改变；升级时按已批准配置改为180。目录旧显式策略同样保留，须通过管理 API 核对实际全局、组和账号规则。目录同主体读写共用每分钟默认180预算，并由 PostgreSQL 跨副本计数；admin 默认无限，但显式账号或 admin 组规则可覆盖。身份来自验签，不依据调用方传入的 role 或通配 scope。

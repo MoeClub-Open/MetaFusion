@@ -235,6 +235,17 @@ function run_migrate() {
     docker compose $COMPOSE_ENV -f docker-compose.yml "$@" run --rm --no-deps backend-migrate "$cmd"
 }
 
+# 账号迁移在新镜像启动 HTTP 前完成；失败保持旧写入口停止。
+# auth 镜像使用 CMD 而非 ENTRYPOINT，完整 CLI 已固定于 compose auth-migrate。
+function migrate_auth_checked() {
+    echo "🗄️  停止账号写入口并显式应用账号 schema..."
+    docker compose $COMPOSE_ENV -f docker-compose.yml "$@" stop auth || return 1
+    if ! docker compose $COMPOSE_ENV -f docker-compose.yml "$@" run --rm --no-deps auth-migrate; then
+        echo "❌ 账号迁移失败：保持 auth 停止；用户名冲突按迁移错误说明修复后重跑" >&2
+        return 1
+    fi
+}
+
 # 只从 $ENV_FILE 取键值，不 source 整份文件（不执行 .env 内容）。
 function _env_val() {
     [ -n "${ENV_FILE:-}" ] && [ -f "$ENV_FILE" ] || return 0
@@ -245,7 +256,7 @@ function _env_val() {
 # 缺失即非零退出，不静默回退共用身份。只判空、不打印值（验收口径：只查有无）。
 function require_business_dsns() {
     local missing=0 v val
-    for v in CATALOG_DATABASE_URL AUTH_DATABASE_URL COMMUNITY_DATABASE_URL STORAGE_DATABASE_URL MCP_DATABASE_URL MCP_MIGRATION_DATABASE_URL MCP_ENCRYPTION_KEY; do
+    for v in CATALOG_DATABASE_URL AUTH_DATABASE_URL AUTH_MIGRATION_DATABASE_URL COMMUNITY_DATABASE_URL STORAGE_DATABASE_URL MCP_DATABASE_URL MCP_MIGRATION_DATABASE_URL MCP_ENCRYPTION_KEY; do
         val="${!v:-}"
         [ -n "$val" ] || val="$(_env_val "$v")"
         if [ -z "$val" ]; then
@@ -321,7 +332,8 @@ function assert_compose_credential_isolation() {
 import json, sys
 doc = json.load(sys.stdin)
 svcs = doc.get("services", {})
-banned_db = {"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
+banned_db = {"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
+             "AUTH_MIGRATION_DATABASE_URL", "MCP_MIGRATION_DATABASE_URL"}
 banned_s3 = {"STORAGE_S3_ACCESS_KEY", "STORAGE_S3_SECRET_KEY",
               "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"}
 bad = []
@@ -441,6 +453,9 @@ case "$ACTION" in
         require_business_dsns
         echo "🚀 启动本地热重载开发模式 (Zero-Rebuild Dev Mode)..."
         export DOCKER_BUILDKIT=1
+        docker compose $COMPOSE_ENV -f docker-compose.yml build auth
+        docker compose $COMPOSE_ENV -f docker-compose.yml up -d --wait postgres
+        migrate_auth_checked
         docker compose $COMPOSE_ENV -f docker-compose.yml -f docker-compose.dev.yml up -d
         echo "✅ 开发环境已就绪！源码已挂载，代码修改即时热重载生效。"
         ;;
@@ -459,6 +474,13 @@ case "$ACTION" in
         if [ -n "$TARGET" ]; then
             echo "⚡ 增量更新指定服务 [$TARGET]..."
             docker compose $COMPOSE_ENV build "$TARGET"
+            if [ "$TARGET" = "backend" ]; then
+                docker compose $COMPOSE_ENV -f docker-compose.yml build backend-migrate
+                migrate_up_checked
+                seed_checked
+                check_refs_report
+            fi
+            if [ "$TARGET" = "auth" ]; then migrate_auth_checked; fi
             if [ "$TARGET" = "mcp" ]; then docker compose $COMPOSE_ENV run --rm --no-deps mcp-migrate; fi
             docker compose $COMPOSE_ENV up -d --no-deps "$TARGET"
         else
@@ -466,7 +488,12 @@ case "$ACTION" in
             # 不带服务名即构建**所有**带 build 段的服务：拆分后子系统在兄弟仓库，
             # 只写 backend frontend 会让互动/存储/账号停留在旧镜像。
             docker compose $COMPOSE_ENV build
-            docker compose $COMPOSE_ENV up -d postgres
+            docker compose $COMPOSE_ENV up -d --wait postgres
+            docker compose $COMPOSE_ENV -f docker-compose.yml build backend-migrate
+            migrate_up_checked
+            seed_checked
+            check_refs_report
+            migrate_auth_checked
             docker compose $COMPOSE_ENV run --rm --no-deps mcp-migrate
             docker compose $COMPOSE_ENV up -d --remove-orphans
         fi
@@ -491,11 +518,14 @@ case "$ACTION" in
         # 同源离线断言见 check_deploy.py，有自测覆盖。
         docker compose $COMPOSE_ENV -f docker-compose.yml build backend backend-migrate
         echo "🚀 启动数据库与核心基础设施 (Postgres / RustFS)..."
-        docker compose $COMPOSE_ENV up -d postgres rustfs
+        docker compose $COMPOSE_ENV up -d --wait postgres
+        docker compose $COMPOSE_ENV up -d rustfs
         migrate_up_checked
         seed_checked
         check_refs_report
         check_gateway_candidate
+        docker compose $COMPOSE_ENV build auth
+        migrate_auth_checked
         docker compose $COMPOSE_ENV build mcp
         docker compose $COMPOSE_ENV run --rm --no-deps mcp-migrate
         docker compose $COMPOSE_ENV up -d --build --remove-orphans
@@ -521,11 +551,13 @@ case "$ACTION" in
             docker compose $COMPOSE_ENV -f docker-compose.yml -f docker-compose.prod.yml -f "$PULL_OVERRIDE" build "$service"
         done
         echo "🚀 启动数据库与核心基础设施..."
-        docker compose $COMPOSE_ENV up -d postgres rustfs
+        docker compose $COMPOSE_ENV up -d --wait postgres
+        docker compose $COMPOSE_ENV up -d rustfs
         migrate_up_checked -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         seed_checked -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         check_refs_report -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         check_gateway_candidate
+        migrate_auth_checked -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         docker compose $COMPOSE_ENV -f docker-compose.yml -f docker-compose.prod.yml -f "$PULL_OVERRIDE" run --rm --no-deps mcp-migrate
         docker compose $COMPOSE_ENV -f docker-compose.yml -f docker-compose.prod.yml -f "$PULL_OVERRIDE" up -d --no-build --pull never --remove-orphans
         reload_gateway
