@@ -5,12 +5,20 @@ import { Gauge, Plus, Trash2, RefreshCw } from "lucide-react";
 import {
   fetchAdminRateLimits,
   saveAdminRateLimits,
+  fetchCommunityAdminRateLimits,
+  saveCommunityAdminRateLimits,
+  CommunityRateLimitConfig,
+  MessageRateLimitPolicy,
   RateLimitConfig,
   RateLimitPolicy,
   RateLimitRule,
 } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
+import { useAuth } from "@/lib/authContext";
+import { can, CATALOG_DEFINITIONS_MANAGE, COMMUNITY_RATE_LIMITS_MANAGE } from "@/lib/permissions";
+
+type RateLimitService = "catalog" | "community";
 
 // 单行编辑态：额度一律存字符串，空串表示「未声明、继承下一级」；
 // unlimited 与 per_minute 互斥——开启解除限制时不再下发额度。
@@ -54,7 +62,7 @@ function recordFromRows(rows: RuleRow[]): Record<string, RateLimitRule> {
   return out;
 }
 
-// 空文档 = 全部沿用各路由内置额度（120 / 60 / 10 / 300 等），界面要能把这件事讲出来。
+// 空文档沿用服务的内置预算。
 function policyIsEmpty(policy: RateLimitPolicy): boolean {
   return (
     policy.default_per_minute == null &&
@@ -65,6 +73,26 @@ function policyIsEmpty(policy: RateLimitPolicy): boolean {
 }
 
 export function RateLimitsTab() {
+  const { user } = useAuth();
+  const { t } = useI18n();
+  const services = (["catalog", "community"] as const).filter((service) =>
+    can(user, service === "catalog" ? CATALOG_DEFINITIONS_MANAGE : COMMUNITY_RATE_LIMITS_MANAGE));
+  const [selected, setSelected] = useState<RateLimitService>(services[0] || "catalog");
+  const service = services.includes(selected) ? selected : services[0];
+  if (!service) return <p role="alert">{t("admin.ratelimits.forbidden")}</p>;
+  return <div className="space-y-4">
+    <div role="tablist" aria-label={t("admin.ratelimits.serviceLabel")} className="flex flex-wrap gap-2">
+      {services.map((item) => <button key={item} type="button" role="tab" aria-selected={service === item}
+        onClick={() => setSelected(item)}
+        className={`px-3 py-2 rounded-lg border text-xs ${service === item ? "border-primary text-primary bg-primary/10" : "border-line text-text-muted"}`}>
+        {t(`admin.ratelimits.service.${item}`)}
+      </button>)}
+    </div>
+    <RateLimitPolicyEditor key={service} service={service} />
+  </div>;
+}
+
+function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -84,8 +112,21 @@ export function RateLimitsTab() {
   const [accounts, setAccounts] = useState<RuleRow[]>([]);
   const [editNote, setEditNote] = useState("");
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [messageSendPerMinute, setMessageSendPerMinute] = useState("");
+  const [messageStrangerPerHour, setMessageStrangerPerHour] = useState("");
+  const [messageAdminUnlimited, setMessageAdminUnlimited] = useState(false);
 
   const applyConfig = (config: RateLimitConfig) => {
+    if (!config || typeof config.etag !== "string" || !config.etag || !config.policy
+      || typeof config.policy !== "object" || Array.isArray(config.policy)) throw new Error("invalid_rate_limit");
+    if (service === "community") {
+      const messages = (config as CommunityRateLimitConfig).messages;
+      if (!messages || !Number.isInteger(messages.send_per_minute) || !Number.isInteger(messages.stranger_per_hour)
+        || typeof messages.admin_unlimited !== "boolean") throw new Error("invalid_rate_limit");
+      setMessageSendPerMinute(String(messages.send_per_minute));
+      setMessageStrangerPerHour(String(messages.stranger_per_hour));
+      setMessageAdminUnlimited(messages.admin_unlimited);
+    }
     const policy = config?.policy || {};
     setEtag(typeof config?.etag === "string" ? config.etag : "");
     setUpdatedAt(typeof config?.updated_at === "string" ? config.updated_at : "");
@@ -100,20 +141,26 @@ export function RateLimitsTab() {
     setAccounts(rowsFromRecord(policy.accounts));
   };
 
-  // 后端错误码翻成人话；认不出的码原样呈现（宁可露出码，也不假装成功）。
+  // 已知错误码给出具体提示，其余失败使用当前操作的失败文案。
   const describeError = (err: unknown, fallback: string): string => {
     const code = String((err as Error)?.message || err || "").trim();
     switch (code) {
       case "version_conflict":
+      case "conflict":
         return t("admin.ratelimits.versionConflict");
       case "evidence_required":
+      case "edit_note_required":
         return t("admin.ratelimits.evidenceRequired");
+      case "rate_limit_unavailable":
+        return t("catalog.error.rateLimitUnavailable");
+      case "source_not_eligible":
+        return t("catalog.error.sourceNotEligible");
       case "invalid_rate_limit":
         return t("admin.ratelimits.invalidRateLimit");
       case "forbidden":
         return t("admin.ratelimits.forbidden");
       default:
-        return code || fallback;
+        return fallback;
     }
   };
 
@@ -123,7 +170,7 @@ export function RateLimitsTab() {
     setNotice("");
     setConflict(false);
     try {
-      const config = await fetchAdminRateLimits();
+      const config = await (service === "catalog" ? fetchAdminRateLimits() : fetchCommunityAdminRateLimits());
       applyConfig(config);
       setEditNote("");
       setLoaded(true);
@@ -158,10 +205,16 @@ export function RateLimitsTab() {
   const groupRateInvalid = groups.some((row) => rateInvalid(row.unlimited, row.perMinute));
   const accountRateInvalid = accounts.some((row) => rateInvalid(row.unlimited, row.perMinute));
   const defaultRateInvalid = rateInvalid(defaultUnlimited, defaultPerMinute);
+  const messagesInvalid = service === "community" && [messageSendPerMinute, messageStrangerPerHour].some((raw) => {
+    const value = rateValue(raw);
+    return value == null || !Number.isInteger(value) || value <= 0;
+  });
 
   // 保存被拦下的第一个原因：界面要说明为什么按钮是灰的，不能只给一个禁用态。
   const blockReason = !noteProvided
     ? t("admin.ratelimits.editNoteRequired")
+    : messagesInvalid
+      ? t("admin.ratelimits.invalidMessageRange")
     : defaultRateInvalid || groupRateInvalid || accountRateInvalid
       ? t("admin.ratelimits.invalidRange")
       : groupKeyInvalid || accountKeyInvalid
@@ -190,14 +243,21 @@ export function RateLimitsTab() {
     setNotice("");
     setConflict(false);
     try {
-      const config = await saveAdminRateLimits(buildPolicy(), etag, editNote);
+      const messages: MessageRateLimitPolicy = {
+        send_per_minute: Number(messageSendPerMinute),
+        stranger_per_hour: Number(messageStrangerPerHour),
+        admin_unlimited: messageAdminUnlimited,
+      };
+      const config = service === "catalog"
+        ? await saveAdminRateLimits(buildPolicy(), etag, editNote)
+        : await saveCommunityAdminRateLimits(buildPolicy(), messages, etag, editNote);
       // 用响应里的新 etag 与 policy 刷新本地状态：下一次保存才带得对并发令牌。
       applyConfig(config);
       setEditNote("");
       setNotice(t("admin.ratelimits.saveSuccess"));
     } catch (err) {
       const code = String((err as Error)?.message || err || "").trim();
-      if (code === "version_conflict") setConflict(true);
+      if (code === "version_conflict" || code === "conflict") setConflict(true);
       setError(describeError(err, t("admin.ratelimits.saveFailed")));
     } finally {
       setSaving(false);
@@ -261,7 +321,7 @@ export function RateLimitsTab() {
             <Gauge className="w-4 h-4 text-info" aria-hidden="true" />
             <span>{t("admin.ratelimits.title")}</span>
           </h2>
-          <p className="text-xs text-text-muted font-mono mt-0.5">{t("admin.ratelimits.desc")}</p>
+          <p className="text-xs text-text-muted font-mono mt-0.5">{t(`admin.ratelimits.${service}Desc`)}</p>
         </div>
         <button
           type="button"
@@ -277,6 +337,7 @@ export function RateLimitsTab() {
       {/* 语义说明：回落顺序、0 的含义、整体替换——三条都容易理解反，常驻展示 */}
       <div className="rounded-xl border border-line-subtle bg-surfaceSubtle p-4 space-y-1.5">
         <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.fallbackHint")}</p>
+        <p className="text-[11px] text-text-muted leading-relaxed">{t(`admin.ratelimits.${service}DefaultHint`)}</p>
         <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.inheritHint")}</p>
         <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.unlimitedHint")}</p>
         <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.wholeReplaceHint")}</p>
@@ -289,7 +350,7 @@ export function RateLimitsTab() {
 
       {policyEmpty ? (
         <div className="rounded-xl border border-dashed border-line bg-surfaceSubtle p-4 text-xs text-text-muted leading-relaxed">
-          {t("admin.ratelimits.emptyHint")}
+          {t(`admin.ratelimits.${service}EmptyHint`)}
         </div>
       ) : null}
 
@@ -519,7 +580,28 @@ export function RateLimitsTab() {
         )}
       </div>
 
-      {/* 编辑说明与保存：说明是必填的证据，空则禁用保存并在就地讲清原因 */}
+      {service === "community" ? <div className="rounded-xl border border-line-subtle bg-surfaceSubtle p-4 space-y-3">
+        <h3 className="text-xs font-semibold text-text-strong">{t("admin.ratelimits.messagesTitle")}</h3>
+        <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.messagesHint")}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-[11px] text-text-muted">{t("admin.ratelimits.messageSendPerMinute")}
+            <input type="number" min={1} max={MAX_PER_MINUTE} value={messageSendPerMinute}
+              onChange={(e) => setMessageSendPerMinute(e.target.value)}
+              className="mt-1 w-full bg-surface border border-theme rounded px-2.5 py-1.5 text-xs text-foreground" />
+          </label>
+          <label className="text-[11px] text-text-muted">{t("admin.ratelimits.messageStrangerPerHour")}
+            <input type="number" min={1} max={MAX_PER_MINUTE} value={messageStrangerPerHour}
+              onChange={(e) => setMessageStrangerPerHour(e.target.value)}
+              className="mt-1 w-full bg-surface border border-theme rounded px-2.5 py-1.5 text-xs text-foreground" />
+          </label>
+        </div>
+        <label className="inline-flex items-center gap-2 text-xs text-text-body">
+          <input type="checkbox" checked={messageAdminUnlimited} onChange={(e) => setMessageAdminUnlimited(e.target.checked)} />
+          {t("admin.ratelimits.messageAdminUnlimited")}
+        </label>
+      </div> : null}
+
+      {/* 编辑说明记入管理审计，空则禁用保存并就地讲清原因。 */}
       <div className="rounded-xl border border-line-subtle bg-surfaceSubtle p-4 space-y-3">
         <div>
           <label htmlFor="ratelimit-edit-note" className="block text-[11px] font-mono text-text-muted mb-1">
@@ -529,6 +611,7 @@ export function RateLimitsTab() {
             id="ratelimit-edit-note"
             type="text"
             value={editNote}
+            maxLength={4000}
             onChange={(e) => setEditNote(e.target.value)}
             placeholder={t("admin.ratelimits.editNotePlaceholder")}
             className="w-full bg-surface border border-theme rounded px-2.5 py-1.5 text-xs text-foreground focus:border-sky-400 outline-none"

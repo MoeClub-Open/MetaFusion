@@ -391,6 +391,7 @@ export function Evidence({
   return (
     <fieldset>
       <legend>{t("catalog.evidence")}</legend>
+      <p className="text-xs text-text-muted">{t("catalog.evidenceSourceHint")}</p>
       <label>
         {t("catalog.editNote")}
         <textarea
@@ -411,9 +412,10 @@ export function Evidence({
                 ),
               )
             }
-            options={["self", "url", "publication"].map((k) => ({
+            options={[...(!["url", "publication"].includes(s.kind) ? [s.kind] : []), "url", "publication"].map((k) => ({
               value: k,
               label: t(`catalog.source.${k}`),
+              disabled: k !== "url" && k !== "publication",
             }))}
           />
           <input

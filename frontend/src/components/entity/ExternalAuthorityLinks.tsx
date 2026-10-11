@@ -5,6 +5,7 @@ import { ExternalLink, Globe, ArrowUpRight } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { fetchExternalDatabases, ExternalDatabaseDefinition, ExternalLinkDisplay, pickLocalizedName } from "@/lib/api";
 import { authorityIcon } from "@/lib/authorityIcons";
+import { safeExternalAuthorityURL } from "@/lib/externalAuthorityURL";
 
 interface Props {
   entity?: {
@@ -84,7 +85,7 @@ export function ExternalAuthorityLinks({
       return externalLinks.map((item, idx) => ({
         code: item.code,
         name: item.name,
-        url: item.url,
+        url: safeExternalAuthorityURL(item.url),
         id: item.external_id,
         icon: item.icon || "Globe",
         icon_url: item.icon_url,
@@ -154,23 +155,23 @@ export function ExternalAuthorityLinks({
         else if (lookupKey === "vgmdb") url = `https://vgmdb.net/album/${strVal}`;
       }
 
-      if (url) {
-        const isOfficial = lookupKey === "official_website" || lookupKey === "bushiroad_music";
-        const isBangumi = lookupKey.startsWith("bangumi");
-        const defaultOrder = isOfficial ? 5 : isBangumi ? 10 : def?.sort_order ?? 100;
+      url = safeExternalAuthorityURL(url);
+      const isOfficial = lookupKey === "official_website" || lookupKey === "bushiroad_music";
+      const isBangumi = lookupKey.startsWith("bangumi");
+      const defaultOrder = isOfficial ? 5 : isBangumi ? 10 : def?.sort_order ?? 100;
 
-        items.push({
-          code: lookupKey,
-          name,
-          url,
-          id: strVal,
-          icon: def?.icon || (isOfficial ? "Globe" : isBangumi ? "Tv" : "Globe"),
-          icon_url: def?.icon_url || "",
-          isOfficial,
-          isBangumi,
-          sortOrder: def ? def.sort_order : defaultOrder,
-        });
-      }
+      // 停用的预设不在公开列表里，历史标识或配置加载失败时仍保留文字展示。
+      items.push({
+        code: lookupKey,
+        name,
+        url,
+        id: strVal,
+        icon: def?.icon || (isOfficial ? "Globe" : isBangumi ? "Tv" : "Globe"),
+        icon_url: def?.icon_url || "",
+        isOfficial,
+        isBangumi,
+        sortOrder: def ? def.sort_order : defaultOrder,
+      });
     }
 
     // 按权威度排序：官网最前，其次为 Bangumi，再按预设排序
@@ -198,6 +199,7 @@ export function ExternalAuthorityLinks({
         <div className="flex flex-col gap-2">
           {linkItems.map((item) => {
             const IconComp = authorityIcon(item.icon);
+            const LinkTag = item.url ? "a" : "span";
             const isOfficial = item.isOfficial;
             const isBangumi = item.isBangumi;
 
@@ -213,11 +215,9 @@ export function ExternalAuthorityLinks({
             }
 
             return (
-              <a
+              <LinkTag
                 key={item.code}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
+                {...(item.url ? { href: item.url, target: "_blank", rel: "noopener noreferrer" } : {})}
                 title={`${item.name}: ${item.id}`}
                 className={`inline-flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-xs font-medium group ${badgeClass}`}
               >
@@ -231,9 +231,9 @@ export function ExternalAuthorityLinks({
                 </span>
                 <span className="flex items-center gap-1 shrink-0 ml-2 font-mono text-[11px] opacity-75">
                   <span className="truncate max-w-[90px]">{item.id.replace(/^https?:\/\//, "")}</span>
-                  <ArrowUpRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-base ease-soft" />
+                  {item.url && <ArrowUpRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-base ease-soft" />}
                 </span>
-              </a>
+              </LinkTag>
             );
           })}
         </div>
@@ -247,6 +247,7 @@ export function ExternalAuthorityLinks({
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       {linkItems.map((item) => {
         const IconComp = authorityIcon(item.icon);
+        const LinkTag = item.url ? "a" : "span";
         const isOfficial = item.isOfficial;
         const isBangumi = item.isBangumi;
 
@@ -261,11 +262,9 @@ export function ExternalAuthorityLinks({
         }
 
         return (
-          <a
+          <LinkTag
             key={item.code}
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
+            {...(item.url ? { href: item.url, target: "_blank", rel: "noopener noreferrer" } : {})}
             title={`${item.name} (${item.id})`}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-all shadow-2xs ${badgeClass}`}
           >
@@ -275,8 +274,8 @@ export function ExternalAuthorityLinks({
               <IconComp className={`w-3.5 h-3.5 shrink-0 ${isOfficial ? "text-emerald-500" : isBangumi ? "text-[#f09199]" : "opacity-70"}`} />
             )}
             <span>{item.name}</span>
-            <ExternalLink className="w-2.5 h-2.5 opacity-40 ml-0.5" />
-          </a>
+            {item.url ? <ExternalLink className="w-2.5 h-2.5 opacity-40 ml-0.5" /> : <span className="font-mono">{item.id}</span>}
+          </LinkTag>
         );
       })}
     </div>

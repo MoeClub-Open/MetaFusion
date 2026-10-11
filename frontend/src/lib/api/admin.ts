@@ -19,6 +19,38 @@ export interface RateLimitConfig {
   updated_at: string;
 }
 
+export interface MessageRateLimitPolicy {
+  send_per_minute: number;
+  stranger_per_hour: number;
+  admin_unlimited: boolean;
+}
+
+export interface CommunityRateLimitConfig extends RateLimitConfig {
+  messages: MessageRateLimitPolicy;
+  updated_by?: string;
+}
+
+export async function fetchCommunityAdminRateLimits(): Promise<CommunityRateLimitConfig> {
+  const res = await fetch("/api/community/admin/rate-limits", { credentials: "same-origin" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+export async function saveCommunityAdminRateLimits(
+  policy: RateLimitPolicy, messages: MessageRateLimitPolicy, expectedEtag: string, editNote: string,
+): Promise<CommunityRateLimitConfig> {
+  const res = await fetch("/api/community/admin/rate-limits", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ policy, messages, expected_etag: expectedEtag, edit_note: editNote }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
 export function fetchAdminRateLimits(): Promise<RateLimitConfig> {
   return fetch("/api/admin/rate-limits", { credentials: "same-origin" })
     .then(async (res) => {
@@ -28,7 +60,7 @@ export function fetchAdminRateLimits(): Promise<RateLimitConfig> {
     });
 }
 
-// PUT 是**整体替换**，且后端 DisallowUnknownFields：请求体只能是这四个键。
+// PUT 是整体替换。限流调整使用管理审计说明，不生成元数据来源。
 export function saveAdminRateLimits(policy: RateLimitPolicy, expectedEtag: string, editNote: string): Promise<RateLimitConfig> {
   return fetch("/api/admin/rate-limits", {
     method: "PUT",
@@ -38,7 +70,6 @@ export function saveAdminRateLimits(policy: RateLimitPolicy, expectedEtag: strin
       policy,
       expected_etag: expectedEtag,
       edit_note: editNote,
-      sources: [{ kind: "self", citation: editNote }],
     }),
   }).then(async (res) => {
     const body = await res.json().catch(() => ({}));

@@ -7,7 +7,7 @@ import { getAuthPasswordUrl } from "@/lib/services";
 import { api } from "./api";
 import { useAuth } from "@/lib/authContext";
 
-// 登录入口唯一：/login（app/login/page.tsx，含注册页签；实例未初始化时由 AuthGate 引导 /setup）。
+// 登录入口唯一：/login，由网关交给 metafusion-auth/user（含注册页签与 /setup 初始化页）。
 // 本页未登录时由 components/AuthGate.tsx 跳 /login?redirect=/account，不要在这里再渲染
 // 用户名/密码表单——两套登录界面并存时字段提示与文案还不一致，用户会以为是两个站。
 // 本页也不展示"已授权应用"：账号服务已整条删除 GET /oauth/clients（登录即可枚举全量客户端），

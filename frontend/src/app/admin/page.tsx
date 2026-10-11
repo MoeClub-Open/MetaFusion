@@ -1,7 +1,7 @@
 "use client";
 
 // 目录域管理台：只覆盖元数据目录自己的工作面（概览 / 条目 / 定义 / 外部来源 / 货架 / 审核 /
-// 合并 / 子系统能力 / 实例交换）。账号、社区、存储三个域的管理台已是独立应用
+// 合并 / 子系统能力 / 实例交换），限流运维页按服务权限提供共享入口。账号、社区、存储的其他管理工作仍在独立应用
 // （deploy/nginx.conf 的 /admin/account|community|storage/ 三条 location），这里只留入口：
 // 左栏底部的「其他控制台」，按权限码与探活结果收敛——未部署的域不出现死链。
 
@@ -11,6 +11,9 @@ import Link from "next/link";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { DefinitionsEditor } from "@/components/catalog/DefinitionsEditor";
+import { Evidence } from "@/components/catalog/Fields";
+import type { Source } from "@/components/catalog/api";
+import { catalogEvidenceError } from "@/lib/catalogEvidence";
 import { useDefinitions, getKindName, resolveKindOptions } from "@/lib/definitions";
 import { PageContainer } from "@/components/ui/PageShell";
 import { Select } from "@/components/ui/Select";
@@ -32,6 +35,7 @@ import {
   COMMUNITY_BOARD_MANAGE,
   COMMUNITY_POST_MODERATE,
   COMMUNITY_REPORT_REVIEW,
+  COMMUNITY_RATE_LIMITS_MANAGE,
   COMMUNITY_TOPIC_PIN,
   STORAGE_ASSET_MODERATE,
   CATALOG_LIFECYCLE_MANAGE,
@@ -77,9 +81,9 @@ const NAV_GROUPS: { labelKey: string; tabs: { id: AdminTab; labelKey: string; ic
     { id: "definitions", labelKey: "admin.tab.definitions", icon: Sliders },
     { id: "shelves", labelKey: "admin.tab.shelves", icon: LayoutDashboard },
     { id: "extdb", labelKey: "admin.tab.extdb", icon: Globe },
-    { id: "ratelimits", labelKey: "admin.tab.ratelimits", icon: Gauge },
   ] },
   { labelKey: "admin.nav.operations", tabs: [
+    { id: "ratelimits", labelKey: "admin.tab.ratelimits", icon: Gauge },
     { id: "modules", labelKey: "admin.tab.modules", icon: Cpu },
     { id: "exchange", labelKey: "admin.tab.exchange", icon: ArrowUpRight },
   ] },
@@ -150,7 +154,7 @@ function AdminInner() {
   })).filter((group) => group.tabs.length > 0), [user]);
   const visibleTabs = visibleGroups.flatMap((group) => group.tabs);
   const visibleTabsKey = visibleTabs.map((item) => item.id).join(",");
-  const currentTab = visibleTabs.some((item) => item.id === activeTab) ? activeTab : "overview";
+  const currentTab = visibleTabs.some((item) => item.id === activeTab) ? activeTab : (visibleTabs[0]?.id || "overview");
   const mayManageLifecycle = can(user, CATALOG_LIFECYCLE_MANAGE);
   const selectTab = (tab: AdminTab) => {
     if (!canUseCatalogAdminTab(user, tab)) return;
@@ -160,7 +164,7 @@ function AdminInner() {
   useEffect(() => {
     const syncFromUrl = () => {
       const hash = window.location.hash.slice(1);
-      setActiveTab(visibleTabs.some((item) => item.id === hash) ? hash as AdminTab : "overview");
+      setActiveTab(visibleTabs.some((item) => item.id === hash) ? hash as AdminTab : (visibleTabs[0]?.id || "overview"));
     };
     syncFromUrl();
     window.addEventListener("popstate", syncFromUrl);
@@ -186,6 +190,9 @@ function AdminInner() {
   const [reviewStatus, setReviewStatus] = useState<"pending_review" | "published">("pending_review");
   const [unpublishTarget, setUnpublishTarget] = useState<any | null>(null);
   const [unpublishing, setUnpublishing] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<{ id: string; action: "published" | "draft"; expectedVersion: number; fromEntities: boolean } | null>(null);
+  const [lifecycleNote, setLifecycleNote] = useState("");
+  const [lifecycleSources, setLifecycleSources] = useState<Source[]>([{ kind: "url", citation: "", url: "" }]);
   const [reviewNotice, setReviewNotice] = useState("");
   const [reviewError, setReviewError] = useState(false);
   const [actingId, setActingId] = useState("");
@@ -212,12 +219,13 @@ function AdminInner() {
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
   const [mergeNote, setMergeNote] = useState("");
+  const [mergeSources, setMergeSources] = useState<Source[]>([{ kind: "url", citation: "", url: "" }]);
   const [mergeMessage, setMergeMessage] = useState("");
   // 合并结果的成功/失败由状态位决定配色：原先靠 "Error: " 前缀判定，等于把英文前缀写进流程。
   const [mergeError, setMergeError] = useState(false);
   const [merging, setMerging] = useState(false);
   const mergeBusy = useRef(false);
-  const [mergePreview, setMergePreview] = useState<{source: Record<string, any>; target: Record<string, any>; note: string} | null>(null);
+  const [mergePreview, setMergePreview] = useState<{source: Record<string, any>; target: Record<string, any>; note: string; sources: Source[]} | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewFailed, setOverviewFailed] = useState(false);
   const overviewRequest = useRef(0);
@@ -378,11 +386,8 @@ function AdminInner() {
     }
   }, [currentTab, reviewStatus, reviewPage, mayEnterCatalog]);
 
-  // 状态写入的唯一封装：PUT 是整份替换，必须先读全量再改状态（列表项是摘要，
-  // 直接提交会因缺字段被服务端拒）；sources 的 kind 只能是 url / publication / self
-  // （validation.go 的 validateSources）：管理台动作属于自述来源，用 "self" + 操作记录说明，
-  // 不拿站点地址冒充外部证据。
-  const submitEntityStatus = async (id: string, status: "published" | "draft", note: string, expectedVersion: number) => {
+  // PUT 是整份替换：先读全量再改状态，编辑凭据由管理员明确填写。
+  const submitEntityStatus = async (id: string, status: "published" | "draft", note: string, expectedVersion: number, sources: Source[]) => {
     const full = await fetchApi<Record<string, any>>(`/catalog/entities/${id}`);
     if (full.version !== expectedVersion) throw new Error("version_conflict");
     const { updated_at: _updatedAt, ...doc } = full;
@@ -392,7 +397,7 @@ function AdminInner() {
         entity: { ...doc, id, status },
         expected_version: expectedVersion,
         edit_note: note,
-        sources: [{ kind: "self", citation: t("admin.reviews.sourceCitation") }],
+        sources,
       }),
     });
   };
@@ -402,13 +407,26 @@ function AdminInner() {
   // 反向的 published → draft 被 store.go 的 use_lifecycle_endpoint 拦住，只能走
   // POST …/unpublish（见 handleUnpublish）。
   const handleStatusAction = async (id: string, action: "published" | "draft", expectedVersion: number, fromEntities = false) => {
+    setLifecycleNote("");
+    setLifecycleSources([{ kind: "url", citation: "", url: "" }]);
+    setReviewNotice(""); setReviewError(false);
+    setStatusTarget({ id, action, expectedVersion, fromEntities });
+  };
+  const confirmStatusAction = async () => {
+    if (!statusTarget) return;
+    const { id, action, expectedVersion, fromEntities } = statusTarget;
+    const evidenceError = catalogEvidenceError(lifecycleNote, lifecycleSources, window.location.origin);
+    if (evidenceError) {
+      setReviewError(true); setReviewNotice(localizeCatalogError(evidenceError, t)); return;
+    }
     if (!mayManageLifecycle || statusActionBusy.current) return;
     statusActionBusy.current = true;
     setActingId(id);
     setReviewNotice("");
     setReviewError(false);
     try {
-      await submitEntityStatus(id, action, t(action === "published" ? "admin.reviews.approveNote" : "admin.reviews.rejectNote"), expectedVersion);
+      await submitEntityStatus(id, action, lifecycleNote.trim(), expectedVersion, lifecycleSources);
+      setStatusTarget(null);
       if (fromEntities) loadEntities(); else loadReviewList();
       void loadOverview();
       setReviewNotice(t(action === "published" ? "admin.reviews.approved" : "admin.reviews.rejected"));
@@ -426,6 +444,10 @@ function AdminInner() {
   // 当前行的版本，服务端把它放进 WHERE 做乐观并发——别人先改过就是 409，不会覆盖掉。
   const handleUnpublish = async () => {
     if (!unpublishTarget || unpublishing) return;
+    const evidenceError = catalogEvidenceError(lifecycleNote, lifecycleSources, window.location.origin);
+    if (evidenceError) {
+      setReviewError(true); setReviewNotice(localizeCatalogError(evidenceError, t)); return;
+    }
     setUnpublishing(true);
     setReviewError(false);
     setReviewNotice("");
@@ -433,8 +455,8 @@ function AdminInner() {
       await unpublishEntity({
         entity_id: unpublishTarget.id,
         expected_version: Number(unpublishTarget.version) || 1,
-        edit_note: t("admin.reviews.unpublishNote"),
-        citation: t("admin.reviews.sourceCitation"),
+        edit_note: lifecycleNote.trim(),
+        sources: lifecycleSources,
       });
       setReviewNotice(t("admin.reviews.unpublished"));
       setUnpublishTarget(null);
@@ -469,6 +491,10 @@ function AdminInner() {
     const sourceId = mergeSource.trim();
     const targetId = mergeTarget.trim();
     if (mergeBusy.current || !mayManageLifecycle) return;
+    const evidenceError = catalogEvidenceError(mergeNote, mergeSources, window.location.origin);
+    if (evidenceError) {
+      setMergeError(true); setMergeMessage(localizeCatalogError(evidenceError, t)); return;
+    }
     mergeBusy.current = true;
     setMerging(true);
     setMergeMessage("");
@@ -492,7 +518,7 @@ function AdminInner() {
         setMergeMessage(t("admin.console.mergeInvalidTarget"));
         return;
       }
-      setMergePreview({source, target, note: mergeNote.trim() || t("admin.console.mergeTitle")});
+      setMergePreview({source, target, note: mergeNote.trim(), sources: structuredClone(mergeSources)});
     } catch (err) {
       setMergeError(true);
       setMergeMessage(localizeCatalogError(String((err as Error).message || err), t));
@@ -504,18 +530,19 @@ function AdminInner() {
 
   const confirmMerge = async () => {
     if (!mergePreview || mergeBusy.current || !mayManageLifecycle) return;
-    const {source, target, note} = mergePreview;
+    const {source, target, note, sources} = mergePreview;
     mergeBusy.current = true;
     setMerging(true);
     try {
       await fetchApi(`/catalog/entities/${encodeURIComponent(source.id)}/lifecycle`, {
         method: "POST",
         body: JSON.stringify({ target_id: target.id, expected_version: source.version,
-          edit_note: note, sources: [{kind: "self", citation: t("admin.reviews.sourceCitation")}] }),
+          edit_note: note, sources }),
       });
       setMergeError(false);
       setMergeMessage(t("admin.console.mergeSuccess"));
       setMergeSource(""); setMergeTarget(""); setMergeNote("");
+      setMergeSources([{ kind: "url", citation: "", url: "" }]);
       void loadOverview();
     } catch (err) {
       setMergeError(true);
@@ -565,7 +592,7 @@ function AdminInner() {
   // 能进管理台、但没有目录域权限（例如只持 auth.users.manage）：这里绝不能把人放进目录外壳——
   // 本页页签全是目录工作面，对他一片 403，看着像管理台坏了。只给"你能进的控制台"入口页。
   // 未探活到在线的域不渲染成链接（与左栏同口径：不给死链），但保留一行说明它存在。
-  if (!canEnterCatalogConsole(user)) {
+  if (!canEnterCatalogConsole(user) && !can(user, COMMUNITY_RATE_LIMITS_MANAGE)) {
     return (
       <div className="min-h-screen bg-background text-text-strong">
         <PageContainer width="narrow" className="py-12">
@@ -985,6 +1012,8 @@ function AdminInner() {
                                   onClick={() => {
                                     setReviewNotice("");
                                     setReviewError(false);
+                                    setLifecycleNote("");
+                                    setLifecycleSources([{ kind: "url", citation: "", url: "" }]);
                                     setUnpublishTarget(e);
                                   }}
                                   className="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-500/25 text-warn text-[11px] transition-colors duration-fast ease-soft cursor-pointer"
@@ -1133,6 +1162,8 @@ function AdminInner() {
                             onClick={() => {
                               setReviewNotice("");
                               setReviewError(false);
+                              setLifecycleNote("");
+                              setLifecycleSources([{ kind: "url", citation: "", url: "" }]);
                               setUnpublishTarget(item);
                             }}
                             className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-warn text-xs font-semibold cursor-pointer"
@@ -1218,18 +1249,8 @@ function AdminInner() {
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="merge-note" className="block text-xs font-medium text-text-body mb-1">
-                    {t("admin.console.mergeNote")}
-                  </label>
-                  <textarea
-                    id="merge-note"
-                    rows={2}
-                    value={mergeNote}
-                    onChange={(e) => setMergeNote(e.target.value)}
-                    placeholder={t("admin.console.mergeNotePlaceholder")}
-                    className="w-full p-2.5 rounded-lg bg-surfaceSubtle border border-line text-xs text-text-strong placeholder:text-text-faint focus:border-primary outline-none"
-                  />
+                <div className="catalog-v2">
+                  <Evidence note={mergeNote} setNote={setMergeNote} sources={mergeSources} setSources={setMergeSources} />
                 </div>
 
                 {mergeMessage && (
@@ -1321,14 +1342,29 @@ function AdminInner() {
         </div>}
         confirmLabel={t("admin.console.executeMerge")} busy={merging}
         onClose={() => { if (!merging) setMergePreview(null); }} onConfirm={() => void confirmMerge()} />
-      {/* 实体行的"退回草稿"与审核台共用这个确认框：一次只可能有一个待确认目标。 */}
+      {/* 状态变更明确采集编辑说明与事实凭据。 */}
+      <ConfirmDialog
+        open={statusTarget != null}
+        title={t(statusTarget?.action === "published" ? "admin.reviews.approve" : "admin.reviews.reject")}
+        message={<div className="catalog-v2 space-y-3">
+          {statusTarget ? <Link href={`/catalog/${statusTarget.id}`} target="_blank" rel="noopener noreferrer" className="break-all text-primary hover:underline">{statusTarget.id}</Link> : null}
+          <Evidence note={lifecycleNote} setNote={setLifecycleNote} sources={lifecycleSources} setSources={setLifecycleSources} />
+          {reviewError && reviewNotice ? <p role="alert">{reviewNotice}</p> : null}
+        </div>}
+        confirmLabel={t(statusTarget?.action === "published" ? "admin.reviews.approve" : "admin.reviews.reject")}
+        busy={!!actingId}
+        onClose={() => { if (!actingId) setStatusTarget(null); }}
+        onConfirm={() => void confirmStatusAction()}
+      />
       <ConfirmDialog
         open={unpublishTarget != null}
         title={t("admin.entities.unpublish")}
         message={<div className="space-y-2"><p>{t("admin.entities.unpublishConfirm", {
           title: unpublishTarget?.title ?? "",
           version: String(unpublishTarget?.version ?? 1),
-        })}</p>{reviewError && reviewNotice ? <p role="alert">{reviewNotice}</p> : null}</div>}
+        })}</p><div className="catalog-v2">
+          <Evidence note={lifecycleNote} setNote={setLifecycleNote} sources={lifecycleSources} setSources={setLifecycleSources} />
+        </div>{reviewError && reviewNotice ? <p role="alert">{reviewNotice}</p> : null}</div>}
         confirmLabel={t("admin.entities.unpublish")}
         busy={unpublishing}
         onClose={() => { if (!unpublishing) setUnpublishTarget(null); }}

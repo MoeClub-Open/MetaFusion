@@ -12,6 +12,7 @@ import { newSubmissionSession, submissionKey } from "@/lib/idempotency";
 import { useAuth } from "@/lib/authContext";
 import { getAuthLoginUrl } from "@/lib/services";
 import { EntityPicker, Evidence, FieldInput, ErrorMessage, GroupFieldInput, NamesEditor } from "./Fields";
+import { catalogEvidenceError } from "@/lib/catalogEvidence";
 import { EntityCover } from "@/components/common/EntityCover";
 import { LanguagePicker } from "@/components/common/LanguagePicker";
 import { RelationEditorField, type RelationDraft } from "@/components/editor/RelationEditorField";
@@ -32,6 +33,10 @@ import {
   StorageRequestError,
 } from "@/lib/storage";
 import { canonicalLanguageCode, languageLabel } from "@/lib/languages";
+import { ApiError } from "@/lib/api/client";
+import { fetchIdentityCandidates } from "@/lib/api/identity";
+import { identityConflictIDs, identityReviewKey, reviewedIdentityIDs, type IdentityReviewState } from "@/lib/identityReview";
+import { IdentityReviewPanel } from "./IdentityReviewPanel";
 
 /** 标签分隔符：中英文逗号/顿号/换行都算新增，避免只能靠回车。 */
 const TAG_SEPARATORS = /[,，、\n]/;
@@ -126,10 +131,19 @@ export function EntityEditor({
   const submitSession = React.useRef("");
   const submissionScope = () => (submitSession.current ||= newSubmissionSession());
   const [sources, setSources] = useState<Source[]>(initialSources || [
-    { kind: "self", citation: "" },
+    { kind: "url", citation: "", url: "" },
   ]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [identityReview, setIdentityReview] = useState<IdentityReviewState | null>(null);
+  const currentIdentityKey = identityReviewKey(e);
+  const identityKeyRef = useRef(currentIdentityKey);
+  identityKeyRef.current = currentIdentityKey;
+  const identityReviewRequest = useRef(0);
+  useEffect(() => {
+    setIdentityReview((review) => review?.key === currentIdentityKey ? review : null);
+  }, [currentIdentityKey]);
+  useEffect(() => () => { identityReviewRequest.current += 1; }, []);
   const editorId = React.useId();
   const [requestedSection, setRequestedSection] = useState("basic");
   const [fieldSearch, setFieldSearch] = useState("");
@@ -464,22 +478,20 @@ export function EntityEditor({
     // 服务端按字段的 applicable_kinds 校验；编辑器不提交布局或业务分类。
     // 应用层证据校验：HTML required 的原生气泡在部分环境不可见，
     // 曾表现为"点保存没反应"；noValidate 后统一在此给出明确提示。
-    const missingEvidence =
-      !note.trim() ||
-      sources.length === 0 ||
-      sources.some(
-        (s) =>
-          !s.citation.trim() ||
-          (s.kind === "url" && !/^https?:\/\/[^\s]+\.[^\s]+/i.test(s.url || "")),
-      );
+    const evidenceError = catalogEvidenceError(note, sources, window.location.origin);
     if (!e.title.trim()) {
       setRequestedSection("basic");
       setError(t("editor.titleRequired"));
       return;
     }
-    if (missingEvidence) {
+    if (evidenceError) {
       setRequestedSection("evidence");
-      setError(t("catalog.evidenceRequired"));
+      setError(localizeCatalogError(evidenceError, t));
+      return;
+    }
+    const reviewedIDs = reviewedIdentityIDs(identityReview, currentIdentityKey);
+    if (identityReview?.key === currentIdentityKey && reviewedIDs === undefined) {
+      setError(t("catalog.identityReview.required"));
       return;
     }
     setBusy(true);
@@ -487,7 +499,10 @@ export function EntityEditor({
     try {
       // 建实体带上幂等键：双击保存 / 超时重发复用同一个键，服务端只建一个实体。
       // PUT 不带（幂等键服务端只覆盖两个 POST 端点，见 lib/idempotency 的说明）。
-      const body = { entity: e, expected_version: e.version, edit_note: note, sources };
+      const body = {
+        entity: e, expected_version: e.version, edit_note: note, sources,
+        ...(reviewedIDs !== undefined ? { reviewed_candidate_ids: reviewedIDs } : {}),
+      };
       const out = await api<Entity>(
         e.id ? `/catalog/entities/${e.id}` : "/catalog/entities",
         e.id ? "PUT" : "POST",
@@ -546,11 +561,37 @@ export function EntityEditor({
       if (onSaved) onSaved(out);
       else router.push(`/catalog/${out.id}`);
     } catch (err) {
-      setError(localizeCatalogError((err as Error).message, t));
+      if (err instanceof ApiError && err.status === 409 && err.message === "identity_candidates_changed") {
+        setError(t("catalog.error.identityCandidatesChanged"));
+        await loadIdentityReview(e, identityConflictIDs(err.details));
+      } else {
+        setError(localizeCatalogError((err as Error).message, t));
+      }
     } finally {
       setBusy(false);
     }
   };
+  const loadIdentityReview = async (entity: Entity, expectedIDs: string[] | null) => {
+    const key = identityReviewKey(entity);
+    if (identityKeyRef.current !== key) return;
+    const request = ++identityReviewRequest.current;
+    setIdentityReview({ key, expectedIDs, status: "loading", confirmed: false });
+    try {
+      const data = await fetchIdentityCandidates(entity);
+      if (request === identityReviewRequest.current && identityKeyRef.current === key) {
+        setIdentityReview({ key, expectedIDs, status: "ready", data, confirmed: false });
+      }
+    } catch (err) {
+      if (request === identityReviewRequest.current && identityKeyRef.current === key) {
+        const message = err instanceof Error ? err.message : "";
+        const error = ["identity_candidates_incomplete", "identity_candidate_unresolved", "invalid_identity_review"].includes(message)
+          ? localizeCatalogError(message, t) : t("catalog.identityReview.failed");
+        setIdentityReview({ key, expectedIDs, status: "failed", confirmed: false, error });
+      }
+    }
+  };
+  const activeIdentityReview = identityReview?.key === currentIdentityKey ? identityReview : null;
+  const identityReviewPending = activeIdentityReview !== null && reviewedIdentityIDs(activeIdentityReview, currentIdentityKey) === undefined;
   const hasStructure = !!((defs?.structure?.[e.kind]?.fields || []).length || defs?.structure?.[e.kind]?.subjects || defs?.structure?.[e.kind]?.contents);
   const editorSections = [
     { id: "basic", label: t("editor.section.basic") },
@@ -576,6 +617,11 @@ export function EntityEditor({
         <span className="cv-hint" aria-live="polite">{t(dirty ? "editor.unsaved" : "editor.draftUnchanged")}</span>
       </div>
       <div ref={errorRef} tabIndex={-1} hidden={!error}><ErrorMessage error={error} /></div>
+      {activeIdentityReview && <IdentityReviewPanel review={activeIdentityReview} busy={busy}
+        definitions={definitions} kindLabel={kindLabel}
+        onConfirm={(confirmed) => setIdentityReview((review) => review?.key === currentIdentityKey && review.status === "ready"
+          ? { ...review, confirmed } : review)}
+        onReload={() => { void loadIdentityReview(e, activeIdentityReview.expectedIDs); }} />}
       <div className="cv-editor-navigation">
         <div role="tablist" aria-label={t("editor.sections")} className="cv-editor-tabs">
           {editorSections.map((section, index) => <button type="button" role="tab" key={section.id}
@@ -594,7 +640,7 @@ export function EntityEditor({
         </div>
         <div className="cv-editor-context">
           <p><span>{kindLabel(e.kind)}</span><strong>{e.title.trim() || t("editor.untitled")}</strong></p>
-          <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null}>
+          <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null || identityReviewPending}>
             {t(busy ? "catalog.saving" : "catalog.save")}
           </button>
         </div>
@@ -1380,6 +1426,21 @@ export function EntityEditor({
               </div>
               <p className="cv-hint">{t("catalog.pictureAssetHint")}</p>
               {assetInvalid && <p className="cv-error">{t("catalog.pictureAssetInvalid")}</p>}
+              <p className="cv-hint">{t("catalog.evidenceSourceHint")}</p>
+              <label>
+                {t("catalog.sourceKind")}
+                <Select
+                  value={p.source.kind}
+                  aria-label={t("catalog.sourceKind")}
+                  onChange={(kind) => patchPicture(i, { source: { ...p.source, kind } })}
+                  options={[
+                    ...(!["url", "publication"].includes(p.source.kind) ? [{
+                      value: p.source.kind, label: tr(`catalog.source.${p.source.kind}`, p.source.kind), disabled: true,
+                    }] : []),
+                    ...["url", "publication"].map((kind) => ({ value: kind, label: t(`catalog.source.${kind}`) })),
+                  ]}
+                />
+              </label>
               <label>
                 {t("catalog.citation")}
                 <input
@@ -1390,6 +1451,15 @@ export function EntityEditor({
                       source: { ...p.source, citation: x.target.value },
                     })
                   }
+                />
+              </label>
+              <label>
+                {t("catalog.sourceUrl")}{p.source.kind === "url" && " *"}
+                <input
+                  type="url"
+                  required={p.source.kind === "url"}
+                  value={p.source.url || ""}
+                  onChange={(x) => patchPicture(i, { source: { ...p.source, url: x.target.value } })}
                 />
               </label>
             </div>
@@ -1405,7 +1475,7 @@ export function EntityEditor({
                 url: "",
                 caption: {},
                 taken_at: "",
-                source: { kind: "self", citation: "" },
+                source: { kind: "url", citation: "", url: "" },
               },
             ])
           }
@@ -1444,7 +1514,7 @@ export function EntityEditor({
         {sectionIndex > 0 && <button type="button" disabled={busy} onClick={() => changeSection(editorSections[sectionIndex - 1].id)}>{t("editor.previousSection")}</button>}
         {sectionIndex < editorSections.length - 1
           ? <button type="button" className="cv-primary" disabled={busy} onClick={() => changeSection(editorSections[sectionIndex + 1].id)}>{t("editor.nextSection")}</button>
-          : <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null}>{t(busy ? "catalog.saving" : "catalog.save")}</button>}
+          : <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null || identityReviewPending}>{t(busy ? "catalog.saving" : "catalog.save")}</button>}
       </div>
       <ConfirmDialog
         open={!!requestedKind}

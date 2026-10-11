@@ -50,7 +50,18 @@ const nextConfig = {
   },
   output: "standalone",
   async rewrites() {
-    return [{source:"/api/:path*",destination:`${process.env.BACKEND_ORIGIN || "http://127.0.0.1:8080"}/api/:path*`}];
+    const origin = (process.env.BACKEND_ORIGIN || "http://127.0.0.1:8080").replace(/\/+$/, "");
+    const routes = [{ source: "/api/:path*", destination: `${origin}/api/:path*` }];
+    // 宿主机完整联调时 BACKEND_ORIGIN 指向网关；登录 HTML 与账号静态资源须一起转发。
+    // 只启动目录后端的默认开发环境不提供账号应用，不能把它伪装成本前端页面。
+    if (process.env.NODE_ENV === "development" && process.env.BACKEND_ORIGIN) {
+      routes.push(
+        { source: "/login", destination: `${origin}/login` },
+        { source: "/setup", destination: `${origin}/setup` },
+        { source: "/auth-user-assets/:path*", destination: `${origin}/auth-user-assets/:path*` },
+      );
+    }
+    return routes;
   },
   // 集中维护入口别名；实体内容只在 /catalog/:id 维护一份。
   async redirects() {

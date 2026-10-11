@@ -23,6 +23,8 @@ import type { DynamicDefinitions } from "@/lib/definitions";
 import { Evidence, ErrorMessage, NamesEditor } from "./Fields";
 import { TemplateRulesEditor } from "./TemplateRulesEditor";
 import { RelationRulesEditor } from "./RelationRulesEditor";
+import { catalogEvidenceError } from "@/lib/catalogEvidence";
+import { localizeCatalogError } from "@/lib/catalogErrors";
 
 // 同一份服务端定义文档在前端有两个方向不同的类型：lib/definitions.ts 的 DynamicDefinitions
 // 是只读消费视图，./api 的 Definitions 是写入视图。
@@ -390,7 +392,7 @@ export function DefinitionsEditor() {
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [sources, setSources] = useState<Source[]>([
-    { kind: "self", citation: "" },
+    { kind: "url", citation: "", url: "" },
   ]);
   const [tab, setTab] = useState<keyof Definitions | "schemes">("fields");
   useEffect(() => {
@@ -971,13 +973,15 @@ export function DefinitionsEditor() {
           }
         }}>{t("catalog.impact")}</button>
         <button className="cv-primary" onClick={async () => {
+          const evidenceError = catalogEvidenceError(note, sources, window.location.origin);
+          if (evidenceError) { setError(localizeCatalogError(evidenceError, t)); return; }
           try {
             await api("/admin/catalog-definitions", "PUT", {
               document: d, expected_etag: base, edit_note: note, sources,
             });
             await reloadPublished();
           } catch (err) {
-            setError((err as Error).message);
+            setError(localizeCatalogError((err as Error).message, t));
           }
         }}>{t("catalog.save")}</button>
       </div>

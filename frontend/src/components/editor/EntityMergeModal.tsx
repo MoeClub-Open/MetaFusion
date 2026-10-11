@@ -6,8 +6,9 @@ import Link from "next/link";
 import { catalogEntityHref, mergeEntities } from "@/lib/api";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { useAuth } from "@/lib/authContext";
-import { api, type Entity, title } from "@/components/catalog/api";
-import { EntityPicker } from "@/components/catalog/Fields";
+import { api, type Entity, type Source, title } from "@/components/catalog/api";
+import { EntityPicker, Evidence } from "@/components/catalog/Fields";
+import { catalogEvidenceError } from "@/lib/catalogEvidence";
 import { isCompatibleMergeTarget, type MergeIdentity } from "@/lib/mergeTarget";
 import { entityIdentitySuffix } from "@/lib/entityIdentity";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -32,7 +33,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
   const { t, locale } = useI18n();
   const [targetId, setTargetId] = useState("");
   const [mergeNote, setMergeNote] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
+  const [sources, setSources] = useState<Source[]>([{ kind: "url", citation: "", url: "" }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -43,7 +44,8 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
   const submitLock = useRef(false);
 
   useEffect(() => {
-    setTargetId(""); setTarget(null); setMergeNote(""); setSourceUrl(""); setError("");
+    setTargetId(""); setTarget(null); setMergeNote("");
+    setSources([{ kind: "url", citation: "", url: "" }]); setError("");
   }, [isOpen, sourceEntity.id]);
 
   useEffect(() => {
@@ -84,6 +86,8 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
       setError(t("catalog.error.invalidMergeTarget"));
       return;
     }
+    const evidenceError = catalogEvidenceError(mergeNote, sources, window.location.origin);
+    if (evidenceError) { setError(localizeCatalogError(evidenceError, t)); return; }
 
     submitLock.current = true;
     setSubmitting(true);
@@ -93,9 +97,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
         source_id: sourceEntity.id,
         target_id: target!.id!,
         merge_note: mergeNote.trim(),
-        source_urls: sourceUrl.trim() ? [sourceUrl.trim()] : [],
-        // 没填考据链接时的 self 来源文案：用既有键，不硬编码中文。
-        citation: t("editor.merge.title"),
+        sources,
       });
       alert(res.message || t("editor.merge.successAlert"));
       onClose();
@@ -215,33 +217,8 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
             </div>
           )}
 
-          {/* Merge Note */}
-          <div className="space-y-1">
-            <label className="block text-text-body font-semibold text-[10px] uppercase tracking-wider">
-              {t("editor.merge.noteLabel")} <span className="text-alt">*</span>
-            </label>
-            <textarea
-              rows={2}
-              required
-              value={mergeNote}
-              onChange={(e) => setMergeNote(e.target.value)}
-              placeholder={t("editor.merge.notePlaceholder")}
-              className="w-full p-2.5 rounded-md bg-background border border-line text-emphasis text-xs leading-relaxed resize-none focus:outline-none focus:border-purple-400"
-            />
-          </div>
-
-          {/* Source URL */}
-          <div className="space-y-1">
-            <label className="block text-text-body text-[10px] uppercase tracking-wider">
-              {t("editor.merge.sourceUrlLabel")}
-            </label>
-            <input
-              type="url"
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              placeholder="https://musicbrainz.org/artist/..."
-              className="w-full px-3 h-10 rounded-md bg-background border border-line text-emphasis font-mono text-xs focus:outline-none focus:border-purple-400"
-            />
+          <div className="catalog-v2">
+            <Evidence note={mergeNote} setNote={setMergeNote} sources={sources} setSources={setSources} />
           </div>
 
           {error && (

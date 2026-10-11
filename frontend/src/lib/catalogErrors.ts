@@ -44,6 +44,14 @@ const CODE_KEYS: Record<string, string> = {
   invalid_status: "catalog.error.invalidStatus",
   // 证据/来源校验：下架与合并都要求 edit_note + 至少一条合法 sources。
   invalid_source: "catalog.error.invalidSource",
+  source_not_eligible: "catalog.error.sourceNotEligible",
+  rate_limit_unavailable: "catalog.error.rateLimitUnavailable",
+  identity_candidates_changed: "catalog.error.identityCandidatesChanged",
+  identity_candidates_incomplete: "catalog.error.identityCandidatesIncomplete",
+  identity_candidate_unresolved: "catalog.error.identityCandidateUnresolved",
+  invalid_identity_review: "catalog.error.invalidIdentityReview",
+  invalid_isbn: "catalog.error.invalidIsbn",
+  invalid_barcode: "catalog.error.invalidBarcode",
   forbidden: "catalog.error.forbidden",
   authentication_required: "catalog.error.authenticationRequired",
   // 定义/货架/外部库的名称四语齐备是硬约束：缺语种的写入一律被拒。

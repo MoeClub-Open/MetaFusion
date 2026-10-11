@@ -86,10 +86,12 @@ async function requestTokenRefresh(): Promise<boolean> {
 
 export class ApiError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) {
+  readonly details: unknown;
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.details = details;
     // 目标为 ES5 时 Error 子类的原型链会断开，显式接回，保证 instanceof 判断仍可用。
     Object.setPrototypeOf(this, ApiError.prototype);
   }
@@ -144,7 +146,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new ApiError(errorData.error || `HTTP ${res.status}`, res.status);
+    throw new ApiError(errorData.error || `HTTP ${res.status}`, res.status, errorData);
   }
 
   return res.json();

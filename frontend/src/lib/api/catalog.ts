@@ -2,6 +2,8 @@ import { fetchApi } from "./client";
 import type { User } from "./client";
 import { canonicalDetailPath } from "../entityRoutes";
 import { resolveLocalizedName } from "../localizedNames";
+import type { Source } from "@/components/catalog/api";
+import { catalogEvidenceError } from "../catalogEvidence";
 
 export interface Tag {
   id: number;
@@ -153,26 +155,18 @@ export async function unpublishEntity(payload: {
   /** 乐观并发的版本号；语义是"我下架的是我看到的那一版"。 */
   expected_version: number;
   edit_note: string;
-  /** 考据来源（可选）：填了就作为 url 来源，citation 仍用下架说明。 */
-  source_urls?: string[];
-  /** 没有链接时的 self 来源文案（调用方传四语键）。 */
-  citation: string;
+  /** 用户填写的外部链接或出版物凭据。 */
+  sources: Source[];
 }): Promise<Record<string, any>> {
   const note = (payload.edit_note || "").trim();
-  const citation = (note || payload.citation || "").trim();
-  const urls = (payload.source_urls || []).map((u) => u.trim()).filter(Boolean);
-  // 与合并同一套口径：服务端要求 edit_note 与至少一条 sources 都非空，
-  // 缺链接时补一条 kind=self 的站内自述来源，不用站点地址冒充外部证据。
-  const sources =
-    urls.length > 0
-      ? urls.map((url) => ({ kind: "url", citation, url }))
-      : [{ kind: "self", citation }];
+  const error = catalogEvidenceError(note, payload.sources);
+  if (error) throw new Error(error);
   return fetchApi<Record<string, any>>(`/catalog/entities/${payload.entity_id}/unpublish`, {
     method: "POST",
     body: JSON.stringify({
       expected_version: payload.expected_version,
-      edit_note: note || citation,
-      sources,
+      edit_note: note,
+      sources: payload.sources,
     }),
   });
 }
@@ -183,29 +177,20 @@ export async function mergeEntities(payload: {
   source_id: string;
   target_id: string;
   merge_note: string;
-  /** 考据链接（可选）：填了就作为 url 来源，citation 仍用合并说明。 */
-  source_urls?: string[];
-  /** 没有链接时的 self 来源文案（调用方传四语键）；缺省回落到合并说明。 */
-  citation?: string;
+  /** 用户填写的外部链接或出版物凭据。 */
+  sources: Source[];
 }): Promise<{ message: string; target_id: string }> {
   const note = (payload.merge_note || "").trim();
-  const citation = (note || payload.citation || "").trim();
-  const urls = (payload.source_urls || []).map((u) => u.trim()).filter(Boolean);
-  // 服务端 validateSources 要求 edit_note 与 sources **都**非空，sources 里每项的 citation 也要非空。
-  // 用户不填可选的考据链接时若照旧传空数组，这次合并必然 400 evidence_required——
-  // 因此缺链接时补一条 kind=self 的站内来源，而不是伪造外部 URL。
-  const sources =
-    urls.length > 0
-      ? urls.map((url) => ({ kind: "url", citation, url }))
-      : [{ kind: "self", citation }];
+  const error = catalogEvidenceError(note, payload.sources);
+  if (error) throw new Error(error);
   const source = await fetchApi<{ version: number }>(`/catalog/entities/${payload.source_id}`);
   await fetchApi(`/catalog/entities/${payload.source_id}/lifecycle`, {
     method: "POST",
     body: JSON.stringify({
       expected_version: source.version,
       target_id: payload.target_id,
-      edit_note: note || citation,
-      sources,
+      edit_note: note,
+      sources: payload.sources,
     }),
   });
   return { message: "merged", target_id: payload.target_id };

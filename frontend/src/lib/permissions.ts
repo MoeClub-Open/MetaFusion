@@ -21,6 +21,7 @@ import {
   COMMUNITY_BOARD_MANAGE,
   COMMUNITY_POST_MODERATE,
   COMMUNITY_REPORT_REVIEW,
+  COMMUNITY_RATE_LIMITS_MANAGE,
   COMMUNITY_TOPIC_PIN,
   STORAGE_ASSET_MODERATE,
 } from "./permissions.generated";
@@ -43,6 +44,7 @@ export {
   COMMUNITY_BOARD_MANAGE,
   COMMUNITY_POST_MODERATE,
   COMMUNITY_REPORT_REVIEW,
+  COMMUNITY_RATE_LIMITS_MANAGE,
   COMMUNITY_TOPIC_PIN,
   STORAGE_ASSET_MODERATE,
   STORAGE_ASSET_UPLOAD,
@@ -62,34 +64,33 @@ export function can(user: AnyUser | null | undefined, code: string): boolean {
 }
 
 /**
- * 个人访问令牌（PAT）可授权的权限码：只能是自己持有的那些码。
+ * 新个人访问令牌（PAT）可授权的权限码：本人持有且允许委托的那些码。
  *
- * 服务端按「用户权限 ∩ 令牌 scopes」收敛，所以勾了自己没有的码也拿不到东西——
- * 前端先把不可能生效的选项去掉，别让用户勾完才发现白勾。
- * 与 can() 同一套权限码判定；
- * 带 * 通配时展开成具体码，因为 scopes 要落库、要能被人看懂。
- * 本实例自定义的码不在生成物里也照样列出：它可能真实存在，藏起来只会更糟。
+ * 服务端签发时拒绝 * 与所有以 .manage 结尾的权限；前端不提供这些必然被拒的选项。
+ * 本人持有 * 时展开为允许委托的具体码，其余权限按 can() 的持有码语义选择。
+ * 本实例自定义的非管理码不在生成物里也照样列出。
+ * 这里只用于新建选择器，不裁剪既有 PAT 的 scopes，也不改变站内 can() 判定。
  */
 export function grantablePermissionCodes(user: AnyUser | null | undefined): string[] {
   if (!user) return [];
   const perms = user.permissions || [];
   const known = ALL_PERMISSION_CODES as readonly string[];
-  if (perms.includes("*")) return [...known];
+  const delegable = (code: string) => code !== "*" && !code.endsWith(".manage");
+  if (perms.includes("*")) return known.filter(delegable);
   if (perms.length > 0) {
-    const listed = known.filter((code) => perms.includes(code));
-    const custom = perms.filter((code) => !known.includes(code));
+    const listed = known.filter((code) => delegable(code) && perms.includes(code));
+    const custom = perms.filter((code) => delegable(code) && !known.includes(code));
     return [...listed, ...custom];
   }
   return [];
 }
 
 /**
- * 目录域控制台的准入码。`/admin` 这个页面**就是目录控制台**（页签全是条目/定义/来源/
- * 货架/审核/合并/交换），所以它的闸门只能是目录域自己的码。
+ * 目录工作面的准入码：条目/定义/来源/货架/审核/合并/交换只接受目录域自己的权限。
  *
  * 账号、社区、存储三个域的管理台已经是独立应用（各自的 admin/ 应用 + 网关
  * /admin/{account,community,storage}/ 前缀），它们的码不构成进入目录工作面的凭据：
- * 混在一起会让只有账号域权限的人落进一个页签全是 403 的目录外壳，还以为管理台坏了。
+ * 共享限流页单独按服务权限开放，不通过这份码表授予其他目录工作面的访问权。
  */
 export const CATALOG_CONSOLE_CODES = [
   CATALOG_DEFINITIONS_MANAGE,
@@ -112,6 +113,7 @@ export const COMMUNITY_CONSOLE_CODES = [
   COMMUNITY_POST_MODERATE,
   COMMUNITY_REPORT_REVIEW,
   COMMUNITY_TOPIC_PIN,
+  COMMUNITY_RATE_LIMITS_MANAGE,
 ] as const;
 
 export const STORAGE_CONSOLE_CODES = [STORAGE_ASSET_MODERATE] as const;

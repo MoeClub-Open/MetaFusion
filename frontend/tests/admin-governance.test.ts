@@ -24,3 +24,11 @@ test("lifecycle and wildcard grants expose their corresponding management work",
   assert.equal(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), "definitions"), false);
   for (const section of ["overview", "reviews", "definitions", "shelves", "merge"] as const) assert.ok(canUseCatalogAdminTab(user(["*"]), section));
 });
+
+test("community rate-limit grant opens only the shared rate-limit workspace", () => {
+  const operator = user(["community.rate_limits.manage"]);
+  assert.ok(canUseCatalogAdminTab(operator, "ratelimits"));
+  for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "shelves", "modules", "exchange"] as const) {
+    assert.equal(canUseCatalogAdminTab(operator, section), false);
+  }
+});

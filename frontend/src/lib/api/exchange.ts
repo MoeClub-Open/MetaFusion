@@ -9,12 +9,7 @@
 // 两个端点的成功响应都**没有外层包装**：GET 回裸实体快照，POST 回保存后的实体本身，
 // 所以这里不做解包，也不臆造 { data: … } 之类的外壳。
 //
-// 已知后端接线缺陷（界面如实显示，不在前端粉饰）：
-// registerExchange 注册在 http.go:252，而 api.Use(attachUser(s)) 在 http.go:264，
-// gin 的 Use 只对之后注册的路由生效 —— /api/exchange/* 的 handler 链里没有 attachUser、
-// user(c) 恒为 nil。于是导出永远按匿名可见性判（只能取到 published 实体，自己的草稿 404），
-// 提交提案永远拿不到登录态、恒返回 401 authentication_required。后端修好后前端无需改动，
-// 所以这里不写任何"绕过"逻辑（例如改用 /api/catalog 端点替代）。
+// 路由在 attachUser 与审计中间件之后注册；导出可见性与提案作者均由服务端身份判定。
 
 import { ApiError, fetchApi } from "./client";
 import { localizeCatalogError } from "@/lib/catalogErrors";
@@ -93,8 +88,8 @@ export function fetchExchangeEntity(id: string): Promise<ExchangeEntity> {
   return fetchApi<ExchangeEntity>(`/exchange/entities/${encodeURIComponent(id)}`);
 }
 
-/** 来源 kind 的闭集取自 validation.go:181，下拉只给这三个值。 */
-export const EXCHANGE_SOURCE_KINDS = ["url", "publication", "self"] as const;
+/** 新编辑凭据只接受外部链接或出版物；历史 self 不可用于新的提案。 */
+export const EXCHANGE_SOURCE_KINDS = ["url", "publication"] as const;
 export type ExchangeSourceKind = (typeof EXCHANGE_SOURCE_KINDS)[number];
 
 export interface ExchangeSource {
