@@ -29,6 +29,7 @@ func TestOpenAPIRouteCoverage(t *testing.T) {
 		path := strings.ReplaceAll(clean, ":id", "{id}")
 		path = strings.ReplaceAll(path, ":code", "{code}")
 		path = strings.ReplaceAll(path, ":position", "{position}")
+		path = strings.ReplaceAll(path, ":slug", "{slug}")
 		p, ok := paths[path].(map[string]any)
 		if !ok || p[strings.ToLower(route.Method)] == nil {
 			t.Fatalf("undocumented endpoint: %s %s", route.Method, path)
@@ -54,6 +55,7 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 		path := strings.ReplaceAll(clean, ":id", "{id}")
 		path = strings.ReplaceAll(path, ":code", "{code}")
 		path = strings.ReplaceAll(path, ":position", "{position}")
+		path = strings.ReplaceAll(path, ":slug", "{slug}")
 		registered[strings.ToLower(route.Method)+" "+path] = true
 	}
 	paths := doc["paths"].(map[string]any)
@@ -100,6 +102,7 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 		{"/catalog/tags", "get", "limit"},
 		{"/catalog/shelves/feed", "get", "per_shelf"},
 		{"/catalog/entities", "get", "field"},
+		{"/catalog/entities", "get", "shelf"},
 	} {
 		op := paths[p.path].(map[string]any)[p.method].(map[string]any)
 		params, _ := op["parameters"].([]any)

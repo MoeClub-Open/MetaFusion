@@ -103,6 +103,42 @@ func TestOpenSearchIntegrationStructuralRebuild(t *testing.T) {
 	}
 }
 
+func TestOpenSearchIntegrationMusicShelfPagination(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	sh, err := f.s.ResolveShelf(ctx, "music", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{}
+	for _, form := range []string{"song", "single", "original_album"} {
+		e := f.save(Entity{Kind: "work", Title: "Music fixture " + form, Attributes: map[string]any{"creation_form": form}})
+		allowed[e.ID] = true
+	}
+	for _, form := range []string{"tv_anime", "manga_serialized", "audio_drama"} {
+		f.save(Entity{Kind: "work", Title: "Music fixture " + form, Attributes: map[string]any{"creation_form": form, "tags": []any{"music", "song"}}})
+	}
+	useTestSearch(t, f.s)
+	opts := ListOptions{Query: "Music fixture", Limit: 2, Shelf: &sh.Query}
+	page, err := f.s.Search(ctx, opts, nil, "")
+	if err != nil || page.Total != 3 || len(page.Items) != 2 || !page.HasMore {
+		t.Fatalf("first music page: %+v err=%v", page, err)
+	}
+	second, err := f.s.Search(ctx, opts, nil, page.NextCursor)
+	if err != nil || second.Total != 3 || len(second.Items) != 1 || second.HasMore {
+		t.Fatalf("second music page: %+v err=%v", second, err)
+	}
+	for _, e := range append(page.Items, second.Items...) {
+		if !allowed[e.ID] {
+			t.Fatalf("wrong form or duplicate search result: %+v", e)
+		}
+		delete(allowed, e.ID)
+	}
+	if len(allowed) != 0 {
+		t.Fatalf("music results missing: %v", allowed)
+	}
+}
+
 type openSearchTestTransport func(*http.Request) (*http.Response, error)
 
 func (f openSearchTestTransport) RoundTrip(r *http.Request) (*http.Response, error) {

@@ -309,10 +309,9 @@ export default function HomePage() {
   );
 }
 
-// 分区“查看全部”进入探索页，使用规则的全部开放标签。
+// 分区“查看全部”由服务端解析完整规则，包含字段、词项和个人覆盖。
 function shelfExploreParam(shelf: ShelfLike): string {
-  const params = new URLSearchParams({ kind: "work" });
-  for (const tag of shelf.query?.tags || []) if (tag) params.append("tags", tag);
+  const params = new URLSearchParams({ kind: "work", shelf: shelf.slug });
   return params.toString();
 }
 

@@ -135,6 +135,24 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 	}
 	term("kind", o.Kind)
 	terms("kind", o.Kinds)
+	if o.Shelf != nil {
+		term("kind", "work")
+		terms("tags", trimAll(o.Shelf.Tags))
+		for _, conditions := range []map[string][]string{o.Shelf.Fields, o.Shelf.VocabTerms} {
+			for _, field := range sortedKeys(conditions) {
+				values := trimAll(conditions[field])
+				if len(values) == 0 {
+					continue
+				}
+				filters = append(filters, map[string]any{"nested": map[string]any{
+					"path": "fields", "query": map[string]any{"bool": map[string]any{"filter": []any{
+						map[string]any{"term": map[string]any{"fields.path": field}},
+						map[string]any{"terms": map[string]any{"fields.value": values}},
+					}}},
+				}})
+			}
+		}
+	}
 	term("status", o.Status)
 	term("original_language", o.OriginalLanguage)
 	term("work_ids", o.WorkID)
@@ -287,6 +305,11 @@ type EntitySearchPage struct {
 // snapshot, while returned documents are rechecked against current PostgreSQL.
 func (s *Store) Search(ctx context.Context, o ListOptions, u *User, rawCursor string) (EntitySearchPage, error) {
 	out := EntitySearchPage{Items: []Entity{}, TotalRelation: "index_snapshot"}
+	// Relationship existence is evaluated in PostgreSQL, not in the text index.
+	// Reject this combination rather than showing counts or pages from a wider query.
+	if o.Shelf != nil && len(trimAll(o.Shelf.Relations)) > 0 {
+		return out, errParam(codeInvalidQueryParam)
+	}
 	if s.OpenSearch == nil || !s.OpenSearch.ready.Load() {
 		return out, errSearchUnavailable
 	}

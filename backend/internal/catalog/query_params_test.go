@@ -53,6 +53,7 @@ func TestListRejectsUnsendableQueryParams(t *testing.T) {
 		{"overlong", "/api/catalog/entities?q=" + strings.Repeat("a", listTextParamLimit+1), codeQueryTooLong},
 		{"attribute value", "/api/catalog/entities?kind=work&value=%00", codeInvalidQueryParam},
 		{"tag", "/api/catalog/entities?tags=%FF", codeInvalidQueryParam},
+		{"shelf", "/api/catalog/entities?shelf=%00", codeInvalidQueryParam},
 		{"tags endpoint", "/api/catalog/tags?q=%00", codeInvalidQueryParam},
 		{"limit not a number", "/api/catalog/entities?limit=abc", codeInvalidLimit},
 		{"limit fraction", "/api/catalog/entities?limit=1.5", codeInvalidLimit},

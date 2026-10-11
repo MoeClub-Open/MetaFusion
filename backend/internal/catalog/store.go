@@ -725,6 +725,8 @@ type ListOptions struct {
 	// SearchIDs 是 OpenSearch 提供的候选 ID 顺序。它仅由 HTTP 列表处理器内部填写，
 	// 最终查询仍用数据库可见性和筛选谓词收口，不作为外部参数暴露。
 	SearchIDs []string
+	// Shelf contains the caller's resolved section rule; only the server fills it.
+	Shelf *ShelfQuery
 	// Kinds 命中任一结构层级。
 	Kinds []string
 	// Tags 按 TagsMode（any / all，默认 any）过滤 attributes.tags，走 jsonb 容器包含，
@@ -867,6 +869,9 @@ func nestedFieldPredicate(doc Definitions, o ListOptions, args *[]any) (string, 
 
 func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]any) ([]string, error) {
 	parts := []string{"status NOT IN ('deleted','merged')"}
+	if o.Shelf != nil {
+		parts = append(parts, shelfFilter(Shelf{Query: *o.Shelf}, args, "catalog.entities")...)
+	}
 	add := func(clause string, value any) {
 		*args = append(*args, value)
 		parts = append(parts, fmt.Sprintf(clause, len(*args)))

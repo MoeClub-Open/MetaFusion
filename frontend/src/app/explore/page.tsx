@@ -31,6 +31,7 @@ import {
 import { TabPanel } from "@/components/ui/TabPanel";
 import { Select } from "@/components/ui/Select";
 import { languageLabel, searchLanguages } from "@/lib/languages";
+import { resolveLocalizedName } from "@/lib/localizedNames";
 
 /** 列表项：图片结构复用 lib/cover 的 CoverBearing（首张即封面只在那一处定义）。 */
 interface EntityItem extends CoverBearing {
@@ -72,6 +73,19 @@ function ExploreInner() {
   const currentKind = searchParams.get("kind") || "all";
   const currentStatus = searchParams.get("status") || "published";
   const currentQ = searchParams.get("q") || "";
+  const currentShelf = searchParams.get("shelf") || "";
+  const [shelfNames, setShelfNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    setShelfNames({});
+    if (currentShelf) {
+      fetch(`/api/catalog/shelves/${encodeURIComponent(currentShelf)}`, { credentials: "same-origin" })
+        .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+        .then((data) => { if (alive) setShelfNames(data.names || {}); })
+        .catch(() => { if (alive) setShelfNames({}); });
+    }
+    return () => { alive = false; };
+  }, [currentShelf]);
   // 标签可多选；默认任一命中，all 要求同时包含全部选中标签。
   const currentTagsMode = searchParams.get("tags_mode") || "any";
   const currentTags = useMemo(
@@ -193,6 +207,7 @@ function ExploreInner() {
     if (currentKind !== "all") params.set("kind", currentKind);
     if (currentStatus) params.set("status", currentStatus);
     if (currentQ) params.set("q", currentQ);
+    if (currentShelf) params.set("shelf", currentShelf);
     currentTags.forEach((tag) => params.append("tags", tag));
     if (currentTagsMode !== "any") params.set("tags_mode", currentTagsMode);
     if (currentOriginalLanguage) params.set("original_language", currentOriginalLanguage);
@@ -251,7 +266,7 @@ function ExploreInner() {
       })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [currentKind, currentStatus, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
+  }, [currentKind, currentStatus, currentQ, currentShelf, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
 
   const updateFilters = (updates: Record<string, string>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -283,6 +298,9 @@ function ExploreInner() {
 
   // 已选条件在结果上方始终可见；手机端收起面板后仍能逐项撤销。
   const appliedFilters: { id: string; label: string; remove: () => void }[] = [];
+  if (currentShelf) {
+    appliedFilters.push({ id: "shelf", label: resolveLocalizedName(shelfNames, locale, currentShelf), remove: () => updateFilters({ shelf: "" }) });
+  }
   if (currentQ) {
     appliedFilters.push({ id: "q", label: `${t("search.submit")}: ${currentQ}`, remove: () => updateFilters({ q: "" }) });
   }
@@ -308,7 +326,7 @@ function ExploreInner() {
 
   const clearFilters = () => {
     const next = new URLSearchParams(searchParams.toString());
-    for (const key of ["q", "kind", "status", "tags", "tags_mode", "original_language", "has_pictures", "page", "cursor"]) next.delete(key);
+    for (const key of ["q", "kind", "status", "shelf", "tags", "tags_mode", "original_language", "has_pictures", "page", "cursor"]) next.delete(key);
     router.push(next.size ? "/explore?" + next.toString() : "/explore");
   };
 
@@ -366,6 +384,7 @@ function ExploreInner() {
     currentKind,
     currentStatus,
     currentQ,
+    currentShelf,
     currentTags.join(","),
     currentTagsMode,
     currentPage,
