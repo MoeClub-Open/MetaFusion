@@ -30,8 +30,17 @@ import { CoverOriginNote } from "@/components/common/CoverOriginNote";
 import { resolveCover } from "@/lib/cover";
 import ReportButton from "@/components/report/ReportButton";
 import { ErrorMessage } from "@/components/catalog/Fields";
-import { ConfiguredBlock, ConfiguredBlocks } from "@/components/catalog/ConfiguredBlocks";
 import { InclusionSources } from "@/components/catalog/InclusionContents";
+import { TabBar, useHashTab, type TabItem } from "@/components/catalog/DetailTabs";
+import { ExternalAuthorityLinks } from "@/components/entity/ExternalAuthorityLinks";
+import { EntityRevisions } from "@/components/catalog/EntityRevisions";
+import { EntityCommentsPanel } from "@/components/entity/EntityCommentsPanel";
+
+/** 页签没有数据时的统一占位。 */
+function EmptyPanel() {
+  const { t } = useI18n();
+  return <Card padding="section"><p className="text-xs text-text-muted text-center">{t("common.noData")}</p></Card>;
+}
 import {
   ArrowLeft,
   ArrowRightLeft,
@@ -42,6 +51,11 @@ import {
   ExternalLink,
   Layers,
   Users,
+  BookOpen,
+  Disc,
+  Network,
+  MessageSquare,
+  History,
 } from "lucide-react";
 
 
@@ -402,6 +416,30 @@ export default function ReleaseDetailLayout() {
     }
     return Array.from(groups.entries());
   }, [mediumTree]);
+
+  // 页签（与作品详情页一致）：概览 · 载体 · 参与与署名 · 关联 · 评论 · 修订历史与证据溯源。
+  const [aggregateCount, setAggregateCount] = useState<number | null>(null);
+  const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [revisions, setRevisions] = useState<any[]>([]);
+  const [revisionsState, setRevisionsState] = useState<"loading" | "ready" | "error">("loading");
+  useEffect(() => {
+    if (!releaseId) return;
+    let alive = true;
+    setRevisionsState("loading");
+    api<{ items: any[] }>(`/catalog/entities/${encodeURIComponent(releaseId)}/revisions`)
+      .then((res) => { if (alive) { setRevisions(Array.isArray(res?.items) ? res.items : []); setRevisionsState("ready"); } })
+      .catch(() => { if (alive) setRevisionsState("error"); });
+    return () => { alive = false; };
+  }, [releaseId]);
+  const sectionTabs: TabItem[] = [
+    { id: "overview", label: t("entity.page.navOverview"), icon: <BookOpen className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "mediums", label: t("release.detail.tabMediums"), badge: media.length, icon: <Disc className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "credits", label: t("release.detail.tabCredits"), badge: releaseStaffLoaded ? releaseStaffCount : undefined, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "relations", label: t("entity.page.navRelations"), badge: aggregateCount === null ? undefined : aggregateCount + expressionIds.length, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "comments", label: t("entity.page.communityTitle"), badge: commentCount ?? undefined, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "revisions", label: t("release.detail.tabRevisions"), badge: revisionsState === "ready" ? revisions.length : undefined, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+  ];
+  const { active: activeSection, select: selectSection } = useHashTab(sectionTabs);
 
   if (loading) {
     return (
@@ -813,8 +851,16 @@ export default function ReleaseDetailLayout() {
         }
       >
 
-        <ConfiguredBlocks blocks={blocksForEntity(dynamicDefs,"release",release.attributes)}>
-        <ConfiguredBlock code="editions">
+        {/* 与作品详情页同构：左侧外部链接卡片常驻，右侧页签。没有数据的页签照常显示并写「暂无数据」。 */}
+        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] items-start">
+        <aside className="min-w-0 space-y-4">
+          <ExternalAuthorityLinks entity={release} category="release" variant="list" emptyText={t("entity.authority.empty")} />
+        </aside>
+        <div className="min-w-0 space-y-4">
+        <TabBar ariaLabel={t("entity.page.sections")} active={activeSection} onSelect={selectSection} items={sectionTabs} />
+
+        <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={activeSection !== "overview"} className="space-y-4">
+
         {editionsError && <div className="space-y-2"><ErrorMessage error={editionsError}/><button type="button" onClick={() => setReloadKey((key) => key+1)}>{t("catalog.retry")}</button></div>}
         {blocksForEntity(dynamicDefs,"release",release.attributes).includes("editions") && siblingReleases.length > 1 && (
           <Card padding="none">
@@ -855,8 +901,73 @@ export default function ReleaseDetailLayout() {
           </Card>
         )}
 
-        </ConfiguredBlock>
-        <ConfiguredBlock code="directory">
+                <div className="space-y-3">
+        {attachments.length > 0 && (
+            <Collapsible title={t("release.detail.attachments")} count={attachments.length}>
+              <RecordList
+                items={attachments}
+                field={dynamicDefs?.fields?.attachments}
+                defs={dynamicDefs}
+                locale={locale}
+                fallbackLabel={(i) => t("release.detail.attachmentItem", { index: i + 1 })}
+              />
+            </Collapsible>
+          )}
+          {storeBonuses.length > 0 && (
+            <Collapsible title={t("release.detail.storeBonuses")} count={storeBonuses.length}>
+              <RecordList
+                items={storeBonuses}
+                field={dynamicDefs?.fields?.store_bonuses}
+                defs={dynamicDefs}
+                locale={locale}
+                fallbackLabel={(i) => t("release.detail.attachmentItem", { index: i + 1 })}
+              />
+            </Collapsible>
+          )}
+          {events.length > 0 && (
+            <Collapsible title={t("release.detail.releaseEvents")} count={events.length}>
+              <RecordList
+                items={events}
+                field={dynamicDefs?.fields?.events}
+                defs={dynamicDefs}
+                locale={locale}
+                fallbackLabel={(i) => t("release.detail.attachmentItem", { index: i + 1 })}
+              />
+            </Collapsible>
+          )}
+        </div>
+
+        {dynamicDefs && (
+          <Card padding="none">
+          <details className="px-3.5 sm:px-4 py-2.5">
+            <summary className="cursor-pointer font-mono text-[11px] text-text-faint hover:text-primary min-h-[32px] flex items-center">
+              {t("release.detail.comparableFields")}
+            </summary>
+            <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+              {Object.keys(attrs).map((k) => {
+                const field = dynamicDefs?.fields?.[k];
+                if (field && "comparable" in field && field.comparable === false) return null;
+                // 字段名只从一份定义里解析（getFieldName 在定义缺该字段时回落字段码本身）。
+                const name = getFieldName(dynamicDefs, k, locale);
+                const v = attrs[k];
+                const text = typeof v === "string" || typeof v === "number" ? String(v) : Array.isArray(v) ? t("release.detail.listCount", { count: v.length }) : "—";
+                if (["attachments", "store_bonuses", "events"].includes(k)) return null;
+                return (
+                  <div key={k} className="flex gap-2 min-w-0">
+                    <dt className="font-mono text-text-faint shrink-0">{name}</dt>
+                    <dd className="text-text-strong truncate">{text}</dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </details>
+          </Card>
+        )}
+
+        </div>
+
+        <div role="tabpanel" id="panel-mediums" aria-labelledby="tab-mediums" hidden={activeSection !== "mediums"} className="space-y-4">
+
         {formatGroups.length > 1 && (
           <nav aria-label={t("release.detail.formatTabs")} className="flex gap-1.5 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
             <button
@@ -967,8 +1078,26 @@ export default function ReleaseDetailLayout() {
           </div>
         )}
 
-        </ConfiguredBlock>
-        <ConfiguredBlock code="occurrences">
+                </div>
+
+        <div role="tabpanel" id="panel-credits" aria-labelledby="tab-credits" hidden={activeSection !== "credits"} className="space-y-4">
+
+        {(releaseStaffLoaded ? releaseStaffCount > 0 : true) && (
+          <section className="space-y-3" aria-label={t("work.detail.staffAndCharacters")}>
+            {releaseStaffCount > 0 && (
+              <SectionTitle icon={<Users className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
+                {t("work.detail.staffAndCharacters")}
+              </SectionTitle>
+            )}
+            <EntityStaffSection entityId={releaseId} onCount={handleReleaseStaffCount} />
+          </section>
+        )}
+
+                {releaseStaffLoaded && releaseStaffCount === 0 && <EmptyPanel />}
+        </div>
+
+        <div role="tabpanel" id="panel-relations" aria-labelledby="tab-relations" hidden={activeSection !== "relations"} className="space-y-4">
+
         {expressionIds.length > 0 && (
           <Collapsible title={t("release.detail.sameRecordingTitle")} count={expressionIds.length}>
             {/* 批量加载不完整时给出可重试提示，不静默留空表：实体与收录/署名分别统计，
@@ -1099,85 +1228,27 @@ export default function ReleaseDetailLayout() {
           </Collapsible>
         )}
 
-        </ConfiguredBlock>
-        <div className="space-y-3">
-        {attachments.length > 0 && (
-            <Collapsible title={t("release.detail.attachments")} count={attachments.length}>
-              <RecordList
-                items={attachments}
-                field={dynamicDefs?.fields?.attachments}
-                defs={dynamicDefs}
-                locale={locale}
-                fallbackLabel={(i) => t("release.detail.attachmentItem", { index: i + 1 })}
-              />
-            </Collapsible>
-          )}
-          {storeBonuses.length > 0 && (
-            <Collapsible title={t("release.detail.storeBonuses")} count={storeBonuses.length}>
-              <RecordList
-                items={storeBonuses}
-                field={dynamicDefs?.fields?.store_bonuses}
-                defs={dynamicDefs}
-                locale={locale}
-                fallbackLabel={(i) => t("release.detail.attachmentItem", { index: i + 1 })}
-              />
-            </Collapsible>
-          )}
-          {events.length > 0 && (
-            <Collapsible title={t("release.detail.releaseEvents")} count={events.length}>
-              <RecordList
-                items={events}
-                field={dynamicDefs?.fields?.events}
-                defs={dynamicDefs}
-                locale={locale}
-                fallbackLabel={(i) => t("release.detail.attachmentItem", { index: i + 1 })}
-              />
-            </Collapsible>
-          )}
+                <AggregateRelationList entityId={releaseId} onCount={setAggregateCount} />
+        {aggregateCount === 0 && expressionIds.length === 0 && <EmptyPanel />}
         </div>
 
-        {dynamicDefs && (
-          <Card padding="none">
-          <details className="px-3.5 sm:px-4 py-2.5">
-            <summary className="cursor-pointer font-mono text-[11px] text-text-faint hover:text-primary min-h-[32px] flex items-center">
-              {t("release.detail.comparableFields")}
-            </summary>
-            <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-              {Object.keys(attrs).map((k) => {
-                const field = dynamicDefs?.fields?.[k];
-                if (field && "comparable" in field && field.comparable === false) return null;
-                // 字段名只从一份定义里解析（getFieldName 在定义缺该字段时回落字段码本身）。
-                const name = getFieldName(dynamicDefs, k, locale);
-                const v = attrs[k];
-                const text = typeof v === "string" || typeof v === "number" ? String(v) : Array.isArray(v) ? t("release.detail.listCount", { count: v.length }) : "—";
-                if (["attachments", "store_bonuses", "events"].includes(k)) return null;
-                return (
-                  <div key={k} className="flex gap-2 min-w-0">
-                    <dt className="font-mono text-text-faint shrink-0">{name}</dt>
-                    <dd className="text-text-strong truncate">{text}</dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </details>
-          </Card>
-        )}
+        <div role="tabpanel" id="panel-comments" aria-labelledby="tab-comments" hidden={activeSection !== "comments"} className="space-y-4">
+          <EntityCommentsPanel entityId={releaseId} onCount={setCommentCount} />
+        </div>
 
-        <ConfiguredBlock code="credits">
-        {(releaseStaffLoaded ? releaseStaffCount > 0 : true) && (
-          <section className="space-y-3" aria-label={t("work.detail.staffAndCharacters")}>
-            {releaseStaffCount > 0 && (
-              <SectionTitle icon={<Users className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
-                {t("work.detail.staffAndCharacters")}
-              </SectionTitle>
-            )}
-            <EntityStaffSection entityId={releaseId} onCount={handleReleaseStaffCount} />
-          </section>
-        )}
-
-        </ConfiguredBlock>
-        <ConfiguredBlock code="relations"><AggregateRelationList entityId={releaseId} /></ConfiguredBlock>
-        </ConfiguredBlocks>
+        <div role="tabpanel" id="panel-revisions" aria-labelledby="tab-revisions" hidden={activeSection !== "revisions"} className="space-y-4">
+          {revisionsState === "error" ? (
+            <p role="alert" className="text-xs text-text-muted">{t("catalog.listFailed")}</p>
+          ) : revisionsState === "loading" ? (
+            <p className="text-xs text-text-muted">{t("catalog.loading")}</p>
+          ) : revisions.length === 0 ? (
+            <EmptyPanel />
+          ) : (
+            <Card padding="section"><EntityRevisions revisions={revisions} currentEntity={release} /></Card>
+          )}
+        </div>
+        </div>
+        </div>
 
       </PageShell>
     </div>
