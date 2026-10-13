@@ -488,6 +488,20 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		respond(c, stats, err)
 	})
 	cat.GET("/entities/:id", func(c *gin.Context) { e, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); respond(c, e, err) })
+	cat.GET("/entities/:id/quality", func(c *gin.Context) {
+		v, err := s.EntityQuality(c.Request.Context(), c.Param("id"), user(c))
+		respond(c, v, err)
+	})
+	cat.POST("/quality/batch", func(c *gin.Context) {
+		var in QualityBatchRequest
+		if !body(c, &in) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
+		v, err := s.QualityBatch(ctx, in, user(c))
+		respond(c, v, err)
+	})
 	cat.GET("/releases/:id/toc", func(c *gin.Context) {
 		v, err := s.ReleaseTableOfContents(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, v, err)

@@ -56,6 +56,8 @@ type CommitReceipt struct {
 	Applied bool              `json:"applied"`
 	Refs    map[string]string `json:"refs"`
 	Items   []CommitItem      `json:"items"`
+	// QualityWarnings 只在 preview 返回：对受影响实体的自动质量诊断，纯建议，不阻止提交。
+	QualityWarnings []QualityIssue `json:"quality_warnings,omitempty"`
 }
 type CommitConflict struct {
 	Operation      int      `json:"operation"`
@@ -517,6 +519,7 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 			out.Items = append(out.Items, item)
 		}
 		if preview {
+			out.QualityWarnings = commitQualityWarnings(ctx, tx, v, out.Items, &u)
 			return errPreviewRollback
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE catalog.commits SET result=$2 WHERE id=$1`, in.ID, encode(out))
