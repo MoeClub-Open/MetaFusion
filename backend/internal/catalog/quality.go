@@ -15,7 +15,7 @@ import (
 // 状态三档：
 //   - complete           自动诊断未发现缺项（界面文案「无缺项」）。注意：这不代表经过人工核验，
 //     只代表本次自动检查项全部通过；
-//   - partial            存在结构性缺项（缺载体/缺曲目、曲目没有收录内容、序号不连续、必填字段为空）；
+//   - partial            存在结构性缺项（缺载体/缺曲目、曲目没有收录内容、序号未从1连续、必填字段为空）；
 //   - needs_verification 存在悬挂引用等需要人工核实的数据问题。
 const (
 	QualityComplete          = "complete"
@@ -235,12 +235,16 @@ func auditMediumTracks(ctx context.Context, q queryer, mediumID string, u *User,
 	return nil
 }
 
-// positionGap 检查顶层曲目序号是否为 1..n（或 0..n-1）连续不重复；不连续返回说明。
+// positionGap 检查同一 medium 内顶层曲目序号是否从 1 起连续不重复（1..n）。
+// 不接受 0-based，也不接受从 2 起的「自洽连续」——缺第 1 轨也是 gap（如《アルストロメリア》）。
 func positionGap(ps []int) string {
-	if len(ps) < 2 {
+	if len(ps) == 0 {
 		return ""
 	}
 	sort.Ints(ps)
+	if ps[0] != 1 {
+		return fmt.Sprintf("count=%d positions=%d..%d", len(ps), ps[0], ps[len(ps)-1])
+	}
 	for i := 1; i < len(ps); i++ {
 		if ps[i] != ps[i-1]+1 {
 			return fmt.Sprintf("count=%d positions=%d..%d", len(ps), ps[0], ps[len(ps)-1])
