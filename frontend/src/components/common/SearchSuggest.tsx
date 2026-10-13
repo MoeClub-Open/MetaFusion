@@ -1,5 +1,6 @@
 "use client";
 
+import { clampSearchQuery, searchInputLimitProps } from "@/lib/searchQuery";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
@@ -111,8 +112,10 @@ export function SearchSuggest({
     setFocused(false);
     setActive(-1);
     inputRef.current?.blur();
-    onSubmit(q);
+    onSubmit(clampSearchQuery(q));
   };
+
+  const limit = searchInputLimitProps(onValueChange);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const action = searchKeyAction({ key: e.key, isComposing: composingRef.current || e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode }, open, active, items.length);
@@ -154,8 +157,10 @@ export function SearchSuggest({
         aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
         aria-autocomplete="list"
         aria-label={ariaLabel || placeholder}
+        // 输入端就卡住后端上限（256 UTF-8 字节），免得提交后才拿到 400 query_too_long。
+        maxLength={limit.maxLength}
         onChange={(e) => {
-          onValueChange(e.target.value);
+          limit.onChange(e);
           setActive(-1);
         }}
         onFocus={() => setFocused(true)}
@@ -164,7 +169,7 @@ export function SearchSuggest({
           setTimeout(() => setFocused(false), 120);
         }}
         onCompositionStart={() => { composingRef.current = true; }}
-        onCompositionEnd={() => { composingRef.current = false; }}
+        onCompositionEnd={(e) => { composingRef.current = false; limit.onCompositionEnd(e); }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className={

@@ -27,6 +27,9 @@ import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isDistinctOriginalTitle, findRowForLocale, buildTitleChain } from "@/lib/titles";
 import { isNotFoundError, localizeCatalogError } from "@/lib/catalogErrors";
+import { EntityLoadError } from "@/components/catalog/EntityLoadError";
+
+const isInvalidIdError = (message?: string | null) => !!message && message.trim().split(":")[0].trim() === "invalid_id";
 import { localizeCommunityError } from "@/lib/communityErrors";
 import { copyText } from "@/lib/clipboard";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
@@ -772,20 +775,12 @@ export function EntityDetailView({ id }: { id: string }) {
       <div className="min-h-screen bg-background relative flex flex-col overflow-clip">
         <div className="absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
         <PageShell width="narrow" center>
-          {/* 后端读取失败给的是稳定码（not_found）；裸码不能直接给用户看。 */}
-          <div className="font-mono text-sm text-red-500 dark:text-danger">
-            {!error || isNotFoundError(error) ? t("entity.detail.notFound") : localizeCatalogError(error, t)}
-          </div>
-          {error && !isNotFoundError(error) && (
-            <button type="button" onClick={() => void load()} className="text-sm text-primary hover:underline cursor-pointer">{t("catalog.retry")}</button>
-          )}
-          <Link
-            href="/explore"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-all duration-base ease-soft"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>{t("nav.catalog")}</span>
-          </Link>
+          {/* 不存在 / ID 非法：不给重试；其余失败视为网络或服务故障，才给重试。 */}
+          <EntityLoadError
+            kind={!error || isNotFoundError(error) || isInvalidIdError(error) ? "not-found" : "network"}
+            onRetry={() => void load()}
+            message={error ? localizeCatalogError(error, t) : undefined}
+          />
         </PageShell>
       </div>
     );

@@ -1,5 +1,6 @@
 "use client";
 
+import { searchInputLimitProps } from "@/lib/searchQuery";
 import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -309,7 +310,17 @@ export function Compare({ ids, revisions, mode }: { ids: string; revisions?: str
   // 变更对比：带 ?revisions= 即在（历史页勾选两版进来），或页签切过去。
   // 只带 mode=revisions 而不带 revisions 不是死路了——选取器就在对比页里。
   const revisionMode = !!revisions || mode === "revisions";
-  const entityQuery = selectedIds.length ? `?ids=${encodeURIComponent(selectedIds.join(","))}` : "";
+  // 切换模式时保留另一种模式的参数：从实体对比切到变更对比再切回来，ids 不丢。
+  const modeHref = (target: "entities" | "revisions") => {
+    const qs = new URLSearchParams();
+    if (target === "revisions") qs.set("mode", "revisions");
+    if (selectedIds.length) qs.set("ids", selectedIds.join(","));
+    else if (ids) qs.set("ids", ids);
+    // revisions 一出现就进变更模式，所以只在切到变更对比时带上。
+    if (target === "revisions" && revisions) qs.set("revisions", revisions);
+    const q = qs.toString();
+    return `/compare${q ? `?${q}` : ""}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -326,7 +337,7 @@ export function Compare({ ids, revisions, mode }: { ids: string; revisions?: str
           {/* 两种对比共用一个 /compare：实体横向对比，与修订级变更 diff。 */}
           <div className="inline-flex rounded-lg border border-border bg-muted/20 p-1" role="tablist">
             <Link
-              href={`/compare${entityQuery}`}
+              href={modeHref("entities")}
               role="tab"
               aria-selected={!revisionMode}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-fast ease-soft ${
@@ -336,7 +347,7 @@ export function Compare({ ids, revisions, mode }: { ids: string; revisions?: str
               {t("compare.modeEntities")}
             </Link>
             <Link
-              href={`/compare?mode=revisions${revisions ? `&revisions=${encodeURIComponent(revisions)}` : ""}`}
+              href={modeHref("revisions")}
               role="tab"
               aria-selected={revisionMode}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-fast ease-soft ${
@@ -531,7 +542,7 @@ export function Compare({ ids, revisions, mode }: { ids: string; revisions?: str
                 type="text"
                 placeholder={t("catalog.compareSearchPlaceholder")}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                {...searchInputLimitProps(setSearchQuery)}
                 className="w-full pl-10 pr-10 py-2.5 bg-background border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-base ease-soft"
               />
               {searchQuery && (

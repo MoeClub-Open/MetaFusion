@@ -1,5 +1,6 @@
 "use client";
 
+import { searchInputLimitProps } from "@/lib/searchQuery";
 // /compare 的「变更对比」模式。两条入口，同一套渲染：
 //   1) 深链 ?revisions=<实体>:<版本>,<实体>:<版本> —— 实体历史页勾选两版进来，可跨实体；
 //   2) 对比页自带的选取器 —— 直接选实体 + 任意两版看字段级 diff，不必先去历史页。
@@ -195,7 +196,7 @@ function RevisionWorkbench({ refs }: { refs: RevRef[] }) {
                 type="text"
                 placeholder={t("catalog.compareSearchPlaceholder")}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                {...searchInputLimitProps(setQuery)}
                 onKeyDown={(e) => e.key === "Enter" && pickFromInput()}
                 className="w-full pl-10 pr-10 py-2.5 bg-background border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-base ease-soft"
               />
