@@ -863,52 +863,20 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.Compare(c.Request.Context(), strings.Split(c.Query("ids"), ","), user(c))
 		respond(c, gin.H{"items": v}, err)
 	})
-	// 导入端点按 catalog.import.submit 收口（账号服务已把该码分配给目录编辑/目录管理员组）：
-	// 预览与落库同权限——两者都按载荷里的来源 ID 出站抓取，匿名预览是免费的出站放大面。
-	// 预览另有分集分页与 ≤8 并发详情抓取，因此按 /compare 同档加 10/min 限流；
-	// 顺序为先鉴权后限流：限流桶按 IP+路由计数，不该被未授权流量挤占。
-	imp := api.Group("/importer")
-	imp.POST("/preview", required(PermissionImportSubmit), func(c *gin.Context) {
-		var in ImporterPreviewRequest
-		if !body(c, &in) {
-			return
-		}
-		if strings.TrimSpace(in.URLOrID) == "" {
-			c.JSON(400, gin.H{"error": "invalid_payload"})
-			return
-		}
-		v, err := s.Preview(c.Request.Context(), in.Source, in.URLOrID, in.EntityType)
-		if err == nil {
-			c.JSON(200, v)
-			return
-		}
-		respond(c, nil, err)
-	})
-	imp.POST("/import", required(PermissionImportSubmit), func(c *gin.Context) {
-		auditlog.Describe(c, auditlog.Detail{TargetType: "entity"})
-		var in ImporterImportRequest
-		if !body(c, &in) {
-			return
-		}
-		v, err := s.Import(c.Request.Context(), in, *user(c))
-		if err == nil {
-			targetType, targetID, changes := importChangeDetail(in, v)
-			auditlog.Describe(c, auditlog.Detail{TargetType: targetType, TargetID: targetID, Changes: changes})
-			// 导入完成回执（收件人 = 发起人）。失败只记日志、不改响应：
-			// 导入本身已经落库成功，回执丢了不该让用户以为导入失败；但也不能静默，
-			// 否则"通知没来"会变成无法排查的悬案。
-			source, _ := normalizeImporterSource(in.Source)
-			if nerr := s.notifyImportCompleted(c.Request.Context(), *user(c), source, v); nerr != nil {
-				slog.Error("目录服务：导入完成通知写入失败", "err", nerr.Error())
-			}
-		}
-		respond(c, v, err)
-	})
-	// 可用来源清单与导入端点同权限（同一功能面）：它只读注册表，不做出站抓取，
-	// 因此按普通列表口径处理，不额外限流。界面拿到的 id 一定是真有适配器的。
-	imp.GET("/sources", required(PermissionImportSubmit), func(c *gin.Context) {
-		v, err := s.ImporterSources(c.Request.Context())
+	// 外部来源只读查询：出站抓取有放大面，要求登录（required("")），不再使用已删除的
+	// catalog.import.submit。出站站点限速见 outbound_throttle.go（Wait），与入站 rate_budget 无关。
+	extSrc := api.Group("/external-sources", required(""))
+	extSrc.GET("", func(c *gin.Context) {
+		v, err := s.ExternalSources(c.Request.Context())
 		respond(c, gin.H{"items": v}, err)
+	})
+	extSrc.POST("/query", func(c *gin.Context) {
+		var in ExternalSourceQueryRequest
+		if !body(c, &in) {
+			return
+		}
+		v, err := s.QueryExternalSource(c.Request.Context(), in)
+		respond(c, v, err)
 	})
 	// 关系写端点强制 catalog.relation.edit：与实体编辑分开的码（账号服务已分配），
 	// 端点级闸门挡住无码者的写请求，细粒度两端判定仍在 SaveRelation（canWriteRelation/canAttachToTarget）。

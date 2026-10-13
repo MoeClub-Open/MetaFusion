@@ -4,10 +4,9 @@
 // 校验：cd frontend && node scripts/generate-contracts.mjs --check
 
 // ── catalog ──
-// 目录权限：条目/关系/定义/生命周期/导入/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。
+// 目录权限：条目/关系/定义/生命周期/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。
 export const CATALOG_DEFINITIONS_MANAGE = "catalog.definitions.manage" as const;
 export const CATALOG_ENTITY_EDIT = "catalog.entity.edit" as const;
-export const CATALOG_IMPORT_SUBMIT = "catalog.import.submit" as const;
 export const CATALOG_LIFECYCLE_MANAGE = "catalog.lifecycle.manage" as const;
 export const CATALOG_RELATION_EDIT = "catalog.relation.edit" as const;
 export const CATALOG_SHELVES_MANAGE = "catalog.shelves.manage" as const;
@@ -15,7 +14,6 @@ export const CATALOG_SHELVES_MANAGE = "catalog.shelves.manage" as const;
 export const CATALOG_PERMISSION_CODES = [
   CATALOG_DEFINITIONS_MANAGE,
   CATALOG_ENTITY_EDIT,
-  CATALOG_IMPORT_SUBMIT,
   CATALOG_LIFECYCLE_MANAGE,
   CATALOG_RELATION_EDIT,
   CATALOG_SHELVES_MANAGE,
@@ -85,7 +83,6 @@ export const ALL_PERMISSION_CODES = [
   "auth.users.manage",
   "catalog.definitions.manage",
   "catalog.entity.edit",
-  "catalog.import.submit",
   "catalog.lifecycle.manage",
   "catalog.relation.edit",
   "catalog.shelves.manage",

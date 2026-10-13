@@ -27,7 +27,7 @@
 | auth | `/api/admin/audit-logs` | 跨服务审计的唯一读取面，见[审计契约](./audit-log.md) |
 | auth | `/api/oauth/*`、`/api/oidc/jwks`、`/api/.well-known/openid-configuration`、`/.well-known/*` | 授权、discovery 与公钥；只有 auth 签发令牌 |
 | auth | `/api/developer/*`、`/api/admin/oauth/*` | 开发者自助登记与管理员客户端治理 |
-| catalog | `/api/catalog/*`、`/api/importer/*`、`/api/exchange/*`、`/api/openapi.json` | 目录、导入、交换与运行时 API 契约 |
+| catalog | `/api/catalog/*`、`/api/external-sources/*`、`/api/exchange/*`、`/api/openapi.json` | 目录、外部来源只读查询、交换与运行时 API 契约 |
 | catalog | `/api/admin/catalog-definitions*`、`/api/admin/external-databases*`、`/api/admin/shelves*`、`/api/admin/rate-limits` | 目录定义、外部库、货架与额度策略 |
 | catalog | `/api/notifications*` | 通知收件箱；internal 投递由调用服务凭 INTERNAL_API_TOKEN 授权 |
 | catalog | `/api/version`、`/api/capabilities` | 运行版本身份和[声明式能力](./capabilities.md) |

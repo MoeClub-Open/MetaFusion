@@ -4,10 +4,10 @@ import (
 	"context"
 )
 
-// ImporterSource 是导入弹窗可选的来源项。
+// ImporterSource 是外部来源查询可选的来源项。
 // id / category / 展示元数据三者都不是前端或后端各抄一份的常量：
 // id 来自代码里的适配器集合（真实实现），元数据来自 external databases 注册表，
-// 后台改名、换图标或调整适用范围后，导入弹窗下一次打开即生效。
+// 后台改名、换图标或调整适用范围后，查询端点下一次请求即生效。
 type ImporterSource struct {
 	ID          string            `json:"id"`
 	Names       map[string]string `json:"names"`
@@ -18,7 +18,7 @@ type ImporterSource struct {
 }
 
 // importerAdapterCodes 是**真正实现了适配器**的来源 id，与 normalizeImporterSource
-// 接受的具体来源一一对应。新增一个可导入来源时，必须同时在
+// 接受的具体来源一一对应。新增一个可查询来源时，必须同时在
 // externalDatabaseSeeds 里有对应的注册表行（importer_sources_test 直接断言这一点），
 // 否则下方合成会丢掉它——界面不撒谎的前提是这份清单只增真实条目。
 //
@@ -67,11 +67,11 @@ func buildImporterSources(rows []ExternalDatabase) []ImporterSource {
 	return out
 }
 
-// ImporterSources 返回可用导入源清单。
+// ImporterSources 返回可查询外部来源清单（ExternalSources 同实现）。
 //
 // 为什么读全表（含停用行）：注册表的 is_enabled 管的是"外链字段是否出现"
 // （GET /catalog/external-databases 只回启用项），而"这个库有没有导入适配器"是代码事实；
-// 把一个适配器仍在的来源从导入界面抹掉只会让导入功能无源可选。停用与适配器的关系
+// 把一个适配器仍在的来源从清单抹掉只会让查询功能无源可选。停用与适配器的关系
 // 由管理台那一列呈现给管理员，不在读取侧静默改语义。
 func (s *Store) ImporterSources(ctx context.Context) ([]ImporterSource, error) {
 	// 纯映射单测用的 Store{} 没有库：回落到种子元数据，不引入新的失败形态。

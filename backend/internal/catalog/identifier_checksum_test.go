@@ -1,14 +1,9 @@
 package catalog
 
 import (
-	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 )
 
 func TestISBNAndGTINChecksums(t *testing.T) {
@@ -69,65 +64,3 @@ func TestImporterISBNConversionAndRawPreservation(t *testing.T) {
 	}
 }
 
-func TestImporterBarcodePreflightChecksOnlyDeclaredStandardShapes(t *testing.T) {
-	for _, tc := range []struct{ value, want string }{
-		{"9780306406152", "invalid_barcode"},
-		{"0306406153", "invalid_isbn"},
-		{"4006381333932", "invalid_barcode"},
-		{"96385075", "invalid_barcode"},
-		{"036000291453", "invalid_barcode"},
-		{"10012345000018", "invalid_barcode"},
-		{"9780306406157", ""},
-		{"0306406152", ""},
-		{"REAL-1", ""},
-	} {
-		err := importerCheckAttrs(Defaults(), "release", map[string]any{"barcode": tc.value})
-		if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
-			t.Errorf("barcode %q error = %v, want %q", tc.value, err, tc.want)
-		}
-	}
-}
-
-func TestImporterBarcodePreflightHTTPErrorCodes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, tc := range []struct{ raw, want string }{
-		{"0306406153", "invalid_isbn"},
-		{"9780306406152", "invalid_barcode"},
-	} {
-		err := importerCheckAttrs(Defaults(), "release", map[string]any{"barcode": tc.raw})
-		response := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(response)
-		respond(ctx, nil, err)
-		var body struct {
-			Error string `json:"error"`
-		}
-		if decodeErr := json.Unmarshal(response.Body.Bytes(), &body); decodeErr != nil {
-			t.Fatal(decodeErr)
-		}
-		if response.Code != http.StatusBadRequest || body.Error != tc.want {
-			t.Fatalf("HTTP barcode failure = %d %s, want 400 %s", response.Code, response.Body, tc.want)
-		}
-	}
-}
-
-func TestPostgresImporterInvalidBarcodeKeepsZeroWrites(t *testing.T) {
-	for _, place := range []string{"release", "work fallback"} {
-		t.Run(place, func(t *testing.T) {
-			f := newFixture(t)
-			req := importerValuePayload()
-			if place == "release" {
-				req.Release.Barcode = "9780306406152"
-			} else {
-				req.Work.Fields = map[string]any{"barcode": "9780306406152"}
-			}
-			before := countEntities(t, f, "")
-			_, err := f.s.Import(context.Background(), req, f.u)
-			if err == nil || !strings.Contains(err.Error(), "invalid_barcode") {
-				t.Fatalf("invalid barcode accepted: %v", err)
-			}
-			if after := countEntities(t, f, ""); after != before {
-				t.Fatalf("invalid barcode caused partial writes: %d -> %d", before, after)
-			}
-		})
-	}
-}

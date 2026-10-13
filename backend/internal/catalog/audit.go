@@ -35,7 +35,6 @@ func AuditActions() map[string]string {
 		"POST /api/catalog/relations":                       "relation.created",
 		"PUT /api/catalog/relations/:id":                    "relation.updated",
 		"DELETE /api/catalog/relations/:id":                 "relation.deleted",
-		"POST /api/importer/import":                         "import.completed",
 		"PUT /api/admin/catalog-definitions":                "definition.updated",
 		"PUT /api/admin/rate-limits":                        "rate_limit.updated",
 		"POST /api/admin/external-databases":                "external_database.created",
@@ -64,9 +63,9 @@ func AuditExempt() map[string]string {
 		"POST /api/catalog/expressions/details":      "批量读：POST 只为把最多 500 个 id 放进 body（GET query 会撞 8KB 请求行上限），零写入",
 		"POST /api/catalog/relationships/query":      "批量关系查询：POST 承载实体集合与筛选条件，目录数据仅在只读事务中读取，零写入",
 		"POST /api/catalog/quality/batch":            "批量质量审计：POST 承载最多 100 个 id，按需计算、只读事务、不落库，零写入",
-		"POST /api/importer/preview":                 "来源预览：出站抓取 + 组装草稿，零落库（落库入口是 POST /api/importer/import）",
 		"POST /api/catalog/entities/identity":        "批量身份解析（X01 别名集合的只读投影）：POST 只为把最多 500 个 id 放进 body，零写入",
 		"POST /api/admin/catalog-definitions/impact": "定义影响检查：只读回放提交的文档，零写入",
+		"POST /api/external-sources/query":            "外部来源只读查询：出站抓取原文与预览映射，不写目录",
 	}
 }
 
@@ -266,37 +265,3 @@ func homePreferencesDetail(before, after *HomePreferences) map[string]any {
 	return changes
 }
 
-// importChangeDetail 是导入落库的摘要：来源与外部 id（"从哪导的什么"）、创建出来的实体 id、
-// 各分区计数。刻意不记 url_or_id：那是调用方给的自由文本 URL，可能自带 userinfo，
-// 审计不需要它也能回答"谁导入了什么"。
-func importChangeDetail(in ImporterImportRequest, out ImporterImportResponse) (targetType, targetID string, changes map[string]any) {
-	targetType, targetID = "entity", out.WorkID
-	if targetID == "" {
-		targetID = out.ReleaseID
-	}
-	if targetID == "" {
-		targetID = out.ArtistID
-	}
-	changes = map[string]any{
-		"entity_type": map[string]any{"after": out.EntityType},
-		"source":      map[string]any{"after": in.Source},
-		"external_id": map[string]any{"after": in.ExternalID},
-		"imported_counts": map[string]any{
-			"artists":           out.ImportedCounts.Artists,
-			"relations":         out.ImportedCounts.Relations,
-			"skipped_relations": out.ImportedCounts.SkippedRelations,
-			"mediums":           out.ImportedCounts.Mediums,
-			"tracks":            out.ImportedCounts.Tracks,
-			"content_units":     out.ImportedCounts.ContentUnits,
-		},
-	}
-	for name, id := range map[string]string{"work_id": out.WorkID, "release_id": out.ReleaseID, "artist_id": out.ArtistID} {
-		if id != "" {
-			changes[name] = map[string]any{"after": id}
-		}
-	}
-	if in.TargetWorkID != "" {
-		changes["target_work_id"] = map[string]any{"after": in.TargetWorkID}
-	}
-	return targetType, targetID, changes
-}

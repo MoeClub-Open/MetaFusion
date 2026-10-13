@@ -13,9 +13,9 @@ func batch2Import(t *testing.T, f fixture, e Entity) Entity {
 	if e.Status == "" {
 		e.Status = "draft"
 	}
-	out, err := f.s.importerSave(context.Background(), e, f.u, "batch2 fixture", fixtureSources())
+	out, err := f.s.Save(context.Background(), Edit{Entity: e, EditNote: "batch2 fixture", Sources: fixtureSources()}, f.u)
 	if err != nil {
-		t.Fatalf("importerSave %s: %v", e.Title, err)
+		t.Fatalf("Save %s: %v", e.Title, err)
 	}
 	return out
 }
@@ -34,55 +34,6 @@ func batch2Merge(t *testing.T, f fixture, src Entity, targetID string) {
 	}
 }
 
-// M04：带导入键的源合入无键目标，目标不复制该键（否则撞唯一索引），
-// 源 merged 行保留它做别名，重导经 findImported→Resolve 回到存活实体。
-func TestPostgresMergeKeepsImportKeyOnSource(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	src := batch2Import(t, f, Entity{Kind: "work", Title: "旧身份",
-		ExternalIDs: map[string]string{"metafusion_import": "bangumi:subject:9001"}})
-	target := f.save(Entity{Kind: "work", Title: "存活身份"})
-	batch2Merge(t, f, src, target.ID)
-	got, err := f.s.Get(ctx, target.ID, &f.u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := got.ExternalIDs["metafusion_import"]; ok {
-		t.Fatalf("目标不得复制内部幂等键：%v", got.ExternalIDs)
-	}
-	srcRow, err := f.s.Get(ctx, src.ID, &f.u)
-	if err != nil || srcRow.Status != "merged" || srcRow.ExternalIDs["metafusion_import"] != "bangumi:subject:9001" {
-		t.Fatalf("源 merged 行应保留别名键：%+v %v", srcRow, err)
-	}
-	reused, ok := f.s.findImported(ctx, "bangumi:subject:9001", &f.u)
-	if !ok || reused.ID != target.ID {
-		t.Fatalf("重导应回到存活实体：ok=%v %+v", ok, reused)
-	}
-}
-
-// M04：删除是终态，重导在此视为未命中（墓碑行仍占唯一索引，直接新建会撞键；
-// 恢复/清理墓碑走手工流程，不在此复活）。
-func TestPostgresFindImportedDeletedIsMiss(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	e := batch2Import(t, f, Entity{Kind: "work", Title: "待删除",
-		ExternalIDs: map[string]string{"metafusion_import": "bangumi:subject:9002"}})
-	cur, err := f.s.Get(ctx, e.ID, &f.u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.s.Lifecycle(ctx, e.ID, LifecycleEdit{
-		ExpectedVersion: cur.Version, EditNote: "batch2 delete", Sources: fixtureSources(),
-	}, f.u); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := f.s.findImported(ctx, "bangumi:subject:9002", &f.u); ok {
-		t.Fatal("已删除键必须视为未命中")
-	}
-}
-
-// M03 端到端：待合并角色只存在于配音关系的 character 属性而不在端点，
-// 合并后该属性指向存活身份，端点不动，改写留痕（版本 +1）。
 func TestPostgresMergeRewritesAttributeOnlyRefs(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

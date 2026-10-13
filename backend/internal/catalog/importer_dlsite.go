@@ -31,6 +31,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // dlsiteWWWBase 允许单测替换为 httptest 服务；生产指向 DLsite 官网。
@@ -497,6 +498,9 @@ func dlsiteMediaType(typeID string) string {
 
 // fetchDLsitePage 抓取商品页 HTML。
 func fetchDLsitePage(ctx context.Context, pageURL string) ([]byte, error) {
+	if err := waitOutbound(ctx, "dlsite"); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("upstream_error")
@@ -518,6 +522,8 @@ func fetchDLsitePage(ctx context.Context, pageURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("upstream_error")
 	}
+	meta := FetchMeta{URL: pageURL, FetchedAt: time.Now().UTC(), ContentHash: contentHash(body)}
+	recorderFrom(ctx).add(meta, body)
 	return body, nil
 }
 

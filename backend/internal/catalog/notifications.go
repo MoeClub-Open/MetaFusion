@@ -32,7 +32,6 @@ const (
 	NotificationEntityIncluded  = "entity.included"
 	NotificationReviewApproved  = "entity.review_approved"
 	NotificationReviewRejected  = "entity.review_rejected"
-	NotificationImportCompleted = "import.completed"
 )
 
 // 列表分页口径：缺省 20、上限 100（越界静默收敛，与 /catalog/entities 风格一致）。
@@ -45,14 +44,13 @@ const (
 var (
 	notificationTypeOrder = []string{
 		NotificationCommentReplied, NotificationEntityIncluded, NotificationReviewApproved,
-		NotificationReviewRejected, NotificationImportCompleted,
+		NotificationReviewRejected,
 	}
 	notificationTypes = map[string]bool{
 		NotificationCommentReplied:  true,
 		NotificationEntityIncluded:  true,
 		NotificationReviewApproved:  true,
 		NotificationReviewRejected:  true,
-		NotificationImportCompleted: true,
 	}
 )
 

@@ -1,230 +1,78 @@
-// 域：外部来源导入 /api/importer/*
+// 域：外部来源只读查询 /api/external-sources/*
 import { fetchApi } from "./client";
-import type { Entity } from "@/components/catalog/api";
 
-export interface ImporterPreviewRequest {
+export interface FetchMeta {
+  url: string;
+  fetched_at: string;
+  content_hash: string;
+}
+
+export interface ExternalSourceQueryRequest {
   source?: string;
-  url_or_id: string;
-  entity_type?: string;
-}
-
-export interface ImporterTranslationItem {
-  locale: string;
-  title: string;
-  summary: string;
-  /** 同语种并列标题（后端 translate-preview 的 TranslationItem.aliases） */
-  aliases?: string[];
-}
-
-export interface ImporterWorkPreview {
-  title: string;
-  original_title: string;
-  aliases: string[];
-  release_date: string;
-  begin_date?: string;
-  country: string;
-  language: string;
-  original_language?: string;
-  summary: string;
-  cover_image_url: string;
-  cover_aspect: string;
-  content_rating: string;
-  tags: string[];
-  translations: ImporterTranslationItem[];
-  catalog_metadata?: Record<string, any>;
-}
-
-export interface ImporterArtistPreview {
+  op: "search" | "lookup" | "detail";
+  q?: string;
   id?: string;
-  name: string;
-  original_name?: string;
-  role: string;
-  entity_type: string;
-  country?: string;
-  biography?: string;
-  disambiguation?: string;
-  language?: string;
-  avatar_url?: string;
-  character_name?: string;
-  aliases?: string[];
-  external_ids?: Record<string, any>;
-  translations?: ImporterTranslationItem[];
-  matched_artist?: Entity;
-  /** 该关联应落到的 definitions 关系码（directed_by / voiced_by / character_in 等） */
-  relation_type?: string;
-  /** 角色番位词表项（primary / supplement / extra） */
-  relation_role?: string;
+  url_or_id?: string;
+  entity_type?: string;
+  limit?: number;
 }
 
-export interface StaffAssociation {
-  parsed_name: string;
-  parsed_original?: string;
-  parsed_role: string;
-  entity_type: string;
-  action: "create" | "link" | "skip";
-  target_artist_id?: string;
-  character_name?: string;
-  country?: string;
-  biography?: string;
-  language?: string;
-  avatar_url?: string;
-  external_ids?: Record<string, any>;
-  translations?: ImporterTranslationItem[];
-  relation_type?: string;
-  relation_role?: string;
-}
-
-export interface ImporterTrackPreview {
-  position: number;
+export interface ExternalSourceSearchItem {
+  id: string;
   title: string;
-  duration_seconds: number;
-  artist_credit?: string;
-  isrc?: string;
-  recording_mbid?: string;
-  /** 手工匹配的既有表达（同 Work），优先于后端自动对齐。 */
-  expression_id?: string;
-  /** 该曲目对应的 canonical_entries 下标：结构绑定到本次清单的稳定节点，不靠标题传递。 */
-  entry_index?: number;
+  entity_type?: string;
+  url?: string;
+  snippet?: string;
+  raw?: unknown;
 }
 
-export interface ImporterMediumPreview {
-  position: number;
-  number?: string;
-  name: string;
-  format: string;
-  role?: "primary" | "supplement" | string;
-  original_language?: string;
-  translations?: Record<string, { name?: string }>;
-  tracks: ImporterTrackPreview[];
-}
-
-export interface ImporterReleasePreview {
-  cover_image_url?: string;
-  cover_aspect?: string;
-  original_language?: string;
-  translations?: Record<string, { edition_name?: string; notes?: string }>;
-  edition_name: string;
-  catalog_number?: string;
-  barcode?: string;
-  publisher?: string;
-  packaging?: string;
-  country?: string;
-  language?: string;
-  distribution_channel?: string;
-  edition_date?: string;
-  notes?: string;
-  catalog_metadata?: Record<string, any>;
-}
-
-export interface ImporterCanonicalEntryPreview {
-  title: string;
-  translations?: Record<string, { title?: string; summary?: string }>;
-  position: number;
-  number?: string;
-  entry_role?: string;
-  original_language?: string;
-  duration_seconds?: number;
-  attributes?: Record<string, any>;
-  external_ids?: Record<string, any>;
-  /** 落库层级：content_unit（篇目/分集）或 expression（默认，录音/正文）。 */
-  entry_kind?: string;
-  /** 同一 canonical_entries 数组内父级下标（章节树），顶层省略或为 -1。 */
-  parent_index?: number;
-  /** 手工匹配的既有表达（可跨 Work），优先于自动对齐。 */
-  expression_id?: string;
-}
-
+/** lookup/detail 仍返回既有 preview 映射形状（只读）。 */
 export interface ImporterPreviewResponse {
   source: string;
   entity_type?: string;
   external_id: string;
   external_url: string;
   media_type: string;
-  work?: ImporterWorkPreview;
-  artist?: ImporterArtistPreview;
-  artists?: ImporterArtistPreview[];
+  work?: Record<string, unknown>;
+  artist?: Record<string, unknown>;
+  artists?: Record<string, unknown>[];
   has_release?: boolean;
-  canonical_entries?: ImporterCanonicalEntryPreview[];
-  release?: ImporterReleasePreview | null;
-  mediums?: ImporterMediumPreview[];
+  canonical_entries?: Record<string, unknown>[];
+  release?: Record<string, unknown> | null;
+  mediums?: Record<string, unknown>[];
   tags: string[];
-  /** 来源抓取不完整等告警（如分集 total 与实取不符），前端需提示而非当作完整。 */
   warnings?: string[];
 }
 
-export interface ImporterImportRequest {
-  entity_type?: string;
-  source?: string;
-  url_or_id?: string;
-  external_id?: string;
-  work?: ImporterWorkPreview;
-  artist?: ImporterArtistPreview;
-  artists?: ImporterArtistPreview[];
-  staff_associations?: StaffAssociation[];
-  has_release?: boolean;
-  canonical_entries?: ImporterCanonicalEntryPreview[];
-  release?: ImporterReleasePreview | null;
-  mediums?: ImporterMediumPreview[];
-  download_cover?: boolean;
-  edit_note?: string;
-  source_urls?: string[];
-  target_work_id?: string;
-  link_mode?: "new_work" | "append_release_to_work" | "create_relation";
-  relation_type?: string;
+export interface ExternalSourceQueryResponse {
+  source: string;
+  op: string;
+  fetch?: FetchMeta;
+  fetches?: FetchMeta[];
+  raw?: unknown;
+  preview?: ImporterPreviewResponse;
+  items?: ExternalSourceSearchItem[];
 }
 
-export interface ImporterImportResponse {
-  success: boolean;
-  entity_type?: string;
-  work_id?: string;
-  release_id?: string;
-  artist_id?: string;
-  /** 落库后返回的目标实体（work / release / agent 统一 DTO）。 */
-  work?: Entity;
-  release?: Entity;
-  artist?: Entity;
-  imported_counts: {
-    artists: number;
-    mediums: number;
-    tracks: number;
-    /** 落库的篇目/分集数（ContentUnit）。 */
-    content_units?: number;
-  };
-  redirect_url: string;
-}
-
-// ── 可用导入源清单（GET /importer/sources）──
-// id 是**真正实现了适配器**的来源；names / category / icon / description 来自
-// external databases 注册表（后台改名即时生效）。前端不维护第二份来源列表：
-// 此前写死在导入弹窗 tab 上的 musicbrainz / tmdb / imdb / vndb / douban
-// 在后端只回 not_supported。
 export interface ImporterSource {
   id: string;
-  /** 四语名称映射（zh-CN / zh-TW / ja-JP / en-US），展示按 pickLocalizedName 的回退链解析。 */
   names: Record<string, string>;
-  /** 适用实体 kind：all 或固定八实体 kind 之一（artist/organization/character 在骨架里都属 agent）。 */
   category: string;
   icon: string;
   description: string;
   url_pattern?: string;
 }
 
-export function fetchImporterSources(): Promise<{ items: ImporterSource[] }> {
-  return fetchApi<{ items: ImporterSource[] }>("/importer/sources");
+export function fetchExternalSources() {
+  return fetchApi<{ items: ImporterSource[] }>("/external-sources");
 }
 
-export function previewExternalCatalog(payload: ImporterPreviewRequest): Promise<ImporterPreviewResponse> {
-  return fetchApi<ImporterPreviewResponse>("/importer/preview", {
+/** @deprecated 使用 fetchExternalSources */
+export const fetchImporterSources = fetchExternalSources;
+
+export function queryExternalSource(body: ExternalSourceQueryRequest) {
+  return fetchApi<ExternalSourceQueryResponse>("/external-sources/query", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
 }
-
-export function importExternalCatalog(payload: ImporterImportRequest): Promise<ImporterImportResponse> {
-  return fetchApi<ImporterImportResponse>("/importer/import", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-// ── 插件系统 (Plugin System) ──
