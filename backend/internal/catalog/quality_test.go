@@ -131,3 +131,47 @@ func TestQualityAuditMediumTrackPositionsStartAt2(t *testing.T) {
 		t.Fatalf("expected track_position_gap on medium alone: %+v", rep.Issues)
 	}
 }
+
+func TestQualityAuditMediumAllNonNumericTrackNumbers(t *testing.T) {
+	// Synthetic fixture: printed track numbers are letters/roman only (no digit
+	// positions like 1..n). Contiguous integer Position still orders them; quality
+	// must not report track_position_gap or force partial solely for non-numeric numbers.
+	f := newFixture(t)
+	ctx := context.Background()
+	ref := func(name string) any { return map[string]string{"$ref": name} }
+	op := func(kind, name string, extra map[string]any) CommitOperation {
+		doc := map[string]any{"kind": kind, "title": name, "status": "published", "translations": map[string]any{"en": map[string]any{"title": name}}}
+		for k, v := range extra {
+			doc[k] = v
+		}
+		return CommitOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc)), ReviewedCandidateIDs: []string{}}
+	}
+	in := fixtureCommit(f,
+		op("work", "w", nil),
+		op("expression", "x1", map[string]any{"work_id": ref("w")}),
+		op("expression", "x2", map[string]any{"work_id": ref("w")}),
+		op("expression", "x3", map[string]any{"work_id": ref("w")}),
+		op("release", "r", map[string]any{"subjects": []any{map[string]any{"work_id": ref("w"), "role": "primary", "position": 0}}}),
+		op("medium", "m", map[string]any{"release_id": ref("r"), "attributes": map[string]any{"format": "cd"}}),
+		op("track", "ta", map[string]any{"medium_id": ref("m"), "position": 1, "number": "A", "contents": []any{map[string]any{"expression_id": ref("x1"), "position": 0}}}),
+		op("track", "tb", map[string]any{"medium_id": ref("m"), "position": 2, "number": "B", "contents": []any{map[string]any{"expression_id": ref("x2"), "position": 0}}}),
+		op("track", "tii", map[string]any{"medium_id": ref("m"), "position": 3, "number": "II", "contents": []any{map[string]any{"expression_id": ref("x3"), "position": 0}}}),
+	)
+	out, err := f.s.PushCommit(ctx, in, f.u, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediumID := out.Refs["m"]
+	rep, err := f.s.EntityQuality(ctx, mediumID, &f.u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range rep.Issues {
+		if issue.Code == "track_position_gap" {
+			t.Fatalf("all-non-numeric track numbers must not report track_position_gap: %+v", rep)
+		}
+	}
+	if rep.Status != QualityComplete || len(rep.Issues) != 0 {
+		t.Fatalf("letter/roman track numbers must not force partial: %+v", rep)
+	}
+}
