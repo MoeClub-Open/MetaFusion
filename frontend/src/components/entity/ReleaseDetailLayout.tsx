@@ -17,6 +17,7 @@ import { orderedTracksWithDepth } from "@/lib/trackTree";
 import { COMPARE_MAX_SLOTS, compareHref, useCompareBasket } from "@/lib/compareBasket";
 import { PageShell } from "@/components/ui/PageShell";
 import { EntityIdentityHeader } from "@/components/entity/EntityIdentityHeader";
+import { QualityBadge } from "@/components/catalog/QualityBadge";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EntityStaffSection } from "@/components/entity/EntityStaffSection";
@@ -743,6 +744,18 @@ export default function ReleaseDetailLayout() {
             <div className="space-y-1.5 min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] tracking-wide">
                 <span className="px-2 py-0.5 rounded-sm bg-primary text-white font-semibold">{t("release.detail.badge")}</span>
+                {release?.status && (
+                  <span className="px-2 py-0.5 rounded-sm bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body uppercase font-semibold">
+                    {release.status}
+                  </span>
+                )}
+                <QualityBadge
+                  entityId={releaseId}
+                  onNavigate={() => {
+                    const el = document.getElementById("release-directory");
+                    if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+                  }}
+                />
                 {editionLabel && (
                   <span className="px-2 py-0.5 rounded-sm bg-violet-500/10 text-violet-600 dark:text-alt-soft border border-violet-500/25 font-semibold">
                     {editionLabel}
@@ -966,6 +979,7 @@ export default function ReleaseDetailLayout() {
 
         </div>
 
+        <div id="release-directory" />
         <div role="tabpanel" id="panel-mediums" aria-labelledby="tab-mediums" hidden={activeSection !== "mediums"} className="space-y-4">
 
         {formatGroups.length > 1 && (

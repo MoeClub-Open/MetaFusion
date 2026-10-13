@@ -732,6 +732,16 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.FindIdentityCandidates(ctx, in, user(c))
 		respond(c, v, err)
 	})
+	cat.POST("/entities/candidates/batch", func(c *gin.Context) {
+		var in IdentityBatchRequest
+		if !body(c, &in) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		defer cancel()
+		v, err := s.FindIdentityCandidatesBatch(ctx, in, user(c))
+		respond(c, v, err)
+	})
 	cat.POST("/relationships/query", func(c *gin.Context) {
 		var in RelationshipQueryRequest
 		if !body(c, &in) {

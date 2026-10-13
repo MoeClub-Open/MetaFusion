@@ -27,6 +27,8 @@ type IdentityCandidateQuery struct {
 	ReleaseID   string                       `json:"release_id,omitempty"`
 	MediumID    string                       `json:"medium_id,omitempty"`
 	Limit       *int                         `json:"limit,omitempty"`
+	// Context only adjusts ranking/confidence; it never shrinks the candidate set.
+	Context *IdentityContext `json:"context,omitempty"`
 }
 
 // A candidate summary carries identity evidence and scope, never editable
@@ -50,6 +52,8 @@ type IdentityCandidateMatch struct {
 	Matched         IdentityCandidateEntity  `json:"matched"`
 	Canonical       *IdentityCandidateEntity `json:"canonical"`
 	ResolutionError string                   `json:"resolution_error,omitempty"`
+	// Assessment is advisory (reuse|review|distinct); the server never auto-merges.
+	Assessment *CandidateAssessment `json:"assessment,omitempty"`
 }
 type IdentityCandidateResponse struct {
 	Items    []IdentityCandidateMatch `json:"items"`
@@ -139,6 +143,11 @@ func normalizeIdentityCandidateQuery(in IdentityCandidateQuery) (IdentityCandida
 			*scope.value = id.String()
 		}
 	}
+	ctx, err := normalizeIdentityContext(in.Context)
+	if err != nil {
+		return in, nil, 0, err
+	}
+	in.Context = ctx
 	return in, docs, limit, nil
 }
 
@@ -240,6 +249,9 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 			item.Canonical = &summary
 		}
 		out.Items = append(out.Items, item)
+	}
+	if err = attachAssessments(ctx, q, in, &out); err != nil {
+		return out, err
 	}
 	return out, nil
 }
