@@ -68,7 +68,7 @@ func OpenAPI() map[string]any {
 			return map[string]any{}
 		}
 	}
-	for _, v := range []any{CatalogCommit{}, CommitReceipt{}, CommitConflict{}, CheckoutRequest{}, CatalogCheckout{}, Entity{}, IdentityCandidateQuery{}, IdentityCandidateResponse{}, EntitySearchPage{}, EntityLinksPage{}, RelationshipQueryRequest{}, RelationshipQueryResponse{}, ReleaseTOC{}, ExpressionComposition{}, ReleaseEditions{}, TrackContentEdit{}, TrackStatusEdit{}, Edit{}, Relation{}, RelationEdit{}, LifecycleEdit{}, UnpublishEdit{}, DefinitionConfig{}, Definitions{}, ExternalDatabase{}, Shelf{}, HomePreferences{}, HomeSection{}, UserContributions{}, ContributionItem{}, UserContributionStats{}, ImporterPreviewRequest{}, ImporterPreviewResponse{}, ImporterImportRequest{}, ImporterImportResponse{}, ImporterSource{}, VersionInfo{}, DefinitionImpact{}, Notification{}, RateLimitConfig{}, RateLimitSave{}} {
+	for _, v := range []any{CatalogCommit{}, CommitReceipt{}, CommitConflict{}, CheckoutRequest{}, CatalogCheckout{}, Entity{}, IdentityCandidateQuery{}, IdentityCandidateResponse{}, IdentityContext{}, CandidateAssessment{}, IdentityBatchRequest{}, IdentityBatchResponse{}, IdentityBatchQuery{}, IdentityBatchResult{}, EntitySearchPage{}, EntityLinksPage{}, RelationshipQueryRequest{}, RelationshipQueryResponse{}, ReleaseTOC{}, ExpressionComposition{}, ReleaseEditions{}, TrackContentEdit{}, TrackStatusEdit{}, Edit{}, Relation{}, RelationEdit{}, LifecycleEdit{}, UnpublishEdit{}, DefinitionConfig{}, Definitions{}, ExternalDatabase{}, Shelf{}, HomePreferences{}, HomeSection{}, UserContributions{}, ContributionItem{}, UserContributionStats{}, ImporterPreviewRequest{}, ImporterPreviewResponse{}, ImporterImportRequest{}, ImporterImportResponse{}, ImporterSource{}, VersionInfo{}, DefinitionImpact{}, Notification{}, RateLimitConfig{}, RateLimitSave{}} {
 		schema(reflect.TypeOf(v))
 	}
 	// Historical responses can contain self; new evidence cannot use it or this
@@ -138,6 +138,64 @@ func OpenAPI() map[string]any {
 	identityProps["limit"].(map[string]any)["minimum"] = 1
 	identityProps["limit"].(map[string]any)["maximum"] = 1000
 	identityProps["limit"].(map[string]any)["default"] = 1000
+	if ctxProp, ok := identityProps["context"].(map[string]any); ok {
+		ctxProp["description"] = "Optional ranking context (creator/performer/label agent UUIDs, catalog_number values). Adjusts confidence and recommended_action only — never filters candidates out. Same-name different-artist entities remain in the result."
+	}
+	if matchSchema, ok := schemas["IdentityCandidateMatch"].(map[string]any); ok {
+		if props, ok := matchSchema["properties"].(map[string]any); ok {
+			if a, ok := props["assessment"].(map[string]any); ok {
+				a["description"] = "Advisory assessment: matched_fields, optional conflicts, context_summary, confidence 0-1, recommended_action reuse|review|distinct. Server never auto-merges."
+			}
+		}
+	}
+	batchReq := schemas["IdentityBatchRequest"].(map[string]any)
+	batchReq["required"] = []string{"queries"}
+	batchProps := batchReq["properties"].(map[string]any)
+	batchProps["queries"].(map[string]any)["minItems"] = 1
+	batchProps["queries"].(map[string]any)["maxItems"] = 50
+	batchQuery := schemas["IdentityBatchQuery"].(map[string]any)
+	batchQuery["required"] = []string{"key", "kind"}
+	// Anonymous embed of IdentityCandidateQuery is promoted by encoding/json but the
+	// OpenAPI walker skips tag-less fields; copy the query properties explicitly.
+	bqProps, _ := batchQuery["properties"].(map[string]any)
+	if bqProps == nil {
+		bqProps = map[string]any{}
+		batchQuery["properties"] = bqProps
+	}
+	if iq, ok := schemas["IdentityCandidateQuery"].(map[string]any); ok {
+		if iqProps, ok := iq["properties"].(map[string]any); ok {
+			for k, v := range iqProps {
+				if _, exists := bqProps[k]; !exists {
+					bqProps[k] = v
+				}
+			}
+		}
+	}
+	if k, ok := bqProps["key"].(map[string]any); ok {
+		k["minLength"] = 1
+		k["maxLength"] = 64
+		k["description"] = "Client correlation key; unique within the batch"
+	} else {
+		bqProps["key"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 64, "description": "Client correlation key; unique within the batch"}
+	}
+	if k, ok := bqProps["kind"].(map[string]any); ok {
+		k["enum"] = Kinds
+	}
+	if assess, ok := schemas["CandidateAssessment"].(map[string]any); ok {
+		assess["required"] = []string{"matched_fields", "confidence", "recommended_action"}
+		if props, ok := assess["properties"].(map[string]any); ok {
+			if a, ok := props["recommended_action"].(map[string]any); ok {
+				a["enum"] = []string{"reuse", "review", "distinct"}
+				a["description"] = "Advisory only: reuse = strong evidence to reuse existing identity; review = human/agent should inspect; distinct = context conflicts suggest a different entity. Server never auto-merges."
+			}
+			if f, ok := props["matched_fields"].(map[string]any); ok {
+				f["description"] = "Evidence codes: title_exact, alias, external_id, attribute, ctx_creator, ctx_performer, ctx_label, ctx_catalog_number"
+			}
+			if f, ok := props["conflicts"].(map[string]any); ok {
+				f["description"] = "Mismatch codes when the candidate has conflicting context: ctx_creator_mismatch, ctx_performer_mismatch, ctx_label_mismatch, ctx_catalog_number_mismatch"
+			}
+		}
+	}
 	trackStatusSchema := schemas["TrackStatusEdit"].(map[string]any)
 	trackStatusSchema["required"] = []string{"status", "expected_version", "edit_note", "sources"}
 	trackStatusProperties := trackStatusSchema["properties"].(map[string]any)
@@ -273,7 +331,8 @@ func OpenAPI() map[string]any {
 		{"/catalog/commits/preview", "post", "Validate an atomic commit through the real write path, then roll back every fact, revision, notification and outbox event. Up to 100 ordered create/update operations; use explicit local references {\"$ref\":\"name\"}. Preview IDs are provisional. No durable receipt. The preview receipt carries quality_warnings: advisory QualityIssue items (code, severity, entity_id, field, value, message) from the same automated audit as /catalog/entities/{id}/quality, evaluated on the uncommitted state of every affected entity; they never block the commit. Shares the catalog 180/min read/write budget", "CatalogCommit", "CommitReceipt", "auth"},
 		{"/catalog/commits", "post", "Atomically push up to 100 ordered entity/relation create/update operations with evidence and definitions_etag. Entity creates and identity-changing entity updates require reviewed_candidate_ids (empty array allowed): formal/localized titles plus external IDs are rechecked within Work/Release/Medium scope under sorted identity-term locks; changed candidate sets return 409 identity_candidates_changed. @local:ref can identify a previously created candidate in this batch. Public legacy entity POST/PUT also recheck changed identity and allow explicit reviewed_candidate_ids; this review permits inspected distinct objects with shared titles, rather than imposing global semantic uniqueness. Canonical UUID commit id is a durable idempotency key: same owner+payload replays receipt; changed payload returns 409 idempotency_conflict. Updates carry authoritative base_version and granular JSON Pointer set/remove patches: disjoint edits merge, identical edits are no-ops, overlapping divergent edits return 409 commit_conflict with operation/id/versions/paths and applied=false. Arrays are atomic; server-owned fields and scopes cannot be patched. Hidden Track contents require specialized content endpoints. Any validation/conflict rolls back the entire batch. Schema changes return 409 definitions_conflict. Deadlines 15s, lock waits 3s; shares the catalog 180/min read/write budget. A lost response is recovered with GET /catalog/commits/{id}, not a new commit id. Evidence: sources is a keyed pool (every source needs a unique key) and every operation must declare source_refs [{source:key, pointers:[json-pointer]}]; each revision then stores only its referenced sources with their pointers, so batch evidence never mixes across entities. Preview and push both reject an operation without source_refs (source_refs_required), a source without key (source_key_required) and a pool source no operation references (source_unused). Historical revisions written before source_refs carry sources with scope=commit (whole-commit pool, not field-level evidence)", "CatalogCommit", "CommitReceipt", "auth"},
 		{"/catalog/commits/{id}", "get", "Read durable push receipt by UUID, only for its original actor; 404 if no committed receipt or not owned. A 404 during an in-flight push is not proof of failure; retry the same immutable payload/id to reconcile", "", "CommitReceipt", "auth"},
-		{"/catalog/entities/candidates", "post", "Read-only identity candidates from the authoritative PostgreSQL index in one repeatable-read snapshot, including canonical resolution. Required kind plus at least one criterion: titles (base/localized title and aliases; case/whitespace normalized), external_ids [{provider,value}] or attributes [{key,value}] (exact scalar or scalar-list value). Criteria are OR, optional work_id restricts expression/content_unit, release_id restricts medium and medium_id restricts track scope. At most 20 criteria per category, values up to 256 bytes. limit=1000, max=1000; total is the exact matched-original count in this snapshot, complete=false when truncated. Never treat partial or unresolved canonical candidates as absence; narrow broad criteria instead of blindly retrying. Current caller visibility only, deleted originals excluded. items contain matched and canonical summaries; summaries must not be used for entity PUT. This read does not reserve identity or lock a later creation. Invalid kind/criteria/work_id/limit return 400; strict JSON; shares the catalog 180/min read/write budget. No OpenSearch dependency or offset pagination", "IdentityCandidateQuery", "IdentityCandidateResponse", ""},
+		{"/catalog/entities/candidates", "post", "Read-only identity candidates from the authoritative PostgreSQL index in one repeatable-read snapshot, including canonical resolution. Required kind plus at least one criterion: titles (base/localized title and aliases; case/whitespace normalized), external_ids [{provider,value}] or attributes [{key,value}] (exact scalar or scalar-list value). Criteria are OR, optional work_id restricts expression/content_unit, release_id restricts medium and medium_id restricts track scope. Optional context {creator,performer,label,catalog_number} only adjusts ranking/confidence/recommended_action — it NEVER filters candidates (same-name different-artist entities remain). Each item carries assessment {matched_fields,conflicts?,context_summary?,confidence,recommended_action:reuse|review|distinct}; advisory only, server never auto-merges. At most 20 criteria per category, values up to 256 bytes. limit=1000, max=1000; total is the exact matched-original count in this snapshot, complete=false when truncated. Never treat partial or unresolved canonical candidates as absence; narrow broad criteria instead of blindly retrying. Current caller visibility only, deleted originals excluded. items contain matched and canonical summaries; summaries must not be used for entity PUT. This read does not reserve identity or lock a later creation. Invalid kind/criteria/work_id/limit/context return 400; strict JSON; shares the catalog 180/min read/write budget. No OpenSearch dependency or offset pagination", "IdentityCandidateQuery", "IdentityCandidateResponse", ""},
+		{"/catalog/entities/candidates/batch", "post", "Batch identity candidate check (1-50 queries) in one repeatable-read snapshot. Body {queries:[{key, kind, titles?, external_ids?, attributes?, work_id?, release_id?, medium_id?, limit?, context?}...]}; key is a client correlation id unique in the batch. Each query has the same semantics as POST /catalog/entities/candidates (context ranks only, never filters; assessment with recommended_action reuse|review|distinct; server never auto-merges). Per-query validation failures are returned as results[].error without failing the whole batch; empty queries or >50 return 400 queries_required / too_many_queries; duplicate/blank key return 400 duplicate_query_key / invalid_query_key. Shares the catalog 180/min read/write budget", "IdentityBatchRequest", "IdentityBatchResponse", ""},
 		{"/catalog/relationships/query", "post", "Query direct structural, semantic and definitions-declared nested attribute-reference neighbors for 1-20 entity UUIDs (deduplicated in request order) in one read-only repeatable-read snapshot with the definitions ETag. direction=both/outgoing/incoming; self-links are outgoing. rule_codes are validated against /catalog/definitions relationship_rules, including disabled historical rules; peer_kinds filter the other endpoint. Visibility and attribute-reference checks precede per-subject pagination (limit=25, max=100; offset>=0). Unavailable subjects have no page and are listed in unavailable_ids without distinguishing hidden from missing. attribute: rules carry field paths; references identify third-party typed entity references and via marks a third-party subject. entities contains only deduplicated RelationshipEntity summaries for visible subjects, returned endpoints and references, never full editable entities or recursive expansion. Strict JSON; invalid_ids/invalid_id/invalid_direction/invalid_rule_code/invalid_peer_kind/invalid_limit/invalid_offset return 400. Default shared read/write budget 180/min per account or client IP, counted atomically in PostgreSQL across replicas, overridable through the shared rate-limit policy; exhausted budgets return 429 with Retry-After", "RelationshipQueryRequest", "RelationshipQueryResponse", ""},
 		{"/catalog/compare", "get", "Compare two to six entities of any kinds (throttled to a 180/min shared read/write budget (admin is unlimited by default, overridable by account/admin-group policy), per account when signed in and otherwise per client IP; override per group or per account via /admin/rate-limits); releases/mediums include their containment tree", "", "Result", ""},
 		{"/exchange/entities/{id}", "get", "Export an entity snapshot for another instance, respecting caller visibility and current expression visibility in track contents; missing or invisible entities return 404, while database and internal decoding failures return a generic server error", "", "Entity", ""},
