@@ -72,7 +72,6 @@ function payloadNumberText(payload: Record<string, unknown>, key: string): strin
  * 跳转映射（契约里 payload 可能缺键，缺了就退回列表页/通用条目页，不拼一个必然 404 的地址）：
  *   comment.replied  → /community/<topic_id>，缺 topic_id 时 /community
  *   entity.*         → catalogEntityHref(entity_id)；详情地址只由 id 决定（kind 不参与 URL 命名）
- *   import.completed → /contribute（导入入口）
  */
 function notificationHref(n: Notification): string | null {
   const payload = n.payload;

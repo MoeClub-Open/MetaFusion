@@ -100,30 +100,23 @@ func TestImporterSourcesUseRegistryMetadata(t *testing.T) {
 	}
 }
 
-// 端点形状与闸门：与 /importer/preview、/importer/import 同权限（catalog.import.submit），
+// 端点形状与闸门：与 /external-sources/query 同权限（authentication (signed-in)），
 // 未登录 401、没这个码 403、持码 200 且 items 的键集合就是文档里声明的那几个。
 func TestImporterSourcesEndpointGateAndShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	path := "/api/importer/sources"
+	path := "/api/external-sources"
 
 	w := httptest.NewRecorder()
 	gateEngine(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "authentication_required") {
 		t.Fatalf("匿名：status=%d body=%s，want 401 authentication_required", w.Code, w.Body.String())
 	}
-	other := &User{ID: "u-other", Permissions: []string{PermissionEntityEdit}}
+	// 登录即可（不再要求 catalog.import.submit）：任意已登录用户可读来源清单。
+	plain := &User{ID: "u-plain", Permissions: []string{"community.post.create"}}
 	w = httptest.NewRecorder()
-	gateEngine(other).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "forbidden") {
-		t.Fatalf("无码：status=%d body=%s，want 403 forbidden", w.Code, w.Body.String())
-	}
-
-	// Store{} 没有库：元数据走种子，正好覆盖"未接库也能给出清单"这一路径。
-	importer := &User{ID: "u-imp", Permissions: []string{PermissionImportSubmit}}
-	w = httptest.NewRecorder()
-	gateEngine(importer).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+	gateEngine(plain).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("持码：status=%d body=%s，want 200", w.Code, w.Body.String())
+		t.Fatalf("已登录：status=%d body=%s，want 200", w.Code, w.Body.String())
 	}
 	var body struct {
 		Items []map[string]any `json:"items"`
@@ -221,15 +214,15 @@ func TestOpenAPIImporterSourceSchema(t *testing.T) {
 	if list["properties"].(map[string]any)["items"] == nil {
 		t.Error("ImporterSourceList 缺少 items 属性")
 	}
-	op, ok := doc["paths"].(map[string]any)["/importer/sources"].(map[string]any)["get"].(map[string]any)
+	op, ok := doc["paths"].(map[string]any)["/external-sources"].(map[string]any)["get"].(map[string]any)
 	if !ok {
-		t.Fatal("OpenAPI 未声明 GET /importer/sources")
+		t.Fatal("OpenAPI 未声明 GET /external-sources")
 	}
 	ref := op["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"]
 	if ref != "#/components/schemas/ImporterSourceList" {
 		t.Errorf("200 响应 schema=%v，want ImporterSourceList", ref)
 	}
 	if _, ok := op["security"]; !ok {
-		t.Error("/importer/sources 与导入端点同权限，必须声明 security")
+		t.Error("/external-sources 需登录，必须声明 security")
 	}
 }

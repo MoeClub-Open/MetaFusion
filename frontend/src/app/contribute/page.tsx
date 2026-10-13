@@ -1,45 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { useI18n } from "@/i18n/I18nProvider";
-import { useAuth } from "@/lib/authContext";
-import { can, CATALOG_IMPORT_SUBMIT } from "@/lib/permissions";
-import { Layers, Users, Disc, Network, ArrowRight, Zap } from "lucide-react";
-import { OmniImportModal } from "@/components/importer/OmniImportModal";
+import { Layers, Users, Disc, Network, ArrowRight } from "lucide-react";
 import { PageShell } from "@/components/ui/PageShell";
-import { fetchImporterSources, ImporterSource } from "@/lib/api";
-import { importerSourceIcon, importerSourceLabel } from "@/lib/importerSources";
 
 export default function ContributeHubPage() {
-  const { user } = useAuth();
-  const { t, tr, locale } = useI18n();
-  // 外部导入走 /api/importer/*:服务端要求 catalog.import.submit（预览与落库同权限）。
-  // 无码时禁用入口并说明原因，不把人引到注定 403 的弹窗上。
-  const canImport = can(user, CATALOG_IMPORT_SUBMIT);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  // 来源徽标只列**真有适配器**的来源（GET /api/importer/sources，与弹窗的来源 tab 同一份事实）。
-  // 取不到（无权限 403、网关或上游异常）就不渲染徽标：原来写死的 MusicBrainz / TMDB & IMDb /
-  // Bangumi 三条正是"列了导不进来的库"，降级时再补一份内置名单等于把谎再讲一遍。
-  const [sources, setSources] = useState<ImporterSource[]>([]);
-  useEffect(() => {
-    if (!canImport) {
-      setSources([]);
-      return;
-    }
-    let active = true;
-    fetchImporterSources()
-      .then((res) => {
-        if (active) setSources(Array.isArray(res?.items) ? res?.items : []);
-      })
-      .catch(() => {
-        if (active) setSources([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [canImport]);
+  const { t } = useI18n();
   const cards = [
     {
       href: "/new?kind=work",
@@ -92,56 +60,6 @@ export default function ContributeHubPage() {
           </p>
         </div>
 
-        {/* 未登录提示原来写在这里，但 AuthGate 对 /contribute 先 return null 并跳登录，
-            那段横幅永远渲染不到；未登录的登录门槛统一由 AuthGate 负责。 */}
-
-        {/* 外部导入入口：与手工创建保持相同密度。 */}
-        <div className="relative overflow-hidden rounded-card border border-line bg-surface p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-            <div className="space-y-2 max-w-2xl">
-              <h2 className="font-display text-lg sm:text-xl font-bold text-text-strong">
-                {t("create.hub.cardImportTitle")}
-              </h2>
-              <p className="text-xs sm:text-sm text-text-body font-mono leading-relaxed">
-                {t("create.hub.cardImportDesc")}
-              </p>
-              {!canImport && (
-                <p className="font-mono text-[11px] text-amber-600 dark:text-warn-soft">
-                  {t("create.hub.importNoPermission")}
-                </p>
-              )}
-              {sources.length > 0 && (
-                <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] font-mono text-text-muted">
-                  {sources.map((s, index) => {
-                    const SourceIcon = importerSourceIcon(s);
-                    return (
-                      <React.Fragment key={s.id}>
-                        {index > 0 && <span>•</span>}
-                        <span className="inline-flex items-center gap-1.5">
-                          <SourceIcon className="w-3.5 h-3.5 text-primary" /> {importerSourceLabel(tr, locale, s)}
-                        </span>
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => canImport && setIsImportModalOpen(true)}
-              disabled={!canImport}
-              aria-disabled={!canImport}
-              title={canImport ? undefined : t("create.hub.importNoPermission")}
-              className="px-3 h-10 rounded-control bg-primary hover:bg-primary/90 text-white font-semibold text-xs sm:text-sm font-mono inline-flex items-center justify-center gap-2 shrink-0 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:shadow-none"
-            >
-              <Zap className="w-4 h-4 fill-white" />
-              <span>{t("nav.importExternal")}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Manual Creation Cards */}
         <div className="space-y-2">
           <div className="text-xs font-mono text-text-muted uppercase tracking-wider font-semibold">
             {t("create.hub.manualSectionTitle")}
@@ -171,12 +89,6 @@ export default function ContributeHubPage() {
           </div>
         </div>
       </PageShell>
-
-      {/* 无权限时永不打开弹窗（预览也会 403）；入口本身已禁用并给出说明。 */}
-      <OmniImportModal
-        isOpen={canImport && isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-      />
     </div>
   );
 }

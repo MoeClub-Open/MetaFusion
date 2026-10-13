@@ -30,7 +30,6 @@ func TestProtectedRouteGates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// 持另一个目录码：能证明被拒的原因是"缺这个码"，而不是"没有权限声明"。
 	otherCode := &User{ID: "u-other", Permissions: []string{PermissionEntityEdit}}
-	importUser := &User{ID: "u-imp", Permissions: []string{PermissionImportSubmit}}
 	relationUser := &User{ID: "u-rel", Permissions: []string{PermissionRelationEdit}}
 	wildcard := &User{ID: "u-admin", Permissions: []string{permissionWildcard}}
 	id := "00000000-0000-0000-0000-000000000001"
@@ -42,8 +41,6 @@ func TestProtectedRouteGates(t *testing.T) {
 		withCode   *User
 		wantDenied string // 无码/匿名时的期望错误码
 	}{
-		{"importer preview", http.MethodPost, "/api/importer/preview", importUser, ""},
-		{"importer import", http.MethodPost, "/api/importer/import", importUser, ""},
 		{"relation create", http.MethodPost, "/api/catalog/relations", relationUser, ""},
 		{"relation update", http.MethodPut, "/api/catalog/relations/" + id, relationUser, ""},
 		{"relation delete", http.MethodDelete, "/api/catalog/relations/" + id, relationUser, ""},
@@ -90,17 +87,17 @@ func TestImporterPreviewIsRateLimited(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resetPreviewBucket()
 	defer resetPreviewBucket()
-	u := &User{ID: "u-rl", Permissions: []string{PermissionImportSubmit}}
+	u := &User{ID: "u-rl", Permissions: []string{PermissionEntityEdit}}
 	engine := gateEngine(u)
 	for i := 0; i < DefaultRateLimitPerMinute; i++ {
 		w := httptest.NewRecorder()
-		engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/importer/preview", strings.NewReader("{")))
+		engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/external-sources/query", strings.NewReader("{")))
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("request %d: status=%d body=%s want 400", i+1, w.Code, w.Body.String())
 		}
 	}
 	w := httptest.NewRecorder()
-	engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/importer/preview", strings.NewReader("{")))
+	engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/external-sources/query", strings.NewReader("{")))
 	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "rate_limited") {
 		t.Fatalf("request beyond default limit: status=%d body=%s want 429 rate_limited", w.Code, w.Body.String())
 	}
@@ -118,5 +115,36 @@ func TestLoginOnlyRouteStaysOpen(t *testing.T) {
 	gateEngine(plain).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/catalog/entities", strings.NewReader("{")))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("login-only endpoint rejected a logged-in user: status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestExternalSourcesRequireLoginOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	plain := &User{ID: "u-plain", Permissions: []string{"community.post.create"}}
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/external-sources"},
+		{http.MethodPost, "/api/external-sources/query"},
+	} {
+		w := httptest.NewRecorder()
+		gateEngine(nil).ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"op":"search","q":"x"}`)))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s anonymous: %d %s", tc.method, tc.path, w.Code, w.Body.String())
+		}
+		w = httptest.NewRecorder()
+		body := "{"
+		if tc.method == http.MethodGet {
+			body = ""
+		}
+		gateEngine(plain).ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, strings.NewReader(body)))
+		// GET list succeeds; POST with "{" is invalid_payload
+		if tc.method == http.MethodGet {
+			if w.Code != http.StatusOK {
+				t.Fatalf("GET list for logged-in user: %d %s", w.Code, w.Body.String())
+			}
+		} else if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_payload") {
+			t.Fatalf("POST query for logged-in user: %d %s want 400 invalid_payload", w.Code, w.Body.String())
+		}
 	}
 }

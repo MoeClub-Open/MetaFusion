@@ -102,7 +102,6 @@ func TestAuditActionCodesAreStable(t *testing.T) {
 		"POST /api/catalog/tracks/:id/contents":             "inclusion.created",
 		"PUT /api/catalog/tracks/:id/contents/:position":    "inclusion.updated",
 		"DELETE /api/catalog/tracks/:id/contents/:position": "inclusion.deleted",
-		"POST /api/importer/import":                         "import.completed",
 		"PUT /api/admin/catalog-definitions":                "definition.updated",
 		"PUT /api/admin/rate-limits":                        "rate_limit.updated",
 		"POST /api/admin/external-databases":                "external_database.created",
@@ -134,8 +133,8 @@ func TestAuditExemptRoutesAreReadOnlyByDesign(t *testing.T) {
 	if len(exempt) != 10 {
 		t.Fatalf("豁免表条数变了（%d）：新增豁免要在测试里说明它为什么零写入", len(exempt))
 	}
-	// relationships/query 与 entities/candidates(/batch) 仅在 repeatable-read 的只读事务中读目录投影。 quality/batch 同样只在只读事务中按需计算质量诊断，不落库。
-	for _, key := range []string{"POST /api/catalog/checkout", "POST /api/catalog/commits/preview", "POST /api/catalog/expressions/details", "POST /api/importer/preview", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/entities/candidates/batch", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
+	// relationships/query 与 entities/candidates(/batch) 仅在 repeatable-read 的只读事务中读目录投影。 quality/batch 同样只在只读事务中按需计算质量诊断，不落库。external-sources/query 只出站抓取，不写目录。
+	for _, key := range []string{"POST /api/catalog/checkout", "POST /api/catalog/commits/preview", "POST /api/catalog/expressions/details", "POST /api/external-sources/query", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/entities/candidates/batch", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
 		if strings.TrimSpace(exempt[key]) == "" {
 			t.Fatalf("%s 必须带豁免理由", key)
 		}

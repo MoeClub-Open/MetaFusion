@@ -86,7 +86,7 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 		{"/catalog/me/home-preferences", "get", true},
 		{"/catalog/me/home-preferences", "put", true},
 		{"/exchange/proposals", "post", true},
-		{"/importer/sources", "get", true},
+		{"/external-sources", "get", true},
 	} {
 		op := paths[p.path].(map[string]any)[p.method].(map[string]any)
 		_, hasSec := op["security"]

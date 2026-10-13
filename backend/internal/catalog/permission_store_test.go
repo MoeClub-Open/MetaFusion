@@ -18,8 +18,8 @@ func TestPermissionCodesAuthorizeCatalogWrites(t *testing.T) {
 	}
 	sources := fixtureSources()
 	// 权限集合按账号服务的组展开，角色一律是 member：授权只看码。
-	editor := User{ID: uuid.NewString(), Username: "catalog-editor", Groups: []string{"catalog_editor"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionImportSubmit}}
-	admin := User{ID: uuid.NewString(), Username: "catalog-admin", Groups: []string{"catalog_admin"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionDefinitionsManage, PermissionLifecycleManage, PermissionImportSubmit, PermissionShelvesManage}}
+	editor := User{ID: uuid.NewString(), Username: "catalog-editor", Groups: []string{"catalog_editor"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit}}
+	admin := User{ID: uuid.NewString(), Username: "catalog-admin", Groups: []string{"catalog_admin"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionDefinitionsManage, PermissionLifecycleManage, PermissionShelvesManage}}
 	member := User{ID: uuid.NewString(), Username: "plain-member", Groups: []string{"member"}, Permissions: []string{"community.post.create"}}
 	mk := func(title string) Entity {
 		return Entity{Kind: "work", Title: title, OriginalLanguage: "ja", Translations: map[string]Translation{"ja": {Title: title}}}

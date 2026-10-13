@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Plus, Edit2, Trash2, Globe, Power } from "lucide-react";
 import {
   fetchAdminExternalDatabases,
-  fetchImporterSources,
+  fetchExternalSources,
   createExternalDatabase,
   updateExternalDatabase,
   deleteExternalDatabase,
@@ -25,7 +25,7 @@ export function ExternalDatabasesTab() {
   // 适用范围候选与显示名都取服务端 kinds（后台停用的骨架不再出现），字典只作兜底。
   const kindOptions = resolveKindOptions(serverKinds);
   const [items, setItems] = useState<ExternalDatabaseDefinition[]>([]);
-  // 有导入适配器的 code 集合，来自 GET /importer/sources（后端同一份事实：
+  // 有外部查询适配器的 code 集合，来自 GET /external-sources（后端同一份事实：
   // 适配器在代码里、元数据在注册表）。null = 还没取到或取不到，与"无适配器"分开显示。
   const [adapterIds, setAdapterIds] = useState<Set<string> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,7 +59,7 @@ export function ExternalDatabasesTab() {
       setLoading(false);
     }
     // 适配器集合单独取：取不到只让这一列显示"未知"，不影响库列表本身（两者失败原因不同）。
-    fetchImporterSources()
+    fetchExternalSources()
       .then((res) => setAdapterIds(new Set((Array.isArray(res.items) ? res.items : []).map((s) => s.id))))
       .catch(() => setAdapterIds(null));
   };
@@ -268,7 +268,7 @@ export function ExternalDatabasesTab() {
                     {item.sort_order}
                   </td>
 
-                  {/* 导入适配器：数据来自 /importer/sources 的 id 集合，与导入弹窗同源 */}
+                  {/* 导入适配器：数据来自 /external-sources 的 id 集合，与外部来源查询同源 */}
                   <td className="py-3 px-4 text-center">
                     {adapterIds === null ? (
                       <span

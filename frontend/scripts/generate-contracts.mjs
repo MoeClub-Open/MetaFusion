@@ -37,7 +37,7 @@ const CATALOG_API_TS = path.join(HERE, "../src/components/catalog/api.ts");
 
 const SERVICES = [
   { id: "catalog", prefix: "catalog.", file: path.join(ROOT, "backend/internal/catalog/permission.go"), required: true, note: "backend/internal/catalog/permission.go",
-    why: "目录权限：条目/关系/定义/生命周期/导入/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。" },
+    why: "目录权限：条目/关系/定义/生命周期/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。" },
   { id: "auth", prefix: "auth.", file: path.join(ROOT, "../metafusion-auth/internal/store/access.go"), required: false, note: "../metafusion-auth/internal/store/access.go",
     why: "账号权限：auth.oauth.manage 覆盖客户端管理、密钥轮换、令牌吊销与审计（metafusion-auth/internal/handler/oauth_admin.go）。" },
   { id: "community", prefix: "community.", file: path.join(ROOT, "../metafusion-community/internal/auth/permission.go"), required: false, note: "../metafusion-community/internal/auth/permission.go",

@@ -13,7 +13,7 @@ import (
 // 权限码是账号服务与目录侧的共享契约：改名等于改两边，这里把拼写钉死
 // （对照 metafusion-auth/internal/store/access.go 的 PermissionCatalog 与 seed_groups.go）。
 func TestCatalogPermissionCodesMatchAccountService(t *testing.T) {
-	want := []string{"catalog.entity.edit", "catalog.relation.edit", "catalog.definitions.manage", "catalog.lifecycle.manage", "catalog.import.submit", "catalog.shelves.manage"}
+	want := []string{"catalog.entity.edit", "catalog.relation.edit", "catalog.definitions.manage", "catalog.lifecycle.manage", "catalog.shelves.manage"}
 	if len(catalogPermissionCodes) != len(want) {
 		t.Fatalf("catalog permission code drift: %v", catalogPermissionCodes)
 	}

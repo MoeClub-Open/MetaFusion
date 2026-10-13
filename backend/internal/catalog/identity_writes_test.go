@@ -224,7 +224,7 @@ func TestPostgresImporterSharesIdentityTermLocks(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := f.s.importerSave(ctx, e, f.u, "import identity lock", fixtureSources())
+		_, err := f.s.Save(ctx, Edit{Entity: e, EditNote: "identity lock", Sources: fixtureSources()}, f.u)
 		done <- err
 	}()
 	deadline := time.Now().Add(2 * time.Second)
@@ -239,7 +239,7 @@ func TestPostgresImporterSharesIdentityTermLocks(t *testing.T) {
 		}
 		select {
 		case err := <-done:
-			t.Fatalf("internal importer bypassed held identity lock: %v", err)
+			t.Fatalf("Save bypassed held identity lock: %v", err)
 		case <-time.After(10 * time.Millisecond):
 		}
 	}

@@ -297,7 +297,11 @@ func importerDatePart(raw string) string {
 // 服务端 Set-Cookie 后 302 回目标页，响应体即详情页；最终仍落在 /age_check/
 // 说明过门失败，报 upstream_error。
 func fetchDMMDetail(ctx context.Context, ref dmmRef) (string, error) {
-	gateURL := dmmGateBase + "/age_check/=/declared=yes/?rurl=" + url.QueryEscape(ref.requestURL())
+	if err := waitOutbound(ctx, "dmm"); err != nil {
+		return "", err
+	}
+	pageURL := ref.requestURL()
+	gateURL := dmmGateBase + "/age_check/=/declared=yes/?rurl=" + url.QueryEscape(pageURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, gateURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("upstream_error")
@@ -322,6 +326,12 @@ func fetchDMMDetail(ctx context.Context, ref dmmRef) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("upstream_error")
 	}
+	finalURL := pageURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
+	meta := FetchMeta{URL: finalURL, FetchedAt: time.Now().UTC(), ContentHash: contentHash(body)}
+	recorderFrom(ctx).add(meta, body)
 	return string(body), nil
 }
 
