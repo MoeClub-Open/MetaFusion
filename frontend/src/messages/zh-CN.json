@@ -2102,5 +2102,6 @@
   "catalog.error.invalidIsbn": "ISBN 格式或校验位无效，请核对原始出版物上的 ISBN。",
   "catalog.error.invalidBarcode": "条码格式或校验位无效，请核对原始商品上的 GTIN 条码。",
   "catalog.noResults": "没有找到结果",
-  "catalog.noResultsFor": "没有找到「{q}」相关的结果，试试更短的关键词或检查拼写"
+  "catalog.noResultsFor": "没有找到「{q}」相关的结果，试试更短的关键词或检查拼写",
+  "authority.officialBadge": "官方"
 }

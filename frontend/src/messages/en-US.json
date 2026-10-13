@@ -2102,5 +2102,6 @@
   "catalog.error.invalidIsbn": "The ISBN format or check digit is invalid. Check the ISBN printed on the publication.",
   "catalog.error.invalidBarcode": "The barcode format or check digit is invalid. Check the GTIN barcode printed on the product.",
   "catalog.noResults": "No results",
-  "catalog.noResultsFor": "No results for “{q}”. Try a shorter keyword or check the spelling."
+  "catalog.noResultsFor": "No results for “{q}”. Try a shorter keyword or check the spelling.",
+  "authority.officialBadge": "Official"
 }

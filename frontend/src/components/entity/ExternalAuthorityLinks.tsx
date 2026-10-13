@@ -19,6 +19,8 @@ interface Props {
   className?: string;
   label?: string;
   variant?: "chips" | "list"; // chips: 小徽标水平流; list: 左侧大边栏列表
+  /** list 样式下没有任何链接时显示的文案；不传则整块不渲染。 */
+  emptyText?: string;
 }
 
 export interface AuthorityLinkItem {
@@ -41,6 +43,7 @@ export function ExternalAuthorityLinks({
   className = "",
   label,
   variant = "chips",
+  emptyText,
 }: Props) {
   const { t, locale } = useI18n();
   const [definitions, setDefinitions] = useState<ExternalDatabaseDefinition[]>([]);
@@ -174,11 +177,29 @@ export function ExternalAuthorityLinks({
       });
     }
 
-    // 按权威度排序：官网最前，其次为 Bangumi，再按预设排序
-    return items.sort((a, b) => a.sortOrder - b.sortOrder);
+    // 按权威度排序：官网始终最前（不受预设 sort_order 影响），其余按预设排序
+    return items.sort((a, b) => Number(b.isOfficial) - Number(a.isOfficial) || a.sortOrder - b.sortOrder);
   }, [externalLinks, resolvedIds, definitions, entity, locale]);
 
-  if (linkItems.length === 0) return null;
+  if (linkItems.length === 0) {
+    // 发行版本等页面要求卡片常驻：传了 emptyText 就渲染空卡片，否则保持原样不渲染。
+    if (variant !== "list" || !emptyText) return null;
+    return (
+      <div className={`p-4 sm:p-5 rounded-xl border border-line bg-surface shadow-soft space-y-3 ${className}`}>
+        <div className="flex items-center gap-2 border-b border-line-subtle pb-2.5">
+          <Globe className="w-4 h-4 text-primary" strokeWidth={1.5} />
+          <h3 className="font-display text-xs font-bold uppercase tracking-wider text-text-strong font-mono">{displayLabel}</h3>
+        </div>
+        <p className="text-xs text-text-muted">{emptyText}</p>
+      </div>
+    );
+  }
+
+  const officialBadge = (
+    <span className="shrink-0 px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 text-[10px] font-semibold leading-none">
+      {t("authority.officialBadge")}
+    </span>
+  );
 
   // 样式 A: 竖直大列表（专为详情页左侧边栏设计，与基本信息卡片完美呼应）
   if (variant === "list") {
@@ -228,6 +249,7 @@ export function ExternalAuthorityLinks({
                     <IconComp className={`w-4 h-4 shrink-0 ${isOfficial ? "text-emerald-500" : isBangumi ? "text-[#f09199]" : "opacity-70"}`} />
                   )}
                   <span className="font-sans truncate">{item.name}</span>
+                  {isOfficial && officialBadge}
                 </span>
                 <span className="flex items-center gap-1 shrink-0 ml-2 font-mono text-[11px] opacity-75">
                   <span className="truncate max-w-[90px]">{item.id.replace(/^https?:\/\//, "")}</span>
@@ -274,6 +296,7 @@ export function ExternalAuthorityLinks({
               <IconComp className={`w-3.5 h-3.5 shrink-0 ${isOfficial ? "text-emerald-500" : isBangumi ? "text-[#f09199]" : "opacity-70"}`} />
             )}
             <span>{item.name}</span>
+            {isOfficial && officialBadge}
             {item.url ? <ExternalLink className="w-2.5 h-2.5 opacity-40 ml-0.5" /> : <span className="font-mono">{item.id}</span>}
           </LinkTag>
         );

@@ -2102,5 +2102,6 @@
   "catalog.error.invalidIsbn": "ISBN の形式またはチェックディジットが無効です。出版物に記載された ISBN を確認してください。",
   "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。",
   "catalog.noResults": "結果が見つかりません",
-  "catalog.noResultsFor": "「{q}」に一致する結果はありません。短いキーワードを試すか、綴りを確認してください。"
+  "catalog.noResultsFor": "「{q}」に一致する結果はありません。短いキーワードを試すか、綴りを確認してください。",
+  "authority.officialBadge": "公式"
 }
