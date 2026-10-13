@@ -194,6 +194,7 @@ function statusIcon(status: QualityStatus) {
   }
 }
 
+// i18n: track_position_gap copy synced with Kimi「音轨序号有缺口或重复」
 function issueLabel(issue: QualityIssue, t: (key: string, vars?: Record<string, string | number>) => string): string {
   const key = `catalog.quality.issue.${issue.code}`;
   const field = issue.field || "";
