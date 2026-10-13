@@ -1720,10 +1720,8 @@ export function EntityDetailView({ id }: { id: string }) {
                   </a>
                 }
               >
-                {t("entity.page.communityTitle")}
-                <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                  {communityPosts.length}
-                </span>
+                {/* 标题与计数写成一句「评论 (N)」：以前是标题后紧贴一个计数徽标，读屏和复制出来都是「评论0」。 */}
+                {t("entity.page.communityTitleCount", { count: communityPosts.length })}
               </SectionTitle>
 
               {/* Quick Comment Composer */}
