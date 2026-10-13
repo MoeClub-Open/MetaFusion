@@ -351,8 +351,14 @@ func Middleware(o Options) gin.HandlerFunc {
 	}
 }
 
-// requestID 取 X-Request-Id 透传值，缺失时生成 uuid 并回写响应头（契约 §1）。
+// requestID 优先用 httplog.RequestID 写进上下文的值（与访问日志、响应头同一条），
+// 再回落到请求头；都没有时才生成（单元测试等没挂 httplog 中间件的场景）。
 func requestID(c *gin.Context) string {
+	if v, ok := c.Get("request_id"); ok {
+		if rid, _ := v.(string); strings.TrimSpace(rid) != "" {
+			return rid
+		}
+	}
 	rid := strings.TrimSpace(c.GetHeader(RequestIDHeader))
 	if rid == "" {
 		rid = uuid.NewString()
