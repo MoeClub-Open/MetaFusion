@@ -23,7 +23,14 @@ func respondCommit(c *gin.Context, v CommitReceipt, err error) {
 	var conflict *commitConflictError
 	if errors.As(err, &conflict) {
 		auditlog.Fail(c, "commit_conflict")
-		c.JSON(409, gin.H{"error": "commit_conflict", "applied": false, "conflict": conflict.Conflict})
+		// Top-level conflicts mirrors conflict.conflicts so agents and the
+		// three-column UI can read field diagnostics without digging.
+		c.JSON(409, gin.H{
+			"error":     "commit_conflict",
+			"applied":   false,
+			"conflict":  conflict.Conflict,
+			"conflicts": conflict.Conflict.Conflicts,
+		})
 		return
 	}
 	if errors.Is(err, errDefinitionsConflict) {
