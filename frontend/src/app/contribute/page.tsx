@@ -16,65 +16,79 @@ export default function ContributeHubPage() {
       desc: t("create.hub.cardWorkDesc"),
       accent: "text-info",
       border: "hover:border-sky-500/30",
+      bg: "bg-sky-500/10",
     },
     {
       href: "/new?kind=agent",
       icon: Users,
       title: t("create.hub.cardArtistTitle"),
       desc: t("create.hub.cardArtistDesc"),
-      accent: "text-success",
-      border: "hover:border-emerald-500/30",
+      accent: "text-warn",
+      border: "hover:border-amber-500/30",
+      bg: "bg-amber-500/10",
     },
     {
       href: "/new?kind=release",
       icon: Disc,
       title: t("create.hub.cardReleaseTitle"),
       desc: t("create.hub.cardReleaseDesc"),
-      accent: "text-warning",
-      border: "hover:border-amber-500/30",
+      accent: "text-success",
+      border: "hover:border-emerald-500/30",
+      bg: "bg-emerald-500/10",
     },
     {
       href: "/new?kind=collection",
       icon: Network,
       title: t("create.hub.cardFranchiseTitle"),
       desc: t("create.hub.cardFranchiseDesc"),
-      accent: "text-accent",
-      border: "hover:border-violet-500/30",
+      accent: "text-alt",
+      border: "hover:border-indigo-500/30",
+      bg: "bg-indigo-500/10",
     },
-  ];
+  ] as const;
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col bg-background text-text-strong">
       <Navbar />
-      <PageShell>
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-fg">{t("create.hub.title")}</h1>
-          <p className="mt-2 text-sm text-fg-muted">{t("create.hub.subtitle")}</p>
+      <PageShell width="narrow" spacing="none" contentClassName="space-y-4">
+        <div className="space-y-1">
+          <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-text-strong">
+            {t("create.hub.title")}
+          </h1>
+          <p className="font-mono text-xs text-text-faint max-w-3xl">
+            {t("create.hub.subtitle")}
+          </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {cards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <Link
-                key={card.href}
-                href={card.href}
-                className={`group rounded-2xl border border-border bg-surface p-5 transition ${card.border}`}
-              >
-                <div className="flex items-start gap-3">
-                  <Icon className={`mt-0.5 h-5 w-5 ${card.accent}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="font-semibold text-fg">{card.title}</h2>
-                      <ArrowRight className="h-4 w-4 text-fg-muted opacity-0 transition group-hover:opacity-100" />
-                    </div>
-                    <p className="mt-1 text-sm text-fg-muted">{card.desc}</p>
+
+        <div className="space-y-2">
+          <div className="text-xs font-mono text-text-muted uppercase tracking-wider font-semibold">
+            {t("create.hub.manualSectionTitle")}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {cards.map((c) => {
+              const Icon = c.icon;
+              return (
+                <Link
+                  key={c.href}
+                  href={c.href}
+                  className={`group p-3 sm:p-4 rounded-card border border-line bg-surface hover:border-primary/40 transition-all space-y-3 shadow-xs hover:shadow-md ${c.border}`}
+                >
+                  <div className={`w-9 h-9 rounded-xl border border-line grid place-items-center ${c.bg}`}>
+                    <Icon className={`w-4 h-4 ${c.accent}`} />
                   </div>
-                </div>
-              </Link>
-            );
-          })}
+                  <div className="font-semibold text-text-strong text-base flex items-center gap-1.5 group-hover:text-primary transition-colors duration-fast ease-soft">
+                    <span>{c.title}</span>
+                    <ArrowRight className="w-4 h-4 text-text-muted group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-base ease-soft" />
+                  </div>
+                  <div className="font-mono text-xs leading-relaxed text-text-muted">
+                    {c.desc}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </PageShell>
-    </>
+    </div>
   );
 }
