@@ -29,6 +29,12 @@ export function FieldValue({
   const def = field || defs?.fields?.[code];
   const type = def?.type;
 
+  // 缺值统一显示「—」：对比页把不同层级（作品 vs 艺人）并排时，一侧没有该字段，
+  // 以前会被 String(undefined) 直出成 "undefined"。布尔字段的 false 不算缺值。
+  if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) {
+    return <span className="text-text-muted">—</span>;
+  }
+
   if (type === "date") {
     return (
       <span className="font-mono inline-flex items-center gap-1">
