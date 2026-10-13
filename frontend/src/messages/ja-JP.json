@@ -2100,5 +2100,7 @@
   "catalog.error.invalidIdentityReview": "候補の確認情報が無効です。再読み込みして確認してください。",
   "auth.error.forbidden_pat_scope": "個人アクセストークンにワイルドカード権限や管理権限は指定できません。権限の範囲を選び直してください。",
   "catalog.error.invalidIsbn": "ISBN の形式またはチェックディジットが無効です。出版物に記載された ISBN を確認してください。",
-  "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。"
+  "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。",
+  "revisions.scopeCommit": "コミット全体",
+  "revisions.scopeCommitHint": "過去の改訂：コミット全体の出典で、この改訂の特定フィールドを裏付けるものではありません"
 }

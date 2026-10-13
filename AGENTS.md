@@ -47,7 +47,7 @@ MetaFusion 是类似 MusicBrainz / Bangumi 的开放元数据目录与受控资�
 
 涉及 API 或数据行为时，以目标实例响应 + 实际处理器 + 已执行迁移为准；有矛盾记差异、停掉依赖写入，不改文案掩盖。接口或外部行为变化时，只同步直接受影响的 OpenAPI、用户和开发者文档及主仓内部契约说明。
 
-- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000028_catalog_shared_budget`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
+- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000029_revision_source_scope`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
 
 ## 4. 按改动范围验证
 

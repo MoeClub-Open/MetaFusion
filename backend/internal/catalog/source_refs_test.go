@@ -46,64 +46,48 @@ func TestSourceRefsValidation(t *testing.T) {
 		{"bad key", refCommit([]Source{keyed("1x", "https://a.example")}, create(SourceRef{Source: "1x"})), "invalid_source_key"},
 		{"client pointers in pool", refCommit([]Source{{Kind: "url", Citation: "c", URL: "https://a.example", Key: "a", Pointers: []string{"/title"}}}, create(SourceRef{Source: "a"})), "source_pointers_not_allowed"},
 		{"unknown ref", refCommit(pool, create(SourceRef{Source: "zzz"})), "unknown_source_ref"},
-		{"empty refs", refCommit(pool, func() CommitOperation { op := create(); op.SourceRefs = []SourceRef{}; return op }()), "source_refs_empty"},
+		{"missing refs", refCommit(pool[:1], create()), "source_refs_required"},
+		{"empty refs", refCommit(pool[:1], func() CommitOperation { op := create(); op.SourceRefs = []SourceRef{}; return op }()), "source_refs_required"},
+		{"source without key", refCommit([]Source{{Kind: "url", Citation: "c", URL: "https://a.example"}}, create(SourceRef{Source: "a"})), "source_key_required"},
+		{"client scope in pool", refCommit([]Source{{Kind: "url", Citation: "c", URL: "https://a.example", Key: "a", Scope: SourceScopeCommit}}, create(SourceRef{Source: "a"})), "source_scope_not_allowed"},
+		{"unused source", refCommit(pool, create(SourceRef{Source: "a"})), "source_unused"},
 		{"duplicate ref", refCommit(pool, create(SourceRef{Source: "a"}, SourceRef{Source: "a"})), "duplicate_source_ref"},
 		{"bad pointer", refCommit(pool, create(SourceRef{Source: "a", Pointers: []string{"title"}})), "invalid_source_pointer"},
 		{"create pointer missing", refCommit(pool, create(SourceRef{Source: "a", Pointers: []string{"/attributes/barcode"}})), "source_pointer_not_in_document"},
 		{"update pointer not patched", refCommit(pool, update(SourceRef{Source: "a", Pointers: []string{"/title"}})), "source_pointer_not_patched"},
 	}
 	for _, tc := range cases {
-		if _, err := validateCommitSourceRefs(tc.in); errCode(err) != tc.want {
+		if err := validateCommitSourceRefs(tc.in); errCode(err) != tc.want {
 			t.Errorf("%s: got %v want %s", tc.name, err, tc.want)
 		}
 	}
 	// 合法：创建指针存在于文档；更新指针等于、前缀于或位于补丁路径之下。
 	for _, ptrs := range [][]string{{"/attributes/catalog_number"}, {"/attributes"}, nil} {
-		w, err := validateCommitSourceRefs(refCommit(pool, create(SourceRef{Source: "a", Pointers: ptrs}), func() CommitOperation {
+		err := validateCommitSourceRefs(refCommit(pool, create(SourceRef{Source: "a", Pointers: ptrs}), func() CommitOperation {
 			op := update(SourceRef{Source: "b", Pointers: ptrs})
 			op.Ref = ""
 			return op
 		}()))
-		if err != nil || len(w) != 0 {
-			t.Fatalf("valid refs %v rejected: %v %v", ptrs, err, w)
+		if err != nil {
+			t.Fatalf("valid refs %v rejected: %v", ptrs, err)
 		}
 	}
 	whole := update(SourceRef{Source: "a", Pointers: []string{"/attributes/catalog_number/x"}})
 	whole.Patch = []CommitPatch{{Path: "/attributes", Value: json.RawMessage(`{}`)}}
-	if _, err := validateCommitSourceRefs(refCommit(pool, whole)); err != nil {
+	if err := validateCommitSourceRefs(refCommit(pool[:1], whole)); err != nil {
 		t.Fatalf("pointer under replaced object rejected: %v", err)
 	}
 }
 
-func TestSourceRefsTransitionWarningsAndStrictMode(t *testing.T) {
-	pool := []Source{keyed("a", "https://a.example/1"), keyed("b", "https://b.example/1"), keyed("unused", "https://c.example/1")}
-	op := func(ref string, refs ...SourceRef) CommitOperation {
-		return CommitOperation{Target: "entity", Action: "create", Ref: ref, Document: json.RawMessage(`{"kind":"work","title":"t"}`), ReviewedCandidateIDs: []string{}, SourceRefs: refs}
+// 历史修订的 scope="commit" 来源能正常读出（一次性迁移写入，新提交不得自带）。
+func TestSourceScopeCommitRoundTrip(t *testing.T) {
+	var got []Source
+	raw := `[{"kind":"url","citation":"c","url":"https://a.example","scope":"commit"}]`
+	if err := json.Unmarshal([]byte(raw), &got); err != nil || len(got) != 1 || got[0].Scope != SourceScopeCommit {
+		t.Fatalf("scope round trip: %+v %v", got, err)
 	}
-	in := refCommit(pool, op("x", SourceRef{Source: "a"}), op("y", SourceRef{Source: "b"}))
-	w, err := validateCommitSourceRefs(in)
-	if err != nil || len(w) != 1 || w[0].Code != "source_unused" || w[0].Source != "unused" {
-		t.Fatalf("unused warning: %+v %v", w, err)
-	}
-	in = refCommit(pool[:2], op("x", SourceRef{Source: "a"}), op("y"))
-	w, err = validateCommitSourceRefs(in)
-	if err != nil || len(w) != 1 || w[0].Code != "source_refs_missing" || *w[0].Operation != 1 {
-		t.Fatalf("missing warning: %+v %v", w, err)
-	}
-	// 未写 source_refs 的操作过渡期继承整个池。
-	if got := operationSources(in, in.Operations[1]); len(got) != 2 {
-		t.Fatalf("legacy op must inherit pool: %+v", got)
-	}
-	SetStrictSourceRefs(true)
-	defer SetStrictSourceRefs(false)
-	if _, err = validateCommitSourceRefs(in); errCode(err) != "source_refs_missing" {
-		t.Fatalf("strict mode: %v", err)
-	}
-	// 完全不用 key 的旧式提交在过渡期照旧通过（只有警告）。
-	SetStrictSourceRefs(false)
-	legacy := refCommit([]Source{{Kind: "url", Citation: "c", URL: "https://a.example"}}, op("x"))
-	if w, err = validateCommitSourceRefs(legacy); err != nil || len(w) != 1 {
-		t.Fatalf("legacy commit: %+v %v", w, err)
+	if b, _ := json.Marshal(Source{Kind: "url", Citation: "c"}); string(b) != `{"kind":"url","citation":"c"}` {
+		t.Fatalf("new sources must not carry scope: %s", b)
 	}
 }
 
@@ -125,7 +109,7 @@ func TestPostgresCommitSourceRefsDoNotMix(t *testing.T) {
 		keyed("nadame_page", "https://www.teichiku.co.jp/artist/kano/TEI-144.html"),
 	}
 	preview, err := f.s.PushCommit(ctx, in, f.u, true)
-	if err != nil || len(preview.Warnings) != 0 {
+	if err != nil || preview.Applied {
 		t.Fatalf("preview: %+v %v", preview, err)
 	}
 	out, err := f.s.PushCommit(ctx, in, f.u, false)
@@ -161,23 +145,28 @@ func TestPostgresCommitSourceRefsDoNotMix(t *testing.T) {
 		t.Fatal(err)
 	}
 	up := fixtureCommit(f, updateCommit(e, CommitPatch{Path: "/title", Value: json.RawMessage(`"rye (通常盤)"`)}))
+	// 池里有未被引用的来源：preview 与 push 都是错误，不再只是警告。
 	up.Sources = []Source{keyed("rye_page", in.Sources[0].URL), keyed("other", "https://example.org/unrelated")}
 	up.Operations[0].SourceRefs = []SourceRef{{Source: "rye_page", Pointers: []string{"/title"}}}
-	receipt, err := f.s.PushCommit(ctx, up, f.u, false)
-	if err != nil || len(receipt.Warnings) != 1 || receipt.Warnings[0].Code != "source_unused" {
-		t.Fatalf("update: %+v %v", receipt, err)
+	for _, preview := range []bool{true, false} {
+		if _, err := f.s.PushCommit(ctx, up, f.u, preview); errCode(err) != "source_unused" {
+			t.Fatalf("unused source (preview=%v): %v", preview, err)
+		}
+	}
+	up.Sources = up.Sources[:1]
+	if _, err := f.s.PushCommit(ctx, up, f.u, false); err != nil {
+		t.Fatalf("update: %v", err)
 	}
 	if got := revisionSources(e.ID); len(got) != 1 || got[0].Key != "rye_page" {
 		t.Fatalf("update revision sources: %+v", got)
 	}
-	// 过渡期：未写 source_refs 的操作继承整个来源池，并带 source_refs_missing 警告。
-	legacy := fixtureCommit(f, CommitOperation{Target: "entity", Action: "create", Ref: "l", Document: doc("legacy", "")})
-	legacy.Sources = in.Sources
-	lr, err := f.s.PushCommit(ctx, legacy, f.u, false)
-	if err != nil || len(lr.Warnings) != 1 || lr.Warnings[0].Code != "source_refs_missing" {
-		t.Fatalf("legacy: %+v %v", lr, err)
-	}
-	if got := revisionSources(lr.Refs["l"]); len(got) != 3 {
-		t.Fatalf("legacy inherits pool: %+v", got)
+	// 没写 source_refs 的操作：preview 与 push 都直接拒绝，不再继承来源池。
+	missing := fixtureCommit(f, CommitOperation{Target: "entity", Action: "create", Ref: "l", Document: doc("missing", "")})
+	missing.Operations[0].SourceRefs = nil
+	missing.Sources = in.Sources[:1]
+	for _, preview := range []bool{true, false} {
+		if _, err := f.s.PushCommit(ctx, missing, f.u, preview); errCode(err) != "source_refs_required" {
+			t.Fatalf("missing refs (preview=%v): %v", preview, err)
+		}
 	}
 }

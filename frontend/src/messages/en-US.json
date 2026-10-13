@@ -2100,5 +2100,7 @@
   "catalog.error.invalidIdentityReview": "Candidate review information is invalid. Reload and review the candidates.",
   "auth.error.forbidden_pat_scope": "Personal access tokens cannot include wildcard or management permissions. Choose other scopes.",
   "catalog.error.invalidIsbn": "The ISBN format or check digit is invalid. Check the ISBN printed on the publication.",
-  "catalog.error.invalidBarcode": "The barcode format or check digit is invalid. Check the GTIN barcode printed on the product."
+  "catalog.error.invalidBarcode": "The barcode format or check digit is invalid. Check the GTIN barcode printed on the product.",
+  "revisions.scopeCommit": "Whole commit",
+  "revisions.scopeCommitHint": "Historical revision: this source covered the whole commit, not a specific field of this revision"
 }

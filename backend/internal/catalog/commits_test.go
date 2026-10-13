@@ -15,9 +15,28 @@ import (
 func patchValue(path string, value any) CommitPatch {
 	return CommitPatch{Path: path, Value: json.RawMessage(encode(value))}
 }
+
+// commitFixtureSources 是提交测试用的来源池：source_refs 必填，来源必须带 key。
+func commitFixtureSources() []Source {
+	return []Source{{Kind: "url", Citation: "isolated acceptance fixture", URL: "https://example.org/fixture", Key: "fixture"}}
+}
+
+// withFixtureRefs 给没写 source_refs 的操作补上对 fixture 来源的引用（测试专用）。
+func withFixtureRefs(in CatalogCommit) CatalogCommit {
+	for i := range in.Operations {
+		if len(in.Operations[i].SourceRefs) == 0 {
+			in.Operations[i].SourceRefs = []SourceRef{{Source: "fixture"}}
+		}
+	}
+	return in
+}
+
 func fixtureCommit(f fixture, ops ...CommitOperation) CatalogCommit {
 	f.t.Helper()
 	for i := range ops {
+		if len(ops[i].SourceRefs) == 0 {
+			ops[i].SourceRefs = []SourceRef{{Source: "fixture"}}
+		}
 		if ops[i].Target == "entity" && ops[i].Action == "create" && ops[i].ReviewedCandidateIDs == nil {
 			ops[i].ReviewedCandidateIDs = []string{}
 		}
@@ -26,7 +45,7 @@ func fixtureCommit(f fixture, ops ...CommitOperation) CatalogCommit {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "commit fixture", Sources: fixtureSources(), Operations: ops}
+	return CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "commit fixture", Sources: commitFixtureSources(), Operations: ops}
 }
 func updateCommit(e Entity, patch ...CommitPatch) CommitOperation {
 	op := CommitOperation{Target: "entity", Action: "update", ID: e.ID, BaseVersion: e.Version, Patch: patch}
@@ -63,7 +82,7 @@ func TestCommitMergeAndPatchValidation(t *testing.T) {
 	if _, err := resolveCommitRefs(json.RawMessage(`{"$ref":"missing"}`), map[string]string{}); err == nil {
 		t.Fatal("unknown ref")
 	}
-	in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: "etag", EditNote: "fixture", Sources: fixtureSources(), Operations: []CommitOperation{{Target: "entity", Action: "update", ID: uuid.NewString(), BaseVersion: 1, Patch: []CommitPatch{patchValue("/version", 2)}}}}
+	in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: "etag", EditNote: "fixture", Sources: commitFixtureSources(), Operations: []CommitOperation{{Target: "entity", Action: "update", ID: uuid.NewString(), BaseVersion: 1, Patch: []CommitPatch{patchValue("/version", 2)}}}}
 	if validateCommit(in) == nil {
 		t.Fatal("server field accepted")
 	}
@@ -179,7 +198,7 @@ func TestPostgresCommitThreeWayAndConcurrentPush(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "parallel", Sources: fixtureSources(), Operations: []CommitOperation{updateCommit(current, patchValue("/translations/"+[]string{"ja", "zh-CN", "zh-TW", "de", "fr", "es", "it", "ko", "pt", "ru", "nl", "ar"}[i], map[string]any{"title": fmt.Sprint(i)}))}}
+			in := withFixtureRefs(CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "parallel", Sources: commitFixtureSources(), Operations: []CommitOperation{updateCommit(current, patchValue("/translations/"+[]string{"ja", "zh-CN", "zh-TW", "de", "fr", "es", "it", "ko", "pt", "ru", "nl", "ar"}[i], map[string]any{"title": fmt.Sprint(i)}))}})
 			_, err := f.s.PushCommit(ctx, in, f.u, false)
 			errs <- err
 		}(i)
@@ -206,7 +225,7 @@ func TestPostgresCommitConcurrentIdentityReviewAndReplay(t *testing.T) {
 	}
 	op := CommitOperation{Target: "entity", Action: "create", Ref: "work", ReviewedCandidateIDs: []string{}, Document: json.RawMessage(`{"kind":"work","title":"Same identity"}`)}
 	makeCommit := func() CatalogCommit {
-		return CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "parallel identity", Sources: fixtureSources(), Operations: []CommitOperation{op}}
+		return withFixtureRefs(CatalogCommit{ID: uuid.NewString(), DefinitionsETag: v.ETag, EditNote: "parallel identity", Sources: commitFixtureSources(), Operations: []CommitOperation{op}})
 	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)

@@ -61,8 +61,8 @@ func (s *Store) CheckCompatibleVersion(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 28 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 28 required (run mf-migrate up)")
+	if contractVersion != 29 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 29 required (run mf-migrate up)")
 	}
 	var hasCommitProvenance bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='revisions' AND column_name='commit_id')`).Scan(&hasCommitProvenance); err != nil {
