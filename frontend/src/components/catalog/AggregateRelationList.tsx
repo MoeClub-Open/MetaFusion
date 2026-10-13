@@ -10,10 +10,13 @@ import { componentEntries, type RelationRow } from "@/components/work/WorkConten
 
 type RelationData = { items: RelationRow[]; entities: Record<string, Entity> };
 
-/** Any of the eight entity kinds can participate in a declared aggregate relation. */
-export function AggregateRelationList({ entityId, onCount }: { entityId: string; onCount?: (n: number) => void }) {
-  const { t, tr, locale } = useI18n();
-  const { definitions, kinds } = useDefinitions();
+/**
+ * 聚合关系的取数与分组。拆成 hook，是为了让详情页在面板未激活时也能拿到条数
+ * （标签徽标「内容结构 N」要算上它，以前只数目录，聚合项全漏，显示成 0）。
+ */
+export function useAggregateRelations(entityId: string) {
+  const { locale } = useI18n();
+  const { definitions } = useDefinitions();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<RelationData>({ items: [], entities: {} });
   const [attempt, setAttempt] = useState(0);
@@ -52,6 +55,19 @@ export function AggregateRelationList({ entityId, onCount }: { entityId: string;
   }, [data, entityId, locale, definitions]);
 
   const count = groups.reduce((n, g) => n + g.entries.length, 0);
+  return { state, groups, count, retry: () => setAttempt((n) => n + 1) };
+}
+
+export type AggregateRelations = ReturnType<typeof useAggregateRelations>;
+
+/** Any of the eight entity kinds can participate in a declared aggregate relation. */
+export function AggregateRelationList({ entityId, data, onCount }: { entityId: string; data?: AggregateRelations; onCount?: (n: number) => void }) {
+  const own = useAggregateRelations(data ? "" : entityId);
+  const { state, groups, retry, count } = data || own;
+  const { t, tr, locale } = useI18n();
+  const { kinds } = useDefinitions();
+
+  // 发行版本页签的徽标/「暂无数据」要知道条数（#52）；详情页则通过 data 共享 hook（#51）。
   useEffect(() => {
     if (state === "ready") onCount?.(count);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,7 +76,7 @@ export function AggregateRelationList({ entityId, onCount }: { entityId: string;
   if (state === "loading" || (state === "ready" && groups.length === 0)) return null;
   if (state === "error") return (
     <div role="alert" className="rounded-lg border border-line p-4 text-sm text-text-muted">
-      {t("catalog.listFailed")} <button type="button" className="text-primary hover:underline" onClick={() => setAttempt((n) => n + 1)}>{t("catalog.retry")}</button>
+      {t("catalog.listFailed")} <button type="button" className="text-primary hover:underline" onClick={retry}>{t("catalog.retry")}</button>
     </div>
   );
   return (

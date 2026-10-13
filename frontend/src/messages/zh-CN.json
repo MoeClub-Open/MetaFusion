@@ -2109,5 +2109,11 @@
   "release.detail.tabRevisions": "修订历史与证据溯源",
   "entity.authority.empty": "暂无外部链接",
   "common.noData": "暂无数据",
-  "entity.page.communityTitleCount": "评论 ({count})"
+  "entity.page.communityTitleCount": "评论 ({count})",
+  "entity.missing.title": "找不到这个条目",
+  "entity.missing.desc": "链接可能有误，或条目已被删除",
+  "entity.missing.browseCatalog": "浏览目录",
+  "entity.missing.goSearch": "去搜索",
+  "entity.loadFailed.title": "加载失败",
+  "entity.loadFailed.desc": "请检查网络后重试"
 }

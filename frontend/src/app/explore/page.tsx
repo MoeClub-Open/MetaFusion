@@ -1,5 +1,6 @@
 "use client";
 
+import { clampSearchQuery } from "@/lib/searchQuery";
 import { useEffect, useState, useMemo, useRef, useId, Suspense } from "react";
 import { safeCount } from "@/lib/api/fields";
 import Link from "next/link";
@@ -194,7 +195,8 @@ function ExploreInner() {
     const params = new URLSearchParams();
     if (currentKind !== "all") params.set("kind", currentKind);
     if (currentStatus) params.set("status", currentStatus);
-    if (currentQ) params.set("q", currentQ);
+    // 深链/手改 URL 带来的超长 q 也先截断，避免请求直接 400。
+    if (currentQ) params.set("q", clampSearchQuery(currentQ));
     currentTags.forEach((tag) => params.append("tags", tag));
     if (currentTagsMode !== "any") params.set("tags_mode", currentTagsMode);
     if (currentOriginalLanguage) params.set("original_language", currentOriginalLanguage);
@@ -604,7 +606,8 @@ function ExploreInner() {
             {/* 搜索统一在顶栏；本栏只保留排序与视图切换。 */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface border border-line shadow-xs">
               <p role="status" className="w-full sm:w-auto sm:mr-auto text-sm font-medium text-text-body">
-                {loading ? t("catalog.loading") : loadError ? t("catalog.loadFailed") : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
+                {/* 出错时下方的 alert 已经给出唯一一条错误说明，这里不再重复（以前两处文案还互相矛盾）。 */}
+                {loading ? t("catalog.loading") : loadError ? null : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
               </p>
               <div className="flex w-full sm:w-auto items-center gap-2">
                 {/* 排序：取值写回 URL（?sort=&order=），可深链、后退键保持；后端按白名单校验。 */}
@@ -802,7 +805,7 @@ function ExploreInner() {
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-11 h-11 rounded-lg bg-black/[0.03] dark:bg-black/40 border border-line shrink-0 overflow-hidden flex items-center justify-center">
                           {cover ? (
-                            <img src={cover} alt={displayTitle} className="w-full h-full object-cover" />
+                            <img src={cover} alt={displayTitle} width={44} height={44} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                           ) : (
                             <KindIcon className="w-5 h-5 text-text-muted" />
                           )}

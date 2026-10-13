@@ -2109,5 +2109,11 @@
   "release.detail.tabRevisions": "Revisions & evidence",
   "entity.authority.empty": "No external links",
   "common.noData": "No data yet",
-  "entity.page.communityTitleCount": "Comments ({count})"
+  "entity.page.communityTitleCount": "Comments ({count})",
+  "entity.missing.title": "Entry not found",
+  "entity.missing.desc": "The link may be wrong, or the entry has been deleted",
+  "entity.missing.browseCatalog": "Browse catalog",
+  "entity.missing.goSearch": "Search",
+  "entity.loadFailed.title": "Failed to load",
+  "entity.loadFailed.desc": "Check your network and try again"
 }

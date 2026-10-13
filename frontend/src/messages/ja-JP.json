@@ -2109,5 +2109,11 @@
   "release.detail.tabRevisions": "改訂履歴と出典",
   "entity.authority.empty": "外部リンクはありません",
   "common.noData": "データがありません",
-  "entity.page.communityTitleCount": "コメント ({count})"
+  "entity.page.communityTitleCount": "コメント ({count})",
+  "entity.missing.title": "この項目が見つかりません",
+  "entity.missing.desc": "リンクが間違っているか、項目が削除された可能性があります",
+  "entity.missing.browseCatalog": "カタログを見る",
+  "entity.missing.goSearch": "検索する",
+  "entity.loadFailed.title": "読み込みに失敗しました",
+  "entity.loadFailed.desc": "ネットワークを確認して再試行してください"
 }

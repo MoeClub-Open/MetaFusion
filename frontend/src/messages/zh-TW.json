@@ -2109,5 +2109,11 @@
   "release.detail.tabRevisions": "修訂歷史與證據溯源",
   "entity.authority.empty": "暫無外部連結",
   "common.noData": "暫無資料",
-  "entity.page.communityTitleCount": "評論 ({count})"
+  "entity.page.communityTitleCount": "評論 ({count})",
+  "entity.missing.title": "找不到這個條目",
+  "entity.missing.desc": "連結可能有誤，或條目已被刪除",
+  "entity.missing.browseCatalog": "瀏覽目錄",
+  "entity.missing.goSearch": "去搜尋",
+  "entity.loadFailed.title": "載入失敗",
+  "entity.loadFailed.desc": "請檢查網路後重試"
 }

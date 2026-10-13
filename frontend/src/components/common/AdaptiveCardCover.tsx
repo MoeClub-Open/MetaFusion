@@ -60,6 +60,11 @@ export function AdaptiveCardCover({
           <img
             src={src!}
             alt={alt}
+            // 固有尺寸提示：容器已用 aspect 类占位，这里再给 width/height，
+            // 让浏览器在图片到达前就能算出比例，避免布局跳动（CSS 仍按容器拉伸）。
+            width={512}
+            height={512}
+            decoding="async"
             loading="lazy"
             onError={() => setHasError(true)}
             onLoad={() => setLoaded(true)}
