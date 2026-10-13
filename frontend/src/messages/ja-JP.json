@@ -2103,5 +2103,11 @@
   "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。",
   "catalog.noResults": "結果が見つかりません",
   "catalog.noResultsFor": "「{q}」に一致する結果はありません。短いキーワードを試すか、綴りを確認してください。",
-  "authority.officialBadge": "公式"
+  "authority.officialBadge": "公式",
+  "release.detail.tabMediums": "メディア",
+  "release.detail.tabCredits": "参加・クレジット",
+  "release.detail.tabRevisions": "改訂履歴と出典",
+  "entity.authority.empty": "外部リンクはありません",
+  "common.noData": "データがありません",
+  "entity.page.communityTitleCount": "コメント ({count})"
 }

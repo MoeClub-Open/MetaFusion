@@ -2103,5 +2103,11 @@
   "catalog.error.invalidBarcode": "條碼格式或檢查碼無效，請核對原始商品上的 GTIN 條碼。",
   "catalog.noResults": "沒有找到結果",
   "catalog.noResultsFor": "沒有找到「{q}」相關的結果，試試更短的關鍵字或檢查拼字",
-  "authority.officialBadge": "官方"
+  "authority.officialBadge": "官方",
+  "release.detail.tabMediums": "載體",
+  "release.detail.tabCredits": "參與與署名",
+  "release.detail.tabRevisions": "修訂歷史與證據溯源",
+  "entity.authority.empty": "暫無外部連結",
+  "common.noData": "暫無資料",
+  "entity.page.communityTitleCount": "評論 ({count})"
 }

@@ -2103,5 +2103,11 @@
   "catalog.error.invalidBarcode": "The barcode format or check digit is invalid. Check the GTIN barcode printed on the product.",
   "catalog.noResults": "No results",
   "catalog.noResultsFor": "No results for “{q}”. Try a shorter keyword or check the spelling.",
-  "authority.officialBadge": "Official"
+  "authority.officialBadge": "Official",
+  "release.detail.tabMediums": "Media",
+  "release.detail.tabCredits": "Credits",
+  "release.detail.tabRevisions": "Revisions & evidence",
+  "entity.authority.empty": "No external links",
+  "common.noData": "No data yet",
+  "entity.page.communityTitleCount": "Comments ({count})"
 }

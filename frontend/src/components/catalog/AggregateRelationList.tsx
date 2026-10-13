@@ -11,7 +11,7 @@ import { componentEntries, type RelationRow } from "@/components/work/WorkConten
 type RelationData = { items: RelationRow[]; entities: Record<string, Entity> };
 
 /** Any of the eight entity kinds can participate in a declared aggregate relation. */
-export function AggregateRelationList({ entityId }: { entityId: string }) {
+export function AggregateRelationList({ entityId, onCount }: { entityId: string; onCount?: (n: number) => void }) {
   const { t, tr, locale } = useI18n();
   const { definitions, kinds } = useDefinitions();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -50,6 +50,12 @@ export function AggregateRelationList({ entityId }: { entityId: string }) {
     }
     return out;
   }, [data, entityId, locale, definitions]);
+
+  const count = groups.reduce((n, g) => n + g.entries.length, 0);
+  useEffect(() => {
+    if (state === "ready") onCount?.(count);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, count]);
 
   if (state === "loading" || (state === "ready" && groups.length === 0)) return null;
   if (state === "error") return (
