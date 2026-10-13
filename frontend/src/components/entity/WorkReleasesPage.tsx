@@ -1,5 +1,6 @@
 "use client";
 
+import { searchInputLimitProps } from "@/lib/searchQuery";
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -130,7 +131,7 @@ export default function WorkReleasesPage() {
             <h1 className="font-display text-xl tracking-tight text-emphasis">{t("work.releases.releaseCount", { count: total })}</h1>
             <form onSubmit={onSearch} className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-faint" strokeWidth={1.5} />
-              <input value={qInput} onChange={(e)=>setQInput(e.target.value)} placeholder={t("work.detail.searchPlaceholder")} className="pl-9 pr-3 h-10 sm:h-9 w-full sm:w-56 bg-emphasis/[0.04] border border-line rounded-full text-xs text-emphasis placeholder:text-text-faint focus:outline-none focus:border-primary/40" />
+              <input value={qInput} {...searchInputLimitProps(setQInput)} placeholder={t("work.detail.searchPlaceholder")} className="pl-9 pr-3 h-10 sm:h-9 w-full sm:w-56 bg-emphasis/[0.04] border border-line rounded-full text-xs text-emphasis placeholder:text-text-faint focus:outline-none focus:border-primary/40" />
             </form>
           </div>
 

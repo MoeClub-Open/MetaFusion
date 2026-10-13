@@ -2102,5 +2102,11 @@
   "catalog.error.invalidIsbn": "ISBN 格式或校验位无效，请核对原始出版物上的 ISBN。",
   "catalog.error.invalidBarcode": "条码格式或校验位无效，请核对原始商品上的 GTIN 条码。",
   "revisions.scopeCommit": "整笔提交",
-  "revisions.scopeCommitHint": "历史修订：这是整笔提交的来源，不能证明本条修订的某个具体字段"
+  "revisions.scopeCommitHint": "历史修订：这是整笔提交的来源，不能证明本条修订的某个具体字段",
+  "entity.missing.title": "找不到这个条目",
+  "entity.missing.desc": "链接可能有误，或条目已被删除",
+  "entity.missing.browseCatalog": "浏览目录",
+  "entity.missing.goSearch": "去搜索",
+  "entity.loadFailed.title": "加载失败",
+  "entity.loadFailed.desc": "请检查网络后重试"
 }

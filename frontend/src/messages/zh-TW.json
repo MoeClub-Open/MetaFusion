@@ -2102,5 +2102,11 @@
   "catalog.error.invalidIsbn": "ISBN 格式或檢查碼無效，請核對原始出版物上的 ISBN。",
   "catalog.error.invalidBarcode": "條碼格式或檢查碼無效，請核對原始商品上的 GTIN 條碼。",
   "revisions.scopeCommit": "整筆提交",
-  "revisions.scopeCommitHint": "歷史修訂：這是整筆提交的來源，無法證明本條修訂的特定欄位"
+  "revisions.scopeCommitHint": "歷史修訂：這是整筆提交的來源，無法證明本條修訂的特定欄位",
+  "entity.missing.title": "找不到這個條目",
+  "entity.missing.desc": "連結可能有誤，或條目已被刪除",
+  "entity.missing.browseCatalog": "瀏覽目錄",
+  "entity.missing.goSearch": "去搜尋",
+  "entity.loadFailed.title": "載入失敗",
+  "entity.loadFailed.desc": "請檢查網路後重試"
 }

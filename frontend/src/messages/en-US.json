@@ -2102,5 +2102,11 @@
   "catalog.error.invalidIsbn": "The ISBN format or check digit is invalid. Check the ISBN printed on the publication.",
   "catalog.error.invalidBarcode": "The barcode format or check digit is invalid. Check the GTIN barcode printed on the product.",
   "revisions.scopeCommit": "Whole commit",
-  "revisions.scopeCommitHint": "Historical revision: this source covered the whole commit, not a specific field of this revision"
+  "revisions.scopeCommitHint": "Historical revision: this source covered the whole commit, not a specific field of this revision",
+  "entity.missing.title": "Entry not found",
+  "entity.missing.desc": "The link may be wrong, or the entry has been deleted",
+  "entity.missing.browseCatalog": "Browse catalog",
+  "entity.missing.goSearch": "Search",
+  "entity.loadFailed.title": "Failed to load",
+  "entity.loadFailed.desc": "Check your network and try again"
 }

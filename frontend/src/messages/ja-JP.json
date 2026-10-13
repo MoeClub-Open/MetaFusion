@@ -2102,5 +2102,11 @@
   "catalog.error.invalidIsbn": "ISBN の形式またはチェックディジットが無効です。出版物に記載された ISBN を確認してください。",
   "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。",
   "revisions.scopeCommit": "コミット全体",
-  "revisions.scopeCommitHint": "過去の改訂：コミット全体の出典で、この改訂の特定フィールドを裏付けるものではありません"
+  "revisions.scopeCommitHint": "過去の改訂：コミット全体の出典で、この改訂の特定フィールドを裏付けるものではありません",
+  "entity.missing.title": "この項目が見つかりません",
+  "entity.missing.desc": "リンクが間違っているか、項目が削除された可能性があります",
+  "entity.missing.browseCatalog": "カタログを見る",
+  "entity.missing.goSearch": "検索する",
+  "entity.loadFailed.title": "読み込みに失敗しました",
+  "entity.loadFailed.desc": "ネットワークを確認して再試行してください"
 }
