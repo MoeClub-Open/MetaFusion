@@ -61,11 +61,17 @@ export function useAggregateRelations(entityId: string) {
 export type AggregateRelations = ReturnType<typeof useAggregateRelations>;
 
 /** Any of the eight entity kinds can participate in a declared aggregate relation. */
-export function AggregateRelationList({ entityId, data }: { entityId: string; data?: AggregateRelations }) {
+export function AggregateRelationList({ entityId, data, onCount }: { entityId: string; data?: AggregateRelations; onCount?: (n: number) => void }) {
   const own = useAggregateRelations(data ? "" : entityId);
-  const { state, groups, retry } = data || own;
+  const { state, groups, retry, count } = data || own;
   const { t, tr, locale } = useI18n();
   const { kinds } = useDefinitions();
+
+  // 发行版本页签的徽标/「暂无数据」要知道条数（#52）；详情页则通过 data 共享 hook（#51）。
+  useEffect(() => {
+    if (state === "ready") onCount?.(count);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, count]);
 
   if (state === "loading" || (state === "ready" && groups.length === 0)) return null;
   if (state === "error") return (
