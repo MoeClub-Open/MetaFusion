@@ -63,8 +63,14 @@ func TestCommitMergeAndPatchValidation(t *testing.T) {
 		t.Fatalf("merge: %v %v %s", err, conflicts, encode(out))
 	}
 	_, conflicts, _, err = mergeCommitPatch(base, current, []CommitPatch{patchValue("/title", "mine")})
-	if err != nil || len(conflicts) != 1 {
+	if err != nil || len(conflicts) != 1 || conflicts[0].Pointer != "/title" || conflicts[0].Kind != "concurrent_edit" {
 		t.Fatalf("conflict: %v %v", err, conflicts)
+	}
+	if conflicts[0].Base != "base" || conflicts[0].Current != "other" || conflicts[0].Proposed != "mine" {
+		t.Fatalf("conflict values: %+v", conflicts[0])
+	}
+	if len(conflicts[0].Suggestions) == 0 || conflicts[0].Suggestions[0] != "manual_merge" {
+		t.Fatalf("suggestions: %v", conflicts[0].Suggestions)
 	}
 	_, conflicts, changed, err = mergeCommitPatch(base, current, []CommitPatch{patchValue("/title", "other")})
 	if err != nil || len(conflicts) != 0 || changed {
@@ -89,6 +95,57 @@ func TestCommitMergeAndPatchValidation(t *testing.T) {
 	in.Operations[0].Patch = []CommitPatch{patchValue("/attributes", map[string]any{}), patchValue("/attributes/language", "ja")}
 	if validateCommit(in) == nil {
 		t.Fatal("overlapping patch accepted")
+	}
+}
+
+func TestCommitFieldConflictKindsAndJSON(t *testing.T) {
+	base := commitMap(map[string]any{"title": "base", "attributes": map[string]any{"language": "ja"}})
+	current := commitMap(map[string]any{"title": "remote", "attributes": map[string]any{"language": "en"}})
+
+	_, conflicts, _, err := mergeCommitPatch(base, current, []CommitPatch{patchValue("/title", "base")})
+	if err != nil || len(conflicts) != 1 || conflicts[0].Kind != "stale_base" {
+		t.Fatalf("stale_base: %v %+v", err, conflicts)
+	}
+	if conflicts[0].Suggestions[0] != "take_current" {
+		t.Fatalf("stale suggestions: %v", conflicts[0].Suggestions)
+	}
+
+	_, conflicts, _, err = mergeCommitPatch(base, current, []CommitPatch{{Path: "/attributes/language", Remove: true}})
+	if err != nil || len(conflicts) != 1 || !conflicts[0].Remove || conflicts[0].Kind != "concurrent_edit" {
+		t.Fatalf("remove conflict: %v %+v", err, conflicts)
+	}
+	if conflicts[0].Proposed != nil || conflicts[0].Current != "en" || conflicts[0].Base != "ja" {
+		t.Fatalf("remove values: %+v", conflicts[0])
+	}
+
+	payload := &commitConflictError{Conflict: CommitConflict{
+		Operation: 0, ID: "11111111-2222-4333-8444-555555555555", BaseVersion: 1, CurrentVersion: 3,
+		Conflicts: []FieldConflict{{
+			Operation: 0, Pointer: "/title", Base: "base", Current: "remote", Proposed: "local",
+			Kind: "concurrent_edit", Suggestions: fieldConflictSuggestions("concurrent_edit"),
+		}},
+	}}
+	raw := encode(map[string]any{"error": "commit_conflict", "applied": false, "conflict": payload.Conflict, "conflicts": payload.Conflict.Conflicts})
+	var body map[string]any
+	if json.Unmarshal([]byte(raw), &body) != nil {
+		t.Fatal(raw)
+	}
+	if body["error"] != "commit_conflict" || body["applied"] != false {
+		t.Fatalf("envelope: %s", raw)
+	}
+	conflictsAny, _ := body["conflicts"].([]any)
+	if len(conflictsAny) != 1 {
+		t.Fatalf("top-level conflicts: %s", raw)
+	}
+	fc, _ := conflictsAny[0].(map[string]any)
+	for _, key := range []string{"operation", "pointer", "base", "current", "proposed", "kind", "suggestions"} {
+		if _, ok := fc[key]; !ok {
+			t.Fatalf("missing %s in %s", key, raw)
+		}
+	}
+	conflictObj, _ := body["conflict"].(map[string]any)
+	if _, ok := conflictObj["paths"]; ok {
+		t.Fatalf("legacy paths present: %s", raw)
 	}
 }
 
@@ -175,8 +232,15 @@ func TestPostgresCommitThreeWayAndConcurrentPush(t *testing.T) {
 	conflicting := fixtureCommit(f, updateCommit(e, patchValue("/title", "local")))
 	_, err = f.s.PushCommit(ctx, conflicting, f.u, false)
 	var conflict *commitConflictError
-	if !errors.As(err, &conflict) || conflict.Conflict.CurrentVersion != 3 || len(conflict.Conflict.Paths) != 1 {
+	if !errors.As(err, &conflict) || conflict.Conflict.CurrentVersion != 3 || len(conflict.Conflict.Conflicts) != 1 {
 		t.Fatalf("overlap: %v", err)
+	}
+	fc := conflict.Conflict.Conflicts[0]
+	if fc.Pointer != "/title" || fc.Kind != "concurrent_edit" || fc.Base != "base" || fc.Current != "remote" || fc.Proposed != "local" {
+		t.Fatalf("field conflict: %+v", fc)
+	}
+	if fc.Operation != 0 || len(fc.Suggestions) == 0 || fc.Suggestions[0] != "manual_merge" {
+		t.Fatalf("field conflict meta: %+v", fc)
 	}
 	identical := fixtureCommit(f, updateCommit(e, patchValue("/title", "remote")))
 	out, err = f.s.PushCommit(ctx, identical, f.u, false)

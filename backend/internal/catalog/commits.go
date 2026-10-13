@@ -67,12 +67,30 @@ type CommitReceipt struct {
 	// QualityWarnings 只在 preview 返回：对受影响实体的自动质量诊断，纯建议，不阻止提交。
 	QualityWarnings []QualityIssue `json:"quality_warnings,omitempty"`
 }
+
+// FieldConflict is one divergent JSON Pointer from a three-way merge.
+// Values are decoded JSON (null when the pointer was absent). Suggestions use
+// the project vocabulary: manual_merge, take_current, rebase_keep_mine.
+type FieldConflict struct {
+	Operation   int      `json:"operation"`
+	Pointer     string   `json:"pointer"`
+	Base        any      `json:"base"`
+	Current     any      `json:"current"`
+	Proposed    any      `json:"proposed"`
+	Remove      bool     `json:"remove,omitempty"`
+	Kind        string   `json:"kind"`
+	Suggestions []string `json:"suggestions"`
+}
+
+// CommitConflict is the 409 commit_conflict payload. Paths were replaced by
+// Conflicts (no compatibility shim): each entry carries mine/current values and
+// suggested resolutions for the three-column compare UI.
 type CommitConflict struct {
-	Operation      int      `json:"operation"`
-	ID             string   `json:"id"`
-	BaseVersion    int64    `json:"base_version"`
-	CurrentVersion int64    `json:"current_version"`
-	Paths          []string `json:"paths"`
+	Operation      int             `json:"operation"`
+	ID             string          `json:"id"`
+	BaseVersion    int64           `json:"base_version"`
+	CurrentVersion int64           `json:"current_version"`
+	Conflicts      []FieldConflict `json:"conflicts"`
 }
 type commitConflictError struct{ Conflict CommitConflict }
 
@@ -322,12 +340,38 @@ func putPointer(doc map[string]json.RawMessage, parts []string, value json.RawMe
 	doc[parts[0]] = json.RawMessage(encode(child))
 	return nil
 }
-func mergeCommitPatch(base, current map[string]json.RawMessage, patch []CommitPatch) (map[string]json.RawMessage, []string, bool, error) {
+
+// decodePointerValue turns a present/absent RawMessage into a JSON value for
+// conflict payloads (absent → null).
+func decodePointerValue(v json.RawMessage, ok bool) any {
+	if !ok {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(v, &decoded); err != nil {
+		return nil
+	}
+	return decoded
+}
+
+// fieldConflictSuggestions picks resolution hints for one divergent pointer.
+// Vocabulary: manual_merge (inspect both), take_current (accept server),
+// rebase_keep_mine (re-checkout then re-apply proposed).
+func fieldConflictSuggestions(kind string) []string {
+	switch kind {
+	case "stale_base":
+		return []string{"take_current", "rebase_keep_mine"}
+	default:
+		return []string{"manual_merge", "take_current", "rebase_keep_mine"}
+	}
+}
+
+func mergeCommitPatch(base, current map[string]json.RawMessage, patch []CommitPatch) (map[string]json.RawMessage, []FieldConflict, bool, error) {
 	out := map[string]json.RawMessage{}
 	for k, v := range current {
 		out[k] = v
 	}
-	conflicts := []string{}
+	conflicts := []FieldConflict{}
 	changed := false
 	for _, p := range patch {
 		parts, _ := pointerParts(p.Path)
@@ -339,11 +383,24 @@ func mergeCommitPatch(base, current map[string]json.RawMessage, patch []CommitPa
 		if err != nil {
 			return nil, nil, false, err
 		}
-		if equalCommitValue(c, cok, p.Value, !p.Remove) {
+		proposedOK := !p.Remove
+		if equalCommitValue(c, cok, p.Value, proposedOK) {
 			continue
 		}
 		if !equalCommitValue(b, bok, c, cok) {
-			conflicts = append(conflicts, p.Path)
+			kind := "concurrent_edit"
+			if equalCommitValue(b, bok, p.Value, proposedOK) {
+				kind = "stale_base"
+			}
+			conflicts = append(conflicts, FieldConflict{
+				Pointer:     p.Path,
+				Base:        decodePointerValue(b, bok),
+				Current:     decodePointerValue(c, cok),
+				Proposed:    decodePointerValue(p.Value, proposedOK),
+				Remove:      p.Remove,
+				Kind:        kind,
+				Suggestions: fieldConflictSuggestions(kind),
+			})
 			continue
 		}
 		if err := putPointer(out, parts, p.Value, p.Remove); err != nil {
@@ -628,7 +685,10 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 			return item, err
 		}
 		if len(conflicts) > 0 {
-			return item, &commitConflictError{CommitConflict{index, op.ID, op.BaseVersion, version, conflicts}}
+			for i := range conflicts {
+				conflicts[i].Operation = index
+			}
+			return item, &commitConflictError{CommitConflict{Operation: index, ID: op.ID, BaseVersion: op.BaseVersion, CurrentVersion: version, Conflicts: conflicts}}
 		}
 		item.Merged = op.BaseVersion != version
 		item.Changed = changed

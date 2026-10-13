@@ -316,3 +316,49 @@ func TestOpenAPIDefinitionsResponseIncludesKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPICommitFieldConflicts(t *testing.T) {
+	doc := OpenAPI()
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	fc, ok := schemas["FieldConflict"].(map[string]any)
+	if !ok {
+		t.Fatal("FieldConflict schema missing")
+	}
+	props := fc["properties"].(map[string]any)
+	for _, key := range []string{"operation", "pointer", "base", "current", "proposed", "kind", "suggestions"} {
+		if props[key] == nil {
+			t.Fatalf("FieldConflict.%s missing", key)
+		}
+	}
+	kind, _ := props["kind"].(map[string]any)
+	if encode(kind["enum"]) != encode([]string{"concurrent_edit", "stale_base"}) {
+		t.Fatalf("kind enum: %#v", kind["enum"])
+	}
+	ccProps := schemas["CommitConflict"].(map[string]any)["properties"].(map[string]any)
+	if ccProps["conflicts"] == nil {
+		t.Fatal("CommitConflict.conflicts missing")
+	}
+	if ccProps["paths"] != nil {
+		t.Fatal("legacy CommitConflict.paths must be gone")
+	}
+	for _, path := range []string{"/catalog/commits", "/catalog/commits/preview"} {
+		op := doc["paths"].(map[string]any)[path].(map[string]any)["post"].(map[string]any)
+		resp, ok := op["responses"].(map[string]any)["409"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s missing 409 response", path)
+		}
+		schema := resp["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+		p := schema["properties"].(map[string]any)
+		if p["conflicts"] == nil || p["conflict"] == nil {
+			t.Fatalf("%s 409 schema missing conflict(s): %#v", path, p)
+		}
+	}
+	summary, _ := doc["paths"].(map[string]any)["/catalog/commits"].(map[string]any)["post"].(map[string]any)["summary"].(string)
+	if !strings.Contains(summary, "FieldConflict") || !strings.Contains(summary, "conflicts[]") {
+		snippet := summary
+		if len(snippet) > 240 {
+			snippet = snippet[:240]
+		}
+		t.Fatalf("commit summary should document FieldConflict: %s", snippet)
+	}
+}

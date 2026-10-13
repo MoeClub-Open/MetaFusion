@@ -49,6 +49,12 @@ MetaFusion 是类似 MusicBrainz / Bangumi 的开放元数据目录与受控资�
 
 - 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000029_revision_source_scope`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
 
+## 3.1 提交证据（破坏性，无兼容）
+
+CatalogCommit：`sources[]` 每条必须有唯一 `key`；每个操作必须有非空 `source_refs`。旧格式（无 key / 无 source_refs）以结构化 400 拒绝（`source_refs_required` 带 `operation` 索引、`source_key_required`、`source_unused` 等）。技能与公开文档在 `metafusion-skills` / `metafusion-docs`；改提交契约时同步两边示例。
+
+质量审计：同一 medium 内顶层曲目 `position` 必须从 1 连续（`track_position_gap`）；从 2 起或缺轨不得标 `complete`。
+
 ## 4. 按改动范围验证
 
 根据改动范围和风险选择必要检查；命令在“目录”列位置运行，版本以 manifest 和 CI 为准。
