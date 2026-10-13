@@ -2113,7 +2113,6 @@
   "developer.mcp.reauthorize": "重新授權",
   "developer.mcp.reauthHelp": "要增加權限，請從你的 MCP 用戶端重新發起授權；此處只能縮減或撤銷已有權限。",
   "developer.mcp.revokeAll": "撤銷全部授權",
-  "developer.mcp.expiring": "即將到期",
   "developer.mcp.selectGroup": "全選本組",
   "developer.mcp.clearGroup": "清空本組",
   "developer.mcp.group.catalogRead": "目錄唯讀",

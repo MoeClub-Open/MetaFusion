@@ -2113,7 +2113,6 @@
   "developer.mcp.reauthorize": "重新授权",
   "developer.mcp.reauthHelp": "要增加权限，请从你的 MCP 客户端重新发起授权；此处只能缩减或撤销已有权限。",
   "developer.mcp.revokeAll": "撤销全部授权",
-  "developer.mcp.expiring": "即将到期",
   "developer.mcp.selectGroup": "全选本组",
   "developer.mcp.clearGroup": "清空本组",
   "developer.mcp.group.catalogRead": "目录只读",

@@ -2113,7 +2113,6 @@
   "developer.mcp.reauthorize": "再認可",
   "developer.mcp.reauthHelp": "権限を追加するには、MCP クライアントから再度認可を開始してください。ここでは既存権限の縮小または取り消しのみ可能です。",
   "developer.mcp.revokeAll": "すべての認可を取り消す",
-  "developer.mcp.expiring": "まもなく期限切れ",
   "developer.mcp.selectGroup": "グループを全選択",
   "developer.mcp.clearGroup": "グループをクリア",
   "developer.mcp.group.catalogRead": "カタログ読み取り",
