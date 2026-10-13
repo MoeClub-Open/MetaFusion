@@ -803,7 +803,7 @@ function ExploreInner() {
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-11 h-11 rounded-lg bg-black/[0.03] dark:bg-black/40 border border-line shrink-0 overflow-hidden flex items-center justify-center">
                           {cover ? (
-                            <img src={cover} alt={displayTitle} className="w-full h-full object-cover" />
+                            <img src={cover} alt={displayTitle} width={44} height={44} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                           ) : (
                             <KindIcon className="w-5 h-5 text-text-muted" />
                           )}

@@ -108,20 +108,8 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 	mustNot := []any{
 		map[string]any{"terms": map[string]any{"status": []string{"deleted", "merged"}}},
 	}
-	match := map[string]any{"multi_match": map[string]any{
-		"query": query, "type": "bool_prefix", "operator": "and",
-		"fields": []string{"title_text^5", "title_text._2gram^3", "title_text._3gram^2", "search_text", "search_text._2gram", "search_text._3gram"},
-	}}
-	substring := map[string]any{"wildcard": map[string]any{"search_text_exact": map[string]any{
-		"value": "*" + escapeOpenSearchWildcard(query) + "*", "case_insensitive": true,
-	}}}
-	if utf8.RuneCountInString(query) >= 3 {
-		substring = map[string]any{"bool": map[string]any{"must": []any{
-			map[string]any{"match": map[string]any{"search_text_grams": map[string]any{"query": query, "operator": "and"}}}, substring,
-		}}}
-	}
 	must := []any{map[string]any{"bool": map[string]any{
-		"should": []any{match, substring}, "minimum_should_match": 1,
+		"should": searchMatchClauses(query), "minimum_should_match": 1,
 	}}}
 	term := func(field, value string) {
 		if value != "" {
@@ -402,4 +390,37 @@ func escapeOpenSearchWildcard(value string) string {
 		out.WriteRune(r)
 	}
 	return out.String()
+}
+
+// searchFuzzyMinRunes 是启用拼写容错的最短查询长度：太短的词做编辑距离匹配
+// 噪声远大于收益（"ab" 一改就能命中大半个库）。
+const searchFuzzyMinRunes = 4
+
+// searchMatchClauses 组装文本检索的 should 子句：前缀/分词匹配、子串匹配，
+// 以及低权重的拼写容错（fuzzy）匹配——"kuninaruu" 这类多打/少打/错打一个字母的
+// 查询也能召回 "kuninaru"。容错子句权重很低，精确命中仍排在前面；只改查询，
+// 不需要改索引映射，也不涉及数据库迁移。
+func searchMatchClauses(query string) []any {
+	match := map[string]any{"multi_match": map[string]any{
+		"query": query, "type": "bool_prefix", "operator": "and",
+		"fields": []string{"title_text^5", "title_text._2gram^3", "title_text._3gram^2", "search_text", "search_text._2gram", "search_text._3gram"},
+	}}
+	substring := map[string]any{"wildcard": map[string]any{"search_text_exact": map[string]any{
+		"value": "*" + escapeOpenSearchWildcard(query) + "*", "case_insensitive": true,
+	}}}
+	if utf8.RuneCountInString(query) >= 3 {
+		substring = map[string]any{"bool": map[string]any{"must": []any{
+			map[string]any{"match": map[string]any{"search_text_grams": map[string]any{"query": query, "operator": "and"}}}, substring,
+		}}}
+	}
+	clauses := []any{match, substring}
+	if utf8.RuneCountInString(query) >= searchFuzzyMinRunes {
+		clauses = append(clauses, map[string]any{"multi_match": map[string]any{
+			"query": query, "type": "best_fields", "operator": "and",
+			"fields":    []string{"title_text^2", "search_text"},
+			"fuzziness": "AUTO", "prefix_length": 1, "max_expansions": 50,
+			"boost": 0.3,
+		}})
+	}
+	return clauses
 }
