@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, clearAuthTokens, normalizeSessionUser } from "./api";
+import { clearSessionHint, hasSessionHint } from "./sessionHint";
 
 interface AuthContextType {
   user: User | null;
@@ -29,6 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     } catch {}
     clearAuthTokens();
+    clearSessionHint();
     setUser(null);
   };
 
@@ -44,6 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(normalizeSessionUser(u));
     } catch {
       clearAuthTokens();
+      clearSessionHint();
       setUser(null);
     }
   };
@@ -52,6 +55,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 旧版主站曾把 Bearer 留在 localStorage；账号应用现在只更新 Cookie。
     // 先删旧凭据，再从 /me 读取同域 Cookie，避免两个账号的身份发生冲突。
     clearAuthTokens();
+    // 没有会话提示 = 浏览器里没有 mf_session，直接按未登录处理，不发注定 401 的请求。
+    if (!hasSessionHint()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     fetch("/api/auth/me", {
       credentials: "same-origin",
     })
@@ -65,6 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(normalizeSessionUser(u));
       })
       .catch(() => {
+        // 会话已失效：清掉提示，后续页面不再重复探测。
+        clearSessionHint();
         setUser(null);
       })
       .finally(() => {
