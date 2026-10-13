@@ -12,7 +12,6 @@ type Grant = {
   client_id: string;
   client_name: string;
   scopes: string[];
-  expires_at: string;
   revoked_at: string | null;
 };
 
@@ -42,7 +41,7 @@ function visibleScopes(scopes: string[]): string[] {
 }
 
 export function McpGrantsPanel() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [endpoint, setEndpoint] = useState("");
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
@@ -128,8 +127,6 @@ export function McpGrantsPanel() {
   };
   const buttonClass = "px-3 py-1.5 rounded-lg border border-line bg-surfaceSubtle hover:bg-surfaceHover text-xs text-text-body disabled:opacity-50 cursor-pointer";
   const dangerClass = "px-3 py-1.5 rounded-lg border border-danger/40 bg-danger/10 hover:bg-danger/20 text-xs text-danger-soft disabled:opacity-50 cursor-pointer";
-  const now = Date.now();
-
   return (
     <div className="space-y-3">
       <p className="text-xs text-text-muted leading-relaxed">{t("developer.mcp.subtitle")}</p>
@@ -161,9 +158,7 @@ export function McpGrantsPanel() {
       {loading ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : grants?.length === 0 ? (
         <p className="text-xs text-text-faint">{t("developer.mcp.empty")}</p>
       ) : grants?.map((grant) => {
-        const expired = new Date(grant.expires_at).getTime() <= now;
-        const expiring = !expired && !grant.revoked_at && new Date(grant.expires_at).getTime() - now <= 7 * 24 * 60 * 60 * 1000;
-        const active = !grant.revoked_at && !expired;
+        const active = !grant.revoked_at;
         const scopes = selected[grant.id] || [];
         const changed = grant.scopes.some((scope) => !scopes.includes(scope)) || scopes.some((scope) => !grant.scopes.includes(scope));
         return (
@@ -174,14 +169,11 @@ export function McpGrantsPanel() {
                 <p className="text-xs text-text-faint">client_id: {grant.client_id}</p>
               </div>
               <span className={`text-xs rounded-full border px-2 py-0.5 ${
-                grant.revoked_at || expired ? "border-line text-text-faint"
-                  : expiring ? "border-warn/40 text-warn"
-                    : "border-success/40 text-success"
+                grant.revoked_at ? "border-line text-text-faint" : "border-success/40 text-success"
               }`}>
-                {t(grant.revoked_at ? "developer.apiKeyRevoked" : expired ? "developer.apiKeyExpired" : expiring ? "developer.mcp.expiring" : "developer.apiKeyActive")}
+                {t(grant.revoked_at ? "developer.apiKeyRevoked" : "developer.apiKeyActive")}
               </span>
             </div>
-            <p className="text-xs text-text-faint">{t("developer.apiKeyExpiresAt", { time: new Date(grant.expires_at).toLocaleString(locale) })}</p>
             {active && (
               <div className="space-y-2">
                 {SCOPE_GROUPS.map((group) => {

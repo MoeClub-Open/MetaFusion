@@ -2122,7 +2122,6 @@
   "developer.mcp.reauthorize": "Re-authorize",
   "developer.mcp.reauthHelp": "To add permissions, start authorization again from your MCP client; this page can only reduce or revoke existing permissions.",
   "developer.mcp.revokeAll": "Revoke all access",
-  "developer.mcp.expiring": "Expiring soon",
   "developer.mcp.selectGroup": "Select all in group",
   "developer.mcp.clearGroup": "Clear group",
   "developer.mcp.group.catalogRead": "Catalog read",
