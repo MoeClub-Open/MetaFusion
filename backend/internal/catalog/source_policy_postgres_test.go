@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -67,7 +68,7 @@ func TestPostgresSourcePolicyPreservesHistoricalPictures(t *testing.T) {
 	}
 	old.Title += " revised"
 	saved, err := f.s.Save(ctx, Edit{Entity: old, ExpectedVersion: old.Version, EditNote: "title correction", Sources: fixtureSources()}, f.u)
-	if err != nil || saved.Pictures[0].Source != legacy {
+	if err != nil || !reflect.DeepEqual(saved.Pictures[0].Source, legacy) {
 		t.Fatalf("unchanged legacy picture must survive unrelated edit: %v %+v", err, saved.Pictures)
 	}
 	saved.Pictures[0].Caption = Names{"en-US": "new factual caption"}
@@ -90,11 +91,11 @@ func TestPostgresSourcePolicyPreservesHistoricalInclusionsAndStatus(t *testing.T
 	}
 	old.Title += " revised"
 	saved, err := f.s.Save(ctx, Edit{Entity: old, ExpectedVersion: old.Version, EditNote: "title correction", Sources: fixtureSources()}, f.u)
-	if err != nil || len(saved.Contents[0].Sources) != 1 || saved.Contents[0].Sources[0] != legacy[0] {
+	if err != nil || len(saved.Contents[0].Sources) != 1 || !reflect.DeepEqual(saved.Contents[0].Sources[0], legacy[0]) {
 		t.Fatalf("unchanged legacy inclusion must survive unrelated edit: %v %+v", err, saved.Contents)
 	}
 	saved, err = f.s.EditTrackStatus(ctx, saved.ID, statusInput(saved, "pending_review"), f.u)
-	if err != nil || saved.Contents[0].Sources[0] != legacy[0] {
+	if err != nil || !reflect.DeepEqual(saved.Contents[0].Sources[0], legacy[0]) {
 		t.Fatalf("status-only edit must preserve legacy evidence: %v %+v", err, saved.Contents)
 	}
 	saved.Contents[0].Locator["chapter"] = "changed factual locator"

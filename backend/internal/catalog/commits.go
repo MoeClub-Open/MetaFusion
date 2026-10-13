@@ -35,6 +35,14 @@ type CommitOperation struct {
 	Document             json.RawMessage `json:"document,omitempty"`
 	Patch                []CommitPatch   `json:"patch,omitempty"`
 	ReviewedCandidateIDs []string        `json:"reviewed_candidate_ids"`
+	// SourceRefs 声明本操作由来源池里哪些来源支撑（可细到字段）；必填，至少一项。
+	SourceRefs []SourceRef `json:"source_refs"`
+}
+
+// SourceRef 引用 CatalogCommit.Sources 中 key 相同的来源；Pointers 为空表示支撑整个操作。
+type SourceRef struct {
+	Source   string   `json:"source"`
+	Pointers []string `json:"pointers,omitempty"`
 }
 
 // Paths use JSON Pointer escaping. Arrays are atomic values; indexes cannot be
@@ -350,10 +358,14 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 	if err := validateCommit(in); err != nil {
 		return CommitReceipt{}, err
 	}
+	if err := validateCommitSourceRefs(in); err != nil {
+		return CommitReceipt{}, err
+	}
+	var err error
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var out CommitReceipt
-	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
+	err = s.writeCatalog(ctx, func(tx *sql.Tx) error {
 		// A confirmed serialization rollback restarts the complete commit. Never
 		// retain refs, items or a receipt assembled by the abandoned attempt.
 		out = CommitReceipt{ID: in.ID, Applied: !preview, Refs: map[string]string{}, Items: []CommitItem{}}
@@ -631,7 +643,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 		if err := strictCommitDocument(raw, &e); err != nil {
 			return item, err
 		}
-		input := Edit{Entity: e, ExpectedVersion: version, EditNote: in.EditNote, Sources: in.Sources, definitions: defs, identityLocksHeld: true}
+		input := Edit{Entity: e, ExpectedVersion: version, EditNote: in.EditNote, Sources: operationSources(in, op), definitions: defs, identityLocksHeld: true}
 		if e.Kind == "track" && op.Action == "update" {
 			input.preserveContents = true
 			for _, p := range op.Patch {
@@ -664,7 +676,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 		if err := strictCommitDocument(raw, &r); err != nil {
 			return item, err
 		}
-		input := RelationEdit{Relation: r, ExpectedVersion: version, EditNote: in.EditNote, Sources: in.Sources, definitions: defs}
+		input := RelationEdit{Relation: r, ExpectedVersion: version, EditNote: in.EditNote, Sources: operationSources(in, op), definitions: defs}
 		if op.Action == "create" {
 			if r.ID != "" || r.Version != 0 || r.Via != "" {
 				return item, fmt.Errorf("server_fields_forbidden")
