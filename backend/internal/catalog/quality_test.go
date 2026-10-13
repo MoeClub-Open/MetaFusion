@@ -16,8 +16,14 @@ func TestQualityStatusAndPositionGap(t *testing.T) {
 	if got := qualityStatus([]QualityIssue{{Severity: qualitySeverityWarning}, {Severity: qualitySeverityError}}); got != QualityNeedsVerification {
 		t.Fatalf("error: %s", got)
 	}
-	if positionGap([]int{0, 1, 2}) != "" || positionGap([]int{3, 1, 2}) != "" || positionGap([]int{1}) != "" {
-		t.Fatal("contiguous positions flagged")
+	if positionGap([]int{1, 2, 3}) != "" || positionGap([]int{3, 1, 2}) != "" || positionGap([]int{1}) != "" {
+		t.Fatal("contiguous from-1 positions flagged")
+	}
+	if positionGap([]int{0, 1, 2}) == "" {
+		t.Fatal("0-based contiguous not flagged")
+	}
+	if positionGap([]int{2, 3, 4}) == "" || positionGap([]int{2}) == "" {
+		t.Fatal("positions starting at 2 not flagged")
 	}
 	if positionGap([]int{1, 2, 4}) == "" || positionGap([]int{1, 1}) == "" {
 		t.Fatal("gap/duplicate not flagged")
@@ -76,5 +82,52 @@ func TestQualityAuditReleaseWithoutTracks(t *testing.T) {
 	}
 	if batch.Reports[0].Status != QualityComplete {
 		t.Fatalf("work should have no auto-detected issue: %+v", batch.Reports[0])
+	}
+}
+
+func TestQualityAuditMediumTrackPositionsStartAt2(t *testing.T) {
+	// Regression: 《アルストロメリア》 style CD where top-level track numbers start at 2
+	// (missing track 1). Auditing the medium alone must be partial with track_position_gap,
+	// not complete. Within one medium, positions must be contiguous from 1.
+	f := newFixture(t)
+	ctx := context.Background()
+	ref := func(name string) any { return map[string]string{"$ref": name} }
+	op := func(kind, name string, extra map[string]any) CommitOperation {
+		doc := map[string]any{"kind": kind, "title": name, "status": "published", "translations": map[string]any{"en": map[string]any{"title": name}}}
+		for k, v := range extra {
+			doc[k] = v
+		}
+		return CommitOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc)), ReviewedCandidateIDs: []string{}}
+	}
+	in := fixtureCommit(f,
+		op("work", "w", nil),
+		op("expression", "x1", map[string]any{"work_id": ref("w")}),
+		op("expression", "x2", map[string]any{"work_id": ref("w")}),
+		op("release", "r", map[string]any{"subjects": []any{map[string]any{"work_id": ref("w"), "role": "primary", "position": 0}}}),
+		op("medium", "m", map[string]any{"release_id": ref("r"), "attributes": map[string]any{"format": "cd"}}),
+		op("track", "t2", map[string]any{"medium_id": ref("m"), "position": 2, "number": "2", "contents": []any{map[string]any{"expression_id": ref("x1"), "position": 0}}}),
+		op("track", "t3", map[string]any{"medium_id": ref("m"), "position": 3, "number": "3", "contents": []any{map[string]any{"expression_id": ref("x2"), "position": 0}}}),
+	)
+	out, err := f.s.PushCommit(ctx, in, f.u, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediumID := out.Refs["m"]
+	rep, err := f.s.EntityQuality(ctx, mediumID, &f.u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Status != QualityPartial {
+		t.Fatalf("medium with tracks 2..3 must be partial, got %+v", rep)
+	}
+	found := false
+	for _, issue := range rep.Issues {
+		if issue.Code == "track_position_gap" && issue.EntityID == mediumID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected track_position_gap on medium alone: %+v", rep.Issues)
 	}
 }
