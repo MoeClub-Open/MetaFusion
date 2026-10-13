@@ -27,7 +27,7 @@ func TestCommitIdentityUpdateReviewValidation(t *testing.T) {
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			op := CommitOperation{Target: "entity", Action: "update", ID: uuid.NewString(), BaseVersion: 1, Patch: []CommitPatch{patchValue(tc.path, "value")}}
-			in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: "etag", EditNote: "review", Sources: fixtureSources(), Operations: []CommitOperation{op}}
+			in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: "etag", EditNote: "review", Sources: commitFixtureSources(), Operations: []CommitOperation{op}}
 			if got := commitNeedsIdentityReview(op); got != tc.need {
 				t.Fatalf("needs review=%v want=%v", got, tc.need)
 			}
@@ -50,7 +50,7 @@ func TestCommitIdentityUpdateReviewValidation(t *testing.T) {
 	}
 	id := uuid.NewString()
 	op := CommitOperation{Target: "entity", Action: "update", ID: uuid.NewString(), BaseVersion: 1, Patch: []CommitPatch{patchValue("/title", "value")}}
-	in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: "etag", EditNote: "review", Sources: fixtureSources(), Operations: []CommitOperation{op}}
+	in := CatalogCommit{ID: uuid.NewString(), DefinitionsETag: "etag", EditNote: "review", Sources: commitFixtureSources(), Operations: []CommitOperation{op}}
 	for _, ids := range [][]string{{"bad"}, {id, id}, {"@local:"}} {
 		in.Operations[0].ReviewedCandidateIDs = ids
 		if err := validateCommit(in); err == nil || err.Error() != "invalid_identity_review" {

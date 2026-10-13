@@ -18,7 +18,19 @@ type Source struct {
 	Kind     string `json:"kind"`
 	Citation string `json:"citation"`
 	URL      string `json:"url,omitempty"`
+	// Key 是批量提交里来源池的局部名（同一提交内唯一），供操作级 source_refs 引用。
+	Key string `json:"key,omitempty"`
+	// Pointers 只由服务端在应用 source_refs 时写入修订：该来源支撑的 JSON Pointer
+	// 字段路径；为空表示支撑整个操作。提交来源池里不得自带。
+	Pointers []string `json:"pointers,omitempty"`
+	// Scope 只出现在读取的历史修订上：SourceScopeCommit 表示该来源是整笔提交的
+	// 来源池（本功能之前写入、没有逐操作指针），不能证明支撑本条修订的某个字段。
+	// 新提交里客户端不得自带。
+	Scope string `json:"scope,omitempty"`
 }
+
+// SourceScopeCommit 标记历史修订里"适用于整笔提交"的来源（由一次性迁移写入）。
+const SourceScopeCommit = "commit"
 
 // 多图契约（一条数组顺序规则，别在消费端各自发明第二套）：
 //   - **数组顺序就是展示顺序**，服务端保存时不重排；`pictures[0]` 即该实体的封面。
