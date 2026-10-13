@@ -51,7 +51,7 @@ import { buildStaffCredits, isCreditRelation, unrenderedCreditRelations } from "
 import { TabBar, useHashTab, TabItem } from "@/components/catalog/DetailTabs";
 import { ExternalAuthorityLinks } from "@/components/entity/ExternalAuthorityLinks";
 import { EntityResourceFiles } from "@/components/storage/EntityResourceFiles";
-import { AggregateRelationList } from "@/components/catalog/AggregateRelationList";
+import { AggregateRelationList, useAggregateRelations } from "@/components/catalog/AggregateRelationList";
 import { EntityActionToolbar } from "@/components/entity/EntityActionToolbar";
 import ReportButton from "@/components/report/ReportButton";
 import { RevisionHistoryModal } from "@/components/editor/RevisionHistoryModal";
@@ -200,6 +200,8 @@ export function EntityDetailView({ id }: { id: string }) {
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   // 作品内容目录：hook 必须无条件调用（早期 return 之前），非作品实体传空 id 时不发请求。
   const directoryData = useWorkDirectoryData(entity?.kind === "work" ? entity.id || id : "");
+  // 聚合关系（内容结构的一部分）：在详情页层取数，标签计数和面板共用同一份数据。
+  const aggregate = useAggregateRelations(id);
   const inclusionExpressions = useInclusionExpressions(
     [entity, ...children].flatMap((item) => (item?.contents || []).map((content) => content.expression_id)),
     user?.id,
@@ -728,15 +730,17 @@ export function EntityDetailView({ id }: { id: string }) {
     { id: "staff", label: t("entity.page.navStaff"), badge: sectionFailures.relations ? undefined : staffCredits.length + staffRelations.length, visible: sectionFailures.relations || staffCredits.length + staffRelations.length > 0, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 作品的内容目录覆盖篇目/表达/聚合组成项，比"子实体列表"更准（子实体查询会连发行版一起带回），
     // 因此目录在场时以目录计数，且不再重复渲染子实体网格。
-    { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0), visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : (directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0)) + aggregate.count, visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0 || aggregate.count > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "releases", label: t("entity.page.navReleases"), badge: entity?.kind === "work" || sectionFailures.occurrences ? undefined : occurrences.length, visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : mediaRelations.length, visible: sectionFailures.relations || mediaRelations.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // entity 在数据到达前为 null，这里只能安全取值；分节本身的可见性由 kind 决定。
     { id: "resources", label: t("entity.detail.resourcesTitle"), visible: defs?.structure?.[String(entity?.kind || "")]?.resources === true, icon: <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
+    { id: "community", label: t("entity.page.communityTitle"), badge: communityPosts.length, visible: communityEnabled, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisions.length || 1, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ].map((tab) => ({...tab,visible:tab.visible !== false && (!tabBlocks[tab.id] || templateBlocks.includes(tabBlocks[tab.id]))}))
     .sort((a,b) => {
-      const rank = (id: string) => id === "overview" ? -1 : id === "revisions" ? templateBlocks.length+1 : templateBlocks.indexOf(tabBlocks[id]);
+      const rank = (id: string) => id === "overview" ? -1 : id === "revisions" ? templateBlocks.length+1 : id === "community" ? templateBlocks.length : templateBlocks.indexOf(tabBlocks[id]);
       return rank(a.id)-rank(b.id);
     });
   const { active, select } = useHashTab(tabs);
@@ -1750,15 +1754,12 @@ export function EntityDetailView({ id }: { id: string }) {
             {active === "resources" && defs?.structure?.[String(entity.kind || "")]?.resources === true && (
               <EntityResourceFiles entityId={entity.id || id} />
             )}
-            </TabPanel>
-
-            <AggregateRelationList entityId={entity.id || id} />
-
-            {/* ============================================================ */}
-            {/* Community discussions & collections (below the tabs, not a tab)      */}
-            {/* ============================================================ */}
-            {communityEnabled && (
-            <Card id="community" padding="section" className="space-y-4 shadow-soft mt-8">
+            {/* 聚合关系属于「内容结构」：放进对应面板；模板没有内容结构页签时退到概览。 */}
+            {(aggregate.count > 0 || aggregate.state === "error") && (active === "contents" || (active === "overview" && !tabs.some((x) => x.id === "contents" && x.visible !== false))) && (
+              <AggregateRelationList entityId={entity.id || id} data={aggregate} />
+            )}
+            {active === "community" && communityEnabled && (
+            <Card id="community" padding="section" className="space-y-4 shadow-soft">
               <SectionTitle
                 icon={<MessageSquare className="w-4 h-4 text-primary" strokeWidth={1.5} />}
                 actions={
@@ -1942,6 +1943,9 @@ export function EntityDetailView({ id }: { id: string }) {
               </div>
             </Card>
             )}
+            </TabPanel>
+
+
           </div>
         </div>
       </PageShell>
