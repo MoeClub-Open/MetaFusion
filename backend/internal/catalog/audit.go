@@ -63,6 +63,7 @@ func AuditExempt() map[string]string {
 		"POST /api/catalog/entities/candidates":      "身份候选查询：POST 承载查重条件，在同一只读快照内查找并解析身份，不写目录数据",
 		"POST /api/catalog/expressions/details":      "批量读：POST 只为把最多 500 个 id 放进 body（GET query 会撞 8KB 请求行上限），零写入",
 		"POST /api/catalog/relationships/query":      "批量关系查询：POST 承载实体集合与筛选条件，目录数据仅在只读事务中读取，零写入",
+		"POST /api/catalog/quality/batch":            "批量质量审计：POST 承载最多 100 个 id，按需计算、只读事务、不落库，零写入",
 		"POST /api/importer/preview":                 "来源预览：出站抓取 + 组装草稿，零落库（落库入口是 POST /api/importer/import）",
 		"POST /api/catalog/entities/identity":        "批量身份解析（X01 别名集合的只读投影）：POST 只为把最多 500 个 id 放进 body，零写入",
 		"POST /api/admin/catalog-definitions/impact": "定义影响检查：只读回放提交的文档，零写入",
