@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { EntityCard } from "@/components/common/EntityCard";
+import { fetchQualityBatch } from "@/lib/quality";
 import { Pagination } from "@/components/common/Pagination";
 import { kindIcon } from "@/lib/kindIcons";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -104,6 +105,7 @@ function ExploreInner() {
 
   // 标签云本地搜索：只过滤面板展示，不发请求。
   const [tagQuery, setTagQuery] = useState("");
+  const [qualityById, setQualityById] = useState<Record<string, string>>({});
   const [items, setItems] = useState<EntityItem[]>([]);
   // 结果总数（后端 total）：翻页判定必须以它为准——items.length 只是当前窗口，结果数是页宽整数倍时
   // 会误判"还有下一页"，点进去是没有数据的空页。
@@ -162,6 +164,8 @@ function ExploreInner() {
   // 这不是"没有结果"，页面要说清"没有更多"并把用户带回第一页——线上实测这一页
   // 显示"共 0 条"，与侧栏"全部实体 3070"自相矛盾，原因正是总数被写死成 0。
   const outOfRange = !loading && !loadError && items.length === 0 && total > 0 && currentPage > totalPages;
+  // 结果正好为 0：顶部写「没有找到结果」，空态给具体提示，底部计数与分页整块隐藏（以前「约 0 项」上下各一次）。
+  const noResults = !loading && !loadError && items.length === 0 && total === 0;
 
   // 标签云：来自真实聚合（各实体 attributes.tags 的频次），按使用量取前若干。
   // 取不到时说明"标签面板暂时不可用"，不再与"暂无标签"混成同一句。
@@ -254,6 +258,30 @@ function ExploreInner() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [currentKind, currentStatus, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
+
+  // 探索页质量圆点：仅 partial 显示；接口失败整页不显示，不影响列表。
+  useEffect(() => {
+    if (!items.length) {
+      setQualityById({});
+      return;
+    }
+    let alive = true;
+    const ids = items.map((it) => it.id).filter(Boolean);
+    fetchQualityBatch(ids)
+      .then((batch) => {
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const r of batch.reports || []) {
+          if (r?.entity_id && r.status) map[r.entity_id] = r.status;
+        }
+        setQualityById(map);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setQualityById({});
+      });
+    return () => { alive = false; };
+  }, [items]);
 
   const updateFilters = (updates: Record<string, string>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -605,7 +633,7 @@ function ExploreInner() {
             <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface border border-line shadow-xs">
               <p role="status" className="w-full sm:w-auto sm:mr-auto text-sm font-medium text-text-body">
                 {/* 出错时下方的 alert 已经给出唯一一条错误说明，这里不再重复（以前两处文案还互相矛盾）。 */}
-                {loading ? t("catalog.loading") : loadError ? null : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
+                {loading ? t("catalog.loading") : loadError ? null : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
               </p>
               <div className="flex w-full sm:w-auto items-center gap-2">
                 {/* 排序：取值写回 URL（?sort=&order=），可深链、后退键保持；后端按白名单校验。 */}
@@ -750,7 +778,7 @@ function ExploreInner() {
               </div>
             ) : items.length === 0 ? (
               <div className="p-5 rounded-card border border-dashed border-line text-center bg-surface/50 shadow-2xs">
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">{t("catalog.emptyTitle")}</p>
+                <p className="text-text-muted text-sm mb-3">{currentQ ? t("catalog.noResultsFor", { q: currentQ }) : t("catalog.emptyTitle")}</p>
                 <button
                   type="button"
                   onClick={clearFilters}
@@ -780,6 +808,7 @@ function ExploreInner() {
                       status={item.status}
                       statusLabel={tr("catalog.status." + item.status, item.status)}
                       pictureUrl={cover}
+                      qualityStatus={qualityById[item.id]}
                     />
                   );
                 })}
@@ -815,6 +844,9 @@ function ExploreInner() {
                             </span>
                             <h3 className="w-full sm:w-auto min-w-0 font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 break-words">
                               {displayTitle}
+                              {qualityById[item.id] === "partial" && (
+                                <span className="ml-1.5 inline-block align-middle w-1.5 h-1.5 rounded-full bg-warn shrink-0" aria-hidden />
+                              )}
                             </h3>
                             {item.title !== displayTitle && (
                               <span className="text-[11px] text-text-faint font-mono hidden sm:inline truncate">
@@ -844,7 +876,8 @@ function ExploreInner() {
               </TabPanel>
             )}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs font-mono text-gray-600 dark:text-gray-400">
+            {!noResults && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs font-mono text-text-muted">
               <div>
                 {/* 空结果不显示"第 1 - 0 项"这类自相矛盾的区间（offset 有值而 items 为空）。 */}
                 <span>
@@ -880,6 +913,7 @@ function ExploreInner() {
                   onChange={(n) => updateFilters({ page: n.toString() })} />
               )}
             </div>
+            )}
           </div>
         </div>
       </PageShell>

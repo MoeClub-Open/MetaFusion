@@ -23,12 +23,28 @@ func respondCommit(c *gin.Context, v CommitReceipt, err error) {
 	var conflict *commitConflictError
 	if errors.As(err, &conflict) {
 		auditlog.Fail(c, "commit_conflict")
-		c.JSON(409, gin.H{"error": "commit_conflict", "applied": false, "conflict": conflict.Conflict})
+		// Top-level conflicts mirrors conflict.conflicts so agents and the
+		// three-column UI can read field diagnostics without digging.
+		c.JSON(409, gin.H{
+			"error":     "commit_conflict",
+			"applied":   false,
+			"conflict":  conflict.Conflict,
+			"conflicts": conflict.Conflict.Conflicts,
+		})
 		return
 	}
 	if errors.Is(err, errDefinitionsConflict) {
 		auditlog.Fail(c, "definitions_conflict")
 		c.JSON(409, gin.H{"error": "definitions_conflict", "applied": false})
+		return
+	}
+	// Per-operation evidence errors (source_refs_required, unknown_source_ref, …):
+	// stable code + 0-based operation index. Old commit formats are rejected, not adapted.
+	var opErr *commitOperationError
+	if errors.As(err, &opErr) {
+		code := opErr.Cause.Error()
+		auditlog.Fail(c, code)
+		c.JSON(400, gin.H{"error": code, "applied": false, "operation": opErr.Index})
 		return
 	}
 	respond(c, v, err)

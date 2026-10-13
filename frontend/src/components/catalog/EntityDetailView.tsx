@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import type { EntityComment, EntityCollectionRef } from "@/lib/api";
 import { EntityRevisions } from "./EntityRevisions";
+import { QualityBadge } from "./QualityBadge";
 import { RelationFilterBar, useRelationFilter } from "@/components/entity/RelationFilterBar";
 import { UNGROUPED_RELATION_GROUP } from "@/lib/relationFilters";
 import { PageShell, PageContainer } from "@/components/ui/PageShell";
@@ -97,7 +98,6 @@ import {
   Sparkles,
   Users,
   Tag as TagIcon,
-  Globe,
   Sliders,
   BookOpen,
   ListTree,
@@ -423,40 +423,6 @@ export function EntityDetailView({ id }: { id: string }) {
       })),
     [entity, locale, pictureRoleLabel],
   );
-
-  // Extract official website and authority links (Strictly entity-owned, never borrowed)
-  const officialInfo = useMemo(() => {
-    if (!entity) return null;
-
-    // Direct website from attributes or external_ids
-    const rawUrl =
-      entity.attributes?.official_website ||
-      entity.attributes?.website ||
-      entity.attributes?.official_url ||
-      entity.attributes?.url ||
-      entity.external_ids?.official ||
-      entity.external_ids?.website ||
-      entity.external_ids?.official_website;
-
-    if (rawUrl && typeof rawUrl === "string" && rawUrl.startsWith("http")) {
-      return {
-        url: rawUrl,
-        label: t("authority.officialWebsite"),
-        isDirect: true,
-      };
-    }
-
-    if (entity.external_ids?.bushiroad || entity.external_ids?.bushiroad_music) {
-      const bushiId = String(entity.external_ids.bushiroad || entity.external_ids.bushiroad_music).toLowerCase();
-      return {
-        url: `https://bushiroad-music.com/musics/${bushiId}/`,
-        label: t("authority.bushiroad"),
-        isDirect: true,
-      };
-    }
-
-    return null;
-  }, [entity, locale]);
 
   // Store bonuses
   const storeBonuses = useMemo(() => {
@@ -955,6 +921,13 @@ export function EntityDetailView({ id }: { id: string }) {
             <span className="px-2.5 py-1 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body text-xs uppercase font-semibold font-mono">
               {entity.status}
             </span>
+            <QualityBadge
+              entityId={entity.id || id}
+              onNavigate={(tabId) => {
+                const shown = tabs.some((tab) => tab.id === tabId && tab.visible !== false);
+                select(shown ? tabId : "overview");
+              }}
+            />
           </div>
         </div>
 
@@ -1116,25 +1089,7 @@ export function EntityDetailView({ id }: { id: string }) {
                   );
                 })}
 
-                {officialInfo && (
-                  <div>
-                    <dt className="text-text-muted font-mono text-[11px] mb-0.5">
-                      {t("entity.page.officialLink")}
-                    </dt>
-                    <dd className="font-mono text-emerald-600 dark:text-success truncate">
-                      <a
-                        href={officialInfo.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 hover:underline truncate max-w-full text-[11px]"
-                      >
-                        <Globe className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                        <span className="truncate">{officialInfo.url.replace(/^https?:\/\//, "")}</span>
-                        <ArrowUpRight className="w-3 h-3 shrink-0 opacity-70" />
-                      </a>
-                    </dd>
-                  </div>
-                )}
+                {/* 官方链接只在「外部链接」卡片里出现（排第一并带「官方」标记），基本信息里不再重复。 */}
               </dl>
 
               {/* 其余属性按实体自身模板分区渲染，与作品布局共用同一实现。
@@ -1769,10 +1724,8 @@ export function EntityDetailView({ id }: { id: string }) {
                   </a>
                 }
               >
-                {t("entity.page.communityTitle")}
-                <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                  {communityPosts.length}
-                </span>
+                {/* 标题与计数写成一句「评论 (N)」：以前是标题后紧贴一个计数徽标，读屏和复制出来都是「评论0」。 */}
+                {t("entity.page.communityTitleCount", { count: communityPosts.length })}
               </SectionTitle>
 
               {/* Quick Comment Composer */}
