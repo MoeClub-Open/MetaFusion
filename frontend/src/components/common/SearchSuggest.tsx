@@ -1,5 +1,6 @@
 "use client";
 
+import { clampSearchQuery, SEARCH_QUERY_MAX_BYTES } from "@/lib/searchQuery";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
@@ -111,7 +112,7 @@ export function SearchSuggest({
     setFocused(false);
     setActive(-1);
     inputRef.current?.blur();
-    onSubmit(q);
+    onSubmit(clampSearchQuery(q));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -148,6 +149,7 @@ export function SearchSuggest({
         ref={inputRef}
         type="text"
         value={value}
+        maxLength={SEARCH_QUERY_MAX_BYTES}
         role="combobox"
         aria-expanded={open}
         aria-controls={listId}
@@ -155,7 +157,8 @@ export function SearchSuggest({
         aria-autocomplete="list"
         aria-label={ariaLabel || placeholder}
         onChange={(e) => {
-          onValueChange(e.target.value);
+          // 输入端就卡住后端上限，免得提交后才拿到 400 query_too_long。
+          onValueChange(clampSearchQuery(e.target.value));
           setActive(-1);
         }}
         onFocus={() => setFocused(true)}
