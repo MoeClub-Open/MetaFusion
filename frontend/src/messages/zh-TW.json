@@ -2117,5 +2117,15 @@
   "entity.missing.browseCatalog": "瀏覽目錄",
   "entity.missing.goSearch": "去搜尋",
   "entity.loadFailed.title": "載入失敗",
-  "entity.loadFailed.desc": "請檢查網路後重試"
+  "entity.loadFailed.desc": "請檢查網路後重試",
+  "catalog.quality.complete": "無缺項",
+  "catalog.quality.partial": "有缺項",
+  "catalog.quality.needsVerification": "待核實",
+  "catalog.quality.diagnosticsTitle": "品質診斷",
+  "catalog.quality.issue.dangling_reference": "存在懸空引用，需核實",
+  "catalog.quality.issue.missing_required_field": "必填欄位「{field}」為空",
+  "catalog.quality.issue.release_missing_media": "發行版本缺少載體",
+  "catalog.quality.issue.medium_missing_tracks": "載體缺少曲目",
+  "catalog.quality.issue.track_empty_contents": "曲目未收錄表達內容",
+  "catalog.quality.issue.track_position_gap": "曲目序號不連續或有重複"
 }

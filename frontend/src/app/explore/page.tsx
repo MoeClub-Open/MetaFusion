@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { EntityCard } from "@/components/common/EntityCard";
+import { fetchQualityBatch } from "@/lib/quality";
 import { Pagination } from "@/components/common/Pagination";
 import { kindIcon } from "@/lib/kindIcons";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -104,6 +105,7 @@ function ExploreInner() {
 
   // 标签云本地搜索：只过滤面板展示，不发请求。
   const [tagQuery, setTagQuery] = useState("");
+  const [qualityById, setQualityById] = useState<Record<string, string>>({});
   const [items, setItems] = useState<EntityItem[]>([]);
   // 结果总数（后端 total）：翻页判定必须以它为准——items.length 只是当前窗口，结果数是页宽整数倍时
   // 会误判"还有下一页"，点进去是没有数据的空页。
@@ -256,6 +258,30 @@ function ExploreInner() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [currentKind, currentStatus, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
+
+  // 探索页质量圆点：仅 partial 显示；接口失败整页不显示，不影响列表。
+  useEffect(() => {
+    if (!items.length) {
+      setQualityById({});
+      return;
+    }
+    let alive = true;
+    const ids = items.map((it) => it.id).filter(Boolean);
+    fetchQualityBatch(ids)
+      .then((batch) => {
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const r of batch.reports || []) {
+          if (r?.entity_id && r.status) map[r.entity_id] = r.status;
+        }
+        setQualityById(map);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setQualityById({});
+      });
+    return () => { alive = false; };
+  }, [items]);
 
   const updateFilters = (updates: Record<string, string>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -782,6 +808,7 @@ function ExploreInner() {
                       status={item.status}
                       statusLabel={tr("catalog.status." + item.status, item.status)}
                       pictureUrl={cover}
+                      qualityStatus={qualityById[item.id]}
                     />
                   );
                 })}
@@ -817,6 +844,9 @@ function ExploreInner() {
                             </span>
                             <h3 className="w-full sm:w-auto min-w-0 font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 break-words">
                               {displayTitle}
+                              {qualityById[item.id] === "partial" && (
+                                <span className="ml-1.5 inline-block align-middle w-1.5 h-1.5 rounded-full bg-warn shrink-0" aria-hidden />
+                              )}
                             </h3>
                             {item.title !== displayTitle && (
                               <span className="text-[11px] text-text-faint font-mono hidden sm:inline truncate">

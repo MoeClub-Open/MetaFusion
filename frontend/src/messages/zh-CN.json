@@ -2117,5 +2117,15 @@
   "entity.missing.browseCatalog": "浏览目录",
   "entity.missing.goSearch": "去搜索",
   "entity.loadFailed.title": "加载失败",
-  "entity.loadFailed.desc": "请检查网络后重试"
+  "entity.loadFailed.desc": "请检查网络后重试",
+  "catalog.quality.complete": "无缺项",
+  "catalog.quality.partial": "有缺项",
+  "catalog.quality.needsVerification": "待核实",
+  "catalog.quality.diagnosticsTitle": "质量诊断",
+  "catalog.quality.issue.dangling_reference": "存在悬挂引用，需核实",
+  "catalog.quality.issue.missing_required_field": "必填字段「{field}」为空",
+  "catalog.quality.issue.release_missing_media": "发行版本缺少载体",
+  "catalog.quality.issue.medium_missing_tracks": "载体缺少曲目",
+  "catalog.quality.issue.track_empty_contents": "曲目未收录表达内容",
+  "catalog.quality.issue.track_position_gap": "曲目序号不连续或有重复"
 }

@@ -2117,5 +2117,15 @@
   "entity.missing.browseCatalog": "カタログを見る",
   "entity.missing.goSearch": "検索する",
   "entity.loadFailed.title": "読み込みに失敗しました",
-  "entity.loadFailed.desc": "ネットワークを確認して再試行してください"
+  "entity.loadFailed.desc": "ネットワークを確認して再試行してください",
+  "catalog.quality.complete": "欠落なし",
+  "catalog.quality.partial": "欠落あり",
+  "catalog.quality.needsVerification": "要確認",
+  "catalog.quality.diagnosticsTitle": "品質診断",
+  "catalog.quality.issue.dangling_reference": "不正参照があります。確認が必要です",
+  "catalog.quality.issue.missing_required_field": "必須フィールド「{field}」が空です",
+  "catalog.quality.issue.release_missing_media": "リリースにメディアがありません",
+  "catalog.quality.issue.medium_missing_tracks": "メディアにトラックがありません",
+  "catalog.quality.issue.track_empty_contents": "トラックに収録表現がありません",
+  "catalog.quality.issue.track_position_gap": "トラック番号が連続していないか重複しています"
 }

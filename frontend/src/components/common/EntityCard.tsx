@@ -22,6 +22,8 @@ export interface EntityCardProps {
   status?: string;
   statusLabel?: string;
   pictureUrl?: string;
+  /** 探索页质量提示：仅 partial 显示小圆点。 */
+  qualityStatus?: string;
 }
 
 /**
@@ -38,6 +40,7 @@ export function EntityCard({
   status,
   statusLabel,
   pictureUrl,
+  qualityStatus,
 }: EntityCardProps) {
   // 题名下第二行只放有区分度的事实：原文题名优先，否则退到标签。
   // 与展示题名同文的原题名不渲染——复读一遍只添噪音。
@@ -78,7 +81,13 @@ export function EntityCard({
 
       <div className="p-3 flex-1">
         <h3 className="min-h-10 font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 leading-snug mb-1">
-          {title}
+          <span className="inline">{title}</span>
+          {qualityStatus === "partial" && (
+            <span
+              className="ml-1.5 inline-block align-middle w-1.5 h-1.5 rounded-full bg-warn shrink-0"
+              aria-hidden
+            />
+          )}
         </h3>
         {metaLine && (
           <p className="text-[11px] leading-5 text-text-muted line-clamp-1">{metaLine}</p>
