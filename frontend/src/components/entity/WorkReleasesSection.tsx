@@ -1,5 +1,6 @@
 "use client";
 
+import { searchInputLimitProps } from "@/lib/searchQuery";
 // 作品详情的"发行目录"分节：从 WorkDetailPage 原样搬出（含数据装载、facet 过滤、分页与
 // 表格/移动端卡片两套呈现），改成自包含组件由通用详情视图按 kind=work 渲染。
 // 迁移动机：同一份发行数据此前有"作品模板版"与"通用版"两套实现，合并后只保留这一套。
@@ -173,7 +174,7 @@ export function WorkReleasesSection({ workId }: Props) {
  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" strokeWidth={1.5} />
  <input
  value={qInput}
- onChange={(e) => setQInput(e.target.value)}
+ {...searchInputLimitProps(setQInput)}
  aria-label={t("work.detail.searchPlaceholder")}
  placeholder={t("work.detail.searchPlaceholder")}
  className="pl-11 pr-3.5 h-9 max-sm:min-h-[44px] w-full sm:w-48 bg-black/[0.03] dark:bg-white/[0.04] border border-line rounded-md text-sm text-text-strong placeholder:text-text-muted focus:outline-none focus:border-primary/50 font-mono"

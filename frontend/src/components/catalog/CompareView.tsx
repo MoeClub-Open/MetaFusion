@@ -1,5 +1,6 @@
 "use client";
 
+import { searchInputLimitProps } from "@/lib/searchQuery";
 import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -541,7 +542,7 @@ export function Compare({ ids, revisions, mode }: { ids: string; revisions?: str
                 type="text"
                 placeholder={t("catalog.compareSearchPlaceholder")}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                {...searchInputLimitProps(setSearchQuery)}
                 className="w-full pl-10 pr-10 py-2.5 bg-background border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-base ease-soft"
               />
               {searchQuery && (

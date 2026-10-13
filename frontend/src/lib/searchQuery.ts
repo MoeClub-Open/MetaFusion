@@ -16,3 +16,30 @@ export function clampSearchQuery(q: string, maxBytes = SEARCH_QUERY_MAX_BYTES): 
   }
   return out;
 }
+
+type LimitedTarget = { value: string };
+type LimitedEvent = { currentTarget: LimitedTarget; nativeEvent?: object };
+
+/**
+ * 给受控搜索框挂上字节上限：maxLength 先按字符数卡住（256 个 ASCII 正好 256 字节），
+ * onChange/onCompositionEnd 再按 UTF-8 字节截断，并把截断结果直接写回 DOM，
+ * 这样中文/emoji 也无法继续输入。输入法组字过程中不截断，组字结束时再截。
+ */
+export function searchInputLimitProps(setValue: (v: string) => void, maxBytes = SEARCH_QUERY_MAX_BYTES) {
+  const apply = (target: LimitedTarget) => {
+    const clamped = clampSearchQuery(target.value, maxBytes);
+    if (clamped !== target.value) target.value = clamped;
+    setValue(clamped);
+  };
+  return {
+    maxLength: maxBytes,
+    onChange: (e: LimitedEvent) => {
+      if ((e.nativeEvent as { isComposing?: boolean } | undefined)?.isComposing) {
+        setValue(e.currentTarget.value);
+        return;
+      }
+      apply(e.currentTarget);
+    },
+    onCompositionEnd: (e: LimitedEvent) => apply(e.currentTarget),
+  };
+}

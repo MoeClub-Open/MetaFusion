@@ -1,5 +1,6 @@
 "use client";
 
+import { searchInputLimitProps } from "@/lib/searchQuery";
 // 目录域管理台：只覆盖元数据目录自己的工作面（概览 / 条目 / 定义 / 外部来源 / 货架 / 审核 /
 // 合并 / 子系统能力 / 实例交换），限流运维页按服务权限提供共享入口。账号、社区、存储的其他管理工作仍在独立应用
 // （deploy/nginx.conf 的 /admin/account|community|storage/ 三条 location），这里只留入口：
@@ -884,7 +885,7 @@ function AdminInner() {
                   <input
                     type="text"
                     value={entitiesQ}
-                    onChange={(e) => setEntitiesQ(e.target.value)}
+                    {...searchInputLimitProps(setEntitiesQ)}
                     placeholder={t("admin.entities.search")}
                     className="w-full pl-9 pr-14 py-1.5 rounded-lg bg-surfaceSubtle border border-line text-xs text-text-strong placeholder:text-text-faint focus:border-primary outline-none"
                   />
