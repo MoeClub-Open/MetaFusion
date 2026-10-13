@@ -2127,5 +2127,5 @@
   "catalog.quality.issue.release_missing_media": "リリースにメディアがありません",
   "catalog.quality.issue.medium_missing_tracks": "メディアにトラックがありません",
   "catalog.quality.issue.track_empty_contents": "トラックに収録表現がありません",
-  "catalog.quality.issue.track_position_gap": "トラック番号が連続していないか重複しています"
+  "catalog.quality.issue.track_position_gap": "トラック番号に欠番または重複があります"
 }

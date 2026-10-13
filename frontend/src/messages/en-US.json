@@ -2127,5 +2127,5 @@
   "catalog.quality.issue.release_missing_media": "Release has no medium",
   "catalog.quality.issue.medium_missing_tracks": "Medium has no tracks",
   "catalog.quality.issue.track_empty_contents": "Track has no included expression",
-  "catalog.quality.issue.track_position_gap": "Track positions have gaps or duplicates"
+  "catalog.quality.issue.track_position_gap": "Track numbers have gaps or duplicates"
 }

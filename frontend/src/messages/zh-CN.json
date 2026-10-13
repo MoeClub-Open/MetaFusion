@@ -2127,5 +2127,5 @@
   "catalog.quality.issue.release_missing_media": "发行版本缺少载体",
   "catalog.quality.issue.medium_missing_tracks": "载体缺少曲目",
   "catalog.quality.issue.track_empty_contents": "曲目未收录表达内容",
-  "catalog.quality.issue.track_position_gap": "曲目序号不连续或有重复"
+  "catalog.quality.issue.track_position_gap": "音轨序号有缺口或重复"
 }
