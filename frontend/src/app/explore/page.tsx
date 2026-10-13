@@ -161,6 +161,8 @@ function ExploreInner() {
   // 这不是"没有结果"，页面要说清"没有更多"并把用户带回第一页——线上实测这一页
   // 显示"共 0 条"，与侧栏"全部实体 3070"自相矛盾，原因正是总数被写死成 0。
   const outOfRange = !loading && !loadError && items.length === 0 && total > 0 && currentPage > totalPages;
+  // 结果正好为 0：顶部写「没有找到结果」，空态给具体提示，底部计数与分页整块隐藏（以前「约 0 项」上下各一次）。
+  const noResults = !loading && !loadError && items.length === 0 && total === 0;
 
   // 标签云：来自真实聚合（各实体 attributes.tags 的频次），按使用量取前若干。
   // 取不到时说明"标签面板暂时不可用"，不再与"暂无标签"混成同一句。
@@ -602,7 +604,7 @@ function ExploreInner() {
             {/* 搜索统一在顶栏；本栏只保留排序与视图切换。 */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface border border-line shadow-xs">
               <p role="status" className="w-full sm:w-auto sm:mr-auto text-sm font-medium text-text-body">
-                {loading ? t("catalog.loading") : loadError ? t("catalog.loadFailed") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
+                {loading ? t("catalog.loading") : loadError ? t("catalog.loadFailed") : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
               </p>
               <div className="flex w-full sm:w-auto items-center gap-2">
                 {/* 排序：取值写回 URL（?sort=&order=），可深链、后退键保持；后端按白名单校验。 */}
@@ -747,7 +749,7 @@ function ExploreInner() {
               </div>
             ) : items.length === 0 ? (
               <div className="p-5 rounded-card border border-dashed border-line text-center bg-surface/50 shadow-2xs">
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">{t("catalog.emptyTitle")}</p>
+                <p className="text-text-muted text-sm mb-3">{currentQ ? t("catalog.noResultsFor", { q: currentQ }) : t("catalog.emptyTitle")}</p>
                 <button
                   type="button"
                   onClick={clearFilters}
@@ -841,7 +843,8 @@ function ExploreInner() {
               </TabPanel>
             )}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs font-mono text-gray-600 dark:text-gray-400">
+            {!noResults && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs font-mono text-text-muted">
               <div>
                 {/* 空结果不显示"第 1 - 0 项"这类自相矛盾的区间（offset 有值而 items 为空）。 */}
                 <span>
@@ -877,6 +880,7 @@ function ExploreInner() {
                   onChange={(n) => updateFilters({ page: n.toString() })} />
               )}
             </div>
+            )}
           </div>
         </div>
       </PageShell>

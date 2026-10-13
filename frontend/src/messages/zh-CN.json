@@ -937,7 +937,7 @@
   "catalog.newEntity": "新建条目",
   "catalog.gridView": "网格视图",
   "catalog.listView": "列表视图",
-  "search.placeholder": "搜索作品、发行版本、创作者或标签...",
+  "search.placeholder": "输入作品、艺人或发行名称",
   "search.open": "打开搜索",
   "search.submit": "搜索",
   "admin.nav.entities": "实体管理",
@@ -2100,5 +2100,7 @@
   "catalog.error.invalidIdentityReview": "候选审查信息无效，请重新读取并审查。",
   "auth.error.forbidden_pat_scope": "个人访问令牌不能包含通配权限或管理权限，请重新选择权限范围。",
   "catalog.error.invalidIsbn": "ISBN 格式或校验位无效，请核对原始出版物上的 ISBN。",
-  "catalog.error.invalidBarcode": "条码格式或校验位无效，请核对原始商品上的 GTIN 条码。"
+  "catalog.error.invalidBarcode": "条码格式或校验位无效，请核对原始商品上的 GTIN 条码。",
+  "catalog.noResults": "没有找到结果",
+  "catalog.noResultsFor": "没有找到「{q}」相关的结果，试试更短的关键词或检查拼写"
 }

@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -183,7 +184,7 @@ func TestSingleInclusionEditsPreserveHiddenRecordsAndEvidence(t *testing.T) {
 	edited.Contents[0].Sources = nil
 	edited.Title = "Retitled track"
 	again := f.save(edited)
-	if len(again.Contents[0].Sources) != 1 || again.Contents[0].Sources[0] != fixtureSources()[0] {
+	if len(again.Contents[0].Sources) != 1 || !reflect.DeepEqual(again.Contents[0].Sources[0], fixtureSources()[0]) {
 		t.Fatal("omitted inclusion evidence must inherit the current edit")
 	}
 	// Two editors reading one version cannot both overwrite the record.

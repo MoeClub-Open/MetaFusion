@@ -937,7 +937,7 @@
   "catalog.newEntity": "新建條目",
   "catalog.gridView": "網格檢視",
   "catalog.listView": "列表檢視",
-  "search.placeholder": "搜尋作品、發行版本、創作者或標籤…",
+  "search.placeholder": "輸入作品、藝人或發行名稱",
   "search.open": "開啟搜尋",
   "search.submit": "搜尋",
   "admin.nav.entities": "實體管理",
@@ -2100,5 +2100,7 @@
   "catalog.error.invalidIdentityReview": "候選審查資訊無效，請重新讀取並審查。",
   "auth.error.forbidden_pat_scope": "個人存取權杖不能包含萬用權限或管理權限，請重新選擇權限範圍。",
   "catalog.error.invalidIsbn": "ISBN 格式或檢查碼無效，請核對原始出版物上的 ISBN。",
-  "catalog.error.invalidBarcode": "條碼格式或檢查碼無效，請核對原始商品上的 GTIN 條碼。"
+  "catalog.error.invalidBarcode": "條碼格式或檢查碼無效，請核對原始商品上的 GTIN 條碼。",
+  "catalog.noResults": "沒有找到結果",
+  "catalog.noResultsFor": "沒有找到「{q}」相關的結果，試試更短的關鍵字或檢查拼字"
 }

@@ -937,7 +937,7 @@
   "catalog.newEntity": "新規エントリ",
   "catalog.gridView": "グリッド表示",
   "catalog.listView": "リスト表示",
-  "search.placeholder": "作品・リリース・主体・タグで検索…",
+  "search.placeholder": "作品・アーティスト・リリース名を入力",
   "search.open": "検索を開く",
   "search.submit": "検索",
   "admin.nav.entities": "エンティティ管理",
@@ -2100,5 +2100,7 @@
   "catalog.error.invalidIdentityReview": "候補の確認情報が無効です。再読み込みして確認してください。",
   "auth.error.forbidden_pat_scope": "個人アクセストークンにワイルドカード権限や管理権限は指定できません。権限の範囲を選び直してください。",
   "catalog.error.invalidIsbn": "ISBN の形式またはチェックディジットが無効です。出版物に記載された ISBN を確認してください。",
-  "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。"
+  "catalog.error.invalidBarcode": "バーコードの形式またはチェックディジットが無効です。商品の GTIN バーコードを確認してください。",
+  "catalog.noResults": "結果が見つかりません",
+  "catalog.noResultsFor": "「{q}」に一致する結果はありません。短いキーワードを試すか、綴りを確認してください。"
 }

@@ -18,6 +18,11 @@ type Source struct {
 	Kind     string `json:"kind"`
 	Citation string `json:"citation"`
 	URL      string `json:"url,omitempty"`
+	// Key 是批量提交里来源池的局部名（同一提交内唯一），供操作级 source_refs 引用。
+	Key string `json:"key,omitempty"`
+	// Pointers 只由服务端在应用 source_refs 时写入修订：该来源支撑的 JSON Pointer
+	// 字段路径；为空表示支撑整个操作。提交来源池里不得自带。
+	Pointers []string `json:"pointers,omitempty"`
 }
 
 // 多图契约（一条数组顺序规则，别在消费端各自发明第二套）：
