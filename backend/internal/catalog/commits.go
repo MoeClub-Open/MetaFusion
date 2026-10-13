@@ -35,9 +35,8 @@ type CommitOperation struct {
 	Document             json.RawMessage `json:"document,omitempty"`
 	Patch                []CommitPatch   `json:"patch,omitempty"`
 	ReviewedCandidateIDs []string        `json:"reviewed_candidate_ids"`
-	// SourceRefs 声明本操作由来源池里哪些来源支撑（可细到字段）。缺省时过渡期仍继承
-	// 整个来源池并给出 source_refs_missing 警告；严格模式下报错。
-	SourceRefs []SourceRef `json:"source_refs,omitempty"`
+	// SourceRefs 声明本操作由来源池里哪些来源支撑（可细到字段）；必填，至少一项。
+	SourceRefs []SourceRef `json:"source_refs"`
 }
 
 // SourceRef 引用 CatalogCommit.Sources 中 key 相同的来源；Pointers 为空表示支撑整个操作。
@@ -61,11 +60,12 @@ type CommitItem struct {
 	Changed bool   `json:"changed"`
 }
 type CommitReceipt struct {
-	ID       string            `json:"id"`
-	Applied  bool              `json:"applied"`
-	Refs     map[string]string `json:"refs"`
-	Items    []CommitItem      `json:"items"`
-	Warnings []CommitWarning   `json:"warnings,omitempty"`
+	ID      string            `json:"id"`
+	Applied bool              `json:"applied"`
+	Refs    map[string]string `json:"refs"`
+	Items   []CommitItem      `json:"items"`
+	// QualityWarnings 只在 preview 返回：对受影响实体的自动质量诊断，纯建议，不阻止提交。
+	QualityWarnings []QualityIssue `json:"quality_warnings,omitempty"`
 }
 type CommitConflict struct {
 	Operation      int      `json:"operation"`
@@ -358,17 +358,17 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 	if err := validateCommit(in); err != nil {
 		return CommitReceipt{}, err
 	}
-	warnings, err := validateCommitSourceRefs(in)
-	if err != nil {
+	if err := validateCommitSourceRefs(in); err != nil {
 		return CommitReceipt{}, err
 	}
+	var err error
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var out CommitReceipt
 	err = s.writeCatalog(ctx, func(tx *sql.Tx) error {
 		// A confirmed serialization rollback restarts the complete commit. Never
 		// retain refs, items or a receipt assembled by the abandoned attempt.
-		out = CommitReceipt{ID: in.ID, Applied: !preview, Refs: map[string]string{}, Items: []CommitItem{}, Warnings: warnings}
+		out = CommitReceipt{ID: in.ID, Applied: !preview, Refs: map[string]string{}, Items: []CommitItem{}}
 		if !preview {
 			res, err := tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result) VALUES($1,$2,$3,$4,'null') ON CONFLICT DO NOTHING`, in.ID, u.ID, requestHash(in), encode(in))
 			if err != nil {
@@ -531,6 +531,7 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 			out.Items = append(out.Items, item)
 		}
 		if preview {
+			out.QualityWarnings = commitQualityWarnings(ctx, tx, v, out.Items, &u)
 			return errPreviewRollback
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE catalog.commits SET result=$2 WHERE id=$1`, in.ID, encode(out))

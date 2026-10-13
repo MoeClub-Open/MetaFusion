@@ -131,11 +131,11 @@ func TestAuditActionCodesAreStable(t *testing.T) {
 // 却因为在豁免表里而静默不留痕。
 func TestAuditExemptRoutesAreReadOnlyByDesign(t *testing.T) {
 	exempt := AuditExempt()
-	if len(exempt) != 8 {
+	if len(exempt) != 9 {
 		t.Fatalf("豁免表条数变了（%d）：新增豁免要在测试里说明它为什么零写入", len(exempt))
 	}
-	// relationships/query 与 entities/candidates 仅在 repeatable-read 的只读事务中读目录投影。
-	for _, key := range []string{"POST /api/catalog/checkout", "POST /api/catalog/commits/preview", "POST /api/catalog/expressions/details", "POST /api/importer/preview", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/relationships/query", "POST /api/admin/catalog-definitions/impact"} {
+	// relationships/query 与 entities/candidates 仅在 repeatable-read 的只读事务中读目录投影。 quality/batch 同样只在只读事务中按需计算质量诊断，不落库。
+	for _, key := range []string{"POST /api/catalog/checkout", "POST /api/catalog/commits/preview", "POST /api/catalog/expressions/details", "POST /api/importer/preview", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
 		if strings.TrimSpace(exempt[key]) == "" {
 			t.Fatalf("%s 必须带豁免理由", key)
 		}

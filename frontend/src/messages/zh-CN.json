@@ -2110,6 +2110,8 @@
   "entity.authority.empty": "暂无外部链接",
   "common.noData": "暂无数据",
   "entity.page.communityTitleCount": "评论 ({count})",
+  "revisions.scopeCommit": "整笔提交",
+  "revisions.scopeCommitHint": "历史修订：这是整笔提交的来源，不能证明本条修订的某个具体字段",
   "entity.missing.title": "找不到这个条目",
   "entity.missing.desc": "链接可能有误，或条目已被删除",
   "entity.missing.browseCatalog": "浏览目录",

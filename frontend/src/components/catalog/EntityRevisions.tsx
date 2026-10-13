@@ -29,7 +29,7 @@ export interface RevisionItem {
   edit_note?: string;
   summary?: string;
   status?: string;
-  sources?: Array<{ kind?: string; citation?: string; url?: string }>;
+  sources?: Array<{ kind?: string; citation?: string; url?: string; key?: string; pointers?: string[]; scope?: "commit" }>;
   snapshot?: any;
   created_at: string;
 }
@@ -328,6 +328,13 @@ export function EntityRevisions({
                           <div key={sIdx} className="flex items-start gap-2 text-gray-600 dark:text-gray-400">
                             <span className="text-primary font-bold">[{s.kind || "url"}]</span>
                             <span className="text-text-strong font-medium">{s.citation || t("revisions.officialSource")}</span>
+                            {/* 历史修订：整笔提交的来源池，不代表支撑本条修订的某个字段。 */}
+                            {s.scope === "commit" && (
+                              <span className="shrink-0 px-1.5 rounded border border-line text-text-muted" title={t("revisions.scopeCommitHint")}>{t("revisions.scopeCommit")}</span>
+                            )}
+                            {Array.isArray(s.pointers) && s.pointers.length > 0 && (
+                              <span className="text-text-muted">{s.pointers.join(", ")}</span>
+                            )}
                             {s.url && (
                               <a
                                 href={s.url}

@@ -2110,6 +2110,8 @@
   "entity.authority.empty": "No external links",
   "common.noData": "No data yet",
   "entity.page.communityTitleCount": "Comments ({count})",
+  "revisions.scopeCommit": "Whole commit",
+  "revisions.scopeCommitHint": "Historical revision: this source covered the whole commit, not a specific field of this revision",
   "entity.missing.title": "Entry not found",
   "entity.missing.desc": "The link may be wrong, or the entry has been deleted",
   "entity.missing.browseCatalog": "Browse catalog",

@@ -2110,6 +2110,8 @@
   "entity.authority.empty": "暫無外部連結",
   "common.noData": "暫無資料",
   "entity.page.communityTitleCount": "評論 ({count})",
+  "revisions.scopeCommit": "整筆提交",
+  "revisions.scopeCommitHint": "歷史修訂：這是整筆提交的來源，無法證明本條修訂的特定欄位",
   "entity.missing.title": "找不到這個條目",
   "entity.missing.desc": "連結可能有誤，或條目已被刪除",
   "entity.missing.browseCatalog": "瀏覽目錄",

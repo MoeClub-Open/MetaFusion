@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +16,7 @@ import (
 	"github.com/metafusion/metafusion-app/internal/audit"
 	"github.com/metafusion/metafusion-app/internal/capabilities"
 	"github.com/metafusion/metafusion-app/internal/catalog"
+	"github.com/metafusion/metafusion-app/internal/httplog"
 	"github.com/metafusion/metafusion-app/internal/nettrust"
 	"github.com/metafusion/metafusion-app/internal/upstream"
 )
@@ -123,7 +121,9 @@ func main() {
 	}
 
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	// request_id 必须在访问日志之前：接受 X-Request-ID 或自行生成，写入上下文与响应头；
+	// AccessLogger 每一行都带上它，方便用返回的 request_id 在容器 stdout 里对账。
+	r.Use(httplog.RequestID(), httplog.AccessLogger(nil), gin.Recovery())
 	// 真实客户端 IP：只信任显式声明的来源（TRUSTED_PROXIES，默认回环 + RFC1918 私网 = 网关容器所在网段）。
 	// 此前这里是 SetTrustedProxies(nil)（谁都不是代理），于是 XFF 被整段忽略、ClientIP() 恒等于网关
 	// 容器 IP：routeLimiter 的桶键退化成"全站共享一个桶"（线上实测第 11 次 /api/catalog/compare 即 429），
@@ -140,21 +140,6 @@ func main() {
 		// 切流自检用：标明本次响应来自哪个上游，便于确认网关前缀是否已切到目标服务
 		// （metafusion-auth / -community / -storage 返回同名头，拆分后能逐前缀核对）。
 		c.Header("X-MetaFusion-Service", "metafusion-catalog")
-		c.Next()
-	})
-	// requestID 透传 X-Request-ID：请求无则生成 crypto/rand hex，写入响应头与 gin 上下文。
-	r.Use(func(c *gin.Context) {
-		rid := c.GetHeader("X-Request-ID")
-		if rid == "" {
-			var b [16]byte
-			if _, err := rand.Read(b[:]); err != nil {
-				rid = fmt.Sprintf("%d", time.Now().UnixNano())
-			} else {
-				rid = hex.EncodeToString(b[:])
-			}
-		}
-		c.Set("request_id", rid)
-		c.Header("X-Request-ID", rid)
 		c.Next()
 	})
 
