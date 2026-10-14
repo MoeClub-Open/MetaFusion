@@ -57,6 +57,10 @@ type ExternalSourceQueryResponse struct {
 	Raw     any                        `json:"raw,omitempty"`
 	Preview *ImporterPreviewResponse   `json:"preview,omitempty"`
 	Items   []ExternalSourceSearchItem `json:"items,omitempty"`
+	// Limit 是 search 实际生效的分页大小（我方 clamp 后、或上游回显）。
+	Limit int `json:"limit,omitempty"`
+	// Clamped 表示请求的 limit 与实际生效不一致（我方上限 50，或上游钳制）。
+	Clamped bool `json:"clamped,omitempty"`
 }
 
 type fetchRecorder struct {
@@ -255,22 +259,36 @@ func (s *Store) externalSearch(ctx context.Context, rec *fetchRecorder, in Exter
 	if err != nil {
 		return ExternalSourceQueryResponse{}, err
 	}
-	limit := in.Limit
+	requested := in.Limit
+	limit := requested
 	if limit <= 0 {
 		limit = 20
 	}
+	ourClamp := false
 	if limit > 50 {
 		limit = 50
+		ourClamp = requested > 50
 	}
+	var out ExternalSourceQueryResponse
 	switch source {
 	case "bangumi":
-		return searchBangumi(ctx, rec, q, in.EntityType, limit)
+		out, err = searchBangumi(ctx, rec, q, in.EntityType, limit)
 	case "dlsite", "dmm":
 		// 这两个适配器目前只有商品页详情抓取，没有稳定的公开搜索 API。
 		return ExternalSourceQueryResponse{}, fmt.Errorf("search_not_supported")
 	default:
 		return ExternalSourceQueryResponse{}, fmt.Errorf("not_supported")
 	}
+	if err != nil {
+		return ExternalSourceQueryResponse{}, err
+	}
+	if out.Limit <= 0 {
+		out.Limit = limit
+	}
+	if ourClamp || (requested > 0 && out.Limit != requested) || out.Limit != limit {
+		out.Clamped = true
+	}
+	return out, nil
 }
 
 type bangumiSearchHit struct {
@@ -295,14 +313,16 @@ func searchBangumi(ctx context.Context, rec *fetchRecorder, q, entityType string
 		return ExternalSourceQueryResponse{}, err
 	}
 	// 人物/角色搜索走不同端点；作品默认 subjects。
+	// Bangumi OpenAPI：limit/offset 是 query 参数，写在 JSON body 会被忽略并默认 10。
 	path := "/v0/search/subjects"
-	payload := map[string]any{"keyword": q, "limit": limit, "offset": 0}
+	payload := map[string]any{"keyword": q}
 	switch et {
 	case "artist", "organization":
 		path = "/v0/search/persons"
 	case "character":
 		path = "/v0/search/characters"
 	}
+	path = path + "?limit=" + strconv.Itoa(limit) + "&offset=0"
 	var resp bangumiSearchResponse
 	if err := fetchBangumiPOST(ctx, path, payload, &resp); err != nil {
 		return ExternalSourceQueryResponse{}, err
@@ -341,6 +361,18 @@ func searchBangumi(ctx context.Context, rec *fetchRecorder, q, entityType string
 		})
 	}
 	primary, all, raw := rec.snapshot()
+	applied := limit
+	clamped := false
+	if resp.Limit > 0 {
+		applied = resp.Limit
+		if applied != limit {
+			clamped = true
+		}
+	}
+	if len(items) > applied {
+		items = items[:applied]
+		clamped = true
+	}
 	return ExternalSourceQueryResponse{
 		Source:  "bangumi",
 		Op:      "search",
@@ -348,5 +380,7 @@ func searchBangumi(ctx context.Context, rec *fetchRecorder, q, entityType string
 		Fetches: all,
 		Raw:     raw,
 		Items:   items,
+		Limit:   applied,
+		Clamped: clamped,
 	}, nil
 }
