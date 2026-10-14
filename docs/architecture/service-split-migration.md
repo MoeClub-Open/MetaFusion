@@ -60,7 +60,7 @@ community/storage 通过目录 HTTP 解析当前实体身份与可见性，使�
 
 ## 4. 身份与权限
 
-云端 MCP 在独立 `metafusion-mcp` 仓库维护，只拥有 `mcp` schema，保存客户端、资源绑定令牌、加密的受限 PAT 与不可变提交草稿。通过账号 HTTP 登录与 PAT 权限交集复用既有 API；不接管 Agent 的外部信息获取。运行角色只持本域 CRUD，DDL 由显式 mcp-migrate 完成。目录同主体业务读写共用默认180 RPM，PostgreSQL 共享固定分钟窗口；admin 默认无限，显式账号/组策略可覆盖。网关仅在登录、注册、刷新、安装与令牌精确路径保护未验证凭据，不按共享出口 IP 限业务请求。认证失败次数由账号库共享计数。
+云端 MCP 在独立 `metafusion-mcp` 仓库维护，只拥有 `mcp` schema，保存客户端、资源绑定令牌、加密的受限 PAT 与不可变提交草稿。通过账号 HTTP 登录与 PAT 权限交集复用既有 API；按 Agent 明确请求提供全网搜索和外部 HTTP 请求，来源选择与证据判断仍由 Agent 决定。外部读取要求 `mcp.read`，写请求要求显式同意的 MCP 本地 scope `mcp.web.write`；本地 scope 不进入平台 PAT，不授予平台写权限。外部请求仅访问公开 HTTP(S) 默认端口，连接时检查并固定公开 IP，不携带平台凭据、不跟随重定向、不自动重试。搜索提供方由 `MCP_SEARCH_PROVIDER` / `MCP_SEARCH_URL` / `MCP_SEARCH_API_KEY` 配置。运行角色只持本域 CRUD，DDL 由显式 mcp-migrate 完成。目录同主体业务读写共用默认180 RPM，PostgreSQL 共享固定分钟窗口；admin 默认无限，显式账号/组策略可覆盖。网关仅在登录、注册、刷新、安装与令牌精确路径保护未验证凭据，不按共享出口 IP 限业务请求。认证失败次数由账号库共享计数。
 
 只有 auth 持签发私钥。目录、互动和存储验签 RS256 JWT，公钥来自静态配置或账号 JWKS；目录不派生签发私钥、不查账号表、不签发令牌。PAT 通过账号服务内省，会话续期由账号服务处理。
 

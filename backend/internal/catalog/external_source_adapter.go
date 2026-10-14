@@ -17,70 +17,62 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 )
 
 var (
 	// bangumiAPIBase 允许单测替换为 httptest 服务；生产默认指向 Bangumi 公开 API。
-	bangumiAPIBase     = "https://api.bgm.tv"
-	importerHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	bangumiAPIBase           = "https://api.bgm.tv"
+	externalSourceHTTPClient = &http.Client{Timeout: 10 * time.Second}
 )
 
-const importerUserAgent = "MetaFusion/1.0 (external-source query)"
+const externalSourceUserAgent = "MetaFusion/1.0 (external-source query)"
 
 // ---- 只读预览 DTO（lookup/detail 的 preview 字段沿用此形状） ----
 
-type ImporterPreviewRequest struct {
-	Source     string `json:"source"`
-	URLOrID    string `json:"url_or_id"`
-	EntityType string `json:"entity_type"`
-}
-
-type ImporterTranslationItem struct {
+type ExternalSourceTranslationItem struct {
 	Locale  string   `json:"locale"`
 	Title   string   `json:"title"`
 	Summary string   `json:"summary"`
 	Aliases []string `json:"aliases,omitempty"`
 }
 
-type ImporterWorkPreview struct {
-	Title            string                    `json:"title"`
-	OriginalTitle    string                    `json:"original_title"`
-	Aliases          []string                  `json:"aliases"`
-	ReleaseDate      string                    `json:"release_date"`
-	BeginDate        string                    `json:"begin_date,omitempty"`
-	Country          string                    `json:"country"`
-	Language         string                    `json:"language"`
-	OriginalLanguage string                    `json:"original_language,omitempty"`
-	Summary          string                    `json:"summary"`
-	CoverImageURL    string                    `json:"cover_image_url"`
-	CoverAspect      string                    `json:"cover_aspect"`
-	ContentRating    string                    `json:"content_rating"`
-	Tags             []string                  `json:"tags"`
-	Translations     []ImporterTranslationItem `json:"translations"`
-	CatalogMetadata  any                       `json:"catalog_metadata,omitempty"`
+type ExternalSourceWorkPreview struct {
+	Title            string                          `json:"title"`
+	OriginalTitle    string                          `json:"original_title"`
+	Aliases          []string                        `json:"aliases"`
+	ReleaseDate      string                          `json:"release_date"`
+	BeginDate        string                          `json:"begin_date,omitempty"`
+	Country          string                          `json:"country"`
+	Language         string                          `json:"language"`
+	OriginalLanguage string                          `json:"original_language,omitempty"`
+	Summary          string                          `json:"summary"`
+	CoverImageURL    string                          `json:"cover_image_url"`
+	CoverAspect      string                          `json:"cover_aspect"`
+	ContentRating    string                          `json:"content_rating"`
+	Tags             []string                        `json:"tags"`
+	Translations     []ExternalSourceTranslationItem `json:"translations"`
+	CatalogMetadata  any                             `json:"catalog_metadata,omitempty"`
 	// Fields 是按 infobox 映射出的动态字段值（键为已声明的字段码）；
 	// Infobox 是上游资料表的完整原文快照，用于追溯与后续补充映射。
 	Fields  map[string]any   `json:"fields,omitempty"`
 	Infobox []map[string]any `json:"infobox,omitempty"`
 }
 
-type ImporterArtistPreview struct {
-	ID             string                    `json:"id,omitempty"`
-	Name           string                    `json:"name"`
-	OriginalName   string                    `json:"original_name,omitempty"`
-	Role           string                    `json:"role"`
-	EntityType     string                    `json:"entity_type"`
-	Country        string                    `json:"country,omitempty"`
-	Biography      string                    `json:"biography,omitempty"`
-	Disambiguation string                    `json:"disambiguation,omitempty"`
-	Language       string                    `json:"language,omitempty"`
-	AvatarURL      string                    `json:"avatar_url,omitempty"`
-	CharacterName  string                    `json:"character_name,omitempty"`
-	Aliases        []string                  `json:"aliases,omitempty"`
-	ExternalIDs    map[string]any            `json:"external_ids,omitempty"`
-	Translations   []ImporterTranslationItem `json:"translations,omitempty"`
-	MatchedArtist  any                       `json:"matched_artist,omitempty"`
+type ExternalSourceArtistPreview struct {
+	ID             string                          `json:"id,omitempty"`
+	Name           string                          `json:"name"`
+	OriginalName   string                          `json:"original_name,omitempty"`
+	Role           string                          `json:"role"`
+	EntityType     string                          `json:"entity_type"`
+	Country        string                          `json:"country,omitempty"`
+	Biography      string                          `json:"biography,omitempty"`
+	Disambiguation string                          `json:"disambiguation,omitempty"`
+	Language       string                          `json:"language,omitempty"`
+	AvatarURL      string                          `json:"avatar_url,omitempty"`
+	CharacterName  string                          `json:"character_name,omitempty"`
+	Aliases        []string                        `json:"aliases,omitempty"`
+	ExternalIDs    map[string]any                  `json:"external_ids,omitempty"`
+	Translations   []ExternalSourceTranslationItem `json:"translations,omitempty"`
 	// RelationType 是该关联应落到 definitions 的关系码（如 directed_by / voiced_by / character_in）；
 	// RelationRole 是角色番位的 character_rank 词表项（main/supporting/guest/ensemble/narrator/cameo，
 	// 落 character_in 的 attributes.character_rank）。
@@ -88,44 +80,29 @@ type ImporterArtistPreview struct {
 	RelationRole string `json:"relation_role,omitempty"`
 }
 
-
-type ImporterTrackPreview struct {
+type ExternalSourceTrackPreview struct {
 	Position        int     `json:"position"`
 	Title           string  `json:"title"`
 	DurationSeconds float64 `json:"duration_seconds"`
 	ArtistCredit    string  `json:"artist_credit,omitempty"`
 	ISRC            string  `json:"isrc,omitempty"`
 	RecordingMBID   string  `json:"recording_mbid,omitempty"`
-	// ExpressionID 显式复用的既有表达（用户在预览中手工匹配的录音），
-	// 优先于自动对齐；校验必须属于同一 Work。
-	ExpressionID string `json:"expression_id,omitempty"`
-	// EntryIndex 指向同一 canonical_entries 数组内的条目下标，用于把曲目结构绑定到
-	// 本次清单里的稳定节点，不再靠标题在条目之间传递绑定。
-	EntryIndex *int `json:"entry_index,omitempty"`
 }
 
-// ImporterMediumPreview 是载体预览。OriginalLanguage / Translations 落 medium **实体本体**
-// （不是 attributes）：载体题名的原语言行与各语种译名行，随载体落库写入（importReleaseChain），
-// 幂等命中时补齐缺失行、不覆盖已有行。
-type ImporterMediumPreview struct {
-	Position         int                    `json:"position"`
-	Number           string                 `json:"number,omitempty"`
-	Name             string                 `json:"name"`
-	Format           string                 `json:"format"`
-	Role             string                 `json:"role,omitempty"`
-	OriginalLanguage string                 `json:"original_language,omitempty"`
-	Translations     any                    `json:"translations,omitempty"`
-	Tracks           []ImporterTrackPreview `json:"tracks"`
+// ExternalSourceMediumPreview 是只读载体预览，翻译与属性仅作为编目参考。
+type ExternalSourceMediumPreview struct {
+	Position         int                          `json:"position"`
+	Number           string                       `json:"number,omitempty"`
+	Name             string                       `json:"name"`
+	Format           string                       `json:"format"`
+	Role             string                       `json:"role,omitempty"`
+	OriginalLanguage string                       `json:"original_language,omitempty"`
+	Translations     any                          `json:"translations,omitempty"`
+	Tracks           []ExternalSourceTrackPreview `json:"tracks"`
 }
 
-// ImporterReleasePreview 是发行版预览。与载体同口径：OriginalLanguage / Translations 落
-// release 实体本体（发行版题名的原语言行与各语种译名行），随发行链写入。
-//
-// 封面 CoverImageURL 与 work 封面同口径地兑现：透传为 release 实体的 Picture（只引用远端
-// URL，不抓取、不转存），新建与幂等复用都写（复用只补空、不覆盖已有图）。
-// CoverAspect / Notes / CatalogMetadata / Language 在模型里没有落点，由预检明确拒绝
-// （unsupported_field_for_entity_type，逐条理由见 importerUnsupportedPayloadFields）。
-type ImporterReleasePreview struct {
+// ExternalSourceReleasePreview 是只读发行版预览，不执行目录写入或幂等合并。
+type ExternalSourceReleasePreview struct {
 	CoverImageURL       string `json:"cover_image_url,omitempty"`
 	CoverAspect         string `json:"cover_aspect,omitempty"`
 	OriginalLanguage    string `json:"original_language,omitempty"`
@@ -145,7 +122,7 @@ type ImporterReleasePreview struct {
 	CatalogMetadata     any    `json:"catalog_metadata,omitempty"`
 }
 
-type ImporterCanonicalEntryPreview struct {
+type ExternalSourceCanonicalEntryPreview struct {
 	Title            string         `json:"title"`
 	Translations     any            `json:"translations,omitempty"`
 	Position         int            `json:"position"`
@@ -161,25 +138,22 @@ type ImporterCanonicalEntryPreview struct {
 	// ParentIndex 指向同一 canonical_entries 数组内父级条目的下标（-1/省略为顶层），
 	// 用于表达章节树；仅在同 Work 内成立。
 	ParentIndex *int `json:"parent_index,omitempty"`
-	// ExpressionID 显式指定复用的既有表达（用户在预览中手工匹配），
-	// 优先于自动对齐；校验必须存在、可见且属于同一 Work。
-	ExpressionID string `json:"expression_id,omitempty"`
 }
 
-type ImporterPreviewResponse struct {
-	Source           string                          `json:"source"`
-	EntityType       string                          `json:"entity_type,omitempty"`
-	ExternalID       string                          `json:"external_id"`
-	ExternalURL      string                          `json:"external_url"`
-	MediaType        string                          `json:"media_type"`
-	Work             *ImporterWorkPreview            `json:"work,omitempty"`
-	Artist           *ImporterArtistPreview          `json:"artist,omitempty"`
-	Artists          []ImporterArtistPreview         `json:"artists,omitempty"`
-	HasRelease       bool                            `json:"has_release,omitempty"`
-	CanonicalEntries []ImporterCanonicalEntryPreview `json:"canonical_entries,omitempty"`
-	Release          *ImporterReleasePreview         `json:"release,omitempty"`
-	Mediums          []ImporterMediumPreview         `json:"mediums,omitempty"`
-	Tags             []string                        `json:"tags"`
+type ExternalSourcePreviewResponse struct {
+	Source           string                                `json:"source"`
+	EntityType       string                                `json:"entity_type,omitempty"`
+	ExternalID       string                                `json:"external_id"`
+	ExternalURL      string                                `json:"external_url"`
+	MediaType        string                                `json:"media_type"`
+	Work             *ExternalSourceWorkPreview            `json:"work,omitempty"`
+	Artist           *ExternalSourceArtistPreview          `json:"artist,omitempty"`
+	Artists          []ExternalSourceArtistPreview         `json:"artists,omitempty"`
+	HasRelease       bool                                  `json:"has_release,omitempty"`
+	CanonicalEntries []ExternalSourceCanonicalEntryPreview `json:"canonical_entries,omitempty"`
+	Release          *ExternalSourceReleasePreview         `json:"release,omitempty"`
+	Mediums          []ExternalSourceMediumPreview         `json:"mediums,omitempty"`
+	Tags             []string                              `json:"tags"`
 	// Warnings 记录来源抓取不完整等需要人工留意的情况（如分集总数与实取不符），
 	// 前端据此提示，避免把不完整预览当成完整清单落库。
 	Warnings []string `json:"warnings,omitempty"`
@@ -187,25 +161,24 @@ type ImporterPreviewResponse struct {
 
 // ---- 参数归一化 ----
 
-func normalizeImporterSource(source string) (string, error) {
+func normalizeExternalSourceDefinition(source string) (string, error) {
 	src := strings.ToLower(strings.TrimSpace(source))
 	if src == "" {
 		src = "auto"
 	}
-	// auto 是解析别名而非法定来源：Preview 先按 URL/ID 判定具体适配器，
-	// Import 不做来源探测，空值/auto 在这里默认 bangumi；客户端应回传预览的具体 source。
+	// auto 已由调用方按 URL/ID 探测；无法判定时使用默认适配器。
 	if src == "auto" {
 		return "bangumi", nil
 	}
-	if importerAdapterSet()[src] {
+	if externalSourceAdapterSet()[src] {
 		return src, nil
 	}
 	return "", fmt.Errorf("not_supported")
 }
 
-// detectImporterSource 按 URL/ID 字面形态判定 auto 下的具体来源；
+// detectExternalSourceDefinition 按 URL/ID 字面形态判定 auto 下的具体来源；
 // 无法判定时回落到 bangumi（默认适配器）。纯本地解析，不发网络请求。
-func detectImporterSource(raw string) string {
+func detectExternalSourceDefinition(raw string) string {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return "bangumi"
@@ -222,7 +195,7 @@ func detectImporterSource(raw string) string {
 	return "bangumi"
 }
 
-func normalizeImporterEntityType(entityType string) (string, error) {
+func normalizeExternalSourceEntityType(entityType string) (string, error) {
 	et := strings.ToLower(strings.TrimSpace(entityType))
 	if et == "" {
 		et = "work"
@@ -330,7 +303,6 @@ func resolveBangumiRef(raw, entityType string) (bangumiRef, error) {
 }
 
 // ---- Bangumi 公开 API ----
-
 
 type bangumiImages struct {
 	Large  string `json:"large"`
@@ -491,7 +463,7 @@ func normalizeInfoboxValue(raw, kind string) any {
 	}
 	switch kind {
 	case "isbn":
-		if barcode, ok := importerISBNBarcode(raw); ok {
+		if barcode, ok := externalSourceISBNBarcode(raw); ok {
 			return barcode
 		}
 		return nil
@@ -785,8 +757,8 @@ func fetchBangumiPersonDetails(ctx context.Context, ids []int) map[int]bangumiPe
 // previewBangumiSubjectRelations 拉取条目的关联演职人员与角色，组装为可导入的
 // agent 预览（两层以内关联实体）。任一端点失败只返回已取到的部分——关联数据
 // 是增强项，不应让主条目导入失败。
-func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []ImporterArtistPreview {
-	out := []ImporterArtistPreview{}
+func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []ExternalSourceArtistPreview {
+	out := []ExternalSourceArtistPreview{}
 
 	var persons []bangumiSubjectPerson
 	var chars []bangumiSubjectCharacter
@@ -834,7 +806,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Import
 				agentType = bangumiPersonAgentType(d.Type.ID, d.Summary)
 				biography = strings.TrimSpace(d.Summary)
 			}
-			out = append(out, ImporterArtistPreview{
+			out = append(out, ExternalSourceArtistPreview{
 				Name:         name,
 				OriginalName: name,
 				Role:         role,
@@ -858,7 +830,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Import
 			rank := strings.TrimSpace(c.Relation)
 			// 角色本体：character_in → 作品。番位词表项（主角/配角/客串）进 relation_role，
 			// 原始文本（含"旁白""闲角"等词表未覆盖的）一律进 credit_role 保证无损。
-			out = append(out, ImporterArtistPreview{
+			out = append(out, ExternalSourceArtistPreview{
 				Name:         name,
 				OriginalName: name,
 				Role:         rank,
@@ -882,7 +854,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Import
 					agentType = bangumiPersonAgentType(d.Type.ID, d.Summary)
 					biography = strings.TrimSpace(d.Summary)
 				}
-				out = append(out, ImporterArtistPreview{
+				out = append(out, ExternalSourceArtistPreview{
 					Name:          an,
 					OriginalName:  an,
 					Role:          "配音",
@@ -1038,8 +1010,8 @@ var bangumiEpisodeTypes = []int{0, 1, 2, 3, 4, 5, 6}
 // previewBangumiEpisodes 抓取某条目的分集/篇目。遍历全部 type 并按 episode ID 去重
 // （同一 episode 只落一条，role 由 bangumiEpisodeRole 依 type 决定），
 // 某类抓取失败只跳过该类，不使整体失败。返回值第二项为抓取不完整时的告警。
-func previewBangumiEpisodes(ctx context.Context, subjectID int) ([]ImporterCanonicalEntryPreview, []string) {
-	out := []ImporterCanonicalEntryPreview{}
+func previewBangumiEpisodes(ctx context.Context, subjectID int) ([]ExternalSourceCanonicalEntryPreview, []string) {
+	out := []ExternalSourceCanonicalEntryPreview{}
 	warnings := []string{}
 	seen := map[int]bool{}
 	for _, epType := range bangumiEpisodeTypes {
@@ -1084,7 +1056,7 @@ func previewBangumiEpisodes(ctx context.Context, subjectID int) ([]ImporterCanon
 				if pos <= 0 {
 					pos = offset + i + 1
 				}
-				entry := ImporterCanonicalEntryPreview{
+				entry := ExternalSourceCanonicalEntryPreview{
 					Title:           title,
 					Translations:    bangumiTranslationItems(ep.Name, ep.NameCN, ""),
 					Position:        pos,
@@ -1123,13 +1095,13 @@ func bangumiTitlePair(name, nameCN string) (title, original string) {
 	return name, name
 }
 
-func bangumiTranslationItems(name, nameCN, summary string) []ImporterTranslationItem {
-	items := []ImporterTranslationItem{}
+func bangumiTranslationItems(name, nameCN, summary string) []ExternalSourceTranslationItem {
+	items := []ExternalSourceTranslationItem{}
 	if strings.TrimSpace(nameCN) != "" && strings.TrimSpace(nameCN) != strings.TrimSpace(name) {
-		items = append(items, ImporterTranslationItem{Locale: "zh-CN", Title: strings.TrimSpace(nameCN), Summary: summary})
+		items = append(items, ExternalSourceTranslationItem{Locale: "zh-CN", Title: strings.TrimSpace(nameCN), Summary: summary})
 	}
 	if strings.TrimSpace(name) != "" {
-		items = append(items, ImporterTranslationItem{Locale: "ja", Title: strings.TrimSpace(name)})
+		items = append(items, ExternalSourceTranslationItem{Locale: "ja", Title: strings.TrimSpace(name)})
 	}
 	return items
 }
@@ -1137,37 +1109,37 @@ func bangumiTranslationItems(name, nameCN, summary string) []ImporterTranslation
 // Preview 通过已实现的来源适配器生成预览，返回具体 source 与实际 entity_type。
 // 空来源/auto 按 URL/ID 探测；Bangumi 支持条目、人物与角色，DLsite/DMM 商品返回 work，
 // 不使用请求 entity_type 做人物/角色路由或校验，各来源的字段与关联覆盖由适配器决定。
-func (s *Store) Preview(ctx context.Context, source, urlOrID, entityType string) (ImporterPreviewResponse, error) {
+func (s *Store) Preview(ctx context.Context, source, urlOrID, entityType string) (ExternalSourcePreviewResponse, error) {
 	// auto（含空值）按 URL/ID 字面形态判定具体来源；显式指定来源时以指定为准。
 	rawSource := strings.ToLower(strings.TrimSpace(source))
 	if rawSource == "" || rawSource == "auto" {
-		rawSource = detectImporterSource(urlOrID)
+		rawSource = detectExternalSourceDefinition(urlOrID)
 	}
-	resolvedSource, err := normalizeImporterSource(rawSource)
+	resolvedSource, err := normalizeExternalSourceDefinition(rawSource)
 	if err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	switch resolvedSource {
 	case "dlsite":
 		ref, perr := parseDLsiteRef(urlOrID)
 		if perr != nil {
-			return ImporterPreviewResponse{}, perr
+			return ExternalSourcePreviewResponse{}, perr
 		}
 		return previewDLsite(ctx, ref)
 	case "dmm":
 		ref, perr := parseDMMRef(urlOrID)
 		if perr != nil {
-			return ImporterPreviewResponse{}, perr
+			return ExternalSourcePreviewResponse{}, perr
 		}
 		return previewDMM(ctx, ref)
 	}
-	et, err := normalizeImporterEntityType(entityType)
+	et, err := normalizeExternalSourceEntityType(entityType)
 	if err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	ref, err := resolveBangumiRef(urlOrID, et)
 	if err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	switch ref.Kind {
 	case "subject":
@@ -1177,17 +1149,17 @@ func (s *Store) Preview(ctx context.Context, source, urlOrID, entityType string)
 	case "character":
 		return previewBangumiCharacter(ctx, resolvedSource, ref.ID)
 	default:
-		return ImporterPreviewResponse{}, fmt.Errorf("not_supported")
+		return ExternalSourcePreviewResponse{}, fmt.Errorf("not_supported")
 	}
 }
 
-func previewBangumiSubject(ctx context.Context, source string, id int) (ImporterPreviewResponse, error) {
+func previewBangumiSubject(ctx context.Context, source string, id int) (ExternalSourcePreviewResponse, error) {
 	var sub bangumiSubject
 	if err := fetchBangumi(ctx, "/v0/subjects/"+strconv.Itoa(id), &sub); err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	if strings.TrimSpace(sub.Name) == "" {
-		return ImporterPreviewResponse{}, fmt.Errorf("upstream_error")
+		return ExternalSourcePreviewResponse{}, fmt.Errorf("upstream_error")
 	}
 	title, original := bangumiTitlePair(sub.Name, sub.NameCN)
 	workType := bangumiWorkType(sub.Type)
@@ -1208,13 +1180,13 @@ func previewBangumiSubject(ctx context.Context, source string, id int) (Importer
 	website := firstNonEmpty(sub.infoboxString("官方网站"), sub.infoboxString("官方網站"), sub.infoboxString("官网"))
 	catalogNo := firstNonEmpty(sub.infoboxString("商品编号"), sub.infoboxString("商品編號"), sub.infoboxString("品番"))
 	canonicalEntries, warnings := previewBangumiEpisodes(ctx, sub.ID)
-	return ImporterPreviewResponse{
+	return ExternalSourcePreviewResponse{
 		Source:      source,
 		EntityType:  "work",
 		ExternalID:  strconv.Itoa(sub.ID),
 		ExternalURL: "https://bgm.tv/subject/" + strconv.Itoa(sub.ID),
 		MediaType:   mediaType,
-		Work: &ImporterWorkPreview{
+		Work: &ExternalSourceWorkPreview{
 			Title:            title,
 			OriginalTitle:    original,
 			Aliases:          aliases,
@@ -1310,13 +1282,13 @@ func detectJapaneseScript(s string) string {
 	return ""
 }
 
-func previewBangumiPerson(ctx context.Context, source string, id int) (ImporterPreviewResponse, error) {
+func previewBangumiPerson(ctx context.Context, source string, id int) (ExternalSourcePreviewResponse, error) {
 	var p bangumiPerson
 	if err := fetchBangumi(ctx, "/v0/persons/"+strconv.Itoa(id), &p); err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	if strings.TrimSpace(p.Name) == "" {
-		return ImporterPreviewResponse{}, fmt.Errorf("upstream_error")
+		return ExternalSourcePreviewResponse{}, fmt.Errorf("upstream_error")
 	}
 	agentType := bangumiAgentType(p.Type.ID)
 	entityType := "artist"
@@ -1328,13 +1300,13 @@ func previewBangumiPerson(ctx context.Context, source string, id int) (ImporterP
 	if len(p.Career) > 0 {
 		role = strings.TrimSpace(p.Career[0])
 	}
-	return ImporterPreviewResponse{
+	return ExternalSourcePreviewResponse{
 		Source:      source,
 		EntityType:  entityType,
 		ExternalID:  strconv.Itoa(p.ID),
 		ExternalURL: "https://bgm.tv/person/" + strconv.Itoa(p.ID),
 		MediaType:   agentType,
-		Artist: &ImporterArtistPreview{
+		Artist: &ExternalSourceArtistPreview{
 			Name:         name,
 			OriginalName: original,
 			Role:         role,
@@ -1349,25 +1321,25 @@ func previewBangumiPerson(ctx context.Context, source string, id int) (ImporterP
 	}, nil
 }
 
-func previewBangumiCharacter(ctx context.Context, source string, id int) (ImporterPreviewResponse, error) {
+func previewBangumiCharacter(ctx context.Context, source string, id int) (ExternalSourcePreviewResponse, error) {
 	var ch bangumiCharacter
 	if err := fetchBangumi(ctx, "/v0/characters/"+strconv.Itoa(id), &ch); err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	if strings.TrimSpace(ch.Name) == "" {
-		return ImporterPreviewResponse{}, fmt.Errorf("upstream_error")
+		return ExternalSourcePreviewResponse{}, fmt.Errorf("upstream_error")
 	}
 	name, original := bangumiTitlePair(ch.Name, ch.NameCN)
 	// 顶层 EntityType 保持 character：预览→导入回传与 dedup key 都以 URL 推断为准；
 	// 乐队型条目的类型细化落在 Artist.EntityType，导入侧据此建 group agent。
 	agentType := bangumiCharacterAgentType(ch.Gender, ch.Summary)
-	return ImporterPreviewResponse{
+	return ExternalSourcePreviewResponse{
 		Source:      source,
 		EntityType:  "character",
 		ExternalID:  strconv.Itoa(ch.ID),
 		ExternalURL: "https://bgm.tv/character/" + strconv.Itoa(ch.ID),
 		MediaType:   "character",
-		Artist: &ImporterArtistPreview{
+		Artist: &ExternalSourceArtistPreview{
 			Name:         name,
 			OriginalName: original,
 			Role:         "Character",
@@ -1384,20 +1356,12 @@ func previewBangumiCharacter(ctx context.Context, source string, id int) (Import
 
 // ---- 落库 ----
 
-var importerDatePattern = regexp.MustCompile(`^\d{4}(-\d{2}(-\d{2})?)?$`)
+var externalSourceDatePattern = regexp.MustCompile(`^\d{4}(-\d{2}(-\d{2})?)?$`)
 
-func cleanImporterDate(v string) string {
+func cleanExternalSourceDate(v string) string {
 	v = strings.TrimSpace(v)
-	if !importerDatePattern.MatchString(v) {
+	if !externalSourceDatePattern.MatchString(v) {
 		return ""
 	}
 	return v
 }
-
-func sanitizePosition(v, fallback int) int {
-	if v < 0 {
-		return fallback
-	}
-	return v
-}
-

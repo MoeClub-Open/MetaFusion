@@ -74,7 +74,7 @@ func mergeExternalIDs(target, source map[string]string) (map[string]string, erro
 		target = map[string]string{}
 	}
 	for k, v := range source {
-		if importerInternalKeys[k] {
+		if legacyImportKeys[k] {
 			continue
 		}
 		if cur, ok := target[k]; ok && cur != v {

@@ -27,7 +27,7 @@ export interface ExternalSourceSearchItem {
 }
 
 /** lookup/detail 仍返回既有 preview 映射形状（只读）。 */
-export interface ImporterPreviewResponse {
+export interface ExternalSourcePreview {
   source: string;
   entity_type?: string;
   external_id: string;
@@ -50,11 +50,11 @@ export interface ExternalSourceQueryResponse {
   fetch?: FetchMeta;
   fetches?: FetchMeta[];
   raw?: unknown;
-  preview?: ImporterPreviewResponse;
+  preview?: ExternalSourcePreview;
   items?: ExternalSourceSearchItem[];
 }
 
-export interface ImporterSource {
+export interface ExternalSource {
   id: string;
   names: Record<string, string>;
   category: string;
@@ -64,11 +64,8 @@ export interface ImporterSource {
 }
 
 export function fetchExternalSources() {
-  return fetchApi<{ items: ImporterSource[] }>("/external-sources");
+  return fetchApi<{ items: ExternalSource[] }>("/external-sources");
 }
-
-/** @deprecated 使用 fetchExternalSources */
-export const fetchImporterSources = fetchExternalSources;
 
 export function queryExternalSource(body: ExternalSourceQueryRequest) {
   return fetchApi<ExternalSourceQueryResponse>("/external-sources/query", {

@@ -83,7 +83,7 @@ func resetPreviewBucket() {
 
 // 预览端点使用统一默认限流：第 181 次请求被 429 挡住并给 Retry-After。
 // 计数桶按 IP+路由，本用例进出都清桶，避免影响其它用例。
-func TestImporterPreviewIsRateLimited(t *testing.T) {
+func TestExternalSourcePreviewIsRateLimited(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resetPreviewBucket()
 	defer resetPreviewBucket()

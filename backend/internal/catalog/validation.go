@@ -910,13 +910,9 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 	return nil
 }
 
-// importerInternalKeys 是仅 importer 内部写的键：它决定"重导命中哪条记录"，
-// 手工载荷带它就能抢占他人条目的键（唯一索引全库唯一，见结构基线）。
-//
-// 分层：validateExternalIDs 只管格式（离线、无写入者信息）；"谁能声明新键"由
-// guardImportKey 在 Store.Save 里按写入来源判定——导入链路经 Edit.internal 放行，
-// 手工 POST/PUT 与实例间提案一律拒绝。C 路若已做同口径校验则复用此处错误码。
-var importerInternalKeys = map[string]bool{"metafusion_import": true}
+// legacyImportKeys 保留旧导入标识的格式校验；历史实体可保留或删除已有值，
+// 所有写路径均由 guardImportKey 禁止新声明或改写。
+var legacyImportKeys = map[string]bool{"metafusion_import": true}
 
 // guardImportKey 阻止非导入写入**新声明或改写**内部幂等键。
 // 同值放行：PUT 是全量替换（AGENTS.md 的"先读全量再写"），已带该键的条目原样写回
@@ -934,8 +930,7 @@ func guardImportKey(next, prev map[string]string) error {
 //   - dlsite：dlsite:work:{RJ/RE/BJ/VJ+数字}；社团为 dlsite:circle:RG{数字}
 //   - dmm：dmm:work:{cid}
 //
-// 允许派生后缀（:release、:r{hash}、:m{n}、:t{n}、:e{hash}），与 importer.go 的
-// importDedupKey/importReleaseChain/importerEntryExprKey 键格式一致。
+// 保留旧导入器已生成的派生后缀格式，供历史数据正常编辑。
 var importKeyPattern = regexp.MustCompile(`^(?:bangumi:(?:subject|person|character):[1-9][0-9]*|dlsite:work:(?:RJ|RE|BJ|VJ)[0-9]{5,8}|dlsite:circle:RG[0-9]+|dmm:work:[a-z0-9_]{3,32})(?::e[0-9a-f]+|(?::release)?(?::r[0-9a-f]+)?(?::m[0-9]+(?::t[0-9]+)?)?)?$`)
 
 func validImportKey(s string) bool { return importKeyPattern.MatchString(strings.TrimSpace(s)) }
@@ -957,7 +952,7 @@ func (d Definitions) validateExternalIDs(e Entity) error {
 		if len(k) > 64 || len(v) > 2000 {
 			return fmt.Errorf("invalid_external_id: %s", k)
 		}
-		if importerInternalKeys[k] {
+		if legacyImportKeys[k] {
 			if !validImportKey(v) {
 				return fmt.Errorf("invalid_import_key")
 			}
@@ -979,9 +974,7 @@ func (e Entity) structuralRefs() map[string]string {
 // validateEntityContent 校验与"实体在结构里的位置"无关的内容：类型声明、属性取值
 // （词表项/引用可达/日期与数值格式/列表与子组）、原语言、翻译行、图片。
 //
-// Store.Save（经 validateEntity）与导入预检（importerPreflightValues）调用的是**同一个
-// 函数、同一个 historical 口径**，所以"预检通过 ⇒ Save 不会再因属性值/语言/翻译中途失败"
-// 由构造保证，而不是靠两份逻辑互相对齐；预检只查得比 Save 早，判定不放宽也不收紧。
+// Store.Save 与提交校验共用内容验证。
 // historical 语义与 Save 一致（true：停用的码与词表项不断读，只影响新增使用）。
 func (d Definitions) validateEntityContent(e Entity, reference func(string, []string) error, historical bool) error {
 	if e.OriginalLanguage != "" {
