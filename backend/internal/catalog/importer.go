@@ -78,7 +78,7 @@ type ImporterArtistPreview struct {
 	AvatarURL      string                    `json:"avatar_url,omitempty"`
 	CharacterName  string                    `json:"character_name,omitempty"`
 	Aliases        []string                  `json:"aliases,omitempty"`
-	ExternalIDs    map[string]any            `json:"external_ids,omitempty"`
+	ExternalLinks []map[string]any           `json:"external_links,omitempty"`
 	Translations   []ImporterTranslationItem `json:"translations,omitempty"`
 	MatchedArtist  any                       `json:"matched_artist,omitempty"`
 	// RelationType 是该关联应落到 definitions 的关系码（如 directed_by / voiced_by / character_in）；
@@ -154,7 +154,7 @@ type ImporterCanonicalEntryPreview struct {
 	OriginalLanguage string         `json:"original_language,omitempty"`
 	DurationSeconds  float64        `json:"duration_seconds,omitempty"`
 	Attributes       map[string]any `json:"attributes,omitempty"`
-	ExternalIDs      map[string]any `json:"external_ids,omitempty"`
+	ExternalLinks   []map[string]any `json:"external_links,omitempty"`
 	// EntryKind 条目落库层级："content_unit"（篇目/分集，可带下级）或
 	// "expression"（默认，录音/正文）。由来源结构决定，不由标题猜测。
 	EntryKind string `json:"entry_kind,omitempty"`
@@ -842,7 +842,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Import
 				Biography:    biography,
 				Language:     detectEntityLanguage(name, biography),
 				AvatarURL:    bangumiAvatarURL(p.Images),
-				ExternalIDs:  map[string]any{"bangumi_person": p.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(p.ID)},
+				ExternalLinks: previewLinks(map[string]any{"bangumi_person": p.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(p.ID)}),
 				// 职位文本保真：语义明确时给关系码，否则由 credit_role 承载原文。
 				RelationType: rel,
 			})
@@ -866,7 +866,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Import
 				Biography:    strings.TrimSpace(c.Summary),
 				Language:     detectEntityLanguage(name, c.Summary),
 				AvatarURL:    bangumiAvatarURL(c.Images),
-				ExternalIDs:  map[string]any{"bangumi_character": c.ID, "metafusion_import": "bangumi:character:" + strconv.Itoa(c.ID)},
+				ExternalLinks: previewLinks(map[string]any{"bangumi_character": c.ID, "metafusion_import": "bangumi:character:" + strconv.Itoa(c.ID)}),
 				RelationType: "character_in",
 				RelationRole: bangumiCharacterRankRole(rank),
 			})
@@ -891,7 +891,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Import
 					Language:      detectEntityLanguage(an, biography),
 					AvatarURL:     bangumiAvatarURL(a.Images),
 					CharacterName: name,
-					ExternalIDs:   map[string]any{"bangumi_person": a.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(a.ID)},
+					ExternalLinks: previewLinks(map[string]any{"bangumi_person": a.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(a.ID)}),
 					RelationType:  "voiced_by",
 				})
 			}
@@ -1092,7 +1092,7 @@ func previewBangumiEpisodes(ctx context.Context, subjectID int) ([]ImporterCanon
 					EntryRole:       bangumiEpisodeRole(ep.Type),
 					EntryKind:       "content_unit",
 					DurationSeconds: bangumiDurationSeconds(ep.Duration),
-					ExternalIDs:     map[string]any{"bangumi_episode": ep.ID},
+					ExternalLinks: previewLinks(map[string]any{"bangumi_episode": ep.ID}),
 				}
 				if strings.TrimSpace(ep.NameCN) != "" && strings.TrimSpace(ep.Name) != "" && ep.NameCN != ep.Name {
 					entry.OriginalLanguage = detectJapaneseScript(ep.Name)
@@ -1342,7 +1342,7 @@ func previewBangumiPerson(ctx context.Context, source string, id int) (ImporterP
 			Biography:    p.Summary,
 			AvatarURL:    p.Images.best(),
 			Aliases:      []string{},
-			ExternalIDs:  map[string]any{"bangumi_person": p.ID},
+			ExternalLinks: previewLinks(map[string]any{"bangumi_person": p.ID}),
 			Translations: bangumiTranslationItems(p.Name, p.NameCN, p.Summary),
 		},
 		Tags: []string{},
@@ -1375,7 +1375,7 @@ func previewBangumiCharacter(ctx context.Context, source string, id int) (Import
 			Biography:    ch.Summary,
 			AvatarURL:    ch.Images.best(),
 			Aliases:      []string{},
-			ExternalIDs:  map[string]any{"bangumi_character": ch.ID},
+			ExternalLinks: previewLinks(map[string]any{"bangumi_character": ch.ID}),
 			Translations: bangumiTranslationItems(ch.Name, ch.NameCN, ch.Summary),
 		},
 		Tags: []string{},

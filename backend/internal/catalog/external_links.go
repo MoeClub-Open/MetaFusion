@@ -44,3 +44,35 @@ func linksFromIDMap(ids map[string]string) []ExternalLink {
 	}
 	return out
 }
+
+// previewLinks converts a legacy importer preview map into external_links objects.
+func previewLinks(ids map[string]any) []map[string]any {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(ids))
+	for k, v := range ids {
+		s := strings.TrimSpace(fmt.Sprint(v))
+		if s == "" || s == "<nil>" {
+			continue
+		}
+		link := map[string]any{"kind": k, "url": externalLinkURL(k, s, "")}
+		if !(strings.HasPrefix(strings.ToLower(s), "http://") || strings.HasPrefix(strings.ToLower(s), "https://")) {
+			link["external_id"] = s
+		}
+		out = append(out, link)
+	}
+	return out
+}
+
+func previewLinkID(links []map[string]any, kind string) any {
+	for _, link := range links {
+		if fmt.Sprint(link["kind"]) == kind {
+			if v, ok := link["external_id"]; ok {
+				return v
+			}
+			return link["url"]
+		}
+	}
+	return nil
+}
