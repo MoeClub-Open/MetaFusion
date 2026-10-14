@@ -873,8 +873,8 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.Compare(c.Request.Context(), strings.Split(c.Query("ids"), ","), user(c))
 		respond(c, gin.H{"items": v}, err)
 	})
-	// 外部来源只读查询：出站抓取有放大面，要求登录（required("")），不再使用已删除的
-	// catalog.import.submit。出站站点限速见 outbound_throttle.go（Wait），与入站 rate_budget 无关。
+	// 外部来源只读查询：出站抓取有放大面，要求登录（required("")）。
+	// 出站站点限速见 outbound_throttle.go（Wait），与入站 rate_budget 无关。
 	extSrc := api.Group("/external-sources", required(""))
 	extSrc.GET("", func(c *gin.Context) {
 		v, err := s.ExternalSources(c.Request.Context())

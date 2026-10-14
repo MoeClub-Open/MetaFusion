@@ -111,7 +111,7 @@ func TestImporterSourcesEndpointGateAndShape(t *testing.T) {
 	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "authentication_required") {
 		t.Fatalf("匿名：status=%d body=%s，want 401 authentication_required", w.Code, w.Body.String())
 	}
-	// 登录即可（不再要求 catalog.import.submit）：任意已登录用户可读来源清单。
+	// 登录即可：任意已登录用户可读来源清单。
 	plain := &User{ID: "u-plain", Permissions: []string{"community.post.create"}}
 	w = httptest.NewRecorder()
 	gateEngine(plain).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
