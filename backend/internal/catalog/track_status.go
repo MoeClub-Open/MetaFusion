@@ -83,10 +83,10 @@ func (s *Store) EditTrackStatus(ctx context.Context, id string, in TrackStatusEd
 			if err = validateEntityStructuralReferences(next, ref); err != nil {
 				return err
 			}
-			if err = v.Document.validateExternalIDs(next); err != nil {
+			if err = v.Document.validateExternalLinks(next); err != nil {
 				return err
 			}
-			if err = validateExternalIDsAgainstDB(ctx, tx, next); err != nil {
+			if err = validateExternalLinksAgainstDB(ctx, tx, next); err != nil {
 				return err
 			}
 			missing, err := undeclaredReleaseSubject(ctx, tx, next)

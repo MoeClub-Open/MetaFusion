@@ -77,21 +77,21 @@ func validateExternalDatabase(e ExternalDatabase) error {
 	return nil
 }
 
-// validateExternalIDsAgainstDB 按 external_databases 预设复核实体的 external_ids：
-// 键必须已在预设表（含停用项——删除码后旧值读路径同样宽容，见 retirement.go 的
-// 关系端点注释）；值按预设 validation_regex 收敛（official_website 存完整 URL，
-// 走 validURL）。metafusion_import 内部键不在预设表，跳过（格式由
-// validateExternalIDs 管）。q 用事务内 queryer，保证与写入同快照。
-func validateExternalIDsAgainstDB(ctx context.Context, q queryer, e Entity) error {
-	if len(e.ExternalIDs) == 0 {
+// validateExternalLinksAgainstDB 按 external_databases 预设复核实体的 external_links：
+// kind 必须已在预设表（含停用项）；external_id 按 validation_regex 收敛（官网类存完整 URL，
+// 走 validURL）。metafusion_import 内部 kind 不在预设表，跳过。q 用事务内 queryer。
+func validateExternalLinksAgainstDB(ctx context.Context, q queryer, e Entity) error {
+	if len(e.ExternalLinks) == 0 {
 		return nil
 	}
 	need := []string{}
-	for k := range e.ExternalIDs {
-		if importerInternalKeys[k] {
+	seen := map[string]bool{}
+	for _, link := range e.ExternalLinks {
+		if importerInternalKeys[link.Kind] || seen[link.Kind] {
 			continue
 		}
-		need = append(need, k)
+		seen[link.Kind] = true
+		need = append(need, link.Kind)
 	}
 	if len(need) == 0 {
 		return nil
@@ -116,29 +116,27 @@ func validateExternalIDsAgainstDB(ctx context.Context, q queryer, e Entity) erro
 	if err = rows.Err(); err != nil {
 		return err
 	}
-	for k, v := range e.ExternalIDs {
-		if importerInternalKeys[k] {
+	for _, link := range e.ExternalLinks {
+		if importerInternalKeys[link.Kind] {
 			continue
 		}
-		preset, ok := found[k]
+		preset, ok := found[link.Kind]
 		if !ok {
-			return fmt.Errorf("invalid_external_key: %s", k)
+			return fmt.Errorf("invalid_external_key: %s", link.Kind)
 		}
-		// 分类收敛：all 通用，余下必须与实体 kind 一致（如 imdb 只收 work）。
 		if preset.category != "all" && preset.category != e.Kind {
-			return fmt.Errorf("invalid_external_category: %s", k)
+			return fmt.Errorf("invalid_external_category: %s", link.Kind)
 		}
-		v = strings.TrimSpace(v)
-		if k == "official_website" || k == "publisher_website" {
-			if !validURL(v) {
-				return fmt.Errorf("invalid_external_id: %s", k)
+		if link.Kind == "official_website" || link.Kind == "publisher_website" {
+			if !validURL(link.URL) {
+				return fmt.Errorf("invalid_external_link")
 			}
 			continue
 		}
-		if preset.regex != "" {
+		if link.ExternalID != "" && preset.regex != "" {
 			rx, rerr := regexp.Compile(preset.regex)
-			if rerr != nil || !rx.MatchString(v) {
-				return fmt.Errorf("invalid_external_id: %s", k)
+			if rerr != nil || !rx.MatchString(link.ExternalID) {
+				return fmt.Errorf("invalid_external_id: %s", link.Kind)
 			}
 		}
 	}

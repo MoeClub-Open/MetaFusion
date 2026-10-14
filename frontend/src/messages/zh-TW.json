@@ -2151,5 +2151,16 @@
   "catalog.quality.issue.release_missing_media": "發行版本缺少載體",
   "catalog.quality.issue.medium_missing_tracks": "載體缺少曲目",
   "catalog.quality.issue.track_empty_contents": "曲目未收錄表達內容",
-  "catalog.quality.issue.track_position_gap": "音軌序號有缺口或重複"
+  "catalog.quality.issue.track_position_gap": "音軌序號有缺口或重複",
+  "catalog.externalLinks": "外部連結",
+  "catalog.externalLinkKind": "平台",
+  "catalog.externalLinkId": "外部 ID",
+  "catalog.externalLinkUrl": "URL",
+  "catalog.externalLinkRole": "角色",
+  "catalog.externalLinkRoleNone": "無",
+  "authority.role.official": "官方",
+  "authority.role.primary": "主帳號",
+  "authority.role.secondary": "副帳號",
+  "authority.role.operator": "營運",
+  "editor.diff.fieldExternalLinks": "外部連結"
 }

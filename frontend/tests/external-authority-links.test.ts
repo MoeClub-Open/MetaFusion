@@ -23,8 +23,8 @@ test("中英两种布局显示裸条码为文字，并保留合法外链", () =>
         children: createElement(ExternalAuthorityLinks, {
           variant,
           externalLinks: [
-            { code: "ean_jan", name: "EAN / JAN", external_id: "4901234567894", url: "4901234567894", icon: "Barcode", icon_url: "" },
-            { code: "fandom", name: "Fandom", external_id: "https://series.fandom.com/wiki/Title", url: "https://series.fandom.com/wiki/Title", icon: "BookOpen", icon_url: "" },
+            { kind: "ean_jan", external_id: "4901234567894", url: "4901234567894" },
+            { kind: "fandom", external_id: "https://series.fandom.com/wiki/Title", url: "https://series.fandom.com/wiki/Title" },
           ],
         }),
       }));
@@ -36,9 +36,35 @@ test("中英两种布局显示裸条码为文字，并保留合法外链", () =>
   }
 });
 
-test("公开注册表未返回停用码时，历史标识仍以文字展示", () => {
-  const html = renderToStaticMarkup(createElement(ExternalAuthorityLinks, {
-    externalIds: { bilibili: "ep257552", ean_jan: "4901234567894" },
+test("role 为空不加角色标签；role=official 显示官方徽标", () => {
+  const plain = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      externalLinks: [{ kind: "twitter", url: "https://twitter.com/example", external_id: "example" }],
+    }),
+  }));
+  assert.doesNotMatch(plain, /官方/);
+
+  const official = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      externalLinks: [{ kind: "twitter", url: "https://twitter.com/official", role: "official" }],
+    }),
+  }));
+  assert.match(official, /官方/);
+});
+
+test("实体 external_links 历史标识在无预设时仍以文字展示", () => {
+  const html = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      entity: {
+        external_links: [
+          { kind: "bilibili", external_id: "ep257552", url: "ep257552" },
+          { kind: "ean_jan", external_id: "4901234567894", url: "4901234567894" },
+        ],
+      },
+    }),
   }));
   assert.match(html, /ep257552/);
   assert.match(html, /4901234567894/);

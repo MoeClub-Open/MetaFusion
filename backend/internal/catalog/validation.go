@@ -910,20 +910,30 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 	return nil
 }
 
-// importerInternalKeys 是仅 importer 内部写的键：它决定"重导命中哪条记录"，
-// 手工载荷带它就能抢占他人条目的键（唯一索引全库唯一，见结构基线）。
+// importerInternalKeys 是仅 importer 内部写的 kind：它决定"重导命中哪条记录"，
+// 手工载荷带它就能抢占他人条目的键（唯一索引全库唯一，见 external_links_metafusion_import_key）。
 //
-// 分层：validateExternalIDs 只管格式（离线、无写入者信息）；"谁能声明新键"由
+// 分层：validateExternalLinks 只管格式（离线、无写入者信息）；"谁能声明新键"由
 // guardImportKey 在 Store.Save 里按写入来源判定——导入链路经 Edit.internal 放行，
-// 手工 POST/PUT 与实例间提案一律拒绝。C 路若已做同口径校验则复用此处错误码。
+// 手工 POST/PUT 与实例间提案一律拒绝。
 var importerInternalKeys = map[string]bool{"metafusion_import": true}
 
+const maxExternalLinks = 50
+
+func importKeyFromLinks(links []ExternalLink) string {
+	for _, link := range links {
+		if importerInternalKeys[link.Kind] {
+			return strings.TrimSpace(link.ExternalID)
+		}
+	}
+	return ""
+}
+
 // guardImportKey 阻止非导入写入**新声明或改写**内部幂等键。
-// 同值放行：PUT 是全量替换（AGENTS.md 的"先读全量再写"），已带该键的条目原样写回
-// 必须通过，否则任何一次常规编辑都会被自己的历史键挡住。
-func guardImportKey(next, prev map[string]string) error {
-	key := strings.TrimSpace(next["metafusion_import"])
-	if key == "" || key == strings.TrimSpace(prev["metafusion_import"]) {
+// 同值放行：PUT 是全量替换，已带该键的条目原样写回必须通过。
+func guardImportKey(next, prev []ExternalLink) error {
+	n, p := importKeyFromLinks(next), importKeyFromLinks(prev)
+	if n == "" || n == p {
 		return nil
 	}
 	return fmt.Errorf("invalid_import_key")
@@ -940,31 +950,54 @@ var importKeyPattern = regexp.MustCompile(`^(?:bangumi:(?:subject|person|charact
 
 func validImportKey(s string) bool { return importKeyPattern.MatchString(strings.TrimSpace(s)) }
 
-// validateExternalIDs 校验 external_ids：
-//   - 键必须符合 codePattern（与 external_databases.code 的库约束同口径）；
-//     具体"是否存在+正则+分类"由 Store.Save 经 validateExternalIDsAgainstDB
-//     按预设表复核（需读库，此处无库）；
-//   - 值非空、长度收敛；metafusion_import 内部键只验格式（invalid_import_key）。
-func (d Definitions) validateExternalIDs(e Entity) error {
-	if len(e.ExternalIDs) == 0 {
+// validateExternalLinks 校验 external_links：
+//   - kind 符合 codePattern；url 必填且收敛；optional external_id / role / origin；
+//   - 同一实体 (kind, url) 不重复；最多 maxExternalLinks 条；
+//   - metafusion_import 的 external_id 只验格式；预设存在性由 validateExternalLinksAgainstDB。
+func (d Definitions) validateExternalLinks(e Entity) error {
+	if len(e.ExternalLinks) == 0 {
 		return nil
 	}
-	for k, v := range e.ExternalIDs {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return fmt.Errorf("invalid_external_id: %s", k)
+	if len(e.ExternalLinks) > maxExternalLinks {
+		return fmt.Errorf("too_many_external_links")
+	}
+	seen := map[string]bool{}
+	for i := range e.ExternalLinks {
+		link := &e.ExternalLinks[i]
+		link.Kind = strings.TrimSpace(link.Kind)
+		link.URL = strings.TrimSpace(link.URL)
+		link.ExternalID = strings.TrimSpace(link.ExternalID)
+		link.Role = strings.TrimSpace(link.Role)
+		link.Origin = strings.TrimSpace(link.Origin)
+		if link.Kind == "" || link.URL == "" {
+			return fmt.Errorf("invalid_external_link")
 		}
-		if len(k) > 64 || len(v) > 2000 {
-			return fmt.Errorf("invalid_external_id: %s", k)
+		if len(link.Kind) > 64 || len(link.URL) > 2000 || len(link.ExternalID) > 2000 {
+			return fmt.Errorf("invalid_external_link")
 		}
-		if importerInternalKeys[k] {
-			if !validImportKey(v) {
+		switch link.Role {
+		case "", "official", "primary", "secondary", "operator":
+		default:
+			return fmt.Errorf("invalid_external_link_role")
+		}
+		switch link.Origin {
+		case "", "migration", "commit":
+		default:
+			return fmt.Errorf("invalid_external_link_origin")
+		}
+		key := link.Kind + "|" + link.URL
+		if seen[key] {
+			return fmt.Errorf("duplicate_external_link")
+		}
+		seen[key] = true
+		if importerInternalKeys[link.Kind] {
+			if link.ExternalID == "" || !validImportKey(link.ExternalID) {
 				return fmt.Errorf("invalid_import_key")
 			}
 			continue
 		}
-		if !codePattern.MatchString(k) {
-			return fmt.Errorf("invalid_external_key: %s", k)
+		if !codePattern.MatchString(link.Kind) {
+			return fmt.Errorf("invalid_external_key: %s", link.Kind)
 		}
 	}
 	return nil
@@ -1121,7 +1154,7 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 		if s.Position < 0 {
 			return fmt.Errorf("invalid_position")
 		}
-		key := s.WorkID + "\x00" + s.Role
+		key := s.WorkID + "|" + s.Role
 		if seenSubject[key] {
 			return fmt.Errorf("duplicate_subject")
 		}
@@ -1153,7 +1186,7 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 			return fmt.Errorf("duplicate_position")
 		}
 		positions[c.Position] = true
-		exprLocKey := c.ExpressionID + "\x00" + encode(c.Locator)
+		exprLocKey := c.ExpressionID + "|" + encode(c.Locator)
 		if seenExprLoc[exprLocKey] {
 			return fmt.Errorf("duplicate_content")
 		}

@@ -25,7 +25,7 @@ func commitNeedsIdentityReview(op CommitOperation) bool {
 			continue
 		}
 		switch parts[0] {
-		case "title", "external_ids":
+		case "title", "external_links":
 			return true
 		case "translations":
 			if len(parts) <= 2 || parts[2] == "title" {
@@ -41,7 +41,7 @@ func identityWriteDocument(e Entity) map[string]any {
 	for locale, t := range e.Translations {
 		translations[locale] = map[string]any{"title": t.Title, "aliases": t.Aliases}
 	}
-	return map[string]any{"title": e.Title, "translations": translations, "external_ids": e.ExternalIDs}
+	return map[string]any{"title": e.Title, "translations": translations, "external_links": e.ExternalLinks}
 }
 
 // Use the same indexed terms as candidate lookup, including translated aliases
@@ -99,7 +99,7 @@ func lockEntityIdentityWrite(ctx context.Context, tx *sql.Tx, e Entity, u User) 
 }
 
 func entityNeedsIdentityReview(old, e Entity) bool {
-	if old.ID == "" || old.Title != e.Title || encode(old.ExternalIDs) != encode(e.ExternalIDs) {
+	if old.ID == "" || old.Title != e.Title || encode(old.ExternalLinks) != encode(e.ExternalLinks) {
 		return true
 	}
 	titles := func(translations map[string]Translation) map[string]string {

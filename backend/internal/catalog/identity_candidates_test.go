@@ -72,13 +72,13 @@ func TestPostgresIdentityCandidatesMatchAndVisibility(t *testing.T) {
 		}
 	}
 	original := f.save(Entity{Kind: "work", Title: "Original", Translations: map[string]Translation{
-		"ja": {Title: "夜明け", Aliases: []string{"  Star\tSONG　"}}}, ExternalIDs: map[string]string{"wikidata": "Q123"},
+		"ja": {Title: "夜明け", Aliases: []string{"  Star\tSONG　"}}}, ExternalLinks: linksFromIDMap(map[string]string{"wikidata": "Q123"}),
 		Attributes: map[string]any{"duration": 213}})
 	hidden := f.save(Entity{Kind: "work", Title: "Star song", Status: "draft"})
 	f.save(Entity{Kind: "agent", Title: "Star song"})
 	for _, query := range []IdentityCandidateQuery{
 		{Kind: "work", Titles: []string{"star song"}},
-		{Kind: "work", ExternalIDs: []IdentityExternalCriterion{{Provider: "wikidata", Value: "Q123"}}},
+		{Kind: "work", ExternalLinks: []IdentityExternalCriterion{{Kind: "wikidata", Value: "Q123"}}},
 		{Kind: "work", Attributes: []IdentityAttributeCriterion{{Key: "duration", Value: "213"}}},
 	} {
 		out, err := f.s.FindIdentityCandidates(ctx, query, nil)

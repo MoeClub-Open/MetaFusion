@@ -62,7 +62,7 @@ export interface ExchangeEntity {
   original_language?: string;
   translations?: Record<string, ExchangeTranslation>;
   attributes?: Record<string, unknown>;
-  external_ids?: Record<string, string>;
+  external_links?: { kind: string; url: string; external_id?: string; role?: string }[];
   pictures?: ExchangePicture[];
   status?: string;
   created_by?: string;

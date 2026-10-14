@@ -1,9 +1,9 @@
-import type { Entity } from "@/components/catalog/api";
+import type { Entity, ExternalLink } from "@/components/catalog/api";
 
 export type IdentityCandidateQuery = {
   kind: string;
   titles: string[];
-  external_ids: { provider: string; value: string }[];
+  external_links: { kind: string; value: string }[];
   work_id?: string;
   release_id?: string;
   medium_id?: string;
@@ -16,7 +16,7 @@ export type IdentityCandidateEntity = {
   status: string;
   version: number;
   translations?: Entity["translations"];
-  external_ids?: Entity["external_ids"];
+  external_links?: ExternalLink[];
   attributes?: Entity["attributes"];
   work_id?: string;
   content_unit_id?: string;
@@ -50,8 +50,13 @@ export function identityCandidateQuery(entity: Entity): IdentityCandidateQuery {
     kind: entity.kind,
     titles: [entity.title, ...Object.keys(entity.translations || {}).sort()
       .map((locale) => entity.translations[locale].title).filter(Boolean)],
-    external_ids: Object.entries(entity.external_ids || {}).sort(([a], [b]) => a.localeCompare(b))
-      .map(([provider, value]) => ({ provider, value })),
+    external_links: (entity.external_links || [])
+      .map((link) => ({
+        kind: link.kind,
+        value: link.external_id || link.url,
+      }))
+      .filter((link) => link.kind && link.value)
+      .sort((a, b) => a.kind.localeCompare(b.kind) || a.value.localeCompare(b.value)),
   };
   if (entity.kind === "expression" || entity.kind === "content_unit") query.work_id = entity.work_id;
   if (entity.kind === "medium") query.release_id = entity.release_id;
@@ -81,10 +86,15 @@ function candidateEntity(value: unknown): value is IdentityCandidateEntity {
   if (!record(value) || !canonicalUUID(value.id) || typeof value.kind !== "string" ||
       typeof value.title !== "string" || typeof value.status !== "string" ||
       typeof value.version !== "number" || !Number.isSafeInteger(value.version) || value.version < 0) return false;
-  for (const field of ["translations", "external_ids", "attributes"]) {
+  for (const field of ["translations", "attributes"]) {
     if (value[field] != null && !record(value[field])) return false;
   }
-  if (record(value.external_ids) && Object.values(value.external_ids).some((id) => typeof id !== "string")) return false;
+  if (value.external_links != null) {
+    if (!Array.isArray(value.external_links)) return false;
+    for (const link of value.external_links) {
+      if (!record(link) || typeof link.kind !== "string" || typeof link.url !== "string") return false;
+    }
+  }
   if (record(value.translations) && Object.values(value.translations).some((translation) =>
     !record(translation) || typeof translation.title !== "string" ||
     (translation.aliases != null && (!Array.isArray(translation.aliases) || translation.aliases.some((alias) => typeof alias !== "string"))))) return false;
@@ -121,8 +131,6 @@ export function readIdentityCandidates(value: unknown, entity: Pick<Entity, "id"
       throw new Error("identity_candidate_unresolved");
     }
     if (item.canonical.id === entity.id) continue;
-    // Multiple historical aliases may resolve to one identity. Show every matched alias,
-    // but acknowledge each canonical identity exactly once.
     items.push({ matched: item.matched, canonical: item.canonical });
     candidateIDs.add(item.canonical.id);
   }

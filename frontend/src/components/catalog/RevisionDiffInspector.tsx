@@ -90,7 +90,7 @@ export function RevisionDiffInspector({
         pictures: t("revisions.fieldPictures"),
         contents: t("catalog.contents"),
         subjects: t("catalog.subjects"),
-        external_ids: t("catalog.externalIds"),
+        external_links: t("catalog.externalLinks"),
         position: t("catalog.position"),
         number: t("catalog.number"),
         parent_id: t("catalog.parent"),

@@ -15,12 +15,12 @@ func TestAssessMatchActions(t *testing.T) {
 	base := IdentityCandidateMatch{Matched: IdentityCandidateEntity{
 		ID: "a", Kind: "work", Title: "Star Song",
 		Translations: map[string]Translation{"en": {Title: "Star Song", Aliases: []string{"star theme"}}},
-		ExternalIDs:  map[string]string{"wikidata": "Q1"},
-		Attributes:   map[string]any{"catalog_number": "TECI-1", "publisher": "label-1"},
+		ExternalLinks: []ExternalLink{linkFromID("wikidata", "Q1")},
+		Attributes:    map[string]any{"catalog_number": "TECI-1", "publisher": "label-1"},
 	}}
 	q := IdentityCandidateQuery{
 		Kind: "work", Titles: []string{"star song"},
-		ExternalIDs: []IdentityExternalCriterion{{Provider: "wikidata", Value: "Q1"}},
+		ExternalLinks: []IdentityExternalCriterion{{Kind: "wikidata", Value: "Q1"}},
 		Context: &IdentityContext{
 			Creator:       []string{"11111111-1111-1111-1111-111111111111"},
 			Performer:     []string{"22222222-2222-2222-2222-222222222222"},

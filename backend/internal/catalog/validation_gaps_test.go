@@ -216,22 +216,22 @@ func TestValidateEntityStructuralDedup(t *testing.T) {
 	}
 }
 
-func TestValidateExternalIDs(t *testing.T) {
+func TestValidateExternalLinks(t *testing.T) {
 	d := Defaults()
 	// 格式层只拦"连 codePattern 都不符合"的键；未知但格式合法的键放过，
-	// 由 Store.Save 的 validateExternalIDsAgainstDB 按预设表复核。
+	// 由 Store.Save 的 validateExternalLinksAgainstDB 按预设表复核。
 	// 此处锁的是该分层：格式非法在离线层即拒绝。
-	if err := d.validateExternalIDs(Entity{ExternalIDs: map[string]string{"Bad Key!": "123"}}); err == nil {
+	if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{{Kind: "Bad Key!", URL: "x", ExternalID: "123"}}}); err == nil {
 		t.Fatal("malformed external key accepted")
 	}
 	// metafusion_import 格式非法拒绝；合法格式通过（DB 唯一索引兜底并发）。
-	if err := d.validateExternalIDs(Entity{ExternalIDs: map[string]string{"metafusion_import": "forged:::key"}}); err == nil {
+	if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{linkFromID("metafusion_import", "forged:::key")}}); err == nil {
 		t.Fatal("forged import key accepted")
 	}
-	if err := d.validateExternalIDs(Entity{ExternalIDs: map[string]string{"metafusion_import": "bangumi:subject:123"}}); err != nil {
+	if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{linkFromID("metafusion_import", "bangumi:subject:123")}}); err != nil {
 		t.Fatalf("valid import key rejected: %v", err)
 	}
-	if err := d.validateExternalIDs(Entity{ExternalIDs: map[string]string{"metafusion_import": "bangumi:subject:123:release"}}); err != nil {
+	if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{linkFromID("metafusion_import", "bangumi:subject:123:release")}}); err != nil {
 		t.Fatalf("valid derived import key rejected: %v", err)
 	}
 	// 校验导入器实际生成的所有派生形态均合法放行：
@@ -246,7 +246,7 @@ func TestValidateExternalIDs(t *testing.T) {
 		"bangumi:character:8888",
 	}
 	for _, key := range importerGeneratedKeys {
-		if err := d.validateExternalIDs(Entity{ExternalIDs: map[string]string{"metafusion_import": key}}); err != nil {
+		if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{linkFromID("metafusion_import", key)}}); err != nil {
 			t.Fatalf("importer generated key %q must be valid, got %v", key, err)
 		}
 	}
@@ -256,7 +256,7 @@ func TestMergeConflictKeys(t *testing.T) {
 	// 合并键口径锁死（离线断言，不连库）：
 	//   - Subjects 合并键=（work, role），同键 attributes 不同即冲突；
 	//   - Contents 合并键=expression_id，同表达即冲突检查（不再双留）；
-	//   - ExternalIDs 同键不同值即冲突。
+	//   - ExternalLinks 同 kind 冲突值即冲突。
 	// 具体合并循环在 mergeReferences（需 DB），此处只锁"键选择" helper 语义：
 	// 用 validateEntity 的同口径错误码保证两者一致。
 	d := Defaults()

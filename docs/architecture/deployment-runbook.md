@@ -75,6 +75,9 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 021 安装基线保持不可变；022 增加结构筛选和 JSONB 反查索引；023 按已发布 definitions 一次性规范化 entity/group/list 声明中的 UUID 引用，涵盖实体、关系、发行 subjects、轨位 contents 的 locator 与属性。普通文本及未知键不改，历史修订保留；改变的当前拥有者只升一次版本，并发出维护 outbox 事件。非法值或规范化后关系冲突中止整条迁移，须在备份恢复库确认问题，不静默删边或重定向引用。运行时只接受规范小写、带连字符的 UUID 引用。024 新增同步身份候选索引与归一函数；025 增加提交回执与修订归属。026 将父子环检查改为 SERIALIZABLE，移除全局结构锁，发布 `catalog.schema_contract=26`；后面三条迁移不改实体事实。新版启动还检查候选函数、有效索引和提交结构，不能跳过迁移直接换镜像。
 
+030 以一次不可逆迁移把 `document.external_ids` 转为 `external_links` 数组与旁表 `catalog.external_links`（role 一律 NULL、origin=migration），并删除旧键与 `entities_metafusion_import_key`；身份候选术语改为读 links。不做双写。存量升级执行 030 增量；空库仍走 021+增量至 030。整库安装基线重拍留到本迁移在生产验证后再做。
+
+
 026 切换必须先停止所有旧目录写入端，再迁移并启动匹配的服务端。旧镜像不能单独回退到契约26；恢复必须使用迁移前数据库备份及对应镜像/配置。原始 SQL 改父节点也须 SERIALIZABLE；连接异常不能作为可自动重放 COMMIT 的依据。
 
 切换时停旧写入端，依次执行 up、seed、check-refs，随后启动当前版本与 OpenSearch。新版建立 v3 物理索引并原子切换搜索别名；旧索引不自动删除，确认当前索引及备份后由运维按名称清理。首次重建或故障期间 q 返回503，无关键词浏览仍可用。

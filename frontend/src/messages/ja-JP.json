@@ -2151,5 +2151,16 @@
   "catalog.quality.issue.release_missing_media": "リリースにメディアがありません",
   "catalog.quality.issue.medium_missing_tracks": "メディアにトラックがありません",
   "catalog.quality.issue.track_empty_contents": "トラックに収録表現がありません",
-  "catalog.quality.issue.track_position_gap": "トラック番号に欠番または重複があります"
+  "catalog.quality.issue.track_position_gap": "トラック番号に欠番または重複があります",
+  "catalog.externalLinks": "外部リンク",
+  "catalog.externalLinkKind": "プラットフォーム",
+  "catalog.externalLinkId": "外部 ID",
+  "catalog.externalLinkUrl": "URL",
+  "catalog.externalLinkRole": "役割",
+  "catalog.externalLinkRoleNone": "なし",
+  "authority.role.official": "公式",
+  "authority.role.primary": "メイン",
+  "authority.role.secondary": "サブ",
+  "authority.role.operator": "運営",
+  "editor.diff.fieldExternalLinks": "外部リンク"
 }

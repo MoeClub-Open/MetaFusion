@@ -187,19 +187,18 @@ func makeSearchDocument(e Entity) searchDocument {
 	for _, tag := range searchTags(e.Attributes["tags"]) {
 		addText(tag)
 	}
-	// External IDs are searchable alongside titles, aliases, and summaries.
-	externalKeys := make([]string, 0, len(e.ExternalIDs))
-	for key := range e.ExternalIDs {
-		externalKeys = append(externalKeys, key)
-	}
-	sort.Strings(externalKeys)
-	for _, key := range externalKeys {
-		value := strings.TrimSpace(e.ExternalIDs[key])
-		if value == "" {
+	// External links are searchable alongside titles, aliases, and summaries.
+	for _, link := range e.ExternalLinks {
+		if link.Kind == "" {
 			continue
 		}
-		addText(key + ":" + value)
-		addText(value)
+		if link.ExternalID != "" {
+			addText(link.Kind + ":" + link.ExternalID)
+			addText(link.ExternalID)
+		}
+		if link.URL != "" {
+			addText(link.URL)
+		}
 	}
 	return searchDocument{
 		RecordType:       "entity",

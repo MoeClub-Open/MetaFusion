@@ -110,14 +110,18 @@ def check_product_identifiers(entity, problems):
         valid = valid_isbn(compact) if len(compact) == 10 else valid_gtin(compact)
         if not valid:
             problems.append(("P1", "invalid_barcode", ident, "attributes.barcode=%s" % str(barcode)))
-    external_ids = entity.get("external_ids") or {}
+    links = entity.get("external_links") or []
+    by_kind = {}
+    for link in links:
+        if isinstance(link, dict) and link.get("kind"):
+            by_kind[link["kind"]] = link.get("external_id") or link.get("url") or ""
     for code in ("openbd", "isbndb"):
-        value = external_ids.get(code)
+        value = by_kind.get(code)
         if value not in (None, "") and not valid_isbn(compact_book_identifier(value)):
-            problems.append(("P1", "invalid_isbn", ident, "external_ids.%s=%s" % (code, value)))
-    value = external_ids.get("ean_jan")
+            problems.append(("P1", "invalid_isbn", ident, "external_links.%s=%s" % (code, value)))
+    value = by_kind.get("ean_jan")
     if value not in (None, "") and not valid_gtin(compact_book_identifier(value)):
-        problems.append(("P1", "invalid_barcode", ident, "external_ids.ean_jan=%s" % str(value)))
+        problems.append(("P1", "invalid_barcode", ident, "external_links.ean_jan=%s" % str(value)))
 
 
 # ── 名称四语检查（与后端写路径同一口径，见 backend/internal/catalog/validation.go）──

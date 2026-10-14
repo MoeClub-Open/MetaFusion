@@ -568,22 +568,17 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		if err = validateMediumSchemeChange(ctx, tx, v.Document, old, e); err != nil {
 			return err
 		}
-		// ExternalIDs 两层复核：先格式层（键合规、值非空收敛、metafusion_import
-		// 内部键格式），再预设层（键必须已在 external_databases 预设，值按
-		// validation_regex 收敛；official_website 存完整 URL 走 validURL；
-		// 内部键不在预设表，预设层跳过）。两层缺一不可：格式层拦手工伪造的
-		// 非法键（如 forged:::key），预设层拦格式合法但无预设的键。
-		if err = v.Document.validateExternalIDs(e); err != nil {
+		// ExternalLinks 两层复核：格式层 + external_databases 预设层。
+		if err = v.Document.validateExternalLinks(e); err != nil {
 			return err
 		}
-		// 内部幂等键只能由导入链路声明（见 validation.go 的 guardImportKey）：
-		// 任何登录用户都能写草稿，手工载荷抢占键会让合法导入永久撞唯一索引。
+		// 内部幂等键只能由导入链路声明（见 validation.go 的 guardImportKey）。
 		if !input.internal {
-			if err = guardImportKey(e.ExternalIDs, old.ExternalIDs); err != nil {
+			if err = guardImportKey(e.ExternalLinks, old.ExternalLinks); err != nil {
 				return err
 			}
 		}
-		if err = validateExternalIDsAgainstDB(ctx, tx, e); err != nil {
+		if err = validateExternalLinksAgainstDB(ctx, tx, e); err != nil {
 			return err
 		}
 		if err = v.Document.retiredEntity(e, old); err != nil {
@@ -599,6 +594,9 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			if err = reviewEntityIdentity(ctx, tx, e, input.ReviewedCandidateIDs, u, nil, 0); err != nil {
 				return err
 			}
+		}
+		if e.ExternalLinks == nil {
+			e.ExternalLinks = []ExternalLink{}
 		}
 		stored := e
 		stored.WorkID = ""
@@ -657,6 +655,15 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		}
 		if err != nil {
 			return err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM catalog.external_links WHERE entity_id=$1`, e.ID); err != nil {
+			return err
+		}
+		for _, link := range e.ExternalLinks {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.external_links(entity_id,entity_kind,kind,url,external_id,role,origin,source_refs) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8)`,
+				e.ID, e.Kind, link.Kind, link.URL, link.ExternalID, link.Role, link.Origin, encode(link.SourceRefs)); err != nil {
+				return err
+			}
 		}
 		missing, err := undeclaredReleaseSubject(ctx, tx, e)
 		if err != nil {

@@ -20,7 +20,7 @@ test("changing Work to Agent preserves all kind-independent draft content", () =
   const source = {
     ...emptyEntity("work"), title: "初音ミク", status: "published", original_language: "ja",
     translations: { ja: { title: "初音ミク", summary: "説明", aliases: ["ミク"] } },
-    attributes: { tags: ["初音未来"], work_type: "song" }, external_ids: { wikidata: "Q123" },
+    attributes: { tags: ["初音未来"], work_type: "song" }, external_links: [{ kind: "wikidata", url: "mf://external/wikidata/Q123", external_id: "Q123" }],
     pictures: [{ url: "https://example.test/cover.png", caption: { ja: "画像" }, source: { kind: "self", citation: "test" } }],
     work_id: "parent", medium_id: "disc", parent_id: "side", number: "2", position: 3,
     subjects: [{ work_id: "subject", role: "main", position: 0 }],
@@ -28,7 +28,7 @@ test("changing Work to Agent preserves all kind-independent draft content", () =
   };
   const result = changeDraftKind(source, emptyEntity("agent"));
   assert.equal(result.kind, "agent");
-  for (const key of ["title", "status", "original_language", "translations", "external_ids", "pictures"] as const) assert.deepEqual(result[key], source[key]);
+  for (const key of ["title", "status", "original_language", "translations", "external_links", "pictures"] as const) assert.deepEqual(result[key], source[key]);
   assert.deepEqual(result.attributes, { tags: ["初音未来"] });
   assert.equal(result.work_id, undefined);
   assert.equal(result.medium_id, undefined);
