@@ -138,12 +138,8 @@ function notificationRows(n: Notification, t: Translate): { label: string; value
       if (source) rows.push({ label: t("notifications.field.source"), value: source });
       const status = payloadText(payload, "status");
       if (status) rows.push({ label: t("notifications.field.status"), value: status });
-      // entities / relations 两个数只按服务端同名键渲染，**不做任何再计算**：
-      // entities = 本次导入写入或更新的实体条目总数（顶层实体 + 演职人员 + 载体 + 曲目 + 内容单元），
-      // relations = 写入的关系数。定义与用例见 backend/internal/catalog/notifications_triggers.go
-      // 的 importReceiptPayload 与 TestImportReceiptPayloadDefinition。
-      // 这里**没有**"新建数"：导入器的计数没有新建/更新拆分，服务端不产出这个数就不显示
-      // （字典里的 notifications.field.created 因此暂时无来源，键保留不删）。
+      // 仅渲染退役前已保存的历史通知；服务端不再生成此事件。
+      // entities / relations 直接读取历史载荷，不重新计算或推导新建数。
       const entities = payloadNumberText(payload, "entities");
       if (entities) rows.push({ label: t("notifications.field.entities"), value: entities });
       const relations = payloadNumberText(payload, "relations");

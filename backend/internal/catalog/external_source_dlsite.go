@@ -505,9 +505,9 @@ func fetchDLsitePage(ctx context.Context, pageURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("upstream_error")
 	}
-	req.Header.Set("User-Agent", importerUserAgent)
+	req.Header.Set("User-Agent", externalSourceUserAgent)
 	req.Header.Set("Accept-Language", "ja,en-US;q=0.8")
-	resp, err := importerHTTPClient.Do(req)
+	resp, err := externalSourceHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upstream_error")
 	}
@@ -528,8 +528,8 @@ func fetchDLsitePage(ctx context.Context, pageURL string) ([]byte, error) {
 }
 
 // dlsiteArtistPreviews 把商品上的创作身份转为预览关联。
-func dlsiteArtistPreviews(p *dlsiteParsed) []ImporterArtistPreview {
-	out := []ImporterArtistPreview{}
+func dlsiteArtistPreviews(p *dlsiteParsed) []ExternalSourceArtistPreview {
+	out := []ExternalSourceArtistPreview{}
 	seen := map[string]bool{}
 	add := func(names []string, entityType, role, relationType string, external map[string]any) {
 		for _, name := range names {
@@ -539,7 +539,7 @@ func dlsiteArtistPreviews(p *dlsiteParsed) []ImporterArtistPreview {
 				continue
 			}
 			seen[key] = true
-			out = append(out, ImporterArtistPreview{
+			out = append(out, ExternalSourceArtistPreview{
 				Name:         name,
 				OriginalName: name,
 				Role:         role,
@@ -568,14 +568,14 @@ func dlsiteArtistPreviews(p *dlsiteParsed) []ImporterArtistPreview {
 }
 
 // previewDLsite 产出 DLsite 商品的完整预览。
-func previewDLsite(ctx context.Context, ref dlsiteRef) (ImporterPreviewResponse, error) {
+func previewDLsite(ctx context.Context, ref dlsiteRef) (ExternalSourcePreviewResponse, error) {
 	body, err := fetchDLsitePage(ctx, ref.pageURL())
 	if err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	page := parseDLsitePage(string(body))
 	if strings.TrimSpace(page.Name) == "" {
-		return ImporterPreviewResponse{}, fmt.Errorf("upstream_error")
+		return ExternalSourcePreviewResponse{}, fmt.Errorf("upstream_error")
 	}
 	// 来源声明的分类校正站点（如 RJ367004 实属 girls 而非默认 maniax）。
 	if page.Category != "" && page.Category != ref.Site {
@@ -591,13 +591,13 @@ func previewDLsite(ctx context.Context, ref dlsiteRef) (ImporterPreviewResponse,
 	if page.Romaji != "" {
 		aliases = []string{page.Romaji}
 	}
-	return ImporterPreviewResponse{
+	return ExternalSourcePreviewResponse{
 		Source:      "dlsite",
 		EntityType:  "work",
 		ExternalID:  ref.ProductID,
 		ExternalURL: ref.canonicalURL(),
 		MediaType:   workType,
-		Work: &ImporterWorkPreview{
+		Work: &ExternalSourceWorkPreview{
 			Title:            page.Name,
 			OriginalTitle:    page.Name,
 			Aliases:          aliases,
@@ -617,11 +617,11 @@ func previewDLsite(ctx context.Context, ref dlsiteRef) (ImporterPreviewResponse,
 		},
 		Tags:    tags,
 		Artists: dlsiteArtistPreviews(page),
-		Release: &ImporterReleasePreview{
+		Release: &ExternalSourceReleasePreview{
 			EditionDate:         page.Date,
 			DistributionChannel: "digital",
 		},
-		Mediums: []ImporterMediumPreview{{
+		Mediums: []ExternalSourceMediumPreview{{
 			Position: 1,
 			Name:     "ダウンロード",
 			Format:   "digital",

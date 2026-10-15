@@ -55,7 +55,7 @@ type ExternalSourceQueryResponse struct {
 	Fetch   *FetchMeta                 `json:"fetch,omitempty"`
 	Fetches []FetchMeta                `json:"fetches,omitempty"`
 	Raw     any                        `json:"raw,omitempty"`
-	Preview *ImporterPreviewResponse   `json:"preview,omitempty"`
+	Preview *ExternalSourcePreviewResponse   `json:"preview,omitempty"`
 	Items   []ExternalSourceSearchItem `json:"items,omitempty"`
 	// Limit 是 search 实际生效的分页大小（我方 clamp 后、或上游回显）。
 	Limit int `json:"limit,omitempty"`
@@ -131,9 +131,9 @@ func fetchBangumi(ctx context.Context, path string, out any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", importerUserAgent)
+	req.Header.Set("User-Agent", externalSourceUserAgent)
 	req.Header.Set("Accept", "application/json")
-	resp, err := importerHTTPClient.Do(req)
+	resp, err := externalSourceHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("upstream_error")
 	}
@@ -172,10 +172,10 @@ func fetchBangumiPOST(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", importerUserAgent)
+	req.Header.Set("User-Agent", externalSourceUserAgent)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := importerHTTPClient.Do(req)
+	resp, err := externalSourceHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("upstream_error")
 	}
@@ -201,9 +201,9 @@ func fetchBangumiPOST(ctx context.Context, path string, payload any, out any) er
 	return nil
 }
 
-// ExternalSources 列出有适配器的外部来源（原 ImporterSources）。
-func (s *Store) ExternalSources(ctx context.Context) ([]ImporterSource, error) {
-	return s.ImporterSources(ctx)
+// ExternalSources 列出有适配器的外部来源（原 ExternalSourceDefinitions）。
+func (s *Store) ExternalSources(ctx context.Context) ([]ExternalSourceDefinition, error) {
+	return s.ExternalSourceDefinitions(ctx)
 }
 
 // QueryExternalSource 统一只读查询。
@@ -255,7 +255,7 @@ func (s *Store) externalSearch(ctx context.Context, rec *fetchRecorder, in Exter
 	if rawSource == "" || rawSource == "auto" {
 		rawSource = "bangumi"
 	}
-	source, err := normalizeImporterSource(rawSource)
+	source, err := normalizeExternalSourceDefinition(rawSource)
 	if err != nil {
 		return ExternalSourceQueryResponse{}, err
 	}
@@ -308,7 +308,7 @@ type bangumiSearchResponse struct {
 }
 
 func searchBangumi(ctx context.Context, rec *fetchRecorder, q, entityType string, limit int) (ExternalSourceQueryResponse, error) {
-	et, err := normalizeImporterEntityType(entityType)
+	et, err := normalizeExternalSourceEntityType(entityType)
 	if err != nil {
 		return ExternalSourceQueryResponse{}, err
 	}

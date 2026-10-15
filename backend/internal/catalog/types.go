@@ -123,20 +123,15 @@ type Edit struct {
 	EditNote             string   `json:"edit_note"`
 	Sources              []Source `json:"sources"`
 	ReviewedCandidateIDs []string `json:"reviewed_candidate_ids,omitempty"`
-	// internal 标记写入来自导入链路（importer 内部构造），允许新声明内部幂等键
-	// metafusion_import。未导出是有意的：JSON 解码不填充未导出字段，客户端无法伪造
-	//（DisallowUnknownFields 会把同名 JSON 键判为未知字段）。
-	internal bool
 	// idempotency 是 HTTP 创建端点（POST /entities）的幂等声明：HTTP 层在 body 解码后
 	// 按 Idempotency-Key 头填充（见 IdempotencyClaim），Save 在业务事务内声明/回填。
-	// PUT 更新不带（键只覆盖创建），导入链路走自己的 metafusion_import 键。
+	// PUT 更新不带（键只覆盖创建）。
 	idempotency      *IdempotencyClaim
 	contentPatch     *trackContentPatch
 	preserveContents bool
 	createID         string
 	definitions      *DefinitionConfig
-	// Public single-entity writes review candidates; internal import writes keep
-	// their own identity contract, while every writer shares identity-term locks.
+	// Public single-entity writes review candidates; every writer shares identity-term locks.
 	identityReview    bool
 	identityLocksHeld bool
 }

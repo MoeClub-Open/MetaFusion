@@ -37,7 +37,7 @@ var errIdempotencyConflict = errors.New("idempotency_conflict")
 var errIdempotentReplay = errors.New("idempotent_replay")
 
 // IdempotencyClaim 是一次创建请求的幂等声明：HTTP 层在 body 解码后填充（见 http.go），
-// Store 层在业务事务内声明/回填。未导出是有意的：与 Edit.internal 同理，JSON 解码不填充
+// Store 层在业务事务内声明/回填。Edit.idempotency 未导出是有意的：JSON 解码不填充
 // 未导出字段，客户端无法伪造（DisallowUnknownFields 会把同名 JSON 键判为未知字段）。
 type IdempotencyClaim struct {
 	Operation string

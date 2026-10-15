@@ -14,12 +14,12 @@ import (
 
 // 来源清单必须与代码里的适配器集合一一对应：
 // 多一个 = 界面能选、点了只拿 not_supported；少一个 = 能导入却没有入口。
-func TestImporterSourcesMatchAdapterCodes(t *testing.T) {
-	items := buildImporterSources(nil)
-	if len(items) != len(importerAdapterCodes) {
-		t.Fatalf("items=%d, want %d（适配器集合）", len(items), len(importerAdapterCodes))
+func TestExternalSourceDefinitionsMatchAdapterCodes(t *testing.T) {
+	items := buildExternalSourceDefinitions(nil)
+	if len(items) != len(externalSourceAdapterCodes) {
+		t.Fatalf("items=%d, want %d（适配器集合）", len(items), len(externalSourceAdapterCodes))
 	}
-	byID := map[string]ImporterSource{}
+	byID := map[string]ExternalSourceDefinition{}
 	for _, it := range items {
 		byID[it.ID] = it
 	}
@@ -27,7 +27,7 @@ func TestImporterSourcesMatchAdapterCodes(t *testing.T) {
 	for _, d := range externalDatabaseSeeds() {
 		seeds[d.Code] = d
 	}
-	for _, code := range importerAdapterCodes {
+	for _, code := range externalSourceAdapterCodes {
 		it, ok := byID[code]
 		if !ok {
 			t.Fatalf("适配器 %q 不在来源清单里", code)
@@ -63,11 +63,11 @@ func TestImporterSourcesMatchAdapterCodes(t *testing.T) {
 
 // 展示元数据跟着注册表走：后台改名/换图标后端点即变；注册表缺行时回落到种子，
 // 不让一个真能抓取的来源因为元数据缺失而消失。
-func TestImporterSourcesUseRegistryMetadata(t *testing.T) {
+func TestExternalSourceDefinitionsUseRegistryMetadata(t *testing.T) {
 	rows := externalDatabaseSeeds()
 	found := false
 	for i := range rows {
-		if rows[i].Code != importerAdapterCodes[0] {
+		if rows[i].Code != externalSourceAdapterCodes[0] {
 			continue
 		}
 		found = true
@@ -77,15 +77,15 @@ func TestImporterSourcesUseRegistryMetadata(t *testing.T) {
 		rows[i].Description = "后台改过的说明"
 	}
 	if !found {
-		t.Fatalf("种子行 %q 不存在", importerAdapterCodes[0])
+		t.Fatalf("种子行 %q 不存在", externalSourceAdapterCodes[0])
 	}
-	items := buildImporterSources(rows)
-	if len(items) != len(importerAdapterCodes) {
-		t.Fatalf("items=%d, want %d（适配器集合）", len(items), len(importerAdapterCodes))
+	items := buildExternalSourceDefinitions(rows)
+	if len(items) != len(externalSourceAdapterCodes) {
+		t.Fatalf("items=%d, want %d（适配器集合）", len(items), len(externalSourceAdapterCodes))
 	}
 	got := items[0]
-	if got.ID != importerAdapterCodes[0] {
-		t.Fatalf("首项=%s，want %s", got.ID, importerAdapterCodes[0])
+	if got.ID != externalSourceAdapterCodes[0] {
+		t.Fatalf("首项=%s，want %s", got.ID, externalSourceAdapterCodes[0])
 	}
 	if got.Names["zh-CN"] != "后台改过的名字" {
 		t.Errorf("名称未取注册表行：%v", got.Names)
@@ -94,15 +94,15 @@ func TestImporterSourcesUseRegistryMetadata(t *testing.T) {
 		t.Errorf("注册表行的展示元数据未生效：%+v", got)
 	}
 	// 注册表无行（未播种/被手工删）→ 种子兜底，来源仍在。
-	fallback := buildImporterSources(nil)
-	if len(fallback) != len(importerAdapterCodes) || fallback[0].ID != importerAdapterCodes[0] || strings.TrimSpace(fallback[0].Names["zh-CN"]) == "" {
+	fallback := buildExternalSourceDefinitions(nil)
+	if len(fallback) != len(externalSourceAdapterCodes) || fallback[0].ID != externalSourceAdapterCodes[0] || strings.TrimSpace(fallback[0].Names["zh-CN"]) == "" {
 		t.Fatalf("注册表缺行时未回落到种子元数据：%+v", fallback)
 	}
 }
 
 // 端点形状与闸门：与 /external-sources/query 同权限（authentication (signed-in)），
 // 未登录 401、没这个码 403、持码 200 且 items 的键集合就是文档里声明的那几个。
-func TestImporterSourcesEndpointGateAndShape(t *testing.T) {
+func TestExternalSourceDefinitionsEndpointGateAndShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	path := "/api/external-sources"
 
@@ -124,8 +124,8 @@ func TestImporterSourcesEndpointGateAndShape(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("响应不是 {items:[...]}：%v body=%s", err, w.Body.String())
 	}
-	if len(body.Items) != len(importerAdapterCodes) {
-		t.Fatalf("items=%d, want %d", len(body.Items), len(importerAdapterCodes))
+	if len(body.Items) != len(externalSourceAdapterCodes) {
+		t.Fatalf("items=%d, want %d", len(body.Items), len(externalSourceAdapterCodes))
 	}
 	for _, it := range body.Items {
 		keys := make([]string, 0, len(it))
@@ -146,7 +146,7 @@ func TestImporterSourcesEndpointGateAndShape(t *testing.T) {
 }
 
 // 真库：清单读注册表行（后台改名即时生效），且后加的无适配器行不会冒充可导入来源。
-func TestImporterSourcesFollowRegistryRows(t *testing.T) {
+func TestExternalSourceDefinitionsFollowRegistryRows(t *testing.T) {
 	ctx := context.Background()
 	s := &Store{DB: testutil.Database(t)}
 	if err := s.Initialize(ctx); err != nil {
@@ -155,11 +155,11 @@ func TestImporterSourcesFollowRegistryRows(t *testing.T) {
 	if _, err := s.DB.ExecContext(ctx, `UPDATE catalog.external_databases SET names=jsonb_set(names,'{zh-CN}','"后台改的名"'), icon='Database' WHERE code='bangumi'`); err != nil {
 		t.Fatal(err)
 	}
-	items, err := s.ImporterSources(ctx)
+	items, err := s.ExternalSourceDefinitions(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != len(importerAdapterCodes) || items[0].ID != "bangumi" {
+	if len(items) != len(externalSourceAdapterCodes) || items[0].ID != "bangumi" {
 		t.Fatalf("items=%+v，want 以 bangumi 为首的适配器集合", items)
 	}
 	if items[0].Names["zh-CN"] != "后台改的名" || items[0].Icon != "Database" {
@@ -176,7 +176,7 @@ func TestImporterSourcesFollowRegistryRows(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	items, err = s.ImporterSources(ctx)
+	items, err = s.ExternalSourceDefinitions(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,42 +185,42 @@ func TestImporterSourcesFollowRegistryRows(t *testing.T) {
 			t.Fatal("没有适配器的注册表行被当成可用导入源")
 		}
 	}
-	if len(items) != len(importerAdapterCodes) {
-		t.Fatalf("items=%d，want %d", len(items), len(importerAdapterCodes))
+	if len(items) != len(externalSourceAdapterCodes) {
+		t.Fatalf("items=%d，want %d", len(items), len(externalSourceAdapterCodes))
 	}
 }
 
 // 文档与实现同形：响应 schema 的属性集合必须与 DTO 一致，否则客户端会按文档拒绝真实响应。
-func TestOpenAPIImporterSourceSchema(t *testing.T) {
+func TestOpenAPIExternalSourceDefinitionSchema(t *testing.T) {
 	doc := OpenAPI()
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	src, ok := schemas["ImporterSource"].(map[string]any)
+	src, ok := schemas["ExternalSourceDefinition"].(map[string]any)
 	if !ok {
-		t.Fatal("ImporterSource schema 缺失")
+		t.Fatal("ExternalSourceDefinition schema 缺失")
 	}
 	props, _ := src["properties"].(map[string]any)
 	for _, k := range []string{"id", "names", "category", "icon", "description", "url_pattern"} {
 		if props[k] == nil {
-			t.Errorf("ImporterSource 缺少属性 %q", k)
+			t.Errorf("ExternalSourceDefinition 缺少属性 %q", k)
 		}
 	}
 	if len(props) != 6 {
-		t.Errorf("ImporterSource 属性数=%d，want 6：%v", len(props), props)
+		t.Errorf("ExternalSourceDefinition 属性数=%d，want 6：%v", len(props), props)
 	}
-	list, ok := schemas["ImporterSourceList"].(map[string]any)
+	list, ok := schemas["ExternalSourceList"].(map[string]any)
 	if !ok {
-		t.Fatal("ImporterSourceList schema 缺失")
+		t.Fatal("ExternalSourceList schema 缺失")
 	}
 	if list["properties"].(map[string]any)["items"] == nil {
-		t.Error("ImporterSourceList 缺少 items 属性")
+		t.Error("ExternalSourceList 缺少 items 属性")
 	}
 	op, ok := doc["paths"].(map[string]any)["/external-sources"].(map[string]any)["get"].(map[string]any)
 	if !ok {
 		t.Fatal("OpenAPI 未声明 GET /external-sources")
 	}
 	ref := op["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"]
-	if ref != "#/components/schemas/ImporterSourceList" {
-		t.Errorf("200 响应 schema=%v，want ImporterSourceList", ref)
+	if ref != "#/components/schemas/ExternalSourceList" {
+		t.Errorf("200 响应 schema=%v，want ExternalSourceList", ref)
 	}
 	if _, ok := op["security"]; !ok {
 		t.Error("/external-sources 需登录，必须声明 security")

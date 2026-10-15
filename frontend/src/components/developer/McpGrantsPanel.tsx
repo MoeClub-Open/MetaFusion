@@ -17,6 +17,7 @@ type Grant = {
 
 const SCOPE_GROUPS: { id: string; scopes: string[] }[] = [
   { id: "catalogRead", scopes: ["mcp.read"] },
+  { id: "web", scopes: ["mcp.web.write"] },
   { id: "catalogEdit", scopes: ["catalog.entity.edit", "catalog.relation.edit"] },
   { id: "community", scopes: ["community.post.create", "community.post.moderate", "community.topic.pin", "community.report.review"] },
   { id: "storage", scopes: ["storage.asset.upload", "storage.asset.moderate"] },
@@ -116,6 +117,7 @@ export function McpGrantsPanel() {
 
   const label = (scope: string) => {
     if (scope === "mcp.read") return t("developer.mcp.read");
+    if (scope === "mcp.web.write") return t("developer.mcp.webWrite");
     const key = `developer.apiKeyScope.${scope}`;
     const value = t(key);
     return value === key ? scope : value;

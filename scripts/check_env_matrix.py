@@ -154,7 +154,7 @@ KEYS = {
 }
 
 # 已退役的编排变量：删掉之后不许再回来（它们是"注入了但全仓零读取"的死重量）。
-for key in ("MCP_PUBLIC_URL", "MCP_API_URL", "MCP_AUTH_URL", "MCP_DATABASE_URL", "MCP_ENCRYPTION_KEY", "MCP_SKILLS_REVISION", "MCP_DOCS_REVISION", "MCP_OBJECT_ORIGINS", "MCP_ALLOWED_ORIGINS"):
+for key in ("MCP_PUBLIC_URL", "MCP_API_URL", "MCP_AUTH_URL", "MCP_DATABASE_URL", "MCP_ENCRYPTION_KEY", "MCP_SKILLS_REVISION", "MCP_DOCS_REVISION", "MCP_OBJECT_ORIGINS", "MCP_ALLOWED_ORIGINS", "MCP_SEARCH_PROVIDER", "MCP_SEARCH_URL", "MCP_SEARCH_API_KEY"):
     KEYS[key] = {"readers": [("mcp", "internal/server/config.go")], "default": "见 MCP Config 校验", "safe": True}
 
 RETIRED = {

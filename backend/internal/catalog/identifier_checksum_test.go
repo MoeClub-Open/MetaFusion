@@ -33,19 +33,19 @@ func TestISBNAndGTINChecksums(t *testing.T) {
 	}
 }
 
-func TestImporterISBNConversionAndRawPreservation(t *testing.T) {
+func TestExternalSourceISBNConversionAndRawPreservation(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{
 		{"0-306-40615-2", "9780306406157"},
 		{"0 8044 2957 x", "9780804429573"},
 		{"978-0-306-40615-7", "9780306406157"},
 	} {
-		got, ok := importerISBNBarcode(tc.raw)
+		got, ok := externalSourceISBNBarcode(tc.raw)
 		if !ok || got != tc.want {
 			t.Fatalf("ISBN %q became %q, want %q", tc.raw, got, tc.want)
 		}
 	}
 	for _, raw := range []string{"9780306406152", "0306406153", "ISBN 9780306406157", "https://example.org/9780306406157"} {
-		if got, ok := importerISBNBarcode(raw); ok {
+		if got, ok := externalSourceISBNBarcode(raw); ok {
 			t.Errorf("invalid ISBN %q became %q", raw, got)
 		}
 		encoded, _ := json.Marshal(raw)

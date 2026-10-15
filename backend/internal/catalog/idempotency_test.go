@@ -18,8 +18,8 @@ func TestRequestHashStable(t *testing.T) {
 	if requestHash(a) == requestHash(b) {
 		t.Fatal("载荷变化摘要必须变化")
 	}
-	// 未导出字段（internal/幂等声明）不进摘要：声明本身不改变"请求内容"。
-	a.internal = true
+	// 未导出的幂等声明不进摘要：声明本身不改变"请求内容"。
+	a.idempotency = &IdempotencyClaim{Key: "test-only"}
 	if requestHash(a) != requestHash(Edit{Entity: a.Entity}) {
 		t.Fatal("未导出字段不得影响摘要")
 	}

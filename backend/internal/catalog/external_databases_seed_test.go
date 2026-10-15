@@ -39,8 +39,8 @@ func TestExternalDatabaseSeedsIncludeRuntimeCodes(t *testing.T) {
 		t.Errorf("legacy bilibili must remain compatible and hidden from new selections: %+v", legacy)
 	}
 	// 注册表包含引用目标；可抓取能力仍只能来自实际实现的适配器。
-	if len(buildImporterSources(externalDatabaseSeeds())) != len(importerAdapterCodes) {
-		t.Fatal("reference-only external databases expanded importer sources")
+	if len(buildExternalSourceDefinitions(externalDatabaseSeeds())) != len(externalSourceAdapterCodes) {
+		t.Fatal("reference-only external databases expanded externalSource sources")
 	}
 }
 

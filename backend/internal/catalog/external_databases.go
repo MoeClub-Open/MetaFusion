@@ -88,7 +88,7 @@ func validateExternalIDsAgainstDB(ctx context.Context, q queryer, e Entity) erro
 	}
 	need := []string{}
 	for k := range e.ExternalIDs {
-		if importerInternalKeys[k] {
+		if legacyImportKeys[k] {
 			continue
 		}
 		need = append(need, k)
@@ -117,7 +117,7 @@ func validateExternalIDsAgainstDB(ctx context.Context, q queryer, e Entity) erro
 		return err
 	}
 	for k, v := range e.ExternalIDs {
-		if importerInternalKeys[k] {
+		if legacyImportKeys[k] {
 			continue
 		}
 		preset, ok := found[k]
@@ -339,7 +339,7 @@ func externalDatabaseSeeds() []ExternalDatabase {
 		// amazon.co.jp curl 000）本机被反爬 / 地域 / TLS 挡成 000/403——注册表记的是"这个 ID 该往哪记、
 		// 人点外链去哪看"，与本机能否抓取解耦：这些项仅作引用目标；兼容泛码 bilibili 默认停用，
 		// 其余项可用于记录对应外部标识。**没有任何一个有导入适配器**
-		// （importerAdapterCodes 只有 bangumi/dlsite/dmm），别把它们当成能抓取的来源。
+		// （externalSourceAdapterCodes 只有 bangumi/dlsite/dmm），别把它们当成能抓取的来源。
 		// SortOrder 从 300 起、同类相邻，不重排既有行。
 
 		// openbd 的 URLPattern 取舍（2026-10-11 实测）：hanmoto.com/bd/isbn/{id} 是 isbndb.com/book/{id}

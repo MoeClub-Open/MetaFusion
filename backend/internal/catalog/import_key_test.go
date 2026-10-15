@@ -36,10 +36,7 @@ func TestGuardImportKey(t *testing.T) {
 	}
 }
 
-// 手工写入者抢占内部幂等键必须被拒：键决定"重导命中哪条记录"，且唯一索引全库唯一
-// （migrations/000021_catalog_baseline.up.sql 的 entities_metafusion_import_key），
-// 被抢占后合法导入永久撞 23505，或按 kind 命中后合并进他人实体。
-// 导入链路（Edit 的 internal 标记）仍必须放行，否则正常导入自己就被挡住。
+// 旧导入标识仅可保留或删除，新声明或改写必须被拒绝。
 func TestPostgresForgedImportKeyIsRejected(t *testing.T) {
 	ctx := context.Background()
 	s := &Store{DB: testutil.Database(t)}
@@ -56,10 +53,15 @@ func TestPostgresForgedImportKeyIsRejected(t *testing.T) {
 	if _, err := s.Save(ctx, Edit{Entity: entity(forged), EditNote: "n", Sources: sources}, u); err == nil {
 		t.Fatal("手工载荷新声明内部幂等键被放行")
 	}
-	created, err := s.Save(ctx, Edit{Entity: entity(forged), EditNote: "n", Sources: sources, internal: true}, u)
+	created, err := s.Save(ctx, Edit{Entity: entity(nil), EditNote: "n", Sources: sources}, u)
 	if err != nil {
-		t.Fatalf("导入链路必须能写内部幂等键：%v", err)
+		t.Fatal(err)
 	}
+	// 在测试库模拟导入器退役前已存在的历史数据。
+	if _, err := s.DB.ExecContext(ctx, `UPDATE catalog.entities SET document=jsonb_set(document, '{external_ids}', $1::jsonb) WHERE id=$2`, `{"metafusion_import":"bangumi:subject:633836"}`, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	created.ExternalIDs = forged
 	// 常规编辑（读全量再写回）带着既有键，必须放行。
 	created.Title = "导入键归属用例（改）"
 	updated, err := s.Save(ctx, Edit{Entity: created, ExpectedVersion: created.Version, EditNote: "n", Sources: sources}, u)

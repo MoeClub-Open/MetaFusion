@@ -205,11 +205,11 @@ func TestPostgresIdentityUpdateUpdateRace(t *testing.T) {
 	}
 }
 
-func TestPostgresImporterSharesIdentityTermLocks(t *testing.T) {
+func TestPostgresEntitySaveSharesIdentityTermLocks(t *testing.T) {
 	f := newFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	e := Entity{Kind: "work", Title: "Locked importer identity", Status: "draft"}
+	e := Entity{Kind: "work", Title: "Locked entity identity", Status: "draft"}
 	holder, err := f.s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ func TestPostgresImporterSharesIdentityTermLocks(t *testing.T) {
 		}
 	}
 	if !waiting {
-		t.Fatal("importer did not wait for the shared identity term lock")
+		t.Fatal("entity Save did not wait for the shared identity term lock")
 	}
 	if err = holder.Commit(); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestPostgresImporterSharesIdentityTermLocks(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-ctx.Done():
-		t.Fatal("importer did not resume after the identity lock was released")
+		t.Fatal("entity Save did not resume after the identity lock was released")
 	}
 }
 

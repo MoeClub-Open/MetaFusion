@@ -48,7 +48,7 @@ func stubBangumi(t *testing.T) {
 	bangumiAPIBase = srv.URL
 }
 
-func TestImporterPreviewValidation(t *testing.T) {
+func TestExternalSourcePreviewValidation(t *testing.T) {
 	// 纯参数校验不触库：Store 为空即可。
 	s := &Store{}
 	ctx := context.Background()
@@ -82,7 +82,7 @@ func TestImporterPreviewValidation(t *testing.T) {
 	}
 }
 
-func TestImporterRefParsing(t *testing.T) {
+func TestExternalSourceRefParsing(t *testing.T) {
 	cases := []struct {
 		raw, entityType, kind string
 		id                    int
@@ -108,19 +108,19 @@ func TestImporterRefParsing(t *testing.T) {
 		t.Fatal("non-numeric id accepted")
 	}
 
-	if src, err := normalizeImporterSource(""); err != nil || src != "bangumi" {
+	if src, err := normalizeExternalSourceDefinition(""); err != nil || src != "bangumi" {
 		t.Fatalf("default source: %q %v", src, err)
 	}
-	if src, err := normalizeImporterSource("AUTO"); err != nil || src != "bangumi" {
+	if src, err := normalizeExternalSourceDefinition("AUTO"); err != nil || src != "bangumi" {
 		t.Fatalf("auto source: %q %v", src, err)
 	}
-	if _, err := normalizeImporterSource("douban"); err == nil {
+	if _, err := normalizeExternalSourceDefinition("douban"); err == nil {
 		t.Fatal("douban should be not_supported")
 	}
-	if et, err := normalizeImporterEntityType(""); err != nil || et != "work" {
+	if et, err := normalizeExternalSourceEntityType(""); err != nil || et != "work" {
 		t.Fatalf("default entity type: %q %v", et, err)
 	}
-	if _, err := normalizeImporterEntityType("album"); err == nil {
+	if _, err := normalizeExternalSourceEntityType("album"); err == nil {
 		t.Fatal("album should be invalid_entity_type")
 	}
 
@@ -136,7 +136,7 @@ func TestImporterRefParsing(t *testing.T) {
 	}
 }
 
-func TestImporterPreviewBangumi(t *testing.T) {
+func TestExternalSourcePreviewBangumi(t *testing.T) {
 	stubBangumi(t)
 	f := newFixture(t)
 	ctx := context.Background()
@@ -187,7 +187,7 @@ func TestImporterPreviewBangumi(t *testing.T) {
 	}
 }
 
-func TestNormalizeImporterSource(t *testing.T) {
+func TestNormalizeExternalSourceDefinition(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"", "bangumi"},
 		{"auto", "bangumi"},
@@ -195,21 +195,21 @@ func TestNormalizeImporterSource(t *testing.T) {
 		{"dlsite", "dlsite"},
 		{"DMM", "dmm"},
 	} {
-		got, err := normalizeImporterSource(tc.in)
+		got, err := normalizeExternalSourceDefinition(tc.in)
 		if err != nil || got != tc.want {
 			t.Fatalf("%q: got %q %v want %q", tc.in, got, err, tc.want)
 		}
 	}
-	if _, err := normalizeImporterSource("tmdb"); err == nil {
+	if _, err := normalizeExternalSourceDefinition("tmdb"); err == nil {
 		t.Fatal("tmdb should be not_supported")
 	}
-	if detectImporterSource("https://www.dlsite.com/maniax/work/=/product_id/RJ123.html") != "dlsite" {
+	if detectExternalSourceDefinition("https://www.dlsite.com/maniax/work/=/product_id/RJ123.html") != "dlsite" {
 		t.Fatal("dlsite detect")
 	}
-	if detectImporterSource("https://www.dmm.co.jp/dc/doujin/-/detail/=/cid=d_123/") != "dmm" {
+	if detectExternalSourceDefinition("https://www.dmm.co.jp/dc/doujin/-/detail/=/cid=d_123/") != "dmm" {
 		t.Fatal("dmm detect")
 	}
-	if detectImporterSource("https://bgm.tv/subject/1") != "bangumi" {
+	if detectExternalSourceDefinition("https://bgm.tv/subject/1") != "bangumi" {
 		t.Fatal("bangumi detect")
 	}
 }
@@ -224,7 +224,7 @@ func mustList(t *testing.T, f fixture, o ListOptions) []Entity {
 	return items
 }
 
-func TestImporterPreviewEpisodes(t *testing.T) {
+func TestExternalSourcePreviewEpisodes(t *testing.T) {
 	stubBangumi(t)
 	s := &Store{}
 	ctx := context.Background()
@@ -247,7 +247,7 @@ func TestImporterPreviewEpisodes(t *testing.T) {
 		t.Fatalf("second episode number wrong: %+v", work.CanonicalEntries[1])
 	}
 	// OP（type=2）不应被 type=0 的固定查询漏掉，role 应映射为非本篇。
-	var op *ImporterCanonicalEntryPreview
+	var op *ExternalSourceCanonicalEntryPreview
 	for i := range work.CanonicalEntries {
 		if work.CanonicalEntries[i].ExternalIDs["bangumi_episode"] == 201 {
 			op = &work.CanonicalEntries[i]

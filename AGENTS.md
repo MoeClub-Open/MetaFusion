@@ -55,6 +55,8 @@ CatalogCommit：`sources[]` 每条必须有唯一 `key`；每个操作必须有�
 
 质量审计：同一 medium 内顶层曲目 `position` 必须从 1 连续（`track_position_gap`）；从 2 起或缺轨不得标 `complete`。
 
+外部来源适配器只读，统一入口 `/api/external-sources`，实现为 `external_source_*.go`。旧导入写接口、前端导入弹窗与 `Edit.internal` 特权标记已移除；历史实体的 `metafusion_import` 标识只允许原值保留或删除，任何写路径都不能新声明或改写。
+
 ## 4. 按改动范围验证
 
 根据改动范围和风险选择必要检查；命令在“目录”列位置运行，版本以 manifest 和 CI 为准。
