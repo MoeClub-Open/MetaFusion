@@ -13,6 +13,11 @@ interface AdaptiveCardCoverProps {
   fallbackContent?: React.ReactNode;
   /** 统一容器比例对应的类名；调用方已定好外框时传 "w-full h-full" */
   aspectClassName?: string;
+  /**
+   * 容器比例（宽/高）的数值形式，优先于 aspectClassName。
+   * 给网格卡片用，比例来自 `lib/cover` 的 GRID_COVER_ASPECT，避免类名与常量各写一份数字。
+   */
+  aspectRatio?: number;
   className?: string;
   imgClassName?: string;
 }
@@ -21,9 +26,13 @@ interface AdaptiveCardCoverProps {
  * 网格/卡片封面：**统一容器比例 + object-fit: contain**。
  *
  * 网格里每张卡各用图片自身比例会让同一排参差不齐，统一比例才能保证对齐；
- * 默认取 1:1，控制目录网格高度。图片完整放入容器，
- * 比例不合的部分留衬底（像相框卡纸），不裁切主体；取图期间显示脉冲衬底，
- * 避免懒加载未返回时卡片看起来是一块黑洞。
+ * 容器比例由调用方给出（网格走 `lib/cover` 的 3:4），图片完整放入容器，
+ * 不裁切主体。取图期间显示脉冲衬底，避免懒加载未返回时卡片看起来是一块黑洞。
+ *
+ * 比例不合的部分**不再是一块纯色**：容器里垫一层同一张图放大模糊后的衬底
+ * （见下面的 backdrop 层），留白读起来像相框卡纸而不是"图没加载出来"。
+ * 旧实现是 [3:4 容器 + contain + 纯色底]，竖版两侧/横图上下直接空成一块，
+ * 与"封面没显示"无法区分。
  */
 export function AdaptiveCardCover({
   src,
@@ -35,6 +44,7 @@ export function AdaptiveCardCover({
   fallbackSubtitle,
   fallbackContent,
   aspectClassName = "aspect-square",
+  aspectRatio,
   className = "",
   imgClassName = "",
 }: AdaptiveCardCoverProps) {
@@ -47,13 +57,28 @@ export function AdaptiveCardCover({
   }, [src]);
 
   const hasValidImage = !!src && !hasError;
+  // 数值比例优先：调用方给了就完全接管容器尺寸，不用再写 aspect-* 类。
+  const sizedByNumber = typeof aspectRatio === "number" && isFinite(aspectRatio) && aspectRatio > 0;
 
   return (
     <div
-      className={`relative w-full ${aspectClassName} bg-black/[0.03] dark:bg-black/40 flex items-center justify-center overflow-hidden isolate ${className}`}
+      style={sizedByNumber ? { aspectRatio: String(aspectRatio) } : undefined}
+      className={`relative w-full ${sizedByNumber ? "" : aspectClassName} bg-black/[0.03] dark:bg-black/40 flex items-center justify-center overflow-hidden isolate ${className}`}
     >
       {hasValidImage ? (
         <>
+          {/* 衬底：同一张图放大模糊铺满容器。它只补比例不合的留白，
+              图片本身仍按 contain 完整显示，因此不会裁掉主体。 */}
+          <img
+            src={src!}
+            alt=""
+            aria-hidden
+            width={32}
+            height={32}
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-45 dark:opacity-40 saturate-125 select-none"
+          />
           {!loaded && (
             <div className="absolute inset-0 bg-black/[0.06] dark:bg-white/[0.05] animate-pulse" aria-hidden />
           )}

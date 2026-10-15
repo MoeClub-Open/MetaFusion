@@ -2126,5 +2126,7 @@
   "catalog.error.invalidState": "This lifecycle does not allow the action: deleted or merged entries cannot be deleted again or used as a merge source.",
   "admin.console.activeEntities": "Catalog entries",
   "revisions.fieldState": "Lifecycle",
-  "editor.diff.fieldState": "Lifecycle"
+  "editor.diff.fieldState": "Lifecycle",
+  "catalog.pageSize": "Items per page",
+  "catalog.pageSizeOption": "{n} / page"
 }

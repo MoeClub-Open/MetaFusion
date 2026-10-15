@@ -2126,5 +2126,7 @@
   "catalog.error.invalidState": "当前生命周期不允许此操作：已删除或已合并的条目不能再次删除或作为合并来源。",
   "admin.console.activeEntities": "目录条目",
   "revisions.fieldState": "生命周期",
-  "editor.diff.fieldState": "生命周期"
+  "editor.diff.fieldState": "生命周期",
+  "catalog.pageSize": "每页显示条数",
+  "catalog.pageSizeOption": "{n} 条/页"
 }

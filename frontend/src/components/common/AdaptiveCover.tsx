@@ -28,6 +28,11 @@ interface AdaptiveCoverProps {
   minHeight?: number | string;
   /** 小缩略图：占位走精简版（见 ProceduralCover compact）。 */
   compact?: boolean;
+  /**
+   * 衬底（默认按图片展示方式自动判断）：contain 时把比例不合的留白垫成同色柔化画面，
+   * 见 EntityCover 的 backdrop。显式传值可覆盖自动判断。
+   */
+  backdrop?: boolean;
 }
 
 /**
@@ -58,6 +63,7 @@ export function AdaptiveCover({
   maxHeight,
   minHeight,
   compact = false,
+  backdrop,
 }: AdaptiveCoverProps) {
   const manual = typeof aspect === "string" ? parseManualRatio(aspect) : null;
   const inferred = inferCoverRatio(tags);
@@ -65,6 +71,9 @@ export function AdaptiveCover({
   const initial = manual ?? inferred;
   const uniform = uniformAspect ? clampCoverRatio(uniformAspect) : null;
   const [ratio, setRatio] = useState<number>(clampCoverRatio(initial));
+  const resolvedImgClassName = imgClassName ?? "w-full h-full object-contain";
+  // contain 默认开衬底：留白不再是纯色。调用方改成 cover 时自动关掉（图已铺满）。
+  const showBackdrop = backdrop ?? resolvedImgClassName.includes("object-contain");
 
   const handleLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -90,9 +99,10 @@ export function AdaptiveCover({
         originalTitle={originalTitle}
         id={id}
         loading={loading}
-        imgClassName={imgClassName ?? "w-full h-full object-contain"}
+        imgClassName={resolvedImgClassName}
         onLoad={handleLoad}
         compact={compact}
+        backdrop={showBackdrop}
       />
     </div>
   );

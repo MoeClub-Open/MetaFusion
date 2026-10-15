@@ -17,6 +17,7 @@ import { coverUrl, type CoverBearing } from "@/lib/cover";
 import { PageShell, PageHeader } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
+import { EXPLORE_PAGE_SIZES, parsePageSize } from "@/lib/explorePageSize";
 import {
   Search,
   LayoutGrid,
@@ -99,7 +100,9 @@ function ExploreInner() {
   const sortValue = !currentQ && sortKey === "updated_at:desc" ? "" : sortParam ? sortKey : "";
   const searchLocale = sortParam === "title" ? locale : "";
   const previousSearchLocale = useRef(searchLocale);
-  const limit = 24;
+  // 每页条数走 URL 的 page_size（白名单见 lib/explorePageSize）：非法值回落默认，
+  // 不把非法数字转给服务端。limit 同时决定 offset 与总页数，三者必须同源。
+  const limit = parsePageSize(searchParams.get("page_size"));
   const offset = (currentPage - 1) * limit;
 
   // 标签云本地搜索：只过滤面板展示，不发请求。
@@ -394,6 +397,7 @@ function ExploreInner() {
     currentTags.join(","),
     currentTagsMode,
     currentPage,
+    limit,
     sortKey,
   ].join("|");
 
@@ -610,6 +614,19 @@ function ExploreInner() {
                 {loading ? t("catalog.loading") : loadError ? null : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
               </p>
               <div className="flex w-full sm:w-auto items-center gap-2">
+                {/* 每页条数：写回 URL（?page_size=），与请求的 limit、offset 和总页数同源。
+                    默认 60 是 2/3/4/5 列的公倍数，四种列宽下末排都不会缺一格。 */}
+                <div className="shrink-0 w-28 sm:w-32">
+                  <Select
+                    value={String(limit)}
+                    aria-label={t("catalog.pageSize")}
+                    onChange={(v) => updateFilters({ page_size: v })}
+                    options={EXPLORE_PAGE_SIZES.map((n) => ({
+                      value: String(n),
+                      label: t("catalog.pageSizeOption", { n: n.toString() }),
+                    }))}
+                  />
+                </div>
                 {/* 排序：取值写回 URL（?sort=&order=），可深链、后退键保持；后端按白名单校验。 */}
                 <div className="min-w-0 flex-1 sm:w-48">
                   <Select

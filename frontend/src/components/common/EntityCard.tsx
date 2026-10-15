@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { AdaptiveCardCover } from "./AdaptiveCardCover";
 import { ProceduralCover } from "./ProceduralCover";
+import { GRID_COVER_ASPECT } from "@/lib/cover";
 
 export interface EntityCardProps {
   id: string;
@@ -53,6 +54,9 @@ export function EntityCard({
       <AdaptiveCardCover
         src={pictureUrl}
         alt={title}
+        /* 网格卡片统一走 lib/cover 的 GRID_COVER_ASPECT（3:4）：目录里的封面
+           以竖版书封/海报为主，方形容器会把它们压成"中间一条、两侧空块"。 */
+        aspectRatio={GRID_COVER_ASPECT}
         badge={
           <span className="px-2 py-0.5 rounded-md bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
             <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />

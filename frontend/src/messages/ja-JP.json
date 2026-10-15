@@ -2126,5 +2126,7 @@
   "catalog.error.invalidState": "削除済み・統合済みの項目は再削除や統合元に使用できません。",
   "admin.console.activeEntities": "カタログ項目",
   "revisions.fieldState": "ライフサイクル",
-  "editor.diff.fieldState": "ライフサイクル"
+  "editor.diff.fieldState": "ライフサイクル",
+  "catalog.pageSize": "1ページの表示件数",
+  "catalog.pageSizeOption": "{n} 件/ページ"
 }

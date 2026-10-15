@@ -2126,5 +2126,7 @@
   "catalog.error.invalidState": "目前生命週期不允許此操作：已刪除或已合併的條目不能再次刪除或作為合併來源。",
   "admin.console.activeEntities": "目錄條目",
   "revisions.fieldState": "生命週期",
-  "editor.diff.fieldState": "生命週期"
+  "editor.diff.fieldState": "生命週期",
+  "catalog.pageSize": "每頁顯示筆數",
+  "catalog.pageSizeOption": "{n} 筆/頁"
 }
