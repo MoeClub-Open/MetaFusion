@@ -7,3 +7,5 @@ ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:28
 ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:31
 # auth 仓已验证的公开提交 SHA；仅忽略本次版本锁行的误报。
 cf7d8c6963063c6c854dbc2e9031f7364ede843a:deploy/versions.lock:generic-api-key:28
+# auth 仓公开提交 3b86b213 已与远端 main 核对；仅忽略这条版本锁指纹。
+61975cd303bf153e58d2b4a8f2c0e69d8f4b338b:deploy/versions.lock:generic-api-key:26
