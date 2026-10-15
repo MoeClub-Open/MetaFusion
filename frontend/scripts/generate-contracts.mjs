@@ -40,6 +40,8 @@ const SERVICES = [
     why: "目录权限：条目/关系/定义/生命周期/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。" },
   { id: "auth", prefix: "auth.", file: path.join(ROOT, "../metafusion-auth/internal/store/access.go"), required: false, note: "../metafusion-auth/internal/store/access.go",
     why: "账号权限：auth.oauth.manage 覆盖客户端管理、密钥轮换、令牌吊销与审计（metafusion-auth/internal/handler/oauth_admin.go）。" },
+  { id: "mcp", prefix: "mcp.", file: path.join(ROOT, "../metafusion-auth/internal/store/access.go"), required: false, note: "../metafusion-auth/internal/store/access.go",
+    why: "MCP 连接身份由账号服务声明，与个人 API Key 的业务权限分开。" },
   { id: "community", prefix: "community.", file: path.join(ROOT, "../metafusion-community/internal/auth/permission.go"), required: false, note: "../metafusion-community/internal/auth/permission.go",
     why: "互动权限：发帖/审核/置顶/板块管理（metafusion-community/internal/auth/permission.go）。" },
   { id: "storage", prefix: "storage.", file: path.join(ROOT, "../metafusion-storage/internal/auth/permission.go"), required: false, note: "../metafusion-storage/internal/auth/permission.go",

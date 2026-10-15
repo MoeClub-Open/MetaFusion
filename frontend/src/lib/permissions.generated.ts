@@ -1,6 +1,6 @@
 // 本文件由 frontend/scripts/generate-contracts.mjs 生成，勿手改。
 // 权限码单一来源（各服务自己声明，账号服务持有全量码表）。
-// 来源：backend/internal/catalog/permission.go、../metafusion-auth/internal/store/access.go、../metafusion-community/internal/auth/permission.go、../metafusion-storage/internal/auth/permission.go
+// 来源：backend/internal/catalog/permission.go、../metafusion-auth/internal/store/access.go、../metafusion-auth/internal/store/access.go、../metafusion-community/internal/auth/permission.go、../metafusion-storage/internal/auth/permission.go
 // 校验：cd frontend && node scripts/generate-contracts.mjs --check
 
 // ── catalog ──
@@ -37,6 +37,14 @@ export const AUTH_PERMISSION_CODES = [
   AUTH_USERS_MANAGE,
 ] as const;
 
+// ── mcp ──
+// MCP 连接身份由账号服务声明，与个人 API Key 的业务权限分开。
+export const MCP_CONNECT = "mcp.connect" as const;
+
+export const MCP_PERMISSION_CODES = [
+  MCP_CONNECT,
+] as const;
+
 // ── community ──
 // 互动权限：发帖/审核/置顶/板块管理（metafusion-community/internal/auth/permission.go）。
 export const COMMUNITY_BOARD_MANAGE = "community.board.manage" as const;
@@ -69,6 +77,7 @@ export const STORAGE_PERMISSION_CODES = [
 export const PERMISSION_CODES_BY_SERVICE = {
   catalog: CATALOG_PERMISSION_CODES,
   auth: AUTH_PERMISSION_CODES,
+  mcp: MCP_PERMISSION_CODES,
   community: COMMUNITY_PERMISSION_CODES,
   storage: STORAGE_PERMISSION_CODES,
 } as const;
@@ -92,6 +101,7 @@ export const ALL_PERMISSION_CODES = [
   "community.rate_limits.manage",
   "community.report.review",
   "community.topic.pin",
+  "mcp.connect",
   "storage.asset.moderate",
   "storage.asset.upload",
 ] as const;
