@@ -67,13 +67,17 @@ dedup AS (
     FROM prepared
     ORDER BY entity_id, kind, url, external_id NULLS LAST
 ),
-ins AS (
+inserted AS (
     INSERT INTO catalog.external_links (entity_id, entity_kind, kind, url, external_id, role, origin, source_refs)
     SELECT entity_id, entity_kind, kind, url, external_id, NULL, 'migration', NULL
     FROM dedup
     RETURNING entity_id
-),
-per_entity AS (
+)
+SELECT count(*) FROM inserted;
+
+-- A separate statement must read the inserted rows: modifying CTEs share a
+-- snapshot, so reading external_links alongside INSERT sees the old empty table.
+WITH per_entity AS (
     SELECT el.entity_id,
            jsonb_agg(
                jsonb_strip_nulls(jsonb_build_object(
@@ -122,6 +126,29 @@ SET snapshot = (
     FROM (SELECT r.snapshot AS snap) s
 )
 WHERE jsonb_typeof(snapshot) = 'object' AND snapshot ? 'external_ids';
+
+-- Keep revision evidence attached to the same fact after the representation change.
+CREATE FUNCTION catalog.migrate_external_link_pointer(p_pointer text, p_links jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+ SELECT CASE WHEN p_pointer = '/external_ids' THEN '/external_links'
+  WHEN p_pointer LIKE '/external_ids/%' THEN COALESCE((
+   SELECT '/external_links/' || (position - 1)::text ||
+    CASE WHEN link ? 'external_id' THEN '/external_id' ELSE '/url' END
+   FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_links)='array' THEN p_links ELSE '[]'::jsonb END)
+    WITH ORDINALITY AS links(link,position)
+   WHERE link->>'kind'=replace(replace(substring(p_pointer FROM 15),'~1','/'),'~0','~')
+   LIMIT 1
+  ),p_pointer) ELSE p_pointer END
+$$;
+UPDATE catalog.revisions r SET sources=(
+ SELECT jsonb_agg(CASE WHEN jsonb_typeof(source->'pointers')='array' THEN
+  jsonb_set(source,'{pointers}',COALESCE((
+   SELECT jsonb_agg(catalog.migrate_external_link_pointer(pointer #>> '{}',r.snapshot->'external_links') ORDER BY pointer_order)
+   FROM jsonb_array_elements(source->'pointers') WITH ORDINALITY AS pointers(pointer,pointer_order)
+  ),'[]'::jsonb)) ELSE source END ORDER BY source_order)
+ FROM jsonb_array_elements(r.sources) WITH ORDINALITY AS sources(source,source_order)
+) WHERE jsonb_typeof(r.sources)='array' AND r.sources::text LIKE '%/external_ids%';
+DROP FUNCTION catalog.migrate_external_link_pointer(text,jsonb);
 
 DROP INDEX IF EXISTS catalog.entities_metafusion_import_key;
 

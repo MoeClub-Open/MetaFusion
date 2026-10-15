@@ -362,3 +362,46 @@ func TestOpenAPICommitFieldConflicts(t *testing.T) {
 		t.Fatalf("commit summary should document FieldConflict: %s", snippet)
 	}
 }
+
+func TestOpenAPISourceInputRequiresKey(t *testing.T) {
+	doc := OpenAPI()
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	src, ok := schemas["SourceInput"].(map[string]any)
+	if !ok {
+		t.Fatal("SourceInput schema missing")
+	}
+	got := requiredSet(src["required"])
+	for _, want := range []string{"kind", "citation", "key"} {
+		if !got[want] {
+			t.Fatalf("SourceInput.required missing %q: %#v", want, src["required"])
+		}
+	}
+	props, _ := src["properties"].(map[string]any)
+	if props["key"] == nil {
+		t.Fatal("SourceInput.properties.key missing")
+	}
+	op, ok := schemas["CommitOperation"].(map[string]any)
+	if !ok {
+		t.Fatal("CommitOperation schema missing")
+	}
+	if !requiredSet(op["required"])["source_refs"] {
+		t.Fatalf("CommitOperation.required missing source_refs: %#v", op["required"])
+	}
+}
+
+func requiredSet(v any) map[string]bool {
+	out := map[string]bool{}
+	switch req := v.(type) {
+	case []string:
+		for _, s := range req {
+			out[s] = true
+		}
+	case []any:
+		for _, item := range req {
+			if s, ok := item.(string); ok {
+				out[s] = true
+			}
+		}
+	}
+	return out
+}

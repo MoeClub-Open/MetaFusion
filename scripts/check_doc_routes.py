@@ -9,7 +9,7 @@
 1. backend 里没有 openapi.json / openapi.yaml 之类的生成物，也没有 go:embed 一份：
    GET /api/openapi.json 是 openapi.go 的 OpenAPI() 在进程内用反射拼出来的内存结构，
    静态文件根本不存在，因此不能当来源。
-2. 注册形态是 gin 的 RouterGroup，前缀分两层：catalog/http.go 里 cat/imp/defs/ext/shelves
+2. 注册形态是 gin 的 RouterGroup，前缀分两层：catalog/http.go 里 cat/extSrc/defs/ext/shelves
    的路径相对 Group("/catalog") 这类父前缀，父前缀又落在函数参数上
    （h.registerGroup(r.Group("/api"))），capabilities/handler.go 则在根引擎上写全路径。
    所以来源取"实现本身"：扫描 backend/**/*.go（排除 _test.go）的 X.Method("path") 调用，
@@ -27,7 +27,7 @@
 - 归一化：路径参数（冒号写法、花括号写法、具体数字或 UUID）折成同一段 *；查询串与 #锚点丢弃。
 - 不参与比对的引用逐条给理由（并带行号证据）：纯前缀（以 / 结尾）、通配符片段、花括号列表简写
   （/api/admin/{users,groups} 是前缀枚举，而 {id} 这类路径参数照常归一化后比对）、
-  讲分组前缀的句子（"前缀是 /api/importer"）、文档声明不存在的版本前缀（/api/v1）、
+  讲分组前缀的句子（"前缀是 /api/external-sources"）、文档声明不存在的版本前缀（/api/v1）、
   以及否定标记紧邻引用的反例句（"没有 /api/search"、"不是 /api/catalog/importer"）。
   后两类是启发式：被它们挪进"只报告"桶的引用都会连同行原文打印出来，规则本身可以被人工复核；
   判 P1 仍然只看"归一化后的路径在实现里注册过没有"。

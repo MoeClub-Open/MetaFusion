@@ -67,10 +67,10 @@ func gtinCheckDigit(body string) byte {
 	return byte('0' + (10-sum%10)%10)
 }
 
-// importerISBNBarcode converts a validated ISBN-10 to Bookland EAN-13 by
+// externalSourceISBNBarcode converts a validated ISBN-10 to Bookland EAN-13 by
 // dropping its check digit, prefixing 978, then computing a new check digit.
 // A validated ISBN-13 is returned without separators.
-func importerISBNBarcode(raw string) (string, bool) {
+func externalSourceISBNBarcode(raw string) (string, bool) {
 	compact, ok := compactBookIdentifier(raw)
 	if !ok || !validISBN(compact) {
 		return "", false
@@ -82,7 +82,7 @@ func importerISBNBarcode(raw string) (string, bool) {
 	return body + string(gtinCheckDigit(body)), true
 }
 
-func importerBarcodeError(raw string) error {
+func externalSourceBarcodeError(raw string) error {
 	compact, ok := compactBookIdentifier(raw)
 	if !ok {
 		// barcode is a dynamic text field, and a non-GTIN proprietary barcode

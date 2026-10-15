@@ -38,7 +38,7 @@ func TestGuardImportKey(t *testing.T) {
 	}
 }
 
-// 手工写入者抢占内部幂等键必须被拒。唯一索引见 external_links_metafusion_import_key。
+// 旧导入标识仅可保留或删除，新声明或改写必须被拒绝。
 func TestPostgresForgedImportKeyIsRejected(t *testing.T) {
 	ctx := context.Background()
 	s := &Store{DB: testutil.Database(t)}
@@ -55,9 +55,14 @@ func TestPostgresForgedImportKeyIsRejected(t *testing.T) {
 	if _, err := s.Save(ctx, Edit{Entity: entity(forged), EditNote: "n", Sources: sources}, u); err == nil {
 		t.Fatal("手工载荷新声明内部幂等键被放行")
 	}
-	created, err := s.Save(ctx, Edit{Entity: entity(forged), EditNote: "n", Sources: sources, internal: true}, u)
+	created, err := s.Save(ctx, Edit{Entity: entity(nil), EditNote: "n", Sources: sources}, u)
 	if err != nil {
-		t.Fatalf("导入链路必须能写内部幂等键：%v", err)
+		t.Fatal(err)
+	}
+	// 模拟退役导入器留下的真实存量标识；当前服务不得新建它。
+	created.ExternalLinks = linksOf(forged)
+	if _, err := s.DB.ExecContext(ctx, `UPDATE catalog.entities SET document=jsonb_set(document, '{external_links}', $1::jsonb) WHERE id=$2`, encode(created.ExternalLinks), created.ID); err != nil {
+		t.Fatal(err)
 	}
 	created.Title = "导入键归属用例（改）"
 	updated, err := s.Save(ctx, Edit{Entity: created, ExpectedVersion: created.Version, EditNote: "n", Sources: sources}, u)

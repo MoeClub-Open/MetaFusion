@@ -154,7 +154,7 @@ func TestPreviewDLsite(t *testing.T) {
 	if len(res.Artists) != 5 {
 		t.Fatalf("artists=%+v", res.Artists)
 	}
-	rels := map[string]ImporterArtistPreview{}
+	rels := map[string]ExternalSourceArtistPreview{}
 	for _, a := range res.Artists {
 		rels[a.Name+"|"+a.RelationType] = a
 	}

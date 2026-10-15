@@ -284,8 +284,8 @@ func dmmGenreCell(td string) []string {
 	return dlsiteUnique(names)
 }
 
-// importerDatePart 从 ISO 时间（2023-01-01T00:00:00+09:00）截取 YYYY-MM-DD。
-func importerDatePart(raw string) string {
+// externalSourceDatePart 从 ISO 时间（2023-01-01T00:00:00+09:00）截取 YYYY-MM-DD。
+func externalSourceDatePart(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if len(raw) >= 10 && raw[4] == '-' && raw[7] == '-' {
 		return raw[:10]
@@ -306,7 +306,7 @@ func fetchDMMDetail(ctx context.Context, ref dmmRef) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("upstream_error")
 	}
-	req.Header.Set("User-Agent", importerUserAgent)
+	req.Header.Set("User-Agent", externalSourceUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 	resp, err := dmmHTTPClient.Do(req)
 	if err != nil {
@@ -428,8 +428,8 @@ func dmmArtistRelation(channel string) (entityType, role, relationType string) {
 }
 
 // dmmArtistPreviews 把品牌方 / 作者转为预览关联。
-func dmmArtistPreviews(ref dmmRef, ld dmmJSONLD) []ImporterArtistPreview {
-	out := []ImporterArtistPreview{}
+func dmmArtistPreviews(ref dmmRef, ld dmmJSONLD) []ExternalSourceArtistPreview {
+	out := []ExternalSourceArtistPreview{}
 	entityType, role, relation := dmmArtistRelation(ref.Channel)
 	seen := map[string]bool{}
 	add := func(name, et, rl, relType string) {
@@ -438,7 +438,7 @@ func dmmArtistPreviews(ref dmmRef, ld dmmJSONLD) []ImporterArtistPreview {
 			return
 		}
 		seen[name+"|"+relType] = true
-		out = append(out, ImporterArtistPreview{
+		out = append(out, ExternalSourceArtistPreview{
 			Name:         name,
 			OriginalName: name,
 			Role:         rl,
@@ -453,17 +453,17 @@ func dmmArtistPreviews(ref dmmRef, ld dmmJSONLD) []ImporterArtistPreview {
 }
 
 // previewDMM 产出 DMM 商品的完整预览。
-func previewDMM(ctx context.Context, ref dmmRef) (ImporterPreviewResponse, error) {
+func previewDMM(ctx context.Context, ref dmmRef) (ExternalSourcePreviewResponse, error) {
 	page, err := fetchDMMDetail(ctx, ref)
 	if err != nil {
-		return ImporterPreviewResponse{}, err
+		return ExternalSourcePreviewResponse{}, err
 	}
 	ld := parseDMMPage(page)
 	name := strings.TrimSpace(ld.Name)
 	if name == "" {
-		return ImporterPreviewResponse{}, fmt.Errorf("upstream_error")
+		return ExternalSourcePreviewResponse{}, fmt.Errorf("upstream_error")
 	}
-	date := importerDatePart(ld.DatePublished)
+	date := externalSourceDatePart(ld.DatePublished)
 	summary := strings.TrimSpace(html.UnescapeString(ld.Description))
 	cover := dmmFirstImage(ld.Image)
 	tags := []string{}
@@ -476,7 +476,7 @@ func previewDMM(ctx context.Context, ref dmmRef) (ImporterPreviewResponse, error
 		tags = append(tags, "R-18")
 	}
 	workType := dmmWorkType(ref.Channel, ld.WorkForm, tags)
-	translations := []ImporterTranslationItem{
+	translations := []ExternalSourceTranslationItem{
 		{Locale: "ja-JP", Title: name, Summary: summary},
 	}
 	externalURL := ref.canonicalURL()
@@ -489,13 +489,13 @@ func previewDMM(ctx context.Context, ref dmmRef) (ImporterPreviewResponse, error
 	if channelKind == "physical" {
 		mediumName = "パッケージ"
 	}
-	return ImporterPreviewResponse{
+	return ExternalSourcePreviewResponse{
 		Source:      "dmm",
 		EntityType:  "work",
 		ExternalID:  ref.CID,
 		ExternalURL: externalURL,
 		MediaType:   workType,
-		Work: &ImporterWorkPreview{
+		Work: &ExternalSourceWorkPreview{
 			Title:            name,
 			OriginalTitle:    name,
 			ReleaseDate:      date,
@@ -512,11 +512,11 @@ func previewDMM(ctx context.Context, ref dmmRef) (ImporterPreviewResponse, error
 		},
 		Tags:    tags,
 		Artists: dmmArtistPreviews(ref, ld),
-		Release: &ImporterReleasePreview{
+		Release: &ExternalSourceReleasePreview{
 			EditionDate:         date,
 			DistributionChannel: channelKind,
 		},
-		Mediums: []ImporterMediumPreview{{
+		Mediums: []ExternalSourceMediumPreview{{
 			Position: 1,
 			Name:     mediumName,
 			Format:   mediumFormat,

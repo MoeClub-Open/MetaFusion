@@ -200,7 +200,7 @@ export function ExternalDatabasesTab() {
               <th className="py-3 px-4">{t("admin.extdb.colUrl")}</th>
               <th className="py-3 px-4">{t("admin.extdb.colRegex")}</th>
               <th className="py-3 px-4 text-center">{t("admin.extdb.colSort")}</th>
-              <th className="py-3 px-4 text-center">{t("admin.extdb.colImporter")}</th>
+              <th className="py-3 px-4 text-center">{t("admin.extdb.colQueryAdapter")}</th>
               <th className="py-3 px-4 text-right">{t("admin.extdb.colActions")}</th>
             </tr>
           </thead>
@@ -273,23 +273,23 @@ export function ExternalDatabasesTab() {
                     {adapterIds === null ? (
                       <span
                         className="font-mono text-[10px] text-text-faint"
-                        title={t("admin.extdb.importerUnknownHint")}
+                        title={t("admin.extdb.queryAdapterUnknownHint")}
                       >
-                        {t("admin.extdb.importerUnknown")}
+                        {t("admin.extdb.queryAdapterUnknown")}
                       </span>
                     ) : adapterIds.has(item.code) ? (
                       <span
                         className="inline-block px-2 py-0.5 rounded font-mono text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-success"
-                        title={t("admin.extdb.importerSupportedHint")}
+                        title={t("admin.extdb.queryAdapterSupportedHint")}
                       >
-                        {t("admin.extdb.importerSupported")}
+                        {t("admin.extdb.queryAdapterSupported")}
                       </span>
                     ) : (
                       <span
                         className="inline-block px-2 py-0.5 rounded font-mono text-[10px] bg-surfaceSubtle border border-line text-text-faint"
-                        title={t("admin.extdb.importerUnsupportedHint")}
+                        title={t("admin.extdb.queryAdapterUnsupportedHint")}
                       >
-                        {t("admin.extdb.importerUnsupported")}
+                        {t("admin.extdb.queryAdapterUnsupported")}
                       </span>
                     )}
                   </td>

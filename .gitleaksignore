@@ -2,3 +2,6 @@
 # 仅忽略所列提交、规则和行的指纹，保留其他文档及后续提交的凭据检查。
 4af667ed5b554df55d683eb40e2f0f10b6aea11d:README.md:generic-api-key:46
 3e4bf9a5a1c9ce62d15a840c57aad6228fad7416:docs/architecture/service-split-migration.md:generic-api-key:63
+# 版本锁中的已验证 Git 提交 SHA，分别对应 auth 与 api-gateway；仅标注这两条误报。
+ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:28
+ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:31

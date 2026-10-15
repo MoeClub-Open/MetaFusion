@@ -257,9 +257,17 @@ func TestPostgresLifecycleRetentionMigrationBackfill(t *testing.T) {
 	if err := s.SeedContent(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// Build the historical rows directly: current Save requires the latest schema.
 	f := fixture{t: t, s: s, u: fixtureUser("admin")}
-	deleted := f.save(Entity{Kind: "work", Title: "before migration deletion", Status: "draft"})
-	if _, err := s.Lifecycle(ctx, deleted.ID, LifecycleEdit{ExpectedVersion: deleted.Version, EditNote: "prior action", Sources: fixtureSources()}, f.u); err != nil {
+	id := uuid.NewString()
+	snapshot := encode(map[string]any{"id": id, "kind": "work", "title": "before migration deletion", "status": "deleted"})
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document) VALUES($1,'work',1,'before migration deletion','deleted',$2,$3)`, id, f.u.ID, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO catalog.revisions(target_id,version,actor_id,actor_name,edit_note,sources,snapshot) VALUES($1,1,$2,'fixture','prior action',$3,$4)`, id, f.u.ID, encode(fixtureSources()), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO catalog.outbox(id,type,entity_id,version,payload) VALUES($1,'entity.deleted',$2,1,'{}')`, uuid.NewString(), id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DB.ExecContext(ctx, `INSERT INTO catalog.outbox(id,type,entity_id,version,payload)

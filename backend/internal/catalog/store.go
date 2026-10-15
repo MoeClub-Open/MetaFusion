@@ -544,7 +544,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		if err != nil {
 			return err
 		}
-		historical := input.internal || !create
+		historical := !create
 		mediumFormat := ""
 		if e.Kind == "track" && e.MediumID != "" {
 			medium, lookupErr := get(ctx, tx, e.MediumID)
@@ -572,11 +572,9 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		if err = v.Document.validateExternalLinks(e); err != nil {
 			return err
 		}
-		// 内部幂等键只能由导入链路声明（见 validation.go 的 guardImportKey）。
-		if !input.internal {
-			if err = guardImportKey(e.ExternalLinks, old.ExternalLinks); err != nil {
-				return err
-			}
+		// 旧导入幂等键仅可原值保留或删除，不再允许任何写入者新声明或改写。
+		if err = guardImportKey(e.ExternalLinks, old.ExternalLinks); err != nil {
+			return err
 		}
 		if err = validateExternalLinksAgainstDB(ctx, tx, e); err != nil {
 			return err
@@ -590,7 +588,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		if err = validateChangedEntitySources(e, old); err != nil {
 			return err
 		}
-		if input.identityReview && !input.internal && entityNeedsIdentityReview(old, e) {
+		if input.identityReview && entityNeedsIdentityReview(old, e) {
 			if err = reviewEntityIdentity(ctx, tx, e, input.ReviewedCandidateIDs, u, nil, 0); err != nil {
 				return err
 			}

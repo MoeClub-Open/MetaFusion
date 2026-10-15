@@ -910,19 +910,15 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 	return nil
 }
 
-// importerInternalKeys 是仅 importer 内部写的 kind：它决定"重导命中哪条记录"，
-// 手工载荷带它就能抢占他人条目的键（唯一索引全库唯一，见 external_links_metafusion_import_key）。
-//
-// 分层：validateExternalLinks 只管格式（离线、无写入者信息）；"谁能声明新键"由
-// guardImportKey 在 Store.Save 里按写入来源判定——导入链路经 Edit.internal 放行，
-// 手工 POST/PUT 与实例间提案一律拒绝。
-var importerInternalKeys = map[string]bool{"metafusion_import": true}
+// legacyImportKeys 保留旧导入标识的格式校验；历史实体可保留或删除已有值，
+// 所有写路径均由 guardImportKey 禁止新声明或改写。
+var legacyImportKeys = map[string]bool{"metafusion_import": true}
 
 const maxExternalLinks = 50
 
 func importKeyFromLinks(links []ExternalLink) string {
 	for _, link := range links {
-		if importerInternalKeys[link.Kind] {
+		if legacyImportKeys[link.Kind] {
 			return strings.TrimSpace(link.ExternalID)
 		}
 	}
@@ -944,8 +940,7 @@ func guardImportKey(next, prev []ExternalLink) error {
 //   - dlsite：dlsite:work:{RJ/RE/BJ/VJ+数字}；社团为 dlsite:circle:RG{数字}
 //   - dmm：dmm:work:{cid}
 //
-// 允许派生后缀（:release、:r{hash}、:m{n}、:t{n}、:e{hash}），与 importer.go 的
-// importDedupKey/importReleaseChain/importerEntryExprKey 键格式一致。
+// 保留旧导入器已生成的派生后缀格式，供历史数据正常编辑。
 var importKeyPattern = regexp.MustCompile(`^(?:bangumi:(?:subject|person|character):[1-9][0-9]*|dlsite:work:(?:RJ|RE|BJ|VJ)[0-9]{5,8}|dlsite:circle:RG[0-9]+|dmm:work:[a-z0-9_]{3,32})(?::e[0-9a-f]+|(?::release)?(?::r[0-9a-f]+)?(?::m[0-9]+(?::t[0-9]+)?)?)?$`)
 
 func validImportKey(s string) bool { return importKeyPattern.MatchString(strings.TrimSpace(s)) }
@@ -990,7 +985,7 @@ func (d Definitions) validateExternalLinks(e Entity) error {
 			return fmt.Errorf("duplicate_external_link")
 		}
 		seen[key] = true
-		if importerInternalKeys[link.Kind] {
+		if legacyImportKeys[link.Kind] {
 			if link.ExternalID == "" || !validImportKey(link.ExternalID) {
 				return fmt.Errorf("invalid_import_key")
 			}
@@ -1012,9 +1007,7 @@ func (e Entity) structuralRefs() map[string]string {
 // validateEntityContent 校验与"实体在结构里的位置"无关的内容：类型声明、属性取值
 // （词表项/引用可达/日期与数值格式/列表与子组）、原语言、翻译行、图片。
 //
-// Store.Save（经 validateEntity）与导入预检（importerPreflightValues）调用的是**同一个
-// 函数、同一个 historical 口径**，所以"预检通过 ⇒ Save 不会再因属性值/语言/翻译中途失败"
-// 由构造保证，而不是靠两份逻辑互相对齐；预检只查得比 Save 早，判定不放宽也不收紧。
+// Store.Save 与提交校验共用内容验证。
 // historical 语义与 Save 一致（true：停用的码与词表项不断读，只影响新增使用）。
 func (d Definitions) validateEntityContent(e Entity, reference func(string, []string) error, historical bool) error {
 	if e.OriginalLanguage != "" {

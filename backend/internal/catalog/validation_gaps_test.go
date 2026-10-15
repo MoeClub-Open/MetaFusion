@@ -234,9 +234,9 @@ func TestValidateExternalLinks(t *testing.T) {
 	if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{linkFromID("metafusion_import", "bangumi:subject:123:release")}}); err != nil {
 		t.Fatalf("valid derived import key rejected: %v", err)
 	}
-	// 校验导入器实际生成的所有派生形态均合法放行：
+	// 校验历史导入标识的所有派生形态仍可正常读取和原值编辑：
 	// 表达键、发行变体键、载体键、曲目键
-	importerGeneratedKeys := []string{
+	legacyGeneratedKeys := []string{
 		"bangumi:subject:633836:e7a8b9c0d",
 		"bangumi:subject:633836:release:r1a2b3c4d",
 		"bangumi:subject:633836:release:r1a2b3c4d:m0",
@@ -245,7 +245,7 @@ func TestValidateExternalLinks(t *testing.T) {
 		"bangumi:person:9999",
 		"bangumi:character:8888",
 	}
-	for _, key := range importerGeneratedKeys {
+	for _, key := range legacyGeneratedKeys {
 		if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{linkFromID("metafusion_import", key)}}); err != nil {
 			t.Fatalf("importer generated key %q must be valid, got %v", key, err)
 		}

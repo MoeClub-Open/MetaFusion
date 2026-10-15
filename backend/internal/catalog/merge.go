@@ -72,14 +72,14 @@ func mergeExternalLinks(target, source []ExternalLink) ([]ExternalLink, error) {
 	}
 	byKind := map[string]ExternalLink{}
 	for _, link := range target {
-		if importerInternalKeys[link.Kind] {
+		if legacyImportKeys[link.Kind] {
 			continue
 		}
 		byKind[link.Kind] = link
 	}
 	out := append([]ExternalLink{}, target...)
 	for _, link := range source {
-		if importerInternalKeys[link.Kind] {
+		if legacyImportKeys[link.Kind] {
 			continue
 		}
 		key := link.Kind + "|" + link.URL
