@@ -1,5 +1,6 @@
 "use client";
-import React, { useEffect, useId, useRef } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -36,13 +37,15 @@ export function Modal({
  const { t } = useI18n();
  const titleId = useId();
  const panelRef = useRef<HTMLDivElement>(null);
+ const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+ useEffect(() => { setPortalTarget(document.body); }, []);
  // 关闭后把焦点还给打开它的按钮：读屏与键盘用户不会"掉"到页面顶部。
  const restoreRef = useRef<HTMLElement | null>(null);
  const onCloseRef = useRef(onClose);
  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
  useEffect(() => {
-  if (!open) return;
+  if (!open || !portalTarget) return;
   const panel = panelRef.current;
   if (!panel) return;
   restoreRef.current = (document.activeElement as HTMLElement | null) ?? null;
@@ -93,10 +96,11 @@ export function Modal({
    const restore = restoreRef.current;
    if (restore && restore.isConnected) restore.focus();
   };
- }, [open, initialFocus]);
+ }, [open, initialFocus, portalTarget]);
 
- if (!open) return null;
- return (
+ if (!open || !portalTarget) return null;
+ // Escape page stacking contexts so sticky navigation cannot cover the dialog.
+ return createPortal(
  <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
  <div
  ref={panelRef}
@@ -119,6 +123,6 @@ export function Modal({
  {footer ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div> : children}
  {footer && <div className="shrink-0 border-t border-line-subtle pt-3">{footer}</div>}
  </div>
- </div>
+ </div>, portalTarget
  );
 }

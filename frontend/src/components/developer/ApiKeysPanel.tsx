@@ -6,32 +6,24 @@ import {
   Loader2,
   RefreshCw,
   ShieldOff,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { authErrorText, httpStatusOf } from "@/lib/authErrors";
 import {
   fetchPersonalAccessTokens,
   revokePersonalAccessToken,
+  deletePersonalAccessToken,
   type CreatedPersonalAccessToken,
   type PersonalAccessToken,
 } from "@/lib/api";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import { ApiKeyRevealModal } from "@/components/developer/ApiKeyRevealModal";
-import { ApiKeyCreateModal } from "@/app/developer/components/ApiKeyCreateModal";
+import { ApiKeyEditorModal } from "./ApiKeyEditorModal";
 
-// API Key 自助：只列出我的密钥、一次性看明文、撤销。新建表单在 ApiKeyCreateModal 里
-// （弹窗），打开状态由调用方（开发者中心 API Key 页签头的新建按钮）控制。
-//
-// 契约（账号服务）：
-//   GET    /api/auth/tokens      → { items: [{ id, name, token_prefix, scopes, expires_at, last_used_at, created_at, revoked_at, active }] }
-//   POST   /api/auth/tokens      → 201 { token: "mfp_…", item: {…} }（明文只此一次）
-//   DELETE /api/auth/tokens/:id  → { ok: true }（写 revoked_at）
-// 明文库里只有 sha256，刷新页面就再也拿不回来：所以创建成功后必须**立刻**把明文摆在用户眼前，
-// 不做"稍后再看"，也不把它塞进任何持久化状态。
-//
-// 撤销有窗口：下游服务的内省结果按 token_hash 缓存 60 秒，写库成功不等于立刻全站失效。
-// 这句必须在界面上说清（曾经字典写的是"立即失效"，与实现相反）。
-//
+// Personal API keys: create, edit, revoke and remove. Secrets are revealed only once.
+// Downstream introspection caches can take up to 60 seconds to observe changes.
 export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; onModalClose: () => void }) {
   const { t, locale } = useI18n();
 
@@ -45,6 +37,8 @@ export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; 
   const [reveal, setReveal] = useState<CreatedPersonalAccessToken | null>(null);
 
   const [confirming, setConfirming] = useState<PersonalAccessToken | null>(null);
+  const [editing, setEditing] = useState<PersonalAccessToken | null>(null);
+  const [action, setAction] = useState<"revoke" | "delete">("revoke");
   const [revokingId, setRevokingId] = useState("");
 
   useEffect(() => {
@@ -115,13 +109,14 @@ export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; 
     setError("");
     setNotice("");
     try {
-      await revokePersonalAccessToken(target.id);
+      if (action === "delete") await deletePersonalAccessToken(target.id);
+      else await revokePersonalAccessToken(target.id);
       setConfirming(null);
-      setNotice(t("developer.apiKeyRevokeDone", { name: target.name }));
+      setNotice(t(action === "delete" ? "developer.apiKeyDeleteDone" : "developer.apiKeyRevokeDone", { name: target.name }));
       setReloadKey((k) => k + 1);
     } catch (err: unknown) {
       setConfirming(null);
-      setError(patErrorText(err, "developer.apiKeyRevokeFailed"));
+      setError(patErrorText(err, "developer.apiKeyWriteFailed"));
     } finally {
       setRevokingId("");
     }
@@ -193,13 +188,17 @@ export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; 
                       </div>
                     </div>
 
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <button type="button" disabled={!!revokingId} onClick={() => setEditing(token)} className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs text-text-body"><Pencil className="h-3.5 w-3.5" />{t("developer.apiKeyEdit")}</button>
                     {status !== "revoked" && (
                       <button
                         type="button"
+                        disabled={!!revokingId}
                         onClick={() => {
                           setNotice("");
                           setError("");
                           setConfirming(token);
+                          setAction("revoke");
                         }}
                         className="shrink-0 px-2.5 h-7 rounded-md bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-600 dark:text-danger-soft text-xs font-medium inline-flex items-center gap-1.5"
                       >
@@ -207,6 +206,8 @@ export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; 
                         <span>{t("developer.apiKeyRevoke")}</span>
                       </button>
                     )}
+                      <button type="button" disabled={!!revokingId} onClick={() => { setConfirming(token); setAction("delete"); }} className="inline-flex items-center gap-1 rounded-md border border-danger/30 px-2 py-1 text-xs text-danger-soft"><Trash2 className="h-3.5 w-3.5" />{t("developer.apiKeyDelete")}</button>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-text-faint">
@@ -246,9 +247,11 @@ export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; 
         )}
       </div>
 
-      <ApiKeyCreateModal
-        open={modalOpen}
-        onClose={onModalClose}
+      <ApiKeyEditorModal
+        open={modalOpen || !!editing}
+        token={editing}
+        onClose={() => { setEditing(null); onModalClose(); }}
+        onSaved={() => { setEditing(null); setNotice(t("developer.apiKeySaved")); setReloadKey((key) => key + 1); }}
         onCreated={(created) => {
           onModalClose();
           setReveal(created);
@@ -261,11 +264,11 @@ export function ApiKeysPanel({ modalOpen, onModalClose }: { modalOpen: boolean; 
       {/* 撤销二次确认：用 Modal 版 ConfirmDialog，不用原生 confirm（不可本地化/不可样式化） */}
       <ConfirmDialog
         open={!!confirming}
-        title={t("developer.apiKeyRevokeTitle")}
-        message={t("developer.apiKeyRevokeConfirm", { name: confirming?.name || "" })}
-        confirmLabel={t("developer.apiKeyRevoke")}
+        title={t(action === "delete" ? "developer.apiKeyDeleteTitle" : "developer.apiKeyRevokeTitle")}
+        message={t(action === "delete" ? "developer.apiKeyDeleteConfirm" : "developer.apiKeyRevokeConfirm", { name: confirming?.name || "" })}
+        confirmLabel={t(action === "delete" ? "developer.apiKeyDelete" : "developer.apiKeyRevoke")}
         busy={!!revokingId}
-        onClose={() => setConfirming(null)}
+        onClose={() => { if (!revokingId) setConfirming(null); }}
         onConfirm={handleRevoke}
       />
     </div>

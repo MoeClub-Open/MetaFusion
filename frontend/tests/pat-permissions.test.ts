@@ -22,6 +22,7 @@ test("wildcard ownership expands only to delegable concrete PAT scopes", () => {
   assert.ok(scopes.includes("auth.audit.read"));
   assert.ok(scopes.includes("community.report.review"));
   assert.ok(scopes.every((scope) => scope !== "*" && !scope.endsWith(".manage")));
+  assert.ok(!scopes.includes("mcp.connect"));
   assert.ok(can(admin, "catalog.lifecycle.manage"));
 });
 
@@ -35,6 +36,7 @@ test("PAT selector preserves custom business scopes and filters custom managemen
 test("management-only and missing identities have no issuable PAT scopes", () => {
   assert.deepEqual(grantablePermissionCodes(user(["auth.users.manage", "future.configuration.manage"])), []);
   assert.deepEqual(grantablePermissionCodes(user([])), []);
+  assert.deepEqual(grantablePermissionCodes(user(["mcp.connect"])), []);
   assert.deepEqual(grantablePermissionCodes(null), []);
   assert.deepEqual(grantablePermissionCodes(undefined), []);
 });

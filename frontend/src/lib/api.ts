@@ -5,7 +5,7 @@ export { displayNameOf, clearAuthTokens, ApiError, fetchApi } from "./api/client
 export type { User } from "./api/client";
 export { fetchInviteLedger, createInviteCode, fetchSetupStatus, fetchAuthSettings, normalizeSessionUser } from "./api/auth";
 export { fetchOAuthGrants, revokeOAuthGrant } from "./api/auth";
-export { fetchPersonalAccessTokens, createPersonalAccessToken, revokePersonalAccessToken, updateOwnProfile } from "./api/auth";
+export { fetchPersonalAccessTokens, createPersonalAccessToken, revokePersonalAccessToken, updatePersonalAccessToken, deletePersonalAccessToken, updateOwnProfile } from "./api/auth";
 export type { InviteCode, InviteLedger, SetupStatusResponse, PublicAuthSettings, AuthorizedApp, PersonalAccessToken, CreatedPersonalAccessToken } from "./api/auth";
 export { toggleFavorite, fetchFavoriteStatus, fetchFavorites, normalizeBoard, boardDisplayName, boardDisplayDesc, ALL_FORUM_BOARD, fetchBoards, getBoardSync, shareContent, buildShareUrl, createTopic, createPost, setTopicPinned, fetchDirectMessages, sendDirectMessage, fetchConversations, fetchUnreadMessageCount, markConversationRead, fetchMessageSettings, updateMessageSettings, fetchEntityPosts, fetchEntityCollections, createEntityComment } from "./api/community";
 export type { FavoriteTargetType, FavoriteItem, ForumPost, DiscussionTopic, CreateTopicPayload, CreatePostPayload, EntityComment, EntityCollectionRef, DirectMessage, ConversationItem, ForumBoard } from "./api/community";

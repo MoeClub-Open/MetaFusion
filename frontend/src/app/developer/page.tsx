@@ -81,12 +81,18 @@ export default function DeveloperPage() {
   // 左侧选项、右侧切换：四个自助区共用一页，窄屏时侧栏横排置顶。
   const TABS = [
     { key: "apps", label: t("developer.apps.title"), icon: AppWindow },
-    { key: "keys", label: t("developer.credentials.title"), icon: KeyRound },
+    { key: "keys", label: t("developer.apiKeys.title"), icon: KeyRound },
+    { key: "mcp", label: t("developer.mcp.manage"), icon: SlidersHorizontal },
     { key: "audit", label: t("developer.audit.title"), icon: History },
     { key: "logs", label: t("developer.reqlogs.title"), icon: Activity },
   ] as const;
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("apps");
   const [keyModalOpen, setKeyModalOpen] = useState(false);
+
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("tab");
+    if (value === "apps" || value === "keys" || value === "mcp" || value === "audit" || value === "logs") setTab(value);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -199,7 +205,7 @@ export default function DeveloperPage() {
             <h1 className="text-xl sm:text-2xl font-semibold text-text-strong">{t("developer.title")}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setTab("keys")} className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors cursor-pointer">
+            <button type="button" onClick={() => setTab("mcp")} className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors cursor-pointer">
               {t("developer.mcp.manage")}
             </button>
             <a
@@ -419,13 +425,15 @@ export default function DeveloperPage() {
                 <p className="text-xs text-text-muted leading-relaxed">{t("developer.apiKeys.subtitle")}</p>
                 <ApiKeysPanel modalOpen={keyModalOpen} onModalClose={() => setKeyModalOpen(false)} />
               </Card>
+              </div>
+              )}
+              {tab === "mcp" && (
               <Card padding="section" className="space-y-3">
                 <SectionTitle icon={<KeyRound className="w-4 h-4 text-primary" />}>
                   {t("developer.mcp.manage")}
                 </SectionTitle>
                 <McpGrantsPanel />
               </Card>
-              </div>
               )}
               {tab === "audit" && <AuditLogsCard apps={apps} />}
               {tab === "logs" && <RequestLogsCard />}

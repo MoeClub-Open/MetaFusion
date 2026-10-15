@@ -187,8 +187,16 @@ export async function updateOwnProfile(payload: OwnProfileUpdate): Promise<OwnPr
   });
 }
 
-/** DELETE /auth/tokens/:id：写 revoked_at（幂等）。生效最长需 60 秒，见文件头注释。 */
+/** POST /auth/tokens/:id/revoke：撤销但保留列表记录，最长需 60 秒生效。 */
 export function revokePersonalAccessToken(id: string): Promise<{ ok: boolean }> {
+  return fetchApi<{ ok: boolean }>("/auth/tokens/" + encodeURIComponent(id) + "/revoke", { method: "POST" });
+}
+
+export function updatePersonalAccessToken(id: string, payload: { name?: string; scopes?: string[] }): Promise<{ ok: boolean }> {
+  return fetchApi<{ ok: boolean }>("/auth/tokens/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deletePersonalAccessToken(id: string): Promise<{ ok: boolean }> {
   return fetchApi<{ ok: boolean }>("/auth/tokens/" + encodeURIComponent(id), { method: "DELETE" });
 }
 
