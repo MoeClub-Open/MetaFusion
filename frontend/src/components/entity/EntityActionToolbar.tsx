@@ -1,13 +1,12 @@
 "use client";
 
 import React from "react";
-import { Edit3, History, GitMerge } from "lucide-react";
+import { Edit3, GitMerge } from "lucide-react";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 
 interface Props {
   onEdit: () => void;
-  onHistory: () => void;
   onMerge?: () => void;
   entityTypeLabel?: string;
   className?: string;
@@ -16,7 +15,6 @@ interface Props {
 
 export function EntityActionToolbar({
   onEdit,
-  onHistory,
   onMerge,
   entityTypeLabel,
   className = "",
@@ -53,16 +51,6 @@ export function EntityActionToolbar({
           )}
         </>
       )}
-
-      {/* 修订历史作为公共开放审阅记录，对所有用户可见 */}
-      <button
-        type="button"
-        onClick={onHistory}
-        className="inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-black/[0.03] dark:bg-white/[0.06] border border-line hover:bg-black/[0.06] dark:hover:bg-white/10 text-text-body hover:text-gray-900 dark:hover:text-white transition-all active:scale-95"
-      >
-        <History className="w-3.5 h-3.5 text-amber-500 dark:text-warn" />
-        {t("entity.toolbar.history")}
-      </button>
 
       {children}
     </div>

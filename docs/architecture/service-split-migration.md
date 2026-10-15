@@ -46,6 +46,25 @@
 
 `/api/users/*` 有多种归属，不能按顶层前缀整体改上游。网关仓 `cutover-check.sh` 检查服务标记头，主仓 `scripts/check_gateway_matrix.py` 检查路径登记、归属和限流，`scripts/check_versions.py` 检查组合版本。新增路径须同步具体分流与契约检查，不能靠目录兜底掩盖漏项。
 
+### 管理中心与服务工作区
+
+主前端 `/admin` 是统一管理中心，顶栏按权限切换目录、账号、社区与存储工作区。
+目录工作面由主前端渲染；其他三个仍由服务自带应用提供，通过同源 iframe 嵌入，收起各自顶栏。
+已访问工作区在本次页面打开期间保持挂载，切换不清空表单与筛选。`workspace` 查询参数选择服务，
+`path` 保存该服务下的页面、查询和 hash；目录继续使用 `/admin#<section>`。旧独立地址仍可直接访问。
+
+嵌入协议为 `metafusion.admin.v1`：子窗口名 `metafusion-admin-{account|community|storage}`，
+父页面必须为同源 `/admin`。双方同时核对消息 origin、source、channel 和 workspace；
+宿主只接受对应应用路径下的页面导航，不接收任意 URL、API 或静态资源路径。
+子应用回报 `ready`、`navigate`、`login`，宿主发送 `connect` 与 `preferences`（四语 locale、显示模式、主色与色调）。
+嵌入模式的子路由使用 replace；用户导航声明 `history=push`，由宿主创建唯一历史项；初始化、自动选页和恢复仅替换当前项。
+会话、权限和业务请求仍由各应用与服务负责，不通过消息传递令牌或权限声明。跨出应用的普通链接在顶层打开；
+登录失效由宿主跳登录，回跳目标保留当前管理工作区。
+
+宿主只探测有权限的应用；健康检查失败显示连接故障与重试，不把未部署解释成无权限。
+旧版应用未实现嵌入协议或未响应时，宿主显示重试与独立打开入口。发布这项 UI 时须包含三个服务管理应用的协议实现，
+网关挂载点、安全响应头、业务 API 和数据库归属无需随之变更。
+
 ## 3. 数据所有权与调用
 
 各服务只读写本域 schema，不建跨业务外键、不跨服务 JOIN。运行角色与共享审计的唯一授权源为 `deploy/sql/roles-least-privilege.sql`，验证为 `verify-role-isolation.sql`；详细身份、对象归属和撤权条件见[数据库角色](./database-roles.md)。

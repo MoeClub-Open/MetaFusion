@@ -135,7 +135,7 @@ export type Entity = {
   original_language: string;
   translations: Record<
     string,
-    { title: string; summary?: string; aliases?: string[] }
+    { title: string; summary?: string; body?: string; aliases?: string[] }
   >;
   attributes: Record<string, any>;
   external_links: ExternalLink[];

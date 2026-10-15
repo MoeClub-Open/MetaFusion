@@ -11,8 +11,8 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { BrandMark } from "./Logo";
 import { UserAvatar } from "./UserAvatar";
 import { displayNameOf, fetchUnreadMessageCount, fetchUnreadCount, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/api";
-import { ACCOUNT_CONSOLE_CODES, can, canEnterAdmin } from "@/lib/permissions";
-import { getAuthLoginUrl, getAuthUsersAdminUrl, STORAGE_SERVICE_URL, hasResourceStation } from "@/lib/services";
+import { canEnterAdmin } from "@/lib/permissions";
+import { getAuthLoginUrl, STORAGE_SERVICE_URL, hasResourceStation } from "@/lib/services";
 import { PageContainer } from "@/components/ui/PageShell";
 import { SearchSuggest } from "@/components/common/SearchSuggest";
 import { Modal } from "@/components/ui/Modal";
@@ -110,11 +110,6 @@ export const Navbar: React.FC<{
       document.documentElement.style.removeProperty("--mf-header-h");
     };
   }, []);
-  // 账号管理台（/admin/account/）是账号服务自带的独立应用：按目录管理台同一约定探活
-  // （2.5s AbortController 超时、cache: no-store、只认 HTTP 200）。探不到就不渲染入口——
-  // 本机开发与元数据-only 部署都没有这条网关 location，留着就是一个必 404 的死链。
-  const [authConsoleOnline, setAuthConsoleOnline] = useState(false);
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
@@ -124,33 +119,6 @@ export const Navbar: React.FC<{
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (!ACCOUNT_CONSOLE_CODES.some((code) => can(user, code))) {
-      setAuthConsoleOnline(false);
-      return;
-    }
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 2500);
-    let alive = true;
-    fetch(`${getAuthUsersAdminUrl()}api/health`, {
-      cache: "no-store",
-      credentials: "same-origin",
-      signal: controller.signal,
-    })
-      .then((res) => {
-        if (alive) setAuthConsoleOnline(res.ok);
-      })
-      .catch(() => {
-        if (alive) setAuthConsoleOnline(false);
-      })
-      .finally(() => window.clearTimeout(timer));
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -469,17 +437,6 @@ export const Navbar: React.FC<{
                         <Shield className="w-3.5 h-3.5" strokeWidth={1.7} />
                         <span>{t("navbar.adminConsole")}</span>
                       </Link>
-                    )}
-                    {/* 账号管理台是另一个应用：上面的探活不通过就不渲染，避免死链 */}
-                    {canEnterAdmin(user) && authConsoleOnline && (
-                      <a
-                        href={getAuthUsersAdminUrl()}
-                        onClick={() => setIsUserMenuOpen(false)}
-                        className="w-full px-3 py-2 text-left text-warn hover:text-warn-soft hover:bg-amber-500/10 flex items-center gap-2 transition-colors duration-fast ease-soft font-medium"
-                      >
-                        <Settings className="w-3.5 h-3.5" strokeWidth={1.7} />
-                        <span>{t("navbar.userManagement")}</span>
-                      </a>
                     )}
                   </div>
 

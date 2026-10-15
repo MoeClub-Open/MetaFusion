@@ -19,6 +19,8 @@ const CODE_KEYS: Record<string, string> = {
   version_conflict: "catalog.error.versionConflict",
   immutable_scope: "catalog.error.immutableScope",
   invalid_payload: "catalog.error.invalidPayload",
+  article_too_long: "catalog.article.tooLong",
+  invalid_article_body: "catalog.article.invalidBody",
   unknown_field: "catalog.error.unknownField",
   types_required: "catalog.error.typesRequired",
   invalid_term: "catalog.error.invalidTerm",

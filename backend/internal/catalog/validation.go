@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var codePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
@@ -1021,6 +1022,12 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 		}
 		if len(tr.Title) > 2000 || len(tr.Summary) > maxTextLen {
 			return fmt.Errorf("translation_too_long")
+		}
+		if !utf8.ValidString(tr.Body) || strings.ContainsRune(tr.Body, '\x00') {
+			return fmt.Errorf("invalid_article_body")
+		}
+		if utf8.RuneCountInString(tr.Body) > MaxArticleLength {
+			return fmt.Errorf("article_too_long")
 		}
 		for _, a := range tr.Aliases {
 			if len(a) > 500 {

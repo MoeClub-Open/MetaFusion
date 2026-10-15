@@ -37,6 +37,8 @@ import { ApiError } from "@/lib/api/client";
 import { fetchIdentityCandidates } from "@/lib/api/identity";
 import { identityConflictIDs, identityReviewKey, reviewedIdentityIDs, type IdentityReviewState } from "@/lib/identityReview";
 import { IdentityReviewPanel } from "./IdentityReviewPanel";
+import { ArticleEditor } from "./ArticleEditor";
+import { articleBodyError } from "@/lib/catalogArticle";
 
 /** 标签分隔符：中英文逗号/顿号/换行都算新增，避免只能靠回车。 */
 const TAG_SEPARATORS = /[,，、\n]/;
@@ -54,6 +56,8 @@ export function EntityEditor({
   onSaved,
   initialEditNote = "",
   initialSources,
+  initialSection = "basic",
+  initialLocale = "",
 }: {
   initial?: Entity;
   /** 新建时的预选层级（来自 /new?kind=…，如贡献页与 /works/new 等旧入口重定向）；
@@ -62,6 +66,8 @@ export function EntityEditor({
   onSaved?: (e: Entity) => void;
   initialEditNote?: string;
   initialSources?: Source[];
+  initialSection?: string;
+  initialLocale?: string;
 }) {
   const { t, tr, locale } = useI18n();
   // 会话来自 useAuth（唯一来源），定义来自 useDefinitions（唯一缓存）：
@@ -145,7 +151,7 @@ export function EntityEditor({
   }, [currentIdentityKey]);
   useEffect(() => () => { identityReviewRequest.current += 1; }, []);
   const editorId = React.useId();
-  const [requestedSection, setRequestedSection] = useState("basic");
+  const [requestedSection, setRequestedSection] = useState(initialSection);
   const [fieldSearch, setFieldSearch] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLFormElement>(null);
@@ -177,7 +183,7 @@ export function EntityEditor({
   // 标签输入框的待确认文本（回车/逗号才落到 attributes.tags）。
   const [tagInput, setTagInput] = useState("");
   // 当前编辑的语种；空串表示跟随原始语言（用户还没手动切换过）。
-  const [localePick, setLocalePick] = useState("");
+  const [localePick, setLocalePick] = useState(initialLocale && initial?.translations?.[initialLocale] ? initialLocale : "");
   const [requestedKind, setRequestedKind] = useState("");
   const pictureFileRef = useRef<HTMLInputElement | null>(null);
   const [pendingUploadIndex, setPendingUploadIndex] = useState<number | null>(null);
@@ -276,15 +282,17 @@ export function EntityEditor({
     localePick || e.original_language || Object.keys(e.translations)[0] || "";
   const isOriginalLocale = !!activeLocale && activeLocale === e.original_language;
   const activeTr = e.translations[activeLocale] || { title: "", summary: "", aliases: [] };
-  const setTranslation = (v: { title?: string; summary?: string; aliases?: string[] }) => {
+  const setTranslation = (v: { title?: string; summary?: string; body?: string; aliases?: string[] }) => {
     if (!activeLocale) return;
     patch({
       translations: {
         ...e.translations,
         [activeLocale]: {
+          ...activeTr,
           // 原始语言的题名就是实体基础题名（在身份区维护），这里不覆盖它。
           title: isOriginalLocale ? e.title : v.title ?? activeTr.title ?? "",
           summary: v.summary ?? activeTr.summary ?? "",
+          body: v.body ?? activeTr.body ?? "",
           aliases: v.aliases ?? activeTr.aliases ?? [],
         },
       },
@@ -484,6 +492,15 @@ export function EntityEditor({
       setError(t("editor.titleRequired"));
       return;
     }
+    for (const [lang, row] of Object.entries(e.translations)) {
+      const articleError = articleBodyError(row.body || "");
+      if (articleError) {
+        setRequestedSection("article");
+        setLocalePick(lang);
+        setError(localizeCatalogError(articleError, t));
+        return;
+      }
+    }
     if (evidenceError) {
       setRequestedSection("evidence");
       setError(localizeCatalogError(evidenceError, t));
@@ -595,6 +612,7 @@ export function EntityEditor({
   const hasStructure = !!((defs?.structure?.[e.kind]?.fields || []).length || defs?.structure?.[e.kind]?.subjects || defs?.structure?.[e.kind]?.contents);
   const editorSections = [
     { id: "basic", label: t("editor.section.basic") },
+    { id: "article", label: t("catalog.article.body") },
     ...(hasStructure ? [{ id: "structure", label: t("editor.section.structure") }] : []),
     ...(applicableFields.length || Object.keys(e.attributes).length ? [{ id: "attributes", label: t("catalog.attributes") }] : []),
     { id: "media", label: t("editor.section.media") },
@@ -828,6 +846,20 @@ export function EntityEditor({
         )}
         <p className="text-xs opacity-60">{t("catalog.translationHint")}</p>
       </fieldset>
+      </EditorPanel>
+      <EditorPanel name="article" active={activeSection} editorId={editorId}>
+        <fieldset>
+          <legend>{t("catalog.article.body")}</legend>
+          <div className="cv-row cv-localebar">
+            {localeCodes.length > 0 && <Select value={activeLocale} aria-label={t("catalog.article.language")} fullWidth={false}
+              options={localeCodes.map((code) => ({ value: code, label: localeLabel(code) }))} onChange={setLocalePick} />}
+            <LanguagePicker selected={localeCodes} onSelect={addLocale} label={t("catalog.addLocale")}
+              ariaLabel={t("catalog.addLocale")} variant="field" />
+          </div>
+          {activeLocale ? <ArticleEditor key={activeLocale} value={activeTr.body || ""} locale={activeLocale}
+            onChange={(body) => setTranslation({ body })} /> : <p className="cv-hint">{t("catalog.translationEmpty")}</p>}
+          <p className="cv-hint">{t("catalog.article.evidenceHint")}</p>
+        </fieldset>
       </EditorPanel>
       {/* 结构区仅在当前层级有字段或收录入口时显示。 */}
       {hasStructure && (

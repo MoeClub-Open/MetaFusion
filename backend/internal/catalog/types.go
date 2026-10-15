@@ -9,9 +9,15 @@ import (
 var Kinds = []string{"agent", "collection", "work", "content_unit", "expression", "release", "medium", "track"}
 
 type Names map[string]string
+
+// MaxArticleLength bounds one locale's Markdown body in Unicode code points.
+// Article text is part of the entity document and shares its revisions and ACL.
+const MaxArticleLength = 100000
+
 type Translation struct {
 	Title   string   `json:"title"`
 	Summary string   `json:"summary,omitempty"`
+	Body    string   `json:"body,omitempty"`
 	Aliases []string `json:"aliases,omitempty"`
 }
 type Source struct {
