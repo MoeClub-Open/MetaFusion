@@ -22,7 +22,15 @@ export function revisionChanges(before: any = {}, after: any = {}) {
   const right = after || {};
   for (const key of Array.from(new Set([...Object.keys(left), ...Object.keys(right)]))) {
     if (ignored.has(key) || key.startsWith("localized_")) continue;
-    if (key === "attributes" || key === "translations") {
+    if (key === "translations") {
+      for (const locale of Array.from(new Set([...Object.keys(left[key] || {}), ...Object.keys(right[key] || {})]))) {
+        const oldRow = left[key]?.[locale] || {};
+        const newRow = right[key]?.[locale] || {};
+        for (const field of Array.from(new Set([...Object.keys(oldRow), ...Object.keys(newRow)]))) {
+          put(`${key}.${locale}.${field}`, oldRow[field], newRow[field]);
+        }
+      }
+    } else if (key === "attributes") {
       for (const child of Array.from(new Set([...Object.keys(left[key] || {}), ...Object.keys(right[key] || {})]))) {
         put(`${key}.${child}`, left[key]?.[child], right[key]?.[child]);
       }

@@ -25,7 +25,7 @@ import {
 import { loadCatalogSection } from "@/lib/catalogSection";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { isDistinctOriginalTitle, findRowForLocale, buildTitleChain } from "@/lib/titles";
+import { isDistinctOriginalTitle } from "@/lib/titles";
 import { isNotFoundError, localizeCatalogError } from "@/lib/catalogErrors";
 import { EntityLoadError } from "@/components/catalog/EntityLoadError";
 
@@ -57,8 +57,8 @@ import { ExternalAuthorityLinks } from "@/components/entity/ExternalAuthorityLin
 import { EntityResourceFiles } from "@/components/storage/EntityResourceFiles";
 import { AggregateRelationList, useAggregateRelations } from "@/components/catalog/AggregateRelationList";
 import { EntityActionToolbar } from "@/components/entity/EntityActionToolbar";
-import ReportButton from "@/components/report/ReportButton";
-import { RevisionHistoryModal } from "@/components/editor/RevisionHistoryModal";
+import { EntityArticle } from "./EntityArticle";
+import { ARTICLE_ANCHOR_TABS } from "@/lib/catalogArticle";
 import { EntityMergeModal } from "@/components/editor/EntityMergeModal";
 import { WorkContentDirectory, hasWorkDirectoryContent, useWorkDirectoryData } from "@/components/work/WorkContentDirectory";
 import { WorkReleasesSection } from "@/components/entity/WorkReleasesSection";
@@ -198,8 +198,7 @@ export function EntityDetailView({ id }: { id: string }) {
   const [readProjectionFailed, setProjectionFailed] = useState(false);
   const projectionFailed = isCurrentRead && readProjectionFailed;
   const [editing, setEditing] = useState(searchParams.get("edit") === "1");
-  // 编辑/合并/历史：作品页此前独有的三个动作，现在对八种实体一致提供（kind 只决定文案）。
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // 八种实体共用编辑与合并，公共变更记录集中在历史页签。
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   // 作品内容目录：hook 必须无条件调用（早期 return 之前），非作品实体传空 id 时不发请求。
   const directoryData = useWorkDirectoryData(entity?.kind === "work" ? entity.id || id : "");
@@ -706,13 +705,13 @@ export function EntityDetailView({ id }: { id: string }) {
     { id: "resources", label: t("entity.detail.resourcesTitle"), visible: defs?.structure?.[String(entity?.kind || "")]?.resources === true, icon: <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
     { id: "community", label: t("entity.page.communityTitle"), badge: communityPosts.length, visible: communityEnabled, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisions.length || 1, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisions.length, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ].map((tab) => ({...tab,visible:tab.visible !== false && (!tabBlocks[tab.id] || templateBlocks.includes(tabBlocks[tab.id]))}))
     .sort((a,b) => {
       const rank = (id: string) => id === "overview" ? -1 : id === "revisions" ? templateBlocks.length+1 : id === "community" ? templateBlocks.length : templateBlocks.indexOf(tabBlocks[id]);
       return rank(a.id)-rank(b.id);
     });
-  const { active, select } = useHashTab(tabs);
+  const { active, select } = useHashTab(tabs, ARTICLE_ANCHOR_TABS);
 
   // 讨论分节已不在标签栏（id="community" 现在是普通锚点）。客户端渲染下浏览器
   // 处理 hash 时元素还不存在，旧链接 #community 会停在页首；数据就绪后补一次滚动。
@@ -782,6 +781,8 @@ export function EntityDetailView({ id }: { id: string }) {
         <PageShell width="narrow">
           <EntityEditor
             initial={entity}
+            initialSection={searchParams.get("section") || "basic"}
+            initialLocale={searchParams.get("article_locale") || ""}
             onSaved={(updated) => {
               setEntity(updated);
               setEditing(false);
@@ -824,25 +825,6 @@ export function EntityDetailView({ id }: { id: string }) {
   const directTracks = children.filter((c) => c.kind === "track" && !listedMediumIds.has(c.medium_id));
   const otherChildren = children.filter((c) => c.kind !== "medium" && c.kind !== "track")
     .sort((a, b) => a.position - b.position);
-
-  const rowLocales = Object.keys(entity.translations || {});
-  const chain = buildTitleChain(locale, { order: titleOrder, originalLanguage: entity.original_language }, rowLocales);
-  const summaryRow = (() => {
-    for (const loc of chain) {
-      const row = findRowForLocale(
-        Object.entries(entity.translations || {}).map(([l, r]) => ({ locale: l, summary: r?.summary })),
-        loc,
-      );
-      const s = (row?.summary || "").trim();
-      if (s) return s;
-    }
-    return "";
-  })();
-  const summaryText =
-    summaryRow ||
-    entity.attributes?.summary ||
-    entity.attributes?.description ||
-    "";
 
   return (
     <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
@@ -969,16 +951,13 @@ export function EntityDetailView({ id }: { id: string }) {
           {/* Action Toolbar */}
           <div className="pt-3 border-t border-line-subtle flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              {/* 编辑 / 合并 / 修订历史：此前只有作品页有这三个入口，八种实体统一到同一工具栏。 */}
+              {/* 公共历史统一放在“历史变更”页签。 */}
               <EntityActionToolbar
                 onEdit={() => setEditing(true)}
-                onHistory={() => setIsHistoryOpen(true)}
                 onMerge={() => setIsMergeOpen(true)}
                 entityTypeLabel={kindLabel(entity.kind)}
               >
                 <FavoriteButton targetType={entity.kind as FavoriteTargetType} targetId={entity.id || id} />
-                {/* 条目本身的举报入口：与收藏同一行，不再单开一块工具栏。 */}
-                <ReportButton targetType="entity" targetId={entity.id || id} />
               </EntityActionToolbar>
 
               <Link
@@ -1191,15 +1170,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 {t("entity.page.overviewTitle")}
               </SectionTitle>
 
-              {summaryText ? (
-                <div className="text-sm text-text-strong leading-relaxed whitespace-pre-line">
-                  {summaryText}
-                </div>
-              ) : (
-                <div className="text-xs text-text-muted italic">
-                  {t("entity.page.noSummary")}
-                </div>
-              )}
+              <EntityArticle entity={entity} titleOrder={titleOrder} />
 
               {/* 图片画廊：**数组顺序就是作者定的展示顺序**，pictures[0] 即封面（唯一口径见 lib/cover.ts）。
                   这里过去按 taken_at 重排过——那等于前端静默覆盖作者的排序，与服务端契约直接冲突，已删；
@@ -1690,7 +1661,7 @@ export function EntityDetailView({ id }: { id: string }) {
               <SectionTitle icon={<History className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                 {t("entity.page.revisionsHistory")}
                 <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                  {revisions.length || 1}
+                  {revisions.length}
                 </span>
               </SectionTitle>
 
@@ -1898,14 +1869,6 @@ export function EntityDetailView({ id }: { id: string }) {
         </div>
       </PageShell>
 
-      {/* 修订历史与实体合并：与作品页同一实现，八种实体共用。 */}
-      <RevisionHistoryModal
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        targetType={entity.kind}
-        targetId={entity.id || id}
-        entityTitle={localizedTitle}
-      />
       <EntityMergeModal
         isOpen={isMergeOpen}
         onClose={() => setIsMergeOpen(false)}

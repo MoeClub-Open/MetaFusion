@@ -29,7 +29,9 @@ import { formatDuration as formatDurationShared } from "@/lib/duration";
 import { AdaptiveCardCover } from "@/components/common/AdaptiveCardCover";
 import { CoverOriginNote } from "@/components/common/CoverOriginNote";
 import { resolveCover } from "@/lib/cover";
-import ReportButton from "@/components/report/ReportButton";
+import { EntityArticle } from "@/components/catalog/EntityArticle";
+import { ARTICLE_ANCHOR_TABS } from "@/lib/catalogArticle";
+import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { ErrorMessage } from "@/components/catalog/Fields";
 import { InclusionSources } from "@/components/catalog/InclusionContents";
 import { TabBar, useHashTab, type TabItem } from "@/components/catalog/DetailTabs";
@@ -149,6 +151,7 @@ export default function ReleaseDetailLayout() {
   const params = useParams();
   const releaseId = params.id as string;
   const { t, locale } = useI18n();
+  const titleOrder = useTitleDisplayOrder();
   // 定义一律走 lib/definitions.ts 的缓存（与 /catalog 路由同源）——定义从来不住在 CatalogProvider 里
   // （Provider 只留模块状态与实例初始化状态），以前这里读 Provider 的 definition 恒为 undefined，字段名只能显示裸码。
   const { definitions: dynamicDefs, kinds } = useDefinitions();
@@ -440,7 +443,7 @@ export default function ReleaseDetailLayout() {
     { id: "comments", label: t("entity.page.communityTitle"), badge: commentCount ?? undefined, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("release.detail.tabRevisions"), badge: revisionsState === "ready" ? revisions.length : undefined, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ];
-  const { active: activeSection, select: selectSection } = useHashTab(sectionTabs);
+  const { active: activeSection, select: selectSection } = useHashTab(sectionTabs, ARTICLE_ANCHOR_TABS);
 
   if (loading) {
     return (
@@ -855,8 +858,6 @@ export default function ReleaseDetailLayout() {
                   </Link>
                 )}
               </span>
-              {/* 发行版本身的举报入口：与 /works 的条目举报同为 target_type=entity。 */}
-              <ReportButton targetType="entity" targetId={releaseId} />
               {basketNotice && <span className="font-mono text-[10px] text-amber-600 dark:text-warn">{basketNotice}</span>}
             </div>
           </div>
@@ -873,6 +874,11 @@ export default function ReleaseDetailLayout() {
         <TabBar ariaLabel={t("entity.page.sections")} active={activeSection} onSelect={selectSection} items={sectionTabs} />
 
         <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={activeSection !== "overview"} className="space-y-4">
+
+          <Card padding="section" className="space-y-4">
+            <SectionTitle icon={<BookOpen className="w-4 h-4 text-primary" strokeWidth={1.5} />}>{t("entity.page.overviewTitle")}</SectionTitle>
+            <EntityArticle entity={release} titleOrder={titleOrder} />
+          </Card>
 
         {editionsError && <div className="space-y-2"><ErrorMessage error={editionsError}/><button type="button" onClick={() => setReloadKey((key) => key+1)}>{t("catalog.retry")}</button></div>}
         {blocksForEntity(dynamicDefs,"release",release.attributes).includes("editions") && siblingReleases.length > 1 && (

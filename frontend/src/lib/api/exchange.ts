@@ -17,6 +17,7 @@ import { localizeCatalogError } from "@/lib/catalogErrors";
 export interface ExchangeTranslation {
   title?: string;
   summary?: string;
+  body?: string;
   aliases?: string[];
 }
 

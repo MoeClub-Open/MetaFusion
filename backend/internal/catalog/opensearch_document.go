@@ -179,6 +179,11 @@ func makeSearchDocument(e Entity) searchDocument {
 		add(&titles, translation.Title)
 		addText(translation.Title)
 		addText(translation.Summary)
+		// Index the full article rather than silently truncating it at add's
+		// 4096-rune limit. Overlap preserves substring matches across chunks.
+		for _, chunk := range splitSearchText(translation.Body) {
+			addText(chunk)
+		}
 		for _, alias := range translation.Aliases {
 			addText(alias)
 		}
