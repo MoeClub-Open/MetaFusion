@@ -9,7 +9,7 @@ import { loadCatalogSection } from "../src/lib/catalogSection";
 import ts from "typescript";
 
 test("local release search covers translations, aliases, external IDs and attributes", () => {
-  const entity = { title: "First Press", translations: { ja: { title: "初回盤", aliases: ["限定版"], summary: "特典映像" } }, external_ids: { musicbrainz: "ABC-123" }, attributes: { catalog_number: "XYZ-007" } };
+  const entity = { title: "First Press", translations: { ja: { title: "初回盤", aliases: ["限定版"], summary: "特典映像" } }, external_links: [{ kind: "musicbrainz", url: "mf://external/musicbrainz/ABC-123", external_id: "ABC-123" }], attributes: { catalog_number: "XYZ-007" } };
   for (const query of ["first", "初回", "限定", "特典", "abc-123", "musicbrainz:abc-123", "xyz-007", " "]) assert.ok(matchesEntityQuery(entity, query), query);
   assert.equal(matchesEntityQuery(entity, "unrelated"), false);
   assert.equal(matchesEntityQuery({}, "anything"), false);
@@ -54,7 +54,7 @@ test("merge preview accepts only another published record with matching ownershi
 });
 
 test("picker identity differentiates same-title records without inferred metadata", () => {
-  assert.equal(entityIdentitySuffix({ id: "12345678-abcd", external_ids: { isbn: "978-1" } }), "isbn: 978-1 · 12345678");
+  assert.equal(entityIdentitySuffix({ id: "12345678-abcd", external_links: [{ kind: "isbn", url: "mf://external/isbn/978-1", external_id: "978-1" }] }), "isbn: 978-1 · 12345678");
   assert.equal(entityIdentitySuffix({ id: "abcdef01-abcd" }), "abcdef01");
 });
 

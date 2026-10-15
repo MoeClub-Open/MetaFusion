@@ -353,8 +353,15 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 		add("alias")
 	}
 
-	for _, ext := range in.ExternalIDs {
-		if e.ExternalIDs != nil && e.ExternalIDs[ext.Provider] == ext.Value {
+	extHit := false
+	for _, ext := range in.ExternalLinks {
+		for _, link := range e.ExternalLinks {
+			if link.Kind == ext.Kind && (link.ExternalID == ext.Value || link.URL == ext.Value) {
+				extHit = true
+				break
+			}
+		}
+		if extHit {
 			add("external_id")
 			break
 		}

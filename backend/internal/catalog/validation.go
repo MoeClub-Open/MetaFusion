@@ -915,15 +915,27 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 // 所有写路径均由 guardImportKey 禁止新声明或改写。
 var legacyImportKeys = map[string]bool{"metafusion_import": true}
 
-// guardImportKey 阻止非导入写入**新声明或改写**内部幂等键。
-// 同值放行：PUT 是全量替换（AGENTS.md 的"先读全量再写"），已带该键的条目原样写回
-// 必须通过，否则任何一次常规编辑都会被自己的历史键挡住。
-func guardImportKey(next, prev map[string]string) error {
-	key := strings.TrimSpace(next["metafusion_import"])
-	if key == "" || key == strings.TrimSpace(prev["metafusion_import"]) {
-		return nil
+const maxExternalLinks = 50
+
+func importKeyFromLinks(links []ExternalLink) string {
+	for _, link := range links {
+		if legacyImportKeys[link.Kind] {
+			return strings.TrimSpace(link.ExternalID)
+		}
 	}
-	return fmt.Errorf("invalid_import_key")
+	return ""
+}
+
+// guardImportKey 阻止非导入写入**新声明或改写**内部幂等键。
+// 同值放行：PUT 是全量替换，已带该键的条目原样写回必须通过。
+func guardImportKey(next, prev []ExternalLink) error {
+	p := importKeyFromLinks(prev)
+	for _, link := range next {
+		if legacyImportKeys[link.Kind] && strings.TrimSpace(link.ExternalID) != "" && strings.TrimSpace(link.ExternalID) != p {
+			return fmt.Errorf("invalid_import_key")
+		}
+	}
+	return nil
 }
 
 // validImportKey 校验幂等键格式。基础键按来源各自的 ID 形态收敛：
@@ -936,31 +948,59 @@ var importKeyPattern = regexp.MustCompile(`^(?:bangumi:(?:subject|person|charact
 
 func validImportKey(s string) bool { return importKeyPattern.MatchString(strings.TrimSpace(s)) }
 
-// validateExternalIDs 校验 external_ids：
-//   - 键必须符合 codePattern（与 external_databases.code 的库约束同口径）；
-//     具体"是否存在+正则+分类"由 Store.Save 经 validateExternalIDsAgainstDB
-//     按预设表复核（需读库，此处无库）；
-//   - 值非空、长度收敛；metafusion_import 内部键只验格式（invalid_import_key）。
-func (d Definitions) validateExternalIDs(e Entity) error {
-	if len(e.ExternalIDs) == 0 {
+// validateExternalLinks 校验 external_links：
+//   - kind 符合 codePattern；url 必填且收敛；optional external_id / role / origin；
+//   - 同一实体 (kind, url) 不重复；最多 maxExternalLinks 条；
+//   - metafusion_import 的 external_id 只验格式；预设存在性由 validateExternalLinksAgainstDB。
+func (d Definitions) validateExternalLinks(e Entity) error {
+	if len(e.ExternalLinks) == 0 {
 		return nil
 	}
-	for k, v := range e.ExternalIDs {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return fmt.Errorf("invalid_external_id: %s", k)
+	if len(e.ExternalLinks) > maxExternalLinks {
+		return fmt.Errorf("too_many_external_links")
+	}
+	seen := map[string]bool{}
+	for i := range e.ExternalLinks {
+		link := &e.ExternalLinks[i]
+		link.Kind = strings.TrimSpace(link.Kind)
+		link.URL = strings.TrimSpace(link.URL)
+		link.ExternalID = strings.TrimSpace(link.ExternalID)
+		link.Role = strings.TrimSpace(link.Role)
+		link.Origin = strings.TrimSpace(link.Origin)
+		if link.Kind == "" || link.URL == "" {
+			return fmt.Errorf("invalid_external_link")
 		}
-		if len(k) > 64 || len(v) > 2000 {
-			return fmt.Errorf("invalid_external_id: %s", k)
+		if len(link.Kind) > 64 || len(link.URL) > 2000 || len(link.ExternalID) > 2000 {
+			return fmt.Errorf("invalid_external_link")
 		}
-		if legacyImportKeys[k] {
-			if !validImportKey(v) {
+		// Bare identifiers use an internal display token; all other links must
+		// be absolute HTTP(S) URLs. Never accept executable or relative URLs.
+		if !validURL(link.URL) && (link.ExternalID == "" || link.URL != externalLinkURL(link.Kind, link.ExternalID, "")) {
+			return fmt.Errorf("invalid_external_link")
+		}
+		switch link.Role {
+		case "", "official", "primary", "secondary", "operator":
+		default:
+			return fmt.Errorf("invalid_external_link_role")
+		}
+		switch link.Origin {
+		case "", "migration", "commit":
+		default:
+			return fmt.Errorf("invalid_external_link_origin")
+		}
+		key := link.Kind + "|" + link.URL
+		if seen[key] {
+			return fmt.Errorf("duplicate_external_link")
+		}
+		seen[key] = true
+		if legacyImportKeys[link.Kind] {
+			if link.ExternalID == "" || !validImportKey(link.ExternalID) {
 				return fmt.Errorf("invalid_import_key")
 			}
 			continue
 		}
-		if !codePattern.MatchString(k) {
-			return fmt.Errorf("invalid_external_key: %s", k)
+		if !codePattern.MatchString(link.Kind) {
+			return fmt.Errorf("invalid_external_key: %s", link.Kind)
 		}
 	}
 	return nil
@@ -1121,7 +1161,7 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 		if s.Position < 0 {
 			return fmt.Errorf("invalid_position")
 		}
-		key := s.WorkID + "\x00" + s.Role
+		key := s.WorkID + "|" + s.Role
 		if seenSubject[key] {
 			return fmt.Errorf("duplicate_subject")
 		}
@@ -1153,7 +1193,7 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 			return fmt.Errorf("duplicate_position")
 		}
 		positions[c.Position] = true
-		exprLocKey := c.ExpressionID + "\x00" + encode(c.Locator)
+		exprLocKey := c.ExpressionID + "|" + encode(c.Locator)
 		if seenExprLoc[exprLocKey] {
 			return fmt.Errorf("duplicate_content")
 		}

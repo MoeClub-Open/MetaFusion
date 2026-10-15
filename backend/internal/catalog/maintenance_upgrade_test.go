@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/migrator"
 	"github.com/metafusion/metafusion-app/internal/testutil"
-	"github.com/metafusion/metafusion-app/migrations"
 )
 
 func TestRetiringIndexesPreservesCatalog(t *testing.T) {
@@ -54,7 +53,7 @@ func TestRetiringIndexesPreservesCatalog(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO catalog.definition_config(singleton,etag,document) VALUES(true,'fixture',$1)`, encode(Defaults())); err != nil {
 		t.Fatal(err)
 	}
-	upgrade := migrator.New(db, migrations.FS)
+	upgrade := migrator.New(db, catalogMigrationsBefore(t, "000030"))
 	if err := upgrade.Up(ctx); err != nil {
 		t.Fatal(err)
 	}

@@ -40,11 +40,12 @@ function CandidateSummary({ candidate, label, definitions, kindLabel }: {
         </div>;
       })}
     </dl>
-    {Object.keys(candidate.external_ids || {}).length > 0 && <div>
+    {(candidate.external_links || []).length > 0 && <div>
       <p className="text-xs text-text-muted">{t("catalog.externalIds")}</p>
       <dl className="space-y-1 text-sm">
-        {Object.entries(candidate.external_ids || {}).map(([provider, id]) => <div key={provider} className="flex flex-wrap gap-x-2">
-          <dt className="text-text-muted">{provider}</dt><dd className="break-all">{id}</dd>
+        {(candidate.external_links || []).map((link) => <div key={`${link.kind}:${link.url}`} className="flex flex-wrap gap-x-2">
+          <span className="font-mono text-xs text-text-muted">{link.kind}</span>
+          <span className="font-mono text-xs">{link.external_id || link.url}</span>
         </div>)}
       </dl>
     </div>}

@@ -4,33 +4,49 @@ import (
 	"testing"
 )
 
+func TestMergeExternalLinksDoesNotDiscardMetadata(t *testing.T) {
+	base := linkFromID("bangumi", "7")
+	changed := base
+	changed.Role = "official"
+	if _, err := mergeExternalLinks([]ExternalLink{base}, []ExternalLink{changed}); err == nil {
+		t.Fatal("same URL with different metadata was silently discarded")
+	}
+}
+
 // M04：内部幂等键不复制——源 merged 行保留它做别名，目标复制即撞唯一索引
-// （entities_metafusion_import_key 覆盖 merged/deleted 行）；其它键沿用
+// （external_links_metafusion_import_key 覆盖 merged/deleted 行）；其它键沿用
 // 缺键补齐/同值幂等/异值冲突的旧口径。
-func TestMergeExternalIDsSkipsInternalKey(t *testing.T) {
-	got, err := mergeExternalIDs(
-		map[string]string{"bangumi": "7"},
-		map[string]string{"metafusion_import": "bangumi:subject:7", "bangumi": "7", "official_website": "https://example.com/"},
+func TestMergeExternalLinksSkipsInternalKey(t *testing.T) {
+	got, err := mergeExternalLinks(
+		[]ExternalLink{linkFromID("bangumi", "7")},
+		[]ExternalLink{
+			linkFromID("metafusion_import", "bangumi:subject:7"),
+			linkFromID("bangumi", "7"),
+			linkFromID("official_website", "https://example.com/"),
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got["metafusion_import"]; ok {
-		t.Fatalf("内部幂等键不得复制到目标：%v", got)
+	for _, link := range got {
+		if link.Kind == "metafusion_import" {
+			t.Fatalf("内部幂等键不得复制到目标：%v", got)
+		}
 	}
-	if got["bangumi"] != "7" || got["official_website"] != "https://example.com/" {
+	byKind := map[string]ExternalLink{}
+	for _, link := range got {
+		byKind[link.Kind] = link
+	}
+	if byKind["bangumi"].ExternalID != "7" || byKind["official_website"].URL != "https://example.com" {
 		t.Fatalf("普通键应补齐：%v", got)
 	}
-	// 同值重复合并幂等。
-	if _, err = mergeExternalIDs(got, map[string]string{"bangumi": "7"}); err != nil {
+	if _, err = mergeExternalLinks(got, []ExternalLink{linkFromID("bangumi", "7")}); err != nil {
 		t.Fatalf("同值重复合并应幂等：%v", err)
 	}
-	// 同键异值冲突。
-	if _, err = mergeExternalIDs(got, map[string]string{"bangumi": "8"}); err == nil {
+	if _, err = mergeExternalLinks(got, []ExternalLink{linkFromID("bangumi", "8")}); err == nil {
 		t.Fatal("同键异值必须报 merge_external_conflict")
 	}
-	// 空源不碰目标（含 nil 目标）。
-	if out, err := mergeExternalIDs(nil, nil); err != nil || out != nil {
+	if out, err := mergeExternalLinks(nil, nil); err != nil || out != nil {
 		t.Fatalf("空源应原样返回，实际 %v %v", out, err)
 	}
 }

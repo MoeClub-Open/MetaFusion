@@ -5,3 +5,5 @@
 # 版本锁中的已验证 Git 提交 SHA，分别对应 auth 与 api-gateway；仅标注这两条误报。
 ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:28
 ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:31
+# auth 仓已验证的公开提交 SHA；仅忽略本次版本锁行的误报。
+cf7d8c6963063c6c854dbc2e9031f7364ede843a:deploy/versions.lock:generic-api-key:28

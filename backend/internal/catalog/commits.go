@@ -115,7 +115,7 @@ var errPreviewRollback = errors.New("preview_rollback")
 var errDefinitionsConflict = errors.New("definitions_conflict")
 var commitRef = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 
-var entityCommitFields = strings.Fields("title original_language translations attributes external_ids pictures status content_unit_id parent_id position number contents subjects")
+var entityCommitFields = strings.Fields("title original_language translations attributes external_links pictures status content_unit_id parent_id position number contents subjects")
 var relationCommitFields = strings.Fields("position attributes")
 
 func pointerParts(path string) ([]string, error) {
@@ -759,8 +759,15 @@ func commitIdentityQuery(e Entity) IdentityCandidateQuery {
 			q.Titles = append(q.Titles, translation.Title)
 		}
 	}
-	for provider, value := range e.ExternalIDs {
-		q.ExternalIDs = append(q.ExternalIDs, IdentityExternalCriterion{Provider: provider, Value: value})
+	for _, link := range e.ExternalLinks {
+		value := link.ExternalID
+		if value == "" {
+			value = link.URL
+		}
+		if value == "" || link.Kind == "" {
+			continue
+		}
+		q.ExternalLinks = append(q.ExternalLinks, IdentityExternalCriterion{Kind: link.Kind, Value: value})
 	}
 	switch e.Kind {
 	case "expression", "content_unit":

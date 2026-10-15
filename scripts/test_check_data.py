@@ -19,7 +19,7 @@ class ProductIdentifierChecks(unittest.TestCase):
         check_data.check_product_identifiers({
             "id": "release",
             "attributes": {"isbn": "9780306406152", "barcode": "96385075"},
-            "external_ids": {"openbd": "0306406153", "isbndb": "0804429570", "ean_jan": "4006381333932"},
+            "external_links": [{"kind": "openbd", "url": "mf://external/openbd/0306406153", "external_id": "0306406153"}, {"kind": "isbndb", "url": "mf://external/isbndb/0804429570", "external_id": "0804429570"}, {"kind": "ean_jan", "url": "mf://external/ean_jan/4006381333932", "external_id": "4006381333932"}],
         }, problems)
         self.assertEqual(5, len(problems))
         self.assertTrue(all(item[0] == "P1" for item in problems))
@@ -31,7 +31,7 @@ class ProductIdentifierChecks(unittest.TestCase):
         check_data.check_product_identifiers({
             "id": "release",
             "attributes": {"isbn": "0-8044-2957-X", "barcode": "REAL-1", "custom_code": "9780306406152"},
-            "external_ids": {"openbd": "9780306406157", "ean_jan": "036000291452", "new_authority": "9780306406152"},
+            "external_links": [{"kind": "openbd", "url": "mf://external/openbd/9780306406157", "external_id": "9780306406157"}, {"kind": "ean_jan", "url": "mf://external/ean_jan/036000291452", "external_id": "036000291452"}, {"kind": "new_authority", "url": "mf://external/new_authority/9780306406152", "external_id": "9780306406152"}],
         }, problems)
         self.assertEqual([], problems)
         check_data.check_product_identifiers({"id": "empty"}, problems)

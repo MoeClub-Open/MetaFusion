@@ -115,6 +115,15 @@ export type Definitions = {
     }
   >;
 };
+export type ExternalLink = {
+  kind: string;
+  url: string;
+  external_id?: string;
+  role?: "official" | "primary" | "secondary" | "operator" | "";
+  origin?: "migration" | "commit" | "";
+  source_refs?: { source: string; pointers?: string[] }[];
+};
+
 export type Entity = {
   id?: string;
   kind: string;
@@ -129,7 +138,7 @@ export type Entity = {
     { title: string; summary?: string; body?: string; aliases?: string[] }
   >;
   attributes: Record<string, any>;
-  external_ids: Record<string, string>;
+  external_links: ExternalLink[];
   // 多图契约（见 backend/internal/catalog/types.go 的 PicturesJSON）：**数组顺序就是展示顺序**，
   // pictures[0] 即封面，服务端保存时不重排；taken_at 只是这张图自身的时间元信息、不参与排序。
   // 取封面一律走 lib/cover.ts 的 coverPicture / coverUrl，不在消费点重新索引 [0]。
@@ -274,7 +283,7 @@ export function emptyEntity(kind = "work"): Entity {
     original_language: "",
     translations: {},
     attributes: {},
-    external_ids: {},
+    external_links: [],
     pictures: [],
     position: 0,
     number: "",

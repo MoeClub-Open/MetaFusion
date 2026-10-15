@@ -546,7 +546,7 @@ func dlsiteArtistPreviews(p *dlsiteParsed) []ExternalSourceArtistPreview {
 				EntityType:   entityType,
 				Language:     "ja",
 				RelationType: relationType,
-				ExternalIDs:  external,
+				ExternalLinks: previewLinks(external),
 			})
 		}
 	}

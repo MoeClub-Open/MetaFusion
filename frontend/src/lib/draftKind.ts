@@ -26,7 +26,7 @@ export function changeDraftKind(entity: Entity, targetDefaults: Entity): Entity 
     status: entity.status,
     original_language: entity.original_language,
     translations: structuredClone(entity.translations),
-    external_ids: structuredClone(entity.external_ids),
+    external_links: structuredClone(entity.external_links || []),
     pictures: structuredClone(entity.pictures),
     attributes: Object.prototype.hasOwnProperty.call(entity.attributes || {}, "tags")
       ? { tags: structuredClone(entity.attributes.tags) }

@@ -20,7 +20,7 @@ func TestCommitIdentityUpdateReviewValidation(t *testing.T) {
 		path string
 		need bool
 	}{
-		{"/title", true}, {"/external_ids", true}, {"/external_ids/wikidata", true},
+		{"/title", true}, {"/external_links", true},
 		{"/translations", true}, {"/translations/zh-CN", true}, {"/translations/zh-CN/title", true},
 		{"/translations/zh-CN/summary", false}, {"/translations/zh-CN/aliases", false},
 		{"/attributes/language", false}, {"/pictures", false},
@@ -67,12 +67,12 @@ func TestPostgresCommitIdentityUpdatesAndCanonicalSelf(t *testing.T) {
 		{"title", patchValue("/title", "Taken identity")},
 		{"localized title", patchValue("/translations/en/title", "Taken identity")},
 		{"localized row", patchValue("/translations/en", Translation{Title: "Taken identity"})},
-		{"external ID", patchValue("/external_ids/wikidata", "Q9001")},
+		{"external link", patchValue("/external_links", []ExternalLink{linkFromID("wikidata", "Q9001")})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			ctx := context.Background()
-			taken := f.save(Entity{Kind: "work", Title: "Taken identity", ExternalIDs: map[string]string{"wikidata": "Q9001"}})
+			taken := f.save(Entity{Kind: "work", Title: "Taken identity", ExternalLinks: linksFromIDMap(map[string]string{"wikidata": "Q9001"})})
 			own := f.save(Entity{Kind: "work", Title: "Own identity"})
 			in := fixtureCommit(f, updateCommit(own, tc.patch))
 			for _, preview := range []bool{true, false} {

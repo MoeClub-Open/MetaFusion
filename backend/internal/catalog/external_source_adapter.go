@@ -71,7 +71,7 @@ type ExternalSourceArtistPreview struct {
 	AvatarURL      string                          `json:"avatar_url,omitempty"`
 	CharacterName  string                          `json:"character_name,omitempty"`
 	Aliases        []string                        `json:"aliases,omitempty"`
-	ExternalIDs    map[string]any                  `json:"external_ids,omitempty"`
+	ExternalLinks  []map[string]any                `json:"external_links,omitempty"`
 	Translations   []ExternalSourceTranslationItem `json:"translations,omitempty"`
 	// RelationType 是该关联应落到 definitions 的关系码（如 directed_by / voiced_by / character_in）；
 	// RelationRole 是角色番位的 character_rank 词表项（main/supporting/guest/ensemble/narrator/cameo，
@@ -123,15 +123,15 @@ type ExternalSourceReleasePreview struct {
 }
 
 type ExternalSourceCanonicalEntryPreview struct {
-	Title            string         `json:"title"`
-	Translations     any            `json:"translations,omitempty"`
-	Position         int            `json:"position"`
-	Number           string         `json:"number,omitempty"`
-	EntryRole        string         `json:"entry_role,omitempty"`
-	OriginalLanguage string         `json:"original_language,omitempty"`
-	DurationSeconds  float64        `json:"duration_seconds,omitempty"`
-	Attributes       map[string]any `json:"attributes,omitempty"`
-	ExternalIDs      map[string]any `json:"external_ids,omitempty"`
+	Title            string           `json:"title"`
+	Translations     any              `json:"translations,omitempty"`
+	Position         int              `json:"position"`
+	Number           string           `json:"number,omitempty"`
+	EntryRole        string           `json:"entry_role,omitempty"`
+	OriginalLanguage string           `json:"original_language,omitempty"`
+	DurationSeconds  float64          `json:"duration_seconds,omitempty"`
+	Attributes       map[string]any   `json:"attributes,omitempty"`
+	ExternalLinks    []map[string]any `json:"external_links,omitempty"`
 	// EntryKind 条目落库层级："content_unit"（篇目/分集，可带下级）或
 	// "expression"（默认，录音/正文）。由来源结构决定，不由标题猜测。
 	EntryKind string `json:"entry_kind,omitempty"`
@@ -807,14 +807,14 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Extern
 				biography = strings.TrimSpace(d.Summary)
 			}
 			out = append(out, ExternalSourceArtistPreview{
-				Name:         name,
-				OriginalName: name,
-				Role:         role,
-				EntityType:   agentType,
-				Biography:    biography,
-				Language:     detectEntityLanguage(name, biography),
-				AvatarURL:    bangumiAvatarURL(p.Images),
-				ExternalIDs:  map[string]any{"bangumi_person": p.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(p.ID)},
+				Name:          name,
+				OriginalName:  name,
+				Role:          role,
+				EntityType:    agentType,
+				Biography:     biography,
+				Language:      detectEntityLanguage(name, biography),
+				AvatarURL:     bangumiAvatarURL(p.Images),
+				ExternalLinks: previewLinks(map[string]any{"bangumi_person": p.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(p.ID)}),
 				// 职位文本保真：语义明确时给关系码，否则由 credit_role 承载原文。
 				RelationType: rel,
 			})
@@ -831,16 +831,16 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Extern
 			// 角色本体：character_in → 作品。番位词表项（主角/配角/客串）进 relation_role，
 			// 原始文本（含"旁白""闲角"等词表未覆盖的）一律进 credit_role 保证无损。
 			out = append(out, ExternalSourceArtistPreview{
-				Name:         name,
-				OriginalName: name,
-				Role:         rank,
-				EntityType:   bangumiCharacterAgentType(nil, c.Summary),
-				Biography:    strings.TrimSpace(c.Summary),
-				Language:     detectEntityLanguage(name, c.Summary),
-				AvatarURL:    bangumiAvatarURL(c.Images),
-				ExternalIDs:  map[string]any{"bangumi_character": c.ID, "metafusion_import": "bangumi:character:" + strconv.Itoa(c.ID)},
-				RelationType: "character_in",
-				RelationRole: bangumiCharacterRankRole(rank),
+				Name:          name,
+				OriginalName:  name,
+				Role:          rank,
+				EntityType:    bangumiCharacterAgentType(nil, c.Summary),
+				Biography:     strings.TrimSpace(c.Summary),
+				Language:      detectEntityLanguage(name, c.Summary),
+				AvatarURL:     bangumiAvatarURL(c.Images),
+				ExternalLinks: previewLinks(map[string]any{"bangumi_character": c.ID, "metafusion_import": "bangumi:character:" + strconv.Itoa(c.ID)}),
+				RelationType:  "character_in",
+				RelationRole:  bangumiCharacterRankRole(rank),
 			})
 			// 声优：voiced_by → 作品，attributes.character 保留角色名，供前端把配音与登场角色配对展示。
 			for _, a := range c.Actors {
@@ -863,7 +863,7 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Extern
 					Language:      detectEntityLanguage(an, biography),
 					AvatarURL:     bangumiAvatarURL(a.Images),
 					CharacterName: name,
-					ExternalIDs:   map[string]any{"bangumi_person": a.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(a.ID)},
+					ExternalLinks: previewLinks(map[string]any{"bangumi_person": a.ID, "metafusion_import": "bangumi:person:" + strconv.Itoa(a.ID)}),
 					RelationType:  "voiced_by",
 				})
 			}
@@ -1064,7 +1064,7 @@ func previewBangumiEpisodes(ctx context.Context, subjectID int) ([]ExternalSourc
 					EntryRole:       bangumiEpisodeRole(ep.Type),
 					EntryKind:       "content_unit",
 					DurationSeconds: bangumiDurationSeconds(ep.Duration),
-					ExternalIDs:     map[string]any{"bangumi_episode": ep.ID},
+					ExternalLinks:   previewLinks(map[string]any{"bangumi_episode": ep.ID}),
 				}
 				if strings.TrimSpace(ep.NameCN) != "" && strings.TrimSpace(ep.Name) != "" && ep.NameCN != ep.Name {
 					entry.OriginalLanguage = detectJapaneseScript(ep.Name)
@@ -1307,15 +1307,15 @@ func previewBangumiPerson(ctx context.Context, source string, id int) (ExternalS
 		ExternalURL: "https://bgm.tv/person/" + strconv.Itoa(p.ID),
 		MediaType:   agentType,
 		Artist: &ExternalSourceArtistPreview{
-			Name:         name,
-			OriginalName: original,
-			Role:         role,
-			EntityType:   agentType,
-			Biography:    p.Summary,
-			AvatarURL:    p.Images.best(),
-			Aliases:      []string{},
-			ExternalIDs:  map[string]any{"bangumi_person": p.ID},
-			Translations: bangumiTranslationItems(p.Name, p.NameCN, p.Summary),
+			Name:          name,
+			OriginalName:  original,
+			Role:          role,
+			EntityType:    agentType,
+			Biography:     p.Summary,
+			AvatarURL:     p.Images.best(),
+			Aliases:       []string{},
+			ExternalLinks: previewLinks(map[string]any{"bangumi_person": p.ID}),
+			Translations:  bangumiTranslationItems(p.Name, p.NameCN, p.Summary),
 		},
 		Tags: []string{},
 	}, nil
@@ -1340,15 +1340,15 @@ func previewBangumiCharacter(ctx context.Context, source string, id int) (Extern
 		ExternalURL: "https://bgm.tv/character/" + strconv.Itoa(ch.ID),
 		MediaType:   "character",
 		Artist: &ExternalSourceArtistPreview{
-			Name:         name,
-			OriginalName: original,
-			Role:         "Character",
-			EntityType:   agentType,
-			Biography:    ch.Summary,
-			AvatarURL:    ch.Images.best(),
-			Aliases:      []string{},
-			ExternalIDs:  map[string]any{"bangumi_character": ch.ID},
-			Translations: bangumiTranslationItems(ch.Name, ch.NameCN, ch.Summary),
+			Name:          name,
+			OriginalName:  original,
+			Role:          "Character",
+			EntityType:    agentType,
+			Biography:     ch.Summary,
+			AvatarURL:     ch.Images.best(),
+			Aliases:       []string{},
+			ExternalLinks: previewLinks(map[string]any{"bangumi_character": ch.ID}),
+			Translations:  bangumiTranslationItems(ch.Name, ch.NameCN, ch.Summary),
 		},
 		Tags: []string{},
 	}, nil

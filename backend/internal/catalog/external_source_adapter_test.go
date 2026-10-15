@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"fmt"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -169,8 +170,8 @@ func TestExternalSourcePreviewBangumi(t *testing.T) {
 		t.Fatalf("bad person mapping: %+v", person.Artist)
 	}
 	// 预览 DTO 直接装箱 Go 的 int ID。
-	if v := person.Artist.ExternalIDs["bangumi_person"]; v != 9 && v != "9" && v != float64(9) {
-		t.Fatalf("bad person external_ids: %v", person.Artist.ExternalIDs)
+	if v := previewLinkID(person.Artist.ExternalLinks, "bangumi_person"); fmt.Sprint(v) != "9" {
+		t.Fatalf("bad person external_links: %v", person.Artist.ExternalLinks)
 	}
 
 	character, err := f.s.Preview(ctx, "bangumi", "https://bgm.tv/character/11", "character")
@@ -249,7 +250,7 @@ func TestExternalSourcePreviewEpisodes(t *testing.T) {
 	// OP（type=2）不应被 type=0 的固定查询漏掉，role 应映射为非本篇。
 	var op *ExternalSourceCanonicalEntryPreview
 	for i := range work.CanonicalEntries {
-		if work.CanonicalEntries[i].ExternalIDs["bangumi_episode"] == 201 {
+		if fmt.Sprint(previewLinkID(work.CanonicalEntries[i].ExternalLinks, "bangumi_episode")) == "201" {
 			op = &work.CanonicalEntries[i]
 		}
 	}

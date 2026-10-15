@@ -22,7 +22,7 @@ export function DiffViewer({ diff, editType = "update", className = "" }: Props)
       title: t("editor.diff.fieldTitle"),
       status: t("editor.diff.fieldStatus"),
       translations: t("editor.diff.fieldTranslations"),
-      external_ids: t("editor.diff.fieldExternalIds"),
+      external_links: t("editor.diff.fieldExternalLinks"),
     };
     const dot = key.indexOf(".");
     if (dot > 0) {

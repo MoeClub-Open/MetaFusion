@@ -60,31 +60,46 @@ func rewriteEntityRefs(d Definitions, e *Entity, source, target string) {
 	}
 }
 
-// mergeExternalIDs 把源 external_ids 缺的键补给目标（幂等——重复合并结果一致）；
-// 同键不同值即冲突报错，不静默覆盖。metafusion_import 这类内部幂等键不复制：
-// 源行（merged）保留该键作为别名，目标若复制则撞唯一索引（见结构基线
-// entities_metafusion_import_key，它覆盖 merged/deleted 行）；重导经
-// findImported→Resolve 回到存活实体（X01 别名语义的目录侧部分）。
-// 调用方先手工去重的口径不变（与 000013 唯一索引"存量重复即失败"同策略）。
-func mergeExternalIDs(target, source map[string]string) (map[string]string, error) {
+// mergeExternalLinks 把源缺的 (kind,url) 补给目标（幂等）；同 kind+url 已存在则跳过，
+// 同 kind 但 url/external_id 冲突则报错。metafusion_import 不复制（源行保留别名）。
+func mergeExternalLinks(target, source []ExternalLink) ([]ExternalLink, error) {
 	if len(source) == 0 {
 		return target, nil
 	}
-	if target == nil {
-		target = map[string]string{}
+	index := map[string]ExternalLink{}
+	for _, link := range target {
+		index[link.Kind+"|"+link.URL] = link
 	}
-	for k, v := range source {
-		if legacyImportKeys[k] {
+	byKind := map[string]ExternalLink{}
+	for _, link := range target {
+		if legacyImportKeys[link.Kind] {
 			continue
 		}
-		if cur, ok := target[k]; ok && cur != v {
-			return nil, fmt.Errorf("merge_external_conflict: %s", k)
-		}
-		if _, ok := target[k]; !ok {
-			target[k] = v
-		}
+		byKind[link.Kind] = link
 	}
-	return target, nil
+	out := append([]ExternalLink{}, target...)
+	for _, link := range source {
+		if legacyImportKeys[link.Kind] {
+			continue
+		}
+		key := link.Kind + "|" + link.URL
+		if cur, ok := index[key]; ok {
+			if encode(cur) != encode(link) {
+				return nil, fmt.Errorf("merge_external_conflict: %s", link.Kind)
+			}
+			continue
+		}
+		if cur, ok := byKind[link.Kind]; ok {
+			if cur.URL != link.URL || cur.ExternalID != link.ExternalID {
+				return nil, fmt.Errorf("merge_external_conflict: %s", link.Kind)
+			}
+			continue
+		}
+		out = append(out, link)
+		index[key] = link
+		byKind[link.Kind] = link
+	}
+	return out, nil
 }
 
 // relationReferencesID 判定关系属性里是否有 definitions 声明的 entity 引用指向 id：
@@ -263,12 +278,12 @@ func mergeReferences(ctx context.Context, tx *sql.Tx, source, target Entity, u U
 				}
 			}
 		}
-		// ExternalIDs 合并：目标缺的键从源补齐（幂等——重复合并结果一致）；
-		// 外部键合并口径见 mergeExternalIDs：缺键补齐、同值幂等、异值冲突，
+		// ExternalLinks 合并：目标缺的键从源补齐（幂等——重复合并结果一致）；
+		// 外部键合并口径见 mergeExternalLinks：缺键补齐、同值幂等、异值冲突，
 		// 内部幂等键不复制（源行保留做别名）。
-		if id == target.ID && len(source.ExternalIDs) > 0 {
+		if id == target.ID && len(source.ExternalLinks) > 0 {
 			var err error
-			if e.ExternalIDs, err = mergeExternalIDs(e.ExternalIDs, source.ExternalIDs); err != nil {
+			if e.ExternalLinks, err = mergeExternalLinks(e.ExternalLinks, source.ExternalLinks); err != nil {
 				return err
 			}
 		}

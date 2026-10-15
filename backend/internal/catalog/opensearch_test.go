@@ -35,16 +35,16 @@ func TestNewOpenSearchClientValidatesURLAndCredentials(t *testing.T) {
 	}
 }
 
-func TestMakeSearchDocumentIncludesExternalIDs(t *testing.T) {
+func TestMakeSearchDocumentIncludesExternalLinks(t *testing.T) {
 	doc := makeSearchDocument(Entity{
 		ID:      uuid.NewString(),
 		Kind:    "work",
 		Version: 2,
 		Title:   "Example",
-		ExternalIDs: map[string]string{
+		ExternalLinks: linksFromIDMap(map[string]string{
 			"musicbrainz":  "abc-123",
 			"bangumi_work": "42",
-		},
+		}),
 	})
 	text := strings.Join(doc.SearchText, "\n")
 	exact := strings.Join(doc.SearchTextExact, "\n")
@@ -248,7 +248,7 @@ func TestIndexDocumentsWaitsForRefreshAndSendsExternalVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	docs := []searchDocument{
-		makeSearchDocument(Entity{ID: uuid.NewString(), Kind: "work", Version: 1, Title: "A", ExternalIDs: map[string]string{"source": "external-id"}}),
+		makeSearchDocument(Entity{ID: uuid.NewString(), Kind: "work", Version: 1, Title: "A", ExternalLinks: linksFromIDMap(map[string]string{"source": "external-id"})}),
 		makeSearchDocument(Entity{ID: uuid.NewString(), Kind: "work", Version: 1, Title: "B"}),
 	}
 	if err := client.writeDocuments(context.Background(), docs, nil, true); err != nil {

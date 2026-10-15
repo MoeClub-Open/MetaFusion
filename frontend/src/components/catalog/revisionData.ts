@@ -60,7 +60,7 @@ export function prepareRevisionRestore(current: Entity, snapshot: Entity): Entit
   }
   const result = structuredClone(current);
   const contentFields = ["title", "original_language", "translations", "attributes",
-    "external_ids", "pictures", "content_unit_id", "parent_id", "position", "number", "contents", "subjects"] as const;
+    "external_links", "pictures", "content_unit_id", "parent_id", "position", "number", "contents", "subjects"] as const;
   for (const key of contentFields) {
     if (Object.prototype.hasOwnProperty.call(snapshot, key)) {
       (result as any)[key] = structuredClone(snapshot[key]);

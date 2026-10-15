@@ -88,7 +88,7 @@ export function EntityEditor({
     attributes: initial?.attributes || {},
     translations: initial?.translations || {},
     pictures: initial?.pictures || [],
-    external_ids: initial?.external_ids || {},
+    external_links: initial?.external_links || [],
     contents: initial?.contents || [],
     subjects: initial?.subjects || [],
   }));
@@ -1233,27 +1233,64 @@ export function EntityEditor({
       </EditorPanel>}
       <EditorPanel name="media" active={activeSection} editorId={editorId}>
       <fieldset>
-        <legend>{t("catalog.externalIds")}</legend>
-        {Object.entries(e.external_ids).map(([k, v]) => (
-          <div key={k} className="cv-row">
+        <legend>{t("catalog.externalLinks")}</legend>
+        {(e.external_links || []).map((link, idx) => (
+          <div key={`${link.kind}-${link.url}-${idx}`} className="cv-row">
             <label>
-              {k}
+              {t("catalog.externalLinkKind")}
               <input
-                value={v}
-                onChange={(x) =>
-                  patch({
-                    external_ids: { ...e.external_ids, [k]: x.target.value },
-                  })
-                }
+                value={link.kind}
+                onChange={(x) => {
+                  const external_links = [...e.external_links];
+                  external_links[idx] = { ...link, kind: x.target.value };
+                  patch({ external_links });
+                }}
               />
+            </label>
+            <label>
+              {t("catalog.externalLinkId")}
+              <input
+                value={link.external_id || ""}
+                onChange={(x) => {
+                  const external_links = [...e.external_links];
+                  external_links[idx] = { ...link, external_id: x.target.value };
+                  patch({ external_links });
+                }}
+              />
+            </label>
+            <label>
+              {t("catalog.externalLinkUrl")}
+              <input
+                value={link.url}
+                onChange={(x) => {
+                  const external_links = [...e.external_links];
+                  external_links[idx] = { ...link, url: x.target.value };
+                  patch({ external_links });
+                }}
+              />
+            </label>
+            <label>
+              {t("catalog.externalLinkRole")}
+              <select
+                value={link.role || ""}
+                onChange={(x) => {
+                  const external_links = [...e.external_links];
+                  external_links[idx] = { ...link, role: x.target.value as any };
+                  patch({ external_links });
+                }}
+              >
+                <option value="">{t("catalog.externalLinkRoleNone")}</option>
+                <option value="official">{t("authority.role.official")}</option>
+                <option value="primary">{t("authority.role.primary")}</option>
+                <option value="secondary">{t("authority.role.secondary")}</option>
+                <option value="operator">{t("authority.role.operator")}</option>
+              </select>
             </label>
             <button
               type="button"
               onClick={() =>
                 patch({
-                  external_ids: Object.fromEntries(
-                    Object.entries(e.external_ids).filter(([key]) => key !== k),
-                  ),
+                  external_links: e.external_links.filter((_, i) => i !== idx),
                 })
               }
             >
@@ -1271,7 +1308,12 @@ export function EntityEditor({
             type="button"
             disabled={!externalKey}
             onClick={() => {
-              patch({ external_ids: { ...e.external_ids, [externalKey]: "" } });
+              patch({
+                external_links: [
+                  ...(e.external_links || []),
+                  { kind: externalKey, url: "", external_id: "" },
+                ],
+              });
               setExternalKey("");
             }}
           >

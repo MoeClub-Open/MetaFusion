@@ -18,16 +18,16 @@ const aliasID = "33333333-3333-4333-8333-333333333333";
 const scopeID = "44444444-4444-4444-8444-444444444444";
 const candidate = (id = otherID): IdentityCandidateEntity => ({
   id, kind: "work", title: "Candidate title", status: "published", version: 3,
-  translations: { ja: { title: "候補", aliases: ["別名"] } }, external_ids: { database: "123" }, attributes: {},
+  translations: { ja: { title: "候補", aliases: ["別名"] } }, external_links: [{ kind: "database", url: "mf://external/database/123", external_id: "123" }], attributes: {},
 });
 const entity = { ...emptyEntity(), id: ownID, title: "Candidate title" };
 const response = (items: unknown[], complete = true, total = items.length) => ({ items, complete, total, basis: "postgres_repeatable_read" });
 const match = (canonical = candidate(), matched = canonical) => ({ matched, canonical });
 
 test("lookup criteria match server titles, external identifiers and kind-specific ownership", () => {
-  const draft = { ...entity, translations: { ja: { title: "日本語", aliases: ["not a criterion"] }, en: { title: "English" } }, external_ids: { b: "2", a: "1" }, work_id: scopeID, release_id: scopeID, medium_id: scopeID };
+  const draft = { ...entity, translations: { ja: { title: "日本語", aliases: ["not a criterion"] }, en: { title: "English" } }, external_links: [{ kind: "a", url: "mf://external/a/1", external_id: "1" }, { kind: "b", url: "mf://external/b/2", external_id: "2" }], work_id: scopeID, release_id: scopeID, medium_id: scopeID };
   const query = identityCandidateQuery(draft);
-  assert.deepEqual(query, { kind: "work", titles: ["Candidate title", "English", "日本語"], external_ids: [{ provider: "a", value: "1" }, { provider: "b", value: "2" }] });
+  assert.deepEqual(query, { kind: "work", titles: ["Candidate title", "English", "日本語"], external_links: [{ kind: "a", value: "1" }, { kind: "b", value: "2" }] });
   for (const kind of ["expression", "content_unit"]) assert.equal(identityCandidateQuery({ ...draft, kind }).work_id, scopeID);
   assert.equal(identityCandidateQuery({ ...draft, kind: "medium" }).release_id, scopeID);
   assert.equal(identityCandidateQuery({ ...draft, kind: "track" }).medium_id, scopeID);
@@ -54,7 +54,7 @@ test("incomplete, malformed and unresolved lookups cannot be acknowledged as emp
     response([match({ ...candidate(), status: "merged" })]),
     response([match({ ...candidate(), kind: "agent" })]),
   ]) assert.throws(() => readIdentityCandidates(unresolved, entity), /identity_candidate_unresolved/);
-  for (const malformed of [{}, response([match(), match()]), response([match({ ...candidate(), external_ids: { unsafe: 123 } } as unknown as IdentityCandidateEntity)])]) {
+  for (const malformed of [{}, response([match(), match()]), response([match({ ...candidate(), external_links: [{ kind: "unsafe", url: 123 as any }] } as unknown as IdentityCandidateEntity)])]) {
     assert.throws(() => readIdentityCandidates(malformed, entity), /invalid_identity_review|identity_candidate_unresolved/);
   }
   assert.deepEqual(readIdentityCandidates(response([]), entity), { candidateIDs: [], items: [] });
@@ -68,7 +68,7 @@ test("receipt IDs are metadata, never implicit confirmation; explicit confirmati
   const review: IdentityReviewState = { key, expectedIDs: [otherID], status: "ready", confirmed: false, data: readIdentityCandidates(response([match()]), entity) };
   assert.equal(reviewedIdentityIDs(review, key), undefined);
   assert.deepEqual(reviewedIdentityIDs({ ...review, confirmed: true }, key), [otherID]);
-  for (const edited of [{ ...entity, title: "Changed" }, { ...entity, external_ids: { database: "456" } }, { ...entity, translations: { ja: { title: "Changed" } } }, { ...entity, translations: { ja: { title: "", aliases: ["Changed"] } } }]) {
+  for (const edited of [{ ...entity, title: "Changed" }, { ...entity, external_links: [{ kind: "database", url: "mf://external/database/456", external_id: "456" }] }, { ...entity, translations: { ja: { title: "Changed" } } }, { ...entity, translations: { ja: { title: "", aliases: ["Changed"] } } }]) {
     assert.equal(reviewedIdentityIDs({ ...review, confirmed: true }, identityReviewKey(edited)), undefined);
   }
   assert.equal(identityReviewKey({ ...entity, attributes: { unrelated: "changed" } }), key);

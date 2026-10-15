@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"fmt"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -162,8 +163,8 @@ func TestPreviewDLsite(t *testing.T) {
 		t.Fatalf("missing circle created_by")
 	}
 	// 社团带 RG 外部身份（GA4 data-maker_id 与表格 href 一致）。
-	if circle.ExternalIDs["dlsite_maker"] != "RG12345" || circle.ExternalIDs["metafusion_import"] != "dlsite:circle:RG12345" {
-		t.Errorf("circle external=%v", circle.ExternalIDs)
+	if fmt.Sprint(previewLinkID(circle.ExternalLinks, "dlsite_maker")) != "RG12345" || fmt.Sprint(previewLinkID(circle.ExternalLinks, "metafusion_import")) != "dlsite:circle:RG12345" {
+		t.Errorf("circle external=%v", circle.ExternalLinks)
 	}
 	for _, key := range []string{
 		"如月十二|credit_for",
@@ -237,8 +238,8 @@ func TestPreviewDLsiteRestricted(t *testing.T) {
 	if circle.Name != "がら堂" {
 		t.Errorf("maker=%s, want がら堂", circle.Name)
 	}
-	if circle.ExternalIDs["dlsite_maker"] != "RG56527" {
-		t.Errorf("maker external=%v", circle.ExternalIDs)
+	if fmt.Sprint(previewLinkID(circle.ExternalLinks, "dlsite_maker")) != "RG56527" {
+		t.Errorf("maker external=%v", circle.ExternalLinks)
 	}
 	if !strings.Contains(res.Work.Summary, "簡易あらすじテキスト") {
 		t.Errorf("summary=%q", res.Work.Summary)

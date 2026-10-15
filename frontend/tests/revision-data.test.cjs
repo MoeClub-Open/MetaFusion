@@ -4,9 +4,9 @@ const { revisionChanges, prepareRevisionRestore, canEditRevision } = require('..
 
 test('history includes structural content, authority IDs and complete translated text', () => {
   const before = { subjects: [{ work_id: 'song' }], contents: [], translations: { ja: { title: 'Song', summary: 'old' } }, pictures: [{ url: 'cover', caption: { en: 'old' } }] };
-  const after = { subjects: [{ work_id: 'song', attributes: { role: 'bonus' } }], contents: [{ expression_id: 'recording' }], translations: { ja: { title: 'Song', summary: 'new' } }, pictures: [{ url: 'cover', caption: { en: 'new' } }], external_ids: { isrc: 'code' } };
+  const after = { subjects: [{ work_id: 'song', attributes: { role: 'bonus' } }], contents: [{ expression_id: 'recording' }], translations: { ja: { title: 'Song', summary: 'new' } }, pictures: [{ url: 'cover', caption: { en: 'new' } }], external_links: [{ kind: 'isrc', url: 'mf://external/isrc/code', external_id: 'code' }] };
   const diff = revisionChanges(before, after);
-  assert.deepEqual(Object.keys(diff).sort(), ['contents', 'external_ids', 'pictures', 'subjects', 'translations.ja.summary']);
+  assert.deepEqual(Object.keys(diff).sort(), ['contents', 'external_links', 'pictures', 'subjects', 'translations.ja.summary']);
   assert.equal(diff['translations.ja.summary'].new, 'new');
 });
 

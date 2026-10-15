@@ -11,22 +11,22 @@ import (
 )
 
 type IdentityExternalCriterion struct {
-	Provider string `json:"provider"`
-	Value    string `json:"value"`
+	Kind  string `json:"kind"`
+	Value string `json:"value"` // matches link.external_id or link.url
 }
 type IdentityAttributeCriterion struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 type IdentityCandidateQuery struct {
-	Kind        string                       `json:"kind"`
-	Titles      []string                     `json:"titles,omitempty"`
-	ExternalIDs []IdentityExternalCriterion  `json:"external_ids,omitempty"`
-	Attributes  []IdentityAttributeCriterion `json:"attributes,omitempty"`
-	WorkID      string                       `json:"work_id,omitempty"`
-	ReleaseID   string                       `json:"release_id,omitempty"`
-	MediumID    string                       `json:"medium_id,omitempty"`
-	Limit       *int                         `json:"limit,omitempty"`
+	Kind          string                       `json:"kind"`
+	Titles        []string                     `json:"titles,omitempty"`
+	ExternalLinks []IdentityExternalCriterion  `json:"external_links,omitempty"`
+	Attributes    []IdentityAttributeCriterion `json:"attributes,omitempty"`
+	WorkID        string                       `json:"work_id,omitempty"`
+	ReleaseID     string                       `json:"release_id,omitempty"`
+	MediumID      string                       `json:"medium_id,omitempty"`
+	Limit         *int                         `json:"limit,omitempty"`
 	// Context only adjusts ranking/confidence; it never shrinks the candidate set.
 	Context *IdentityContext `json:"context,omitempty"`
 }
@@ -39,7 +39,7 @@ type IdentityCandidateEntity struct {
 	Version       int64                  `json:"version"`
 	Title         string                 `json:"title"`
 	Translations  map[string]Translation `json:"translations"`
-	ExternalIDs   map[string]string      `json:"external_ids"`
+	ExternalLinks []ExternalLink         `json:"external_links"`
 	Attributes    map[string]any         `json:"attributes"`
 	Status        string                 `json:"status"`
 	WorkID        string                 `json:"work_id,omitempty"`
@@ -64,7 +64,7 @@ type IdentityCandidateResponse struct {
 
 func identityCandidateSummary(e Entity) IdentityCandidateEntity {
 	return IdentityCandidateEntity{ID: e.ID, Kind: e.Kind, Version: e.Version, Title: e.Title,
-		Translations: e.Translations, ExternalIDs: e.ExternalIDs, Attributes: e.Attributes, Status: e.Status,
+		Translations: e.Translations, ExternalLinks: e.ExternalLinks, Attributes: e.Attributes, Status: e.Status,
 		WorkID: e.WorkID, ContentUnitID: e.ContentUnitID, ReleaseID: e.ReleaseID, MediumID: e.MediumID, ParentID: e.ParentID}
 }
 
@@ -72,8 +72,8 @@ func normalizeIdentityCandidateQuery(in IdentityCandidateQuery) (IdentityCandida
 	if !contains(Kinds, in.Kind) {
 		return in, nil, 0, fmt.Errorf("invalid_kind")
 	}
-	count := len(in.Titles) + len(in.ExternalIDs) + len(in.Attributes)
-	if count == 0 || count > 60 || len(in.Titles) > 20 || len(in.ExternalIDs) > 20 || len(in.Attributes) > 20 {
+	count := len(in.Titles) + len(in.ExternalLinks) + len(in.Attributes)
+	if count == 0 || count > 60 || len(in.Titles) > 20 || len(in.ExternalLinks) > 20 || len(in.Attributes) > 20 {
 		return in, nil, 0, fmt.Errorf("invalid_identity_criteria")
 	}
 	limit := 1000
@@ -101,8 +101,8 @@ func normalizeIdentityCandidateQuery(in IdentityCandidateQuery) (IdentityCandida
 		}
 		docs = append(docs, map[string]any{"title": value})
 	}
-	for _, criterion := range in.ExternalIDs {
-		key, err := clean(criterion.Provider)
+	for _, criterion := range in.ExternalLinks {
+		key, err := clean(criterion.Kind)
 		if err != nil {
 			return in, nil, 0, err
 		}
@@ -110,7 +110,7 @@ func normalizeIdentityCandidateQuery(in IdentityCandidateQuery) (IdentityCandida
 		if err != nil {
 			return in, nil, 0, err
 		}
-		docs = append(docs, map[string]any{"external_ids": map[string]string{key: value}})
+		docs = append(docs, map[string]any{"external_links": []map[string]string{{"kind": key, "external_id": value}}})
 	}
 	for _, criterion := range in.Attributes {
 		key, err := clean(criterion.Key)
