@@ -22,6 +22,7 @@ func TestGuardImportKey(t *testing.T) {
 		{"不带内部键", linksOf(map[string]string{"bangumi": "123"}), nil, false},
 		{"新声明内部键", key, nil, true},
 		{"改值", linksOf(map[string]string{"metafusion_import": "bangumi:subject:124"}), key, true},
+		{"保留旧键后追加新键", append(append([]ExternalLink{}, key...), linkFromID("metafusion_import", "bangumi:subject:124")), key, true},
 		{"同值写回（PUT 全量替换）", key, key, false},
 		{"空值不算声明", []ExternalLink{{Kind: "metafusion_import", URL: "mf://external/metafusion_import/x", ExternalID: "  "}}, nil, false},
 		{"删除内部键", nil, key, false},

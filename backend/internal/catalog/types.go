@@ -99,6 +99,7 @@ type Subject struct {
 	Position   int            `json:"position"`
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
+
 // ExternalLink is one authority / platform link on an entity.
 // Role empty/omit = no badge; 「官方」only when role=official (never inferred on migration).
 // Origin=migration marks converted external_ids rows pending real evidence.
@@ -106,7 +107,7 @@ type ExternalLink struct {
 	Kind       string      `json:"kind"`
 	URL        string      `json:"url"`
 	ExternalID string      `json:"external_id,omitempty"`
-	Role       string      `json:"role,omitempty"` // official|primary|secondary|operator|""
+	Role       string      `json:"role,omitempty"`   // official|primary|secondary|operator|""
 	Origin     string      `json:"origin,omitempty"` // migration|commit|""
 	SourceRefs []SourceRef `json:"source_refs,omitempty"`
 }

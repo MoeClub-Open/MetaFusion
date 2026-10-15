@@ -218,6 +218,11 @@ func TestValidateEntityStructuralDedup(t *testing.T) {
 
 func TestValidateExternalLinks(t *testing.T) {
 	d := Defaults()
+	for _, raw := range []string{"javascript:alert(1)", "data:text/html,test", "/relative", "mf://external/bangumi/other"} {
+		if err := d.validateExternalLinks(Entity{ExternalLinks: []ExternalLink{{Kind: "bangumi", URL: raw, ExternalID: "123"}}}); err == nil {
+			t.Fatalf("invalid external URL accepted: %s", raw)
+		}
+	}
 	// 格式层只拦"连 codePattern 都不符合"的键；未知但格式合法的键放过，
 	// 由 Store.Save 的 validateExternalLinksAgainstDB 按预设表复核。
 	// 此处锁的是该分层：格式非法在离线层即拒绝。

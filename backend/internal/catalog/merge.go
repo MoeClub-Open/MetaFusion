@@ -83,7 +83,10 @@ func mergeExternalLinks(target, source []ExternalLink) ([]ExternalLink, error) {
 			continue
 		}
 		key := link.Kind + "|" + link.URL
-		if _, ok := index[key]; ok {
+		if cur, ok := index[key]; ok {
+			if encode(cur) != encode(link) {
+				return nil, fmt.Errorf("merge_external_conflict: %s", link.Kind)
+			}
 			continue
 		}
 		if cur, ok := byKind[link.Kind]; ok {

@@ -4,6 +4,15 @@ import (
 	"testing"
 )
 
+func TestMergeExternalLinksDoesNotDiscardMetadata(t *testing.T) {
+	base := linkFromID("bangumi", "7")
+	changed := base
+	changed.Role = "official"
+	if _, err := mergeExternalLinks([]ExternalLink{base}, []ExternalLink{changed}); err == nil {
+		t.Fatal("same URL with different metadata was silently discarded")
+	}
+}
+
 // M04：内部幂等键不复制——源 merged 行保留它做别名，目标复制即撞唯一索引
 // （external_links_metafusion_import_key 覆盖 merged/deleted 行）；其它键沿用
 // 缺键补齐/同值幂等/异值冲突的旧口径。

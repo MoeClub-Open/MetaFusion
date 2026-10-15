@@ -19,14 +19,14 @@ type IdentityAttributeCriterion struct {
 	Value string `json:"value"`
 }
 type IdentityCandidateQuery struct {
-	Kind        string                       `json:"kind"`
-	Titles      []string                     `json:"titles,omitempty"`
-	ExternalLinks []IdentityExternalCriterion `json:"external_links,omitempty"`
-	Attributes  []IdentityAttributeCriterion `json:"attributes,omitempty"`
-	WorkID      string                       `json:"work_id,omitempty"`
-	ReleaseID   string                       `json:"release_id,omitempty"`
-	MediumID    string                       `json:"medium_id,omitempty"`
-	Limit       *int                         `json:"limit,omitempty"`
+	Kind          string                       `json:"kind"`
+	Titles        []string                     `json:"titles,omitempty"`
+	ExternalLinks []IdentityExternalCriterion  `json:"external_links,omitempty"`
+	Attributes    []IdentityAttributeCriterion `json:"attributes,omitempty"`
+	WorkID        string                       `json:"work_id,omitempty"`
+	ReleaseID     string                       `json:"release_id,omitempty"`
+	MediumID      string                       `json:"medium_id,omitempty"`
+	Limit         *int                         `json:"limit,omitempty"`
 	// Context only adjusts ranking/confidence; it never shrinks the candidate set.
 	Context *IdentityContext `json:"context,omitempty"`
 }

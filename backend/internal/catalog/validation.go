@@ -929,11 +929,13 @@ func importKeyFromLinks(links []ExternalLink) string {
 // guardImportKey 阻止非导入写入**新声明或改写**内部幂等键。
 // 同值放行：PUT 是全量替换，已带该键的条目原样写回必须通过。
 func guardImportKey(next, prev []ExternalLink) error {
-	n, p := importKeyFromLinks(next), importKeyFromLinks(prev)
-	if n == "" || n == p {
-		return nil
+	p := importKeyFromLinks(prev)
+	for _, link := range next {
+		if legacyImportKeys[link.Kind] && strings.TrimSpace(link.ExternalID) != "" && strings.TrimSpace(link.ExternalID) != p {
+			return fmt.Errorf("invalid_import_key")
+		}
 	}
-	return fmt.Errorf("invalid_import_key")
+	return nil
 }
 
 // validImportKey 校验幂等键格式。基础键按来源各自的 ID 形态收敛：
@@ -969,6 +971,11 @@ func (d Definitions) validateExternalLinks(e Entity) error {
 			return fmt.Errorf("invalid_external_link")
 		}
 		if len(link.Kind) > 64 || len(link.URL) > 2000 || len(link.ExternalID) > 2000 {
+			return fmt.Errorf("invalid_external_link")
+		}
+		// Bare identifiers use an internal display token; all other links must
+		// be absolute HTTP(S) URLs. Never accept executable or relative URLs.
+		if !validURL(link.URL) && (link.ExternalID == "" || link.URL != externalLinkURL(link.Kind, link.ExternalID, "")) {
 			return fmt.Errorf("invalid_external_link")
 		}
 		switch link.Role {
