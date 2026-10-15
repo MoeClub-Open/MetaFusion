@@ -7,7 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
-	golang.org/x/net v0.58.0
+	golang.org/x/net v0.60.0
 	golang.org/x/text v0.42.0
 )
 
@@ -36,7 +36,7 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
 	golang.org/x/arch v0.29.0 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
