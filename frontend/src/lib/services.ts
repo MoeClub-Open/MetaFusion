@@ -29,10 +29,9 @@ export function getAuthPasswordUrl(): string {
   return "/settings?tab=password";
 }
 
-// 账号域的管理面是独立控制台（metafusion-auth/admin，网关 /admin/account/），不是本前端的页面。
-// 入口只在探活通过后渲染，见 components/Navbar.tsx。
+// 账号管理统一进入管理中心；服务自带应用仍挂在 /admin/account/，由管理中心嵌入。
 export function getAuthUsersAdminUrl(): string {
-  return "/admin/account/";
+  return "/admin?workspace=account";
 }
 
 // 条目 → 论坛的地址。条目页的「在论坛打开」统一收在这里：板块可选，社区页从
