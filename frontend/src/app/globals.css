@@ -5,6 +5,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The article editor shares the published article's reading rhythm. */
+.article-rich-editor .article-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px;
+  border-bottom: 1px solid var(--line-color); background: var(--surface-color); border-radius: 8px 8px 0 0;
+}
+.article-rich-editor .article-toolbar:first-child { position: sticky; top: var(--mf-header-h, 56px); z-index: 20; }
+.article-rich-editor .article-toolbar button.article-tool { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 6px; }
+.article-rich-editor .article-toolbar button.is-active { color: var(--primary-color); border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 12%, transparent); }
+.article-rich-editor .article-toolbar label { margin: 0; }
+.article-rich-editor .article-toolbar select { width: auto; min-width: 100px; padding: 6px 26px 6px 8px; font-size: 12px; }
+.article-rich-content { min-height: 420px; padding: 20px; outline: none; font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; }
+.article-rich-content > * + * { margin-top: 0.85em; }
+.article-rich-content h1, .article-rich-content h2, .article-rich-content h3, .article-rich-content h4, .article-rich-content h5, .article-rich-content h6 { font-weight: 700; color: var(--text-strong-color); line-height: 1.5; }
+.article-rich-content h1 { font-size: 1.8em; } .article-rich-content h2 { font-size: 1.5em; } .article-rich-content h3 { font-size: 1.25em; }
+.article-rich-content ul { list-style: disc; padding-left: 1.6em; } .article-rich-content ol { list-style: decimal; padding-left: 1.6em; }
+.article-rich-content blockquote { border-left: 3px solid var(--primary-color); padding-left: 1em; color: var(--text-muted-color); }
+.article-rich-content pre { white-space: pre-wrap; padding: 12px; border-radius: 8px; background: var(--surface-subtle-color); font-family: var(--font-mono); font-size: 12px; }
+.article-rich-content a, .article-rich-content sup { color: var(--primary-color); }
+.article-rich-content img { max-width: 100%; max-height: 440px; object-fit: contain; }
+.article-rich-content table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-block: 1em; }
+.article-rich-content th, .article-rich-content td { min-width: 40px; border: 1px solid var(--line-color); padding: 8px; position: relative; vertical-align: top; }
+.article-rich-content th { font-weight: 600; background: var(--surface-subtle-color); }
+.article-rich-content .selectedCell::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: color-mix(in srgb, var(--primary-color) 15%, transparent); }
+.article-rich-content .ProseMirror-selectednode { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.article-rich-content .article-footnote-definition { cursor: pointer; border: 1px solid var(--line-color); }
+.article-rich-content .article-footnote-card { padding: 12px; border: 1px solid var(--line-color); border-radius: 8px; background: var(--surface-subtle-color); }
+
 /* 字体不再用 @import：@import 必须排在所有规则之前，这里被 @tailwind 展开的规则挤到后面，
    按 CSS 规范整条忽略，等于五个 Web 字体都没加载。现在由 next/font 在 layout.tsx 里
    自托管（--font-inter / --font-jetbrains-mono / --font-instrument-serif），

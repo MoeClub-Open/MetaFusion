@@ -44,8 +44,7 @@ import {
 import type { EntityComment, EntityCollectionRef } from "@/lib/api";
 import { EntityRevisions } from "./EntityRevisions";
 import { QualityBadge } from "./QualityBadge";
-import { RelationFilterBar, useRelationFilter } from "@/components/entity/RelationFilterBar";
-import { UNGROUPED_RELATION_GROUP } from "@/lib/relationFilters";
+import { EntityRelationDirectory } from "@/components/entity/EntityRelationDirectory";
 import { PageShell, PageContainer } from "@/components/ui/PageShell";
 import { TabPanel } from "@/components/ui/TabPanel";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -69,7 +68,7 @@ import { TrackDirectory } from "./TrackDirectory";
 import { GroupAttributeInline, LocatorInline } from "./TemplateAttributeSections";
 import { EntityLink } from "./Fields";
 import { useInclusionExpressions } from "./useInclusionExpressions";
-import { useDefinitions, getKindName, getRelationName, getFieldName, getTermName, getTagName, tagCode, resolveLocalizedName, templatesForEntity, blocksForEntity } from "@/lib/definitions";
+import { useDefinitions, getKindName, getRelationName, getTermName, getTagName, tagCode, resolveLocalizedName, templatesForEntity, blocksForEntity } from "@/lib/definitions";
 import {
   getAuthLoginUrl,
   getForumEntityUrl,
@@ -79,7 +78,6 @@ import {
 } from "@/lib/services";
 import {
   ArrowLeft,
-  ArrowRight,
   ArrowUpRight,
   Calendar,
   Check,
@@ -111,10 +109,6 @@ const InteractiveRelationGraph = dynamic(
   { ssr: false }
 );
 
-/** 兜底分组键：全站唯一来源在 relationFilters（筛选条分面与关系网格必须用同一个键，
- * 否则同一页会出现两个"其他关系"分组）。 */
-const FALLBACK_RELATION_GROUP = UNGROUPED_RELATION_GROUP;
-
 /** 关系端点的展示题名：本地化题名 → 原语言题名 → id，绝不返回空串（不出现空标题）。 */
 const endTitleOf = (
   e: Entity | undefined,
@@ -123,24 +117,6 @@ const endTitleOf = (
   order: string[],
 ): string => (e ? title(e, locale, order) || e.title || id : id);
 
-
-/**
- * 展示分组键：定义声明了 group_names 才按自己的 group 分组；
- * 没声明的（类型未定义 / group_names 为空）统一归入兜底分组，
- * 不按 group 码另立一组，也不借用分节标题充当分组名。
- * 多语言解析一律走 resolveLocalizedName，不在前端另拼文案。
- */
-const relationGroupKey = (
-  defs: any,
-  type: string,
-  locale: string,
-): string => {
-  const rel = defs?.relations?.[type];
-  if (!rel) return FALLBACK_RELATION_GROUP;
-  return resolveLocalizedName(rel.group_names, locale, "")
-    ? rel.group || FALLBACK_RELATION_GROUP
-    : FALLBACK_RELATION_GROUP;
-};
 
 export function EntityDetailView({ id }: { id: string }) {
   const { t, tr, locale } = useI18n();
@@ -614,6 +590,11 @@ export function EntityDetailView({ id }: { id: string }) {
     [categorizedRelations, defs]
   );
 
+  // Direct peer agents can form an overview roster; relation codes and labels stay server-defined.
+  const overviewRelations = useMemo(() => entity?.kind === "agent" ? mediaRelations.filter((row) =>
+    (row.isIncoming || row.isOutgoing) && row.target?.kind === "agent" && defs?.relations?.[row.type]?.participant_slot === "peer") : [],
+    [entity?.kind, mediaRelations, defs]);
+
   // 分类展示顺序：按实体 kind 与已有字段匹配的模板声明 relation_groups。
   const relationGroupOrder = useMemo(() => {
     const ordered: string[] = [];
@@ -635,54 +616,6 @@ export function EntityDetailView({ id }: { id: string }) {
     entity?.kind === "work" &&
     (directoryData.status !== "ready" ||
       hasWorkDirectoryContent(directoryData, entity.id || id, (code) => defs?.relations?.[code]?.aggregate === true));
-
-  // 关系筛选：维度与选项由关系数据与 definitions 动态生成（关联对象 / 关系分类 / 关系类型），
-  // 与作品详情的关系列表同一套口径；行里带上关系对象本身，筛完直接取回。
-  const relationFacetRows = useMemo(
-    () =>
-      mediaRelations.map((r) => ({
-        type: r.type,
-        kind: r.target?.kind || "",
-        label: getRelationName(defs, r.type, r.isOutgoing, locale),
-        relation: r,
-      })),
-    [mediaRelations, defs, locale]
-  );
-  const relationFilter = useRelationFilter(relationFacetRows, relationGroupOrder);
-
-  // 其余关系按展示分组归并：声明过的分类排前，声明外的按出现顺序，兜底分组固定在最后；
-  // 定义缺失时进兜底分组，保证不丢数据。
-  const groupedMediaRelations = useMemo(() => {
-    type MediaRelation = (typeof mediaRelations)[number];
-    const groups = new Map<string, MediaRelation[]>();
-    for (const { relation } of relationFilter.visible) {
-      const key = relationGroupKey(defs, relation.type, locale);
-      const list = groups.get(key) || [];
-      list.push(relation);
-      groups.set(key, list);
-    }
-    const ordered: string[] = [];
-    for (const key of relationGroupOrder) {
-      if (groups.has(key) && !ordered.includes(key)) ordered.push(key);
-    }
-    for (const key of Array.from(groups.keys())) {
-      if (key !== FALLBACK_RELATION_GROUP && !ordered.includes(key)) ordered.push(key);
-    }
-    if (groups.has(FALLBACK_RELATION_GROUP)) ordered.push(FALLBACK_RELATION_GROUP);
-    return ordered.map((key) => ({ key, items: groups.get(key) || [] }));
-  }, [relationFilter.visible, defs, locale, relationGroupOrder]);
-
-  // 分组标题：取组内关系定义声明的 group_names 本地化——组内任一条声明了就用它，
-  // 不因组内首条缺声明而整组降级；兜底分组用字典文案（与分节标题区分开）。
-  const relationGroupTitle = (group: { key: string; items: typeof mediaRelations }): string => {
-    if (group.key !== FALLBACK_RELATION_GROUP) {
-      for (const r of group.items) {
-        const name = resolveLocalizedName((defs as any)?.relations?.[r.type]?.group_names, locale, "");
-        if (name) return name;
-      }
-    }
-    return t("entity.page.relationsGroupOther");
-  };
 
   // 社区模块未启用时不展示该标签，避免出现永远为空的分节。
   // modules 来自 /api/capabilities：契约漂移（缺字段/不是数组）时这里不能抛错——
@@ -1302,6 +1235,12 @@ export function EntityDetailView({ id }: { id: string }) {
             </Card>
             )}
 
+            {active === "overview" && overviewRelations.length > 0 && (
+              <Card padding="section" className="shadow-soft">
+                <EntityRelationDirectory subjectId={entity.id || id} relations={overviewRelations} entities={relatedEntities} groupOrder={relationGroupOrder} summary />
+              </Card>
+            )}
+
             {/* ============================================================ */}
             {/* Section 2: Staff & Credits (演职人员与创作者)                 */}
             {/* ============================================================ */}
@@ -1316,43 +1255,7 @@ export function EntityDetailView({ id }: { id: string }) {
                         {staffRelations.length}
                       </span>
                     </SectionTitle>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {staffRelations.map((r, index) => (
-                        <Card key={r.id || `${r.type}:${r.source_id}:${r.target_id}:${index}`} tone="subtle" padding="card" className="space-y-2">
-                          <div className="text-[10px] font-mono font-semibold text-primary tracking-wider">
-                            {getRelationName(defs, r.type, r.isOutgoing || !r.isIncoming, locale)}
-                          </div>
-                          <div className="flex items-center gap-1.5 min-w-0 text-xs">
-                            <Link href={`/catalog/${r.fromId}`} className="truncate text-text-body hover:text-primary">
-                              {endTitleOf(r.from, r.fromId, locale, titleOrder)}
-                            </Link>
-                            <ArrowRight className="w-3 h-3 text-text-muted shrink-0" strokeWidth={1.6} />
-                            <Link href={`/catalog/${r.toId}`} className="truncate font-semibold text-text-strong hover:text-primary">
-                              {endTitleOf(r.to, r.toId, locale, titleOrder)}
-                            </Link>
-                          </div>
-                          {Object.entries(r.attributes || {}).map(([field, value]) => {
-                            if (value === null || value === undefined || value === "") return null;
-                            const referenced = typeof value === "string" ? relatedEntities[value] : undefined;
-                            const vocabulary = defs?.fields?.[field]?.vocabulary;
-                            const display = typeof value === "string" && vocabulary
-                              ? getTermName(defs, vocabulary, value, locale)
-                              : String(value);
-                            if (!referenced && typeof value === "object") return null;
-                            return (
-                              <div key={field} className="flex gap-2 text-[11px] text-text-muted">
-                                <span className="shrink-0">{getFieldName(defs, field, locale)}</span>
-                                {referenced ? (
-                                  <Link href={`/catalog/${value}`} className="truncate text-text-body hover:text-primary">
-                                    {title(referenced, locale, titleOrder)}
-                                  </Link>
-                                ) : <span className="truncate text-text-body">{display}</span>}
-                              </div>
-                            );
-                          })}
-                        </Card>
-                      ))}
-                    </div>
+                    <EntityRelationDirectory subjectId={entity.id || id} relations={staffRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
                   </Card>
                 )}
               </div>
@@ -1545,7 +1448,7 @@ export function EntityDetailView({ id }: { id: string }) {
                           : "text-text-faint hover:text-gray-900 dark:hover:text-white"
                       }`}
                     >
-                      {t("entity.page.viewCards")}
+                      {t("relations.directory.view")}
                     </button>
                     <button
                       type="button"
@@ -1589,65 +1492,7 @@ export function EntityDetailView({ id }: { id: string }) {
                     />
                   </Card>
                 ) : (
-                  <div className="space-y-4">
-                    {/* 筛选条：维度与选项都由关系数据与 definitions 生成，只有一个取值的维度不出现 */}
-                    <RelationFilterBar
-                      facets={relationFilter.facets}
-                      selection={relationFilter.selection}
-                      onToggle={relationFilter.toggle}
-                    />
-                    {relationFilter.visible.length === 0 && (
-                      <p className="text-sm text-text-faint">{t("relations.filterEmpty")}</p>
-                    )}
-                    {groupedMediaRelations.map((group) => (
-                      <div key={group.key || "ungrouped"}>
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground m-0 mb-2">
-                          {relationGroupTitle(group)}
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {group.items.map((r) => {
-                      const fromTitle = endTitleOf(r.from, r.fromId, locale, titleOrder);
-                      const toTitle = endTitleOf(r.to, r.toId, locale, titleOrder);
-                      const target = r.target;
-                      return (
-                        <Card
-                          key={r.id}
-                          tone="subtle"
-                          padding="none"
-                          className="hover:border-primary/50 transition-all group"
-                        >
-                        <Link
-                          href={`/catalog/${r.otherId}`}
-                          className="p-3 flex items-center justify-between gap-3"
-                        >
-                          <div className="min-w-0 space-y-1">
-                            <div className="text-[10px] font-mono font-semibold text-primary tracking-wider">
-                              {getRelationName(defs, r.type, r.isOutgoing, locale)}
-                            </div>
-                            {/* 关系两端都给题名：主体一侧取自响应 entities[subject_id]，
-                                对端取自 entities[另一端]，不再出现空标题或原始 UUID。 */}
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-[11px] text-text-faint truncate">{fromTitle}</span>
-                              <ArrowRight className="w-3 h-3 text-text-muted shrink-0" strokeWidth={1.6} />
-                              <span className="font-semibold text-xs sm:text-sm text-text-strong group-hover:text-primary truncate">
-                                {toTitle}
-                              </span>
-                            </div>
-                            {target && isDistinctOriginalTitle(target.title, toTitle) && (
-                              <div className="text-[10px] text-text-muted font-mono truncate">
-                                {target.title}
-                              </div>
-                            )}
-                          </div>
-                          <ArrowUpRight className="w-3.5 h-3.5 text-text-muted group-hover:text-primary transition-colors duration-fast ease-soft shrink-0" />
-                        </Link>
-                        </Card>
-                      );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <EntityRelationDirectory subjectId={entity.id || id} relations={mediaRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
                 )}
               </Card>
             )}
