@@ -9,3 +9,6 @@ ab970227abfa95da93fe180ba3877ef39369e48a:deploy/versions.lock:generic-api-key:31
 cf7d8c6963063c6c854dbc2e9031f7364ede843a:deploy/versions.lock:generic-api-key:28
 # auth 仓公开提交 3b86b213 已与远端 main 核对；仅忽略这条版本锁指纹。
 61975cd303bf153e58d2b4a8f2c0e69d8f4b338b:deploy/versions.lock:generic-api-key:26
+
+# auth 仓公开 Git SHA 41c687a 的版本锁误报，限定为这一条提交与规则。
+fb812aea608fd7d6552f611b9db352258751d3b8:deploy/versions.lock:generic-api-key:26
