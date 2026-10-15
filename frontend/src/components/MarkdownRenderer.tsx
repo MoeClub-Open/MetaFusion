@@ -8,6 +8,8 @@ import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { normalizeLatexDelimiters, remarkArticleHeadings } from "@/lib/markdown";
+export { normalizeLatexDelimiters } from "@/lib/markdown";
 
 import "katex/dist/katex.min.css";
 // 语法高亮主题在仓库内，跟随主题变量（浅色不再是一块写死的黑板）：见 markdown-highlight.css
@@ -17,24 +19,9 @@ interface MarkdownRendererProps {
   content: string;
   className?: string;
   compact?: boolean;
-}
-
-/**
- * Normalizes LaTeX delimiters so that \( ... \) becomes $ ... $
- * and \[ ... \] becomes $$ ... $$ (without affecting code blocks / spans).
- */
-export function normalizeLatexDelimiters(text: string): string {
-  if (!text) return "";
-  const parts = text.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
-  return parts
-    .map((part, i) => {
-      // Code block or inline code span: keep verbatim
-      if (i % 2 === 1) return part;
-      return part
-        .replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `$$${formula}$$`)
-        .replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => `$${formula}$`);
-    })
-    .join("");
+  headingPrefix?: string;
+  footnoteLabel?: string;
+  footnoteBackLabel?: string;
 }
 
 function CodeBlockWrapper({
@@ -93,6 +80,9 @@ export default function MarkdownRenderer({
   content,
   className = "",
   compact = false,
+  headingPrefix,
+  footnoteLabel,
+  footnoteBackLabel,
 }: MarkdownRendererProps) {
   const normalizedContent = useMemo(() => normalizeLatexDelimiters(content), [content]);
 
@@ -103,7 +93,8 @@ export default function MarkdownRenderer({
       } ${className}`}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }], [remarkArticleHeadings, { prefix: headingPrefix || "" }]]}
+        remarkRehypeOptions={{ ...(headingPrefix ? { clobberPrefix: `${headingPrefix}-` } : {}), ...(footnoteLabel ? { footnoteLabel } : {}), ...(footnoteBackLabel ? { footnoteBackLabel } : {}) }}
         rehypePlugins={[rehypeKatex, [rehypeHighlight, { ignoreMissing: true }]]}
         components={{
           h1: ({ ...props }) => (

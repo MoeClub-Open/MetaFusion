@@ -102,7 +102,11 @@ export function RevisionDiffInspector({
       return known[field] || field;
     }
     if (label.startsWith("attr:")) return t("revisions.fieldAttr", { key: label.slice("attr:".length) });
-    if (label.startsWith("trans:")) return t("revisions.fieldTrans", { lang: label.slice("trans:".length) });
+    if (label.startsWith("trans:")) {
+      const [lang, field] = label.slice("trans:".length).split(".");
+      const labels: Record<string, string> = { title: t("catalog.title"), summary: t("catalog.summary"), body: t("catalog.article.body"), aliases: t("catalog.aliases") };
+      return field ? t("revisions.fieldTranslation", { lang, field: labels[field] || field }) : t("revisions.fieldTrans", { lang });
+    }
     return label;
   };
 
@@ -193,11 +197,11 @@ export function RevisionDiffInspector({
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
-                  <div className="p-2 rounded bg-rose-500/[0.06] dark:bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-danger-soft break-all whitespace-pre-wrap">
+                  <div className="p-2 rounded bg-rose-500/[0.06] dark:bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-danger-soft break-words whitespace-pre-wrap max-h-96 overflow-y-auto">
                     <div className="text-[9px] uppercase tracking-wider text-rose-500 font-bold mb-0.5">{t("revisions.oldVersion", { version: base?.version || 0 })}</div>
                     {diffVal(f.oldVal)}
                   </div>
-                  <div className="p-2 rounded bg-emerald-500/[0.06] dark:bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft break-all whitespace-pre-wrap">
+                  <div className="p-2 rounded bg-emerald-500/[0.06] dark:bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft break-words whitespace-pre-wrap max-h-96 overflow-y-auto">
                     <div className="text-[9px] uppercase tracking-wider text-emerald-500 font-bold mb-0.5">{t("revisions.newVersion", { version: current.version })}</div>
                     {diffVal(f.newVal)}
                   </div>

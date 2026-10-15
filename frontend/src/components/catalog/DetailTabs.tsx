@@ -20,15 +20,24 @@ export interface TabItem {
  * - 监听 hashchange，浏览器前进/后退与外部改 hash 都能跟上；
  * - 标签集合变化（数据到达后数量变化）时校正，避免停在已消失的面板。
  */
-export function useHashTab(items: TabItem[]) {
+export function detailTabFromHash(hash: string, ids: string[], anchorTabs: Record<string, string> = {}): string {
+  let fragment: string;
+  try { fragment = decodeURIComponent(hash.replace(/^#/, "")); } catch { return ""; }
+  if (ids.includes(fragment)) return fragment;
+  return Object.entries(anchorTabs).find(([prefix, tab]) => fragment.startsWith(prefix) && ids.includes(tab))?.[1] || "";
+}
+
+export function useHashTab(items: TabItem[], anchorTabs: Record<string, string> = {}) {
   const shown = useMemo(() => items.filter((x) => x.visible !== false), [items]);
   // 标签集合常随每轮渲染重建数组，用 id 签名做依赖，避免监听器反复重订阅。
   const shownKey = shown.map((x) => x.id).join("|");
   const shownRef = useRef(shown);
   shownRef.current = shown;
+  const anchorTabsRef = useRef(anchorTabs);
+  anchorTabsRef.current = anchorTabs;
 
   const readHash = () =>
-    typeof window === "undefined" ? "" : decodeURIComponent(window.location.hash.replace(/^#/, ""));
+    typeof window === "undefined" ? "" : detailTabFromHash(window.location.hash, shownRef.current.map((item) => item.id), anchorTabsRef.current);
 
   const [active, setActive] = useState<string>(() => {
     const h = readHash();
