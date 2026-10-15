@@ -40,7 +40,7 @@ const (
 // listTextParams 是列表端点会下传给 SQL 的文本查询参数。整数分页参数
 // （limit/offset/page）不在此列，由 listPagination 单独判定。
 var listTextParams = []string{
-	"q", "kind", "kinds", "status", "sort", "order", "locale",
+	"q", "kind", "kinds", "state", "sort", "order", "locale",
 	"work_id", "content_unit_id", "release_id", "medium_id", "parent_id", "field", "value", "tags",
 	"original_language", "has_pictures", "tags_mode",
 }

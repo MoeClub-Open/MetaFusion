@@ -46,7 +46,7 @@ func TestExternalLinksMigrationPreservesDocumentsAndSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, emptyID, actor := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	document := map[string]any{"id": id, "kind": "work", "title": "retained title", "status": "draft", "version": 7,
+	document := map[string]any{"id": id, "kind": "work", "title": "retained title", "version": 7,
 		"external_ids": map[string]any{"bangumi": "123", "fandom": "https://example.org/wiki/A_(B)", "historical_code": "unlisted/value"},
 		"translations": map[string]any{"en": map[string]any{"title": "retained title", "body": "## History\nPreserved article."}},
 		"attributes":   map[string]any{"custom": "keep"}, "pictures": []any{}}
@@ -58,7 +58,7 @@ func TestExternalLinksMigrationPreservesDocumentsAndSources(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO catalog.revisions(target_id,version,actor_id,actor_name,edit_note,sources,snapshot) VALUES($1,7,$2,'fixture','original note',$3,$4)`, id, actor, sources, original); err != nil {
 		t.Fatal(err)
 	}
-	upgrade := migrator.New(db, migrations.FS)
+	upgrade := migrator.New(db, catalogMigrationsBefore(t, "000031"))
 	if err := upgrade.Up(ctx); err != nil {
 		t.Fatal(err)
 	}

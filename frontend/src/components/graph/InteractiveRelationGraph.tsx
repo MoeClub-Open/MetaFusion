@@ -1672,12 +1672,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                 <span className="font-mono text-foreground font-medium">{selectedNode.country}</span>
               </div>
             )}
-            {selectedNode.status && (
-              <div className="flex justify-between items-center">
-                <span>{t("graph.status")}:</span>
-                <span className="text-foreground font-medium">{selectedNode.status}</span>
-              </div>
-            )}
+
             {selectedNode.disambiguation && (
               <div className="pt-1 text-[11px] text-muted-foreground border-t border-border/40">
                 <span className="font-semibold text-foreground/80">{t("graph.disambiguation")}: </span>

@@ -41,7 +41,7 @@ type IdentityCandidateEntity struct {
 	Translations  map[string]Translation `json:"translations"`
 	ExternalLinks []ExternalLink         `json:"external_links"`
 	Attributes    map[string]any         `json:"attributes"`
-	Status        string                 `json:"status"`
+	Status        string                 `json:"state"`
 	WorkID        string                 `json:"work_id,omitempty"`
 	ContentUnitID string                 `json:"content_unit_id,omitempty"`
 	ReleaseID     string                 `json:"release_id,omitempty"`
@@ -193,7 +193,7 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
         )
         SELECT id::text,count(*) OVER () FROM catalog.entities
         WHERE kind=$1 AND status <> 'deleted'
-        AND ($3::boolean OR status='published' OR created_by=$4::uuid)
+        AND ($3::boolean OR status='active' OR created_by=$4::uuid)
         AND ($5::text='' OR EXISTS(SELECT 1 FROM catalog.expressions x WHERE x.id=entities.id AND x.work_id::text=$5) OR EXISTS(SELECT 1 FROM catalog.content_units x WHERE x.id=entities.id AND x.work_id::text=$5))
         AND ($7::text='' OR EXISTS(SELECT 1 FROM catalog.mediums m WHERE m.id=entities.id AND m.release_id::text=$7))
         AND ($8::text='' OR EXISTS(SELECT 1 FROM catalog.tracks t WHERE t.id=entities.id AND t.medium_id::text=$8))

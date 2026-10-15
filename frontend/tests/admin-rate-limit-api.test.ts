@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { saveAdminRateLimits, saveCommunityAdminRateLimits } from "../src/lib/api/admin";
-import { mergeEntities, unpublishEntity } from "../src/lib/api/catalog";
+import { mergeEntities } from "../src/lib/api/catalog";
 
 test("service policy writes preserve community message limits and do not invent sources", async () => {
   const originalFetch = globalThis.fetch;
@@ -31,7 +31,6 @@ test("metadata lifecycle wrappers reject missing evidence before making a reques
   let requests = 0;
   globalThis.fetch = (async () => { requests += 1; return Response.json({ version: 1 }); }) as typeof fetch;
   try {
-    await assert.rejects(unpublishEntity({ entity_id: "source", expected_version: 1, edit_note: "reason", sources: [] }), /evidence_required/);
     await assert.rejects(mergeEntities({ source_id: "source", target_id: "target", merge_note: "reason", sources: [{ kind: "self", citation: "reason" }] }), /source_not_eligible/);
     assert.equal(requests, 0);
   } finally {

@@ -56,7 +56,7 @@ type ContributionItem struct {
 	EditType  string                           `json:"edit_type"`
 	EditNote  string                           `json:"edit_note"`
 	Sources   []Source                         `json:"sources,omitempty"`
-	Status    string                           `json:"status,omitempty"`
+	Status    string                           `json:"state,omitempty"`
 	CreatedAt time.Time                        `json:"created_at"`
 	UpdatedAt *time.Time                       `json:"updated_at,omitempty"`
 	Diff      map[string]ContributionDiffEntry `json:"diff,omitempty"`
@@ -165,10 +165,10 @@ func contributionPage(page, pageSize int) (int, int) {
 func contributionWhere(u *User, args *[]any) string {
 	parts := []string{"r.actor_id = $1", "e.status NOT IN ('deleted','merged')"}
 	if u == nil {
-		parts = append(parts, "e.status = 'published'")
+		parts = append(parts, "e.status = 'active'")
 	} else if !u.Can(PermissionLifecycleManage) {
 		*args = append(*args, u.ID)
-		parts = append(parts, fmt.Sprintf("(e.status = 'published' OR e.created_by = $%d)", len(*args)))
+		parts = append(parts, fmt.Sprintf("(e.status = 'active' OR e.created_by = $%d)", len(*args)))
 	}
 	return strings.Join(parts, " AND ")
 }

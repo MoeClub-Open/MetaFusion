@@ -7,7 +7,7 @@ import { changeDraftKind, hasKindSpecificDraftData } from "../src/lib/draftKind"
 test("all dynamically selected entity states have real labels in every locale", () => {
   for (const locale of ["zh-CN", "zh-TW", "en-US", "ja-JP"]) {
     const messages = JSON.parse(readFileSync(new URL(`../src/messages/${locale}.json`, import.meta.url), "utf8"));
-    for (const state of ["draft", "pending_review", "published", "merged", "deleted"]) {
+    for (const state of ["active", "merged", "deleted"]) {
       const key = `catalog.state.${state}`;
       assert.equal(typeof messages[key], "string", `${locale}: missing ${key}`);
       assert.ok(messages[key].trim());
@@ -18,7 +18,7 @@ test("all dynamically selected entity states have real labels in every locale", 
 
 test("changing Work to Agent preserves all kind-independent draft content", () => {
   const source = {
-    ...emptyEntity("work"), title: "初音ミク", status: "published", original_language: "ja",
+    ...emptyEntity("work"), title: "初音ミク", state: "active", original_language: "ja",
     translations: { ja: { title: "初音ミク", summary: "説明", aliases: ["ミク"] } },
     attributes: { tags: ["初音未来"], work_type: "song" }, external_links: [{ kind: "wikidata", url: "mf://external/wikidata/Q123", external_id: "Q123" }],
     pictures: [{ url: "https://example.test/cover.png", caption: { ja: "画像" }, source: { kind: "self", citation: "test" } }],
@@ -28,7 +28,7 @@ test("changing Work to Agent preserves all kind-independent draft content", () =
   };
   const result = changeDraftKind(source, emptyEntity("agent"));
   assert.equal(result.kind, "agent");
-  for (const key of ["title", "status", "original_language", "translations", "external_links", "pictures"] as const) assert.deepEqual(result[key], source[key]);
+  for (const key of ["title", "state", "original_language", "translations", "external_links", "pictures"] as const) assert.deepEqual(result[key], source[key]);
   assert.deepEqual(result.attributes, { tags: ["初音未来"] });
   assert.equal(result.work_id, undefined);
   assert.equal(result.medium_id, undefined);

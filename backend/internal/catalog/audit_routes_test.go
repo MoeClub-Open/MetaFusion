@@ -89,12 +89,11 @@ func TestEveryWriteRouteIsRegisteredOrReasonedExempt(t *testing.T) {
 // 改任何一个已有码都会让本用例失败——那是要契约层面批准的变更，不是顺手重命名。
 func TestAuditActionCodesAreStable(t *testing.T) {
 	want := map[string]string{
+		"POST /api/catalog/commits/:id/review":              "commit.reviewed",
 		"POST /api/catalog/commits":                         "commit.pushed",
 		"POST /api/catalog/entities":                        "entity.created",
 		"PUT /api/catalog/entities/:id":                     "entity.updated",
-		"PATCH /api/catalog/tracks/:id/status":              "entity.status_changed",
 		"POST /api/catalog/entities/:id/lifecycle":          "entity.lifecycle_changed",
-		"POST /api/catalog/entities/:id/unpublish":          "entity.unpublished",
 		"PUT /api/catalog/me/home-preferences":              "preference.home_updated",
 		"POST /api/catalog/relations":                       "relation.created",
 		"PUT /api/catalog/relations/:id":                    "relation.updated",
@@ -110,7 +109,6 @@ func TestAuditActionCodesAreStable(t *testing.T) {
 		"POST /api/admin/shelves":                           "shelf.created",
 		"PUT /api/admin/shelves/:id":                        "shelf.updated",
 		"DELETE /api/admin/shelves/:id":                     "shelf.deleted",
-		"POST /api/exchange/proposals":                      "proposal.submitted",
 		"POST /api/notifications/:id/read":                  "notification.read",
 		"POST /api/notifications/read-all":                  "notification.all_read",
 		"POST /api/notifications/internal":                  "notification.delivered",

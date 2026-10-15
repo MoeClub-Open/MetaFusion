@@ -351,7 +351,7 @@ func get(ctx context.Context, q queryer, id string) (Entity, error) {
 }
 func visible(e Entity, u *User) bool {
 	// 未发布条目只有创建者与持审核/生命周期权者（旧 admin）可见。
-	return e.Status == "published" || u != nil && (u.Can(PermissionLifecycleManage) || ownedBy(e, *u))
+	return e.Status == "active" || u != nil && (u.Can(PermissionLifecycleManage) || ownedBy(e, *u))
 }
 
 // GetManyVisible 一次查询批量取实体，仅返回 u 可见者。
@@ -427,6 +427,9 @@ func audit(ctx context.Context, tx *sql.Tx, id string, version int64, u User, no
 	return err
 }
 func (s *Store) Save(ctx context.Context, input Edit, u User) (Entity, error) {
+	if !u.Can(PermissionReviewBypass) {
+		return Entity{}, fmt.Errorf("commit_required")
+	}
 	var e Entity
 	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
 		var err error
@@ -877,10 +880,10 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 		parts = append(parts, fmt.Sprintf(clause, len(*args)))
 	}
 	if u == nil {
-		parts = append(parts, "status='published'")
+		parts = append(parts, "status='active'")
 	} else if !u.Can(PermissionLifecycleManage) {
 		// 未发布条目只有创建者能列；持审核/生命周期权者与旧 admin 同口径，看全量。
-		add("(status='published' OR created_by=$%d)", u.ID)
+		add("(status='active' OR created_by=$%d)", u.ID)
 	}
 	if o.Kind != "" {
 		add("kind=$%d", o.Kind)
@@ -1186,6 +1189,16 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 			var historical Entity
 			if err = json.Unmarshal(snapshot, &historical); err != nil {
 				return nil, err
+			}
+			if historical.Status == "" {
+				var legacy struct {
+					Status string `json:"status"`
+				}
+				_ = json.Unmarshal(snapshot, &legacy)
+				historical.Status = "active"
+				if legacy.Status == "deleted" || legacy.Status == "merged" {
+					historical.Status = legacy.Status
+				}
 			}
 			if !visible(historical, u) {
 				continue

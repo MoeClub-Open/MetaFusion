@@ -96,7 +96,7 @@ func TestPostgresCommitSourceRefsDoNotMix(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	doc := func(title, catalog string) json.RawMessage {
-		return json.RawMessage(encode(map[string]any{"kind": "work", "title": title, "status": "published", "translations": map[string]any{"en": map[string]any{"title": title}}}))
+		return json.RawMessage(encode(map[string]any{"kind": "work", "title": title, "translations": map[string]any{"en": map[string]any{"title": title}}}))
 	}
 	in := fixtureCommit(f,
 		CommitOperation{Target: "entity", Action: "create", Ref: "rye", Document: doc("rye", "TECI-1676"), SourceRefs: []SourceRef{{Source: "rye_page", Pointers: []string{"/title"}}}},

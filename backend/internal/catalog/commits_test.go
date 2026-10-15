@@ -152,8 +152,8 @@ func TestCommitFieldConflictKindsAndJSON(t *testing.T) {
 func TestPostgresCommitAtomicPreviewReplayAndRefs(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	work := map[string]any{"kind": "work", "title": "committed work", "status": "published", "translations": map[string]any{"en": map[string]any{"title": "committed work"}}}
-	expression := map[string]any{"kind": "expression", "title": "committed expression", "status": "published", "translations": map[string]any{"en": map[string]any{"title": "committed expression"}}, "work_id": map[string]any{"$ref": "w"}}
+	work := map[string]any{"kind": "work", "title": "committed work", "translations": map[string]any{"en": map[string]any{"title": "committed work"}}}
+	expression := map[string]any{"kind": "expression", "title": "committed expression", "translations": map[string]any{"en": map[string]any{"title": "committed expression"}}, "work_id": map[string]any{"$ref": "w"}}
 	in := fixtureCommit(f, CommitOperation{Target: "entity", Action: "create", Ref: "w", Document: json.RawMessage(encode(work))}, CommitOperation{Target: "entity", Action: "create", Ref: "x", Document: json.RawMessage(encode(expression))})
 	preview, err := f.s.PushCommit(ctx, in, f.u, true)
 	if err != nil || preview.Applied || len(preview.Items) != 2 {
@@ -356,7 +356,7 @@ func TestPostgresCommitAtomicCatalogGraph(t *testing.T) {
 	f.publish(d, v.ETag)
 	ref := func(name string) any { return map[string]string{"$ref": name} }
 	entityOp := func(kind, name string, extra map[string]any) CommitOperation {
-		doc := map[string]any{"kind": kind, "title": name, "status": "published", "translations": map[string]any{"en": map[string]any{"title": name}}}
+		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}
@@ -396,7 +396,7 @@ func TestPostgresCommitPreservesOpaqueTrackFacts(t *testing.T) {
 	r := f.save(Entity{Kind: "release", Title: "opaque release", Subjects: []Subject{{WorkID: w.ID, Role: "primary"}}})
 	m := f.save(Entity{Kind: "medium", Title: "CD", ReleaseID: r.ID, Attributes: map[string]any{"format": "cd"}})
 	track := f.save(Entity{Kind: "track", Title: "old title", MediumID: m.ID, Contents: []Inclusion{{ExpressionID: x.ID}}})
-	if _, err := f.s.Unpublish(ctx, x.ID, UnpublishEdit{ExpectedVersion: x.Version, EditNote: "hide recording", Sources: fixtureSources()}, f.u); err != nil {
+	if _, err := f.s.Lifecycle(ctx, x.ID, LifecycleEdit{ExpectedVersion: x.Version, EditNote: "hide recording", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatal(err)
 	}
 	// Legacy inclusion provenance can be empty; a metadata patch must not attach

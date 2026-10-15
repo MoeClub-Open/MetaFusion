@@ -62,15 +62,15 @@ func TestContributionTabAndKindMapping(t *testing.T) {
 // 差异口径与前端 revisionData.ts 的 revisionChanges 逐条对齐：忽略每次写入都变的键，
 // attributes / translations 下钻一层，其余按顶层字段比。
 func TestContributionDiffMatchesRevisionChanges(t *testing.T) {
-	before := []byte(`{"id":"a","kind":"work","version":1,"created_by":"u-1","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","title":"旧题名","status":"draft","attributes":{"tags":["a"],"duration":100},"translations":{"zh-CN":{"title":"旧题名"}}}`)
-	after := []byte(`{"id":"a","kind":"work","version":2,"created_by":"u-1","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-02-01T00:00:00Z","title":"新题名","status":"published","attributes":{"tags":["a","b"],"duration":100},"translations":{"zh-CN":{"title":"新题名"},"en":{"title":"New"}}}`)
+	before := []byte(`{"id":"a","kind":"work","version":1,"created_by":"u-1","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","title":"旧题名","attributes":{"tags":["a"],"duration":100},"translations":{"zh-CN":{"title":"旧题名"}}}`)
+	after := []byte(`{"id":"a","kind":"work","version":2,"created_by":"u-1","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-02-01T00:00:00Z","title":"新题名","attributes":{"tags":["a","b"],"duration":100},"translations":{"zh-CN":{"title":"新题名"},"en":{"title":"New"}}}`)
 	got := contributionDiff(before, after)
 	keys := make([]string, 0, len(got))
 	for key := range got {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	want := []string{"attributes.tags", "status", "title", "translations.en", "translations.zh-CN"}
+	want := []string{"attributes.tags", "title", "translations.en", "translations.zh-CN"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("差异键 %v, want %v", keys, want)
 	}
@@ -81,7 +81,7 @@ func TestContributionDiffMatchesRevisionChanges(t *testing.T) {
 		t.Fatalf("tags 差异取了未归一的值: %s", encode(got["attributes.tags"].New))
 	}
 	// 只有被忽略的键变了（version/updated_at）：nil，响应里整个 diff 键省略。
-	same := contributionDiff(before, []byte(`{"id":"a","kind":"work","version":9,"created_by":"u-1","created_at":"2026-03-01T00:00:00Z","updated_at":"2026-03-01T00:00:00Z","title":"旧题名","status":"draft","attributes":{"tags":["a"],"duration":100},"translations":{"zh-CN":{"title":"旧题名"}}}`))
+	same := contributionDiff(before, []byte(`{"id":"a","kind":"work","version":9,"created_by":"u-1","created_at":"2026-03-01T00:00:00Z","updated_at":"2026-03-01T00:00:00Z","title":"旧题名","attributes":{"tags":["a"],"duration":100},"translations":{"zh-CN":{"title":"旧题名"}}}`))
 	if same != nil {
 		t.Fatalf("无字段变化应返回 nil: %+v", same)
 	}
@@ -104,7 +104,7 @@ func TestContributionItemShapes(t *testing.T) {
 	s := &Store{}
 	entityID := "11111111-1111-1111-1111-111111111111"
 	rows := []contributionRow{{
-		revID: 7, version: 1, entityID: entityID, kind: "work", title: "作品", status: "published",
+		revID: 7, version: 1, entityID: entityID, kind: "work", title: "作品", status: "active",
 		editNote: "建立条目", sources: []byte(`[{"kind":"self","citation":"作者自述"}]`),
 		createdAt: time.Unix(0, 0).UTC(), updatedAt: time.Unix(1, 0).UTC(),
 	}}
@@ -112,7 +112,7 @@ func TestContributionItemShapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created[0].ID != entityID || created[0].Tab != "works" || created[0].EditType != "create" || created[0].Status != "published" || created[0].UpdatedAt == nil {
+	if created[0].ID != entityID || created[0].Tab != "works" || created[0].EditType != "create" || created[0].Status != "active" || created[0].UpdatedAt == nil {
 		t.Fatalf("创建项字段不符: %+v", created[0])
 	}
 	if len(created[0].Sources) != 1 || created[0].Sources[0].Citation != "作者自述" {
@@ -166,10 +166,10 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 
 	save := func(u User, e Entity) Entity {
 		if e.Status == "" {
-			e.Status = "published"
+			e.Status = "active"
 		}
 		// 发布态要求至少一条翻译（真实契约）：在夹具里补齐，免得每个调用点各记这件事。
-		if e.Status == "published" && len(e.Translations) == 0 {
+		if e.Status == "active" && len(e.Translations) == 0 {
 			e.Translations = map[string]Translation{"en": {Title: e.Title}}
 		}
 		// 与 HTTP 解码同形：动态值经 JSON 往返。
@@ -186,7 +186,7 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 	work := save(author, Entity{Kind: "work", Title: "初版题名"})
 	save(author, Entity{Kind: "release", Title: "发行版"})
 	save(author, Entity{Kind: "agent", Title: "作者"})
-	save(author, Entity{Kind: "work", Title: "草稿", Status: "draft"})
+	save(author, Entity{Kind: "work", Title: "普通条目", Status: "active"})
 	work.Title = "初版题名2"
 	work = save(author, work)
 	work.Title = "初版题名3"
@@ -203,22 +203,27 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 
 	// 匿名：只看已发布条目，草稿既不进列表也不进统计。
 	anon := read(nil, "works", 1, 20)
-	if anon.Total != 1 || len(anon.Items) != 1 {
+	if anon.Total != 2 || len(anon.Items) != 2 {
 		t.Fatalf("匿名 works: total=%d items=%d, want 1/1", anon.Total, len(anon.Items))
 	}
 	item := anon.Items[0]
+	for _, candidate := range anon.Items {
+		if candidate.TargetID == work.ID {
+			item = candidate
+		}
+	}
 	// 作品的 title 经两轮编辑变成"初版题名3"。
 	if item.Kind != "work" || item.Title != "初版题名3" || item.Tab != "works" || item.EditType != "create" {
 		t.Fatalf("创建项字段不符: %+v", item)
 	}
-	if item.Status != "published" || item.UpdatedAt == nil || item.Version != 1 {
+	if item.Status != "active" || item.UpdatedAt == nil || item.Version != 1 {
 		t.Fatalf("创建项应带 status/updated_at 且版本为首次修订: %+v", item)
 	}
-	if st := anon.Stats; st.WorksCreated != 1 || st.ReleasesCreated != 1 || st.ArtistsCreated != 1 || st.AuditActions != 0 {
+	if st := anon.Stats; st.WorksCreated != 2 || st.ReleasesCreated != 1 || st.ArtistsCreated != 1 || st.AuditActions != 0 {
 		t.Fatalf("统计口径不符: %+v", st)
 	}
 	// 修订条数：work 三版 + release 一版 + agent 一版 = 5（草稿那条被可见性过滤掉）。
-	if anon.Stats.RevisionsCount != 5 {
+	if anon.Stats.RevisionsCount != 6 {
 		t.Fatalf("revisions_count=%d, want 5", anon.Stats.RevisionsCount)
 	}
 
@@ -229,13 +234,13 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 	if adm := read(&admin, "works", 1, 20); adm.Total != 2 {
 		t.Fatalf("管理员应看到草稿: total=%d", adm.Total)
 	}
-	if alien := read(&other, "works", 1, 20); alien.Total != 1 {
+	if alien := read(&other, "works", 1, 20); alien.Total != 2 {
 		t.Fatalf("他人不该看到草稿: total=%d", alien.Total)
 	}
 
 	// revisions tab：全部实体修订行（含首次创建），改动项带与上一版的字段差异。
 	revs := read(nil, "revisions", 1, 20)
-	if revs.Total != 5 || len(revs.Items) != 5 {
+	if revs.Total != 6 || len(revs.Items) != 6 {
 		t.Fatalf("匿名 revisions: total=%d items=%d, want 5/5", revs.Total, len(revs.Items))
 	}
 	updates := 0
@@ -257,20 +262,20 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 
 	// all：创建项（作品/发行/艺术家）与后续改动（作品第 2、3 版）混排，同一事件不重复出现。
 	all := read(nil, "all", 1, 20)
-	if all.Total != 5 || len(all.Items) != 5 {
+	if all.Total != 6 || len(all.Items) != 6 {
 		t.Fatalf("匿名 all: total=%d items=%d, want 5/5", all.Total, len(all.Items))
 	}
 	tabs := map[string]int{}
 	for _, it := range all.Items {
 		tabs[it.Tab]++
 	}
-	if tabs["works"] != 1 || tabs["releases"] != 1 || tabs["artists"] != 1 || tabs["revisions"] != 2 {
+	if tabs["works"] != 2 || tabs["releases"] != 1 || tabs["artists"] != 1 || tabs["revisions"] != 2 {
 		t.Fatalf("all 混排分布不符: %+v", tabs)
 	}
 
 	// 分页：total 是真实计数，不随 page_size 变；越界收敛而不是拒绝。
 	last := read(nil, "all", 3, 2)
-	if last.Total != 5 || last.Page != 3 || last.PageSize != 2 || len(last.Items) != 1 {
+	if last.Total != 6 || last.Page != 3 || last.PageSize != 2 || len(last.Items) != 2 {
 		t.Fatalf("分页口径不符: total=%d page=%d size=%d items=%d", last.Total, last.Page, last.PageSize, len(last.Items))
 	}
 	if clamped := read(nil, "all", 0, 500); clamped.Page != 1 || clamped.PageSize != 20 {

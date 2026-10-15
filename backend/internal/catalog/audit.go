@@ -22,15 +22,14 @@ import (
 // 覆盖守卫测试（audit_routes_test.go）遍历真实路由树，保证新增写端点不会漏登记。
 func AuditActions() map[string]string {
 	return map[string]string{
+		"POST /api/catalog/commits/:id/review":              "commit.reviewed",
 		"POST /api/catalog/commits":                         "commit.pushed",
 		"POST /api/catalog/entities":                        "entity.created",
 		"PUT /api/catalog/entities/:id":                     "entity.updated",
-		"PATCH /api/catalog/tracks/:id/status":              "entity.status_changed",
 		"POST /api/catalog/tracks/:id/contents":             "inclusion.created",
 		"PUT /api/catalog/tracks/:id/contents/:position":    "inclusion.updated",
 		"DELETE /api/catalog/tracks/:id/contents/:position": "inclusion.deleted",
 		"POST /api/catalog/entities/:id/lifecycle":          "entity.lifecycle_changed",
-		"POST /api/catalog/entities/:id/unpublish":          "entity.unpublished",
 		"PUT /api/catalog/me/home-preferences":              "preference.home_updated",
 		"POST /api/catalog/relations":                       "relation.created",
 		"PUT /api/catalog/relations/:id":                    "relation.updated",
@@ -43,7 +42,6 @@ func AuditActions() map[string]string {
 		"POST /api/admin/shelves":                           "shelf.created",
 		"PUT /api/admin/shelves/:id":                        "shelf.updated",
 		"DELETE /api/admin/shelves/:id":                     "shelf.deleted",
-		"POST /api/exchange/proposals":                      "proposal.submitted",
 		// 站内通知（2026-09-20）：标记已读是自服务的写操作，同样要留痕；
 		// internal 投递端由互动服务调用，审计行的 actor 是转发过来的终端用户令牌。
 		"POST /api/notifications/:id/read": "notification.read",
@@ -57,15 +55,15 @@ func AuditActions() map[string]string {
 // "这条写路由为什么不记"必须有据可查，而不是被人忘掉。模块开关墓碑
 func AuditExempt() map[string]string {
 	return map[string]string{
-		"POST /api/catalog/checkout":                 "版本化工作副本：只读重复读事务",
-		"POST /api/catalog/commits/preview":          "运行写入校验后整笔回滚，提交、修订、消息、outbox 均不持久化",
-		"POST /api/catalog/entities/candidates":      "身份候选查询：POST 承载查重条件，在同一只读快照内查找并解析身份，不写目录数据",
+		"POST /api/catalog/checkout":                  "版本化工作副本：只读重复读事务",
+		"POST /api/catalog/commits/preview":           "运行写入校验后整笔回滚，提交、修订、消息、outbox 均不持久化",
+		"POST /api/catalog/entities/candidates":       "身份候选查询：POST 承载查重条件，在同一只读快照内查找并解析身份，不写目录数据",
 		"POST /api/catalog/entities/candidates/batch": "批量身份候选查询：POST 承载最多 50 条查重条件，在同一只读快照内查找并评估（context 只排名不筛选），零写入",
-		"POST /api/catalog/expressions/details":      "批量读：POST 只为把最多 500 个 id 放进 body（GET query 会撞 8KB 请求行上限），零写入",
-		"POST /api/catalog/relationships/query":      "批量关系查询：POST 承载实体集合与筛选条件，目录数据仅在只读事务中读取，零写入",
-		"POST /api/catalog/quality/batch":            "批量质量审计：POST 承载最多 100 个 id，按需计算、只读事务、不落库，零写入",
-		"POST /api/catalog/entities/identity":        "批量身份解析（X01 别名集合的只读投影）：POST 只为把最多 500 个 id 放进 body，零写入",
-		"POST /api/admin/catalog-definitions/impact": "定义影响检查：只读回放提交的文档，零写入",
+		"POST /api/catalog/expressions/details":       "批量读：POST 只为把最多 500 个 id 放进 body（GET query 会撞 8KB 请求行上限），零写入",
+		"POST /api/catalog/relationships/query":       "批量关系查询：POST 承载实体集合与筛选条件，目录数据仅在只读事务中读取，零写入",
+		"POST /api/catalog/quality/batch":             "批量质量审计：POST 承载最多 100 个 id，按需计算、只读事务、不落库，零写入",
+		"POST /api/catalog/entities/identity":         "批量身份解析（X01 别名集合的只读投影）：POST 只为把最多 500 个 id 放进 body，零写入",
+		"POST /api/admin/catalog-definitions/impact":  "定义影响检查：只读回放提交的文档，零写入",
 		"POST /api/external-sources/query":            "外部来源只读查询：出站抓取原文与预览映射，不写目录",
 	}
 }
@@ -127,7 +125,7 @@ func entityChangeDetail(before, after *Entity) map[string]any {
 	if after != nil {
 		a = []string{after.Kind, after.Status, after.Title}
 	}
-	return summaryFields([]string{"kind", "status", "title"}, b, a)
+	return summaryFields([]string{"kind", "state", "title"}, b, a)
 }
 
 // relationChangeDetail 是关系变更摘要。关系的 type/source_id/target_id 在服务端是**不可变**的
@@ -265,4 +263,3 @@ func homePreferencesDetail(before, after *HomePreferences) map[string]any {
 	}
 	return changes
 }
-

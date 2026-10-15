@@ -289,7 +289,7 @@ func TestPostgresSaveBlocksOnHeldReleaseLock(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := f.s.Save(ctx, Edit{
-			Entity:   Entity{Kind: "track", Title: "曲目", MediumID: m.ID, Status: "draft"},
+			Entity:   Entity{Kind: "track", Title: "曲目", MediumID: m.ID, Status: "active"},
 			EditNote: "m01 wiring", Sources: fixtureSources(),
 		}, f.u)
 		done <- err
@@ -318,7 +318,7 @@ func TestPostgresSaveRespectsDefinitionsLock(t *testing.T) {
 	ctx := context.Background()
 	saveWork := func() error {
 		_, err := f.s.Save(ctx, Edit{
-			Entity:   Entity{Kind: "work", Title: "并发作品", Status: "draft"},
+			Entity:   Entity{Kind: "work", Title: "并发作品", Status: "active"},
 			EditNote: "m02 wiring", Sources: fixtureSources(),
 		}, f.u)
 		return err

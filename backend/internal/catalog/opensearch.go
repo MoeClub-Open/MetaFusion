@@ -23,9 +23,9 @@ import (
 
 const (
 	openSearchAlias           = "metafusion-entities"
-	openSearchIndex           = "metafusion-entities-v4"
+	openSearchIndex           = "metafusion-entities-v5"
 	openSearchConsumer        = "opensearch"
-	openSearchIndexGeneration = "v4"
+	openSearchIndexGeneration = "v5"
 	openSearchLockID          = int64(740219)
 	openSearchResultWindow    = 10000
 )
@@ -106,7 +106,7 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 
 	filters := []any{map[string]any{"term": map[string]any{"record_type": "entity"}}}
 	mustNot := []any{
-		map[string]any{"terms": map[string]any{"status": []string{"deleted", "merged"}}},
+		map[string]any{"terms": map[string]any{"state": []string{"deleted", "merged"}}},
 	}
 	must := []any{map[string]any{"bool": map[string]any{
 		"should": searchMatchClauses(query), "minimum_should_match": 1,
@@ -123,7 +123,7 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 	}
 	term("kind", o.Kind)
 	terms("kind", o.Kinds)
-	term("status", o.Status)
+	term("state", o.Status)
 	term("original_language", o.OriginalLanguage)
 	term("work_ids", o.WorkID)
 	term("content_unit_id", o.ContentUnitID)
@@ -149,11 +149,11 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 		terms("tags", o.Tags)
 	}
 	if u == nil {
-		term("status", "published")
+		term("state", "active")
 	} else if !u.Can(PermissionLifecycleManage) {
 		filters = append(filters, map[string]any{"bool": map[string]any{
 			"should": []any{
-				map[string]any{"term": map[string]any{"status": "published"}},
+				map[string]any{"term": map[string]any{"state": "active"}},
 				map[string]any{"term": map[string]any{"created_by": u.ID}},
 			}, "minimum_should_match": 1,
 		}})

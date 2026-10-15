@@ -129,7 +129,8 @@ export type Entity = {
   kind: string;
   title: string;
   version: number;
-  status: string;
+  state: string;
+  review_status?: "reviewed";
   created_by?: string;
   redirect_id?: string;
   original_language: string;
@@ -178,7 +179,7 @@ export type Entity = {
   }[];
   updated_at?: string;
 };
-export type Source = { kind: string; citation: string; url?: string };
+export type Source = { kind: string; citation: string; url?: string; key?: string; pointers?: string[]; scope?: string };
 export type Relation = {
   id?: string;
   version: number;
@@ -279,7 +280,7 @@ export function emptyEntity(kind = "work"): Entity {
     kind,
     title: "",
     version: 0,
-    status: "draft",
+    state: "active", review_status: "reviewed",
     original_language: "",
     translations: {},
     attributes: {},

@@ -62,14 +62,11 @@ func TestRetentionPolicyConfiguration(t *testing.T) {
 func TestPostgresRetentionConsumersAndLifecycleFacts(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	deleted := f.save(Entity{Kind: "work", Title: "retention deleted", Status: "draft"})
+	deleted := f.save(Entity{Kind: "work", Title: "retention deleted", Status: "active"})
 	merged := f.save(Entity{Kind: "work", Title: "retention duplicate"})
 	canonical := f.save(Entity{Kind: "work", Title: "retention canonical"})
-	unpublished := f.save(Entity{Kind: "work", Title: "retention unpublished"})
-	if _, err := f.s.Unpublish(ctx, unpublished.ID, UnpublishEdit{ExpectedVersion: unpublished.Version,
-		EditNote: "retain unpublish delivery", Sources: fixtureSources()}, f.u); err != nil {
-		t.Fatal(err)
-	}
+	_ = f.save(Entity{Kind: "work", Title: "retention unpublished"})
+
 	for _, item := range []struct {
 		entity Entity
 		target string
@@ -150,12 +147,12 @@ func TestPostgresRetentionPreservesCommitAndCreateReplay(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	in := fixtureCommit(f, CommitOperation{Target: "entity", Action: "create", Ref: "w",
-		Document: json.RawMessage(`{"kind":"work","title":"retention push","status":"draft"}`)})
+		Document: json.RawMessage(`{"kind":"work","title":"retention push"}`)})
 	receipt, err := f.s.PushCommit(ctx, in, f.u, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	edit := Edit{Entity: Entity{Kind: "work", Title: "retention idempotent", Status: "draft"},
+	edit := Edit{Entity: Entity{Kind: "work", Title: "retention idempotent", Status: "active"},
 		EditNote: "create guard", Sources: fixtureSources()}
 	edit.idempotency = &IdempotencyClaim{Operation: IdempotencyOpEntityCreate, UserID: f.u.ID, Key: "retention-key", Hash: requestHash(edit)}
 	created, err := f.s.Save(ctx, edit, f.u)

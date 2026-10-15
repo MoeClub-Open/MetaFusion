@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	auditlog "github.com/metafusion/metafusion-app/internal/audit"
@@ -78,8 +79,32 @@ func (h HTTP) registerCommits(cat *gin.RouterGroup) {
 		if err == nil {
 			auditlog.Describe(c, auditlog.Detail{TargetType: "commit", TargetID: in.ID, Changes: map[string]any{"operation_count": len(out.Items)}})
 		}
+		if err == nil && out.ReviewStatus == "pending_review" {
+			c.JSON(202, out)
+			return
+		}
 		respondCommit(c, out, err)
 	})
+	cat.GET("/commits", required(""), func(c *gin.Context) {
+		limit, _ := strconv.Atoi(c.Query("limit"))
+		offset, _ := strconv.Atoi(c.Query("offset"))
+		out, err := s.CommitSubmissions(c.Request.Context(), c.Query("review_status"), limit, offset, *user(c))
+		respond(c, out, err)
+	})
+	cat.GET("/commits/:id/submission", required(""), func(c *gin.Context) {
+		out, err := s.CommitSubmission(c.Request.Context(), c.Param("id"), *user(c))
+		respond(c, out, err)
+	})
+	cat.POST("/commits/:id/review", required(PermissionReviewManage), func(c *gin.Context) {
+		var in CommitReviewEdit
+		if !body(c, &in) {
+			return
+		}
+		auditlog.Describe(c, auditlog.Detail{TargetType: "commit", TargetID: c.Param("id"), Changes: map[string]any{"decision": in.Decision}})
+		out, err := s.ReviewCommit(c.Request.Context(), c.Param("id"), in, *user(c))
+		respondCommit(c, out, err)
+	})
+
 	cat.GET("/commits/:id", required(""), func(c *gin.Context) {
 		out, err := s.CommitReceipt(c.Request.Context(), c.Param("id"), *user(c))
 		respond(c, out, err)

@@ -15,7 +15,7 @@ type searchDocument struct {
 	EntityID         string            `json:"entity_id"`
 	EntityVersion    int64             `json:"entity_version"`
 	Kind             string            `json:"kind"`
-	Status           string            `json:"status"`
+	Status           string            `json:"state"`
 	CreatedBy        string            `json:"created_by"`
 	Tags             []string          `json:"tags"`
 	OriginalLanguage string            `json:"original_language"`

@@ -72,7 +72,7 @@ export interface ContributionItem {
   action?: string;
   edit_note?: string;
   sources: ContributionSource[];
-  status?: string;
+  state?: string;
   created_at?: string;
   updated_at?: string;
   /** 字段级差异，键为字段路径（attributes.tags 这类下钻一层），形状与 DiffViewer 的输入一致（old/new 可能为 null）。 */
@@ -126,7 +126,7 @@ function normalizeContributionItem(raw: unknown): ContributionItem {
     action: row.edit_type,
     edit_note: row.edit_note,
     sources: normalizeContributionSources(row),
-    status: row.status,
+    state: row.state,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

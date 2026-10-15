@@ -99,6 +99,12 @@ func validateCommitSourceRefs(in CatalogCommit) error {
 				}
 				seenPointer[ptr] = true
 				switch op.Action {
+				case "content":
+					if ptr != "/contents" {
+						return fail(fmt.Errorf("source_pointer_not_patched"))
+					}
+				case "delete":
+					return fail(fmt.Errorf("invalid_source_pointer"))
 				case "create":
 					if !documentHasPointer(doc, parts) {
 						return fail(fmt.Errorf("source_pointer_not_in_document"))

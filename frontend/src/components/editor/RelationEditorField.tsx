@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/authContext";
 import { can, CATALOG_RELATION_EDIT } from "@/lib/permissions";
 import { useDefinitions, getFieldName, getRelationName } from "@/lib/definitions";
 import { api, Entity, Source } from "@/components/catalog/api";
-import { newSubmissionSession, submissionKey } from "@/lib/idempotency";
+import { commitSubmitter, type CommitOperation } from "@/lib/catalogCommits";
 import { EntityPicker, FieldInput } from "@/components/catalog/Fields";
 import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
@@ -66,8 +66,13 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
   const { definitions: defs } = useDefinitions();
   const { user } = useAuth();
   // 幂等键的会话部分：同一次表单会话内稳定，载荷指纹在提交时算（见 lib/idempotency）。
-  const submitSession = React.useRef("");
-  const submissionScope = () => (submitSession.current ||= newSubmissionSession());
+  const submitCommit = React.useRef(commitSubmitter());
+  const [submission,setSubmission] = useState("");
+  const push = async (ops:CommitOperation[]) => {
+    const out=await submitCommit.current(ops,note,sources);
+    if(!out.applied) setSubmission(out.id);
+    return out;
+  };
   // 关系写走独立端点（POST/PUT/DELETE /catalog/relations），服务端要求 catalog.relation.edit：
   // 无码时不渲染写入控件，避免把用户引到注定 403 的按钮上（只读列表仍展示）。
   const canWrite = can(user, CATALOG_RELATION_EDIT);
@@ -230,12 +235,7 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
         position: nextPosition,
         attributes: addAttrs,
       };
-      await api(
-        "/catalog/relations",
-        "POST",
-        { relation, expected_version: 0, edit_note: note, sources },
-        { "Idempotency-Key": submissionKey(submissionScope(), relation) },
-      );
+      await push([{target:"relation",action:"create",ref:"relation",document:relation}]);
       setAddType("");
       setAddTarget("");
       setAddAttrs({});
@@ -260,24 +260,9 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
     setBusy(true);
     setError("");
     try {
-      const put = (x: Relation, position: number) =>
-        api(`/catalog/relations/${x.id}`, "PUT", {
-          relation: {
-            id: x.id,
-            type: x.type,
-            source_id: x.source_id,
-            target_id: x.target_id,
-            position,
-            attributes: x.attributes || {},
-          },
-          expected_version: x.version,
-          edit_note: note,
-          sources,
-        });
-      const [a, b] = [r.position || 0, other.position || 0];
-      // 两条 position 相同时（历史数据）用相邻值分开，保证次序真正改变。
-      await put(r, b === a ? a + delta : b);
-      await put(other, b === a ? a : a);
+      const [a,b] = [r.position || 0,other.position || 0];
+      await push([{target:"relation",action:"update",id:r.id,base_version:r.version,patch:[{path:"/position",value:b===a?a+delta:b}]},
+        {target:"relation",action:"update",id:other.id,base_version:other.version,patch:[{path:"/position",value:a}]}]);
       await load();
     } catch (e) {
       setError(friendly((e as Error).message));
@@ -309,19 +294,7 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
     setBusy(true);
     setError("");
     try {
-      await api(`/catalog/relations/${r.id}`, "PUT", {
-        relation: {
-          id: r.id,
-          type: r.type,
-          source_id: r.source_id,
-          target_id: r.target_id,
-          position: r.position || 0,
-          attributes: editAttrs,
-        },
-        expected_version: r.version,
-        edit_note: note,
-        sources,
-      });
+      await push([{target:"relation",action:"update",id:r.id,base_version:r.version,patch:[{path:"/attributes",value:editAttrs}]}]);
       setEditingId("");
       setEditAttrs({});
       await load();
@@ -341,12 +314,7 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
     setBusy(true);
     setError("");
     try {
-      await api(`/catalog/relations/${rel.id}`, "DELETE", {
-        expected_version: rel.version,
-        target_id: "",
-        edit_note: note,
-        sources,
-      });
+      await push([{target:"relation",action:"delete",id:rel.id,base_version:rel.version}]);
       await load();
     } catch (e) {
       setError(friendly((e as Error).message));
@@ -426,6 +394,7 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
     <fieldset>
       <legend>{t("catalog.relations")}</legend>
 
+      {submission && <Link className="text-primary underline" href={`/submissions/${submission}`}>{t("catalog.review.pending_review")} · {t("catalog.review.submission")}</Link>}
       {error && (
         <p role="alert" className="cv-error inline-flex items-center gap-1.5 text-sm text-red-600 dark:text-danger">
           <AlertCircle className="w-4 h-4 shrink-0" />

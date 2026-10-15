@@ -1,6 +1,6 @@
 import {
   can, canEnterCatalogConsole, CATALOG_DEFINITIONS_MANAGE,
-  CATALOG_LIFECYCLE_MANAGE, CATALOG_SHELVES_MANAGE,
+  CATALOG_LIFECYCLE_MANAGE, CATALOG_REVIEW_MANAGE, CATALOG_SHELVES_MANAGE,
   COMMUNITY_RATE_LIMITS_MANAGE,
 } from "./permissions";
 import type { User } from "./api";
@@ -12,7 +12,7 @@ const sectionPermissions: Partial<Record<CatalogAdminTab, string>> = {
   definitions: CATALOG_DEFINITIONS_MANAGE,
   extdb: CATALOG_DEFINITIONS_MANAGE,
   shelves: CATALOG_SHELVES_MANAGE,
-  reviews: CATALOG_LIFECYCLE_MANAGE,
+  reviews: CATALOG_REVIEW_MANAGE,
   merge: CATALOG_LIFECYCLE_MANAGE,
 };
 

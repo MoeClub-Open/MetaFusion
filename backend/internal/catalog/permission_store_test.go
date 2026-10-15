@@ -18,7 +18,7 @@ func TestPermissionCodesAuthorizeCatalogWrites(t *testing.T) {
 	}
 	sources := fixtureSources()
 	// 权限集合按账号服务的组展开，角色一律是 member：授权只看码。
-	editor := User{ID: uuid.NewString(), Username: "catalog-editor", Groups: []string{"catalog_editor"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit}}
+	editor := User{ID: uuid.NewString(), Username: "catalog-editor", Groups: []string{"catalog_editor"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionReviewBypass}}
 	admin := User{ID: uuid.NewString(), Username: "catalog-admin", Groups: []string{"catalog_admin"}, Permissions: []string{PermissionEntityEdit, PermissionRelationEdit, PermissionDefinitionsManage, PermissionLifecycleManage, PermissionShelvesManage}}
 	member := User{ID: uuid.NewString(), Username: "plain-member", Groups: []string{"member"}, Permissions: []string{"community.post.create"}}
 	mk := func(title string) Entity {
@@ -27,7 +27,7 @@ func TestPermissionCodesAuthorizeCatalogWrites(t *testing.T) {
 
 	// 目录编辑组可直接发布（旧 editor 语义）；无目录码的成员仍走审核制。
 	pub := mk("permission-editor-published")
-	pub.Status = "published"
+	pub.Status = "active"
 	if _, err := s.Save(ctx, Edit{Entity: pub, EditNote: "n", Sources: sources}, member); err == nil {
 		t.Fatal("member without catalog.entity.edit must not publish")
 	}

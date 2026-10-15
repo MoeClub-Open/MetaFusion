@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { CommitReviewQueue } from "@/components/catalog/CommitReview";
 import { DefinitionsEditor } from "@/components/catalog/DefinitionsEditor";
 import { Evidence } from "@/components/catalog/Fields";
 import type { Source } from "@/components/catalog/api";
@@ -18,7 +19,7 @@ import { RateLimitsTab } from "./components/tabs/RateLimitsTab";
 import { ShelvesTab } from "./components/tabs/ShelvesTab";
 import { ExchangeTab } from "./components/tabs/ExchangeTab";
 import { CATALOG_LIFECYCLE_MANAGE, can, canEnterCatalogConsole } from "@/lib/permissions";
-import { fetchApi, unpublishEntity } from "@/lib/api";
+import { fetchApi } from "@/lib/api";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import type { LucideIcon } from "lucide-react";
@@ -111,33 +112,12 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     extDatabases: number | null;
   }>({ pending: null, published: null, tombstones: null, extDatabases: null });
   const [modules, setModules] = useState<any[]>([]);
-  const [pendingItems, setPendingItems] = useState<any[]>([]);
-  // 审核台要能看的不只是待审：已发布条目下架（published → draft）是审核工作的一部分，
-  // 而它只能走 POST /entities/:id/unpublish（保存端点拒绝降级）。所以列表按状态分档取数。
-  const [reviewStatus, setReviewStatus] = useState<"pending_review" | "published">("pending_review");
-  const [unpublishTarget, setUnpublishTarget] = useState<any | null>(null);
-  const [unpublishing, setUnpublishing] = useState(false);
-  const [statusTarget, setStatusTarget] = useState<{ id: string; action: "published" | "draft"; expectedVersion: number; fromEntities: boolean } | null>(null);
-  const [lifecycleNote, setLifecycleNote] = useState("");
-  const [lifecycleSources, setLifecycleSources] = useState<Source[]>([{ kind: "url", citation: "", url: "" }]);
-  const [reviewNotice, setReviewNotice] = useState("");
-  const [reviewError, setReviewError] = useState(false);
-  const [actingId, setActingId] = useState("");
-  const statusActionBusy = useRef(false);
-  // 取数失败必须与「没有待审条目」分开：管理员看到空列表会以为队列已清空（见 loadReviewList）。
-  const [reviewListFailed, setReviewListFailed] = useState(false);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewPage, setReviewPage] = useState(1);
-  const [reviewTotal, setReviewTotal] = useState<number | null>(null);
-  const reviewRequest = useRef(0);
-
   // Entities management state
   const [entitiesList, setEntitiesList] = useState<any[]>([]);
   const [entitiesListFailed, setEntitiesListFailed] = useState(false);
   const [entitiesLoading, setEntitiesLoading] = useState(false);
   const [entitiesQ, setEntitiesQ] = useState("");
   const [entitiesKind, setEntitiesKind] = useState("all");
-  const [entitiesStatus, setEntitiesStatus] = useState("all");
   const [entitiesPage, setEntitiesPage] = useState(1);
   const [entitiesTotal, setEntitiesTotal] = useState<number | null>(null);
   const entitiesRequest = useRef(0);
@@ -164,7 +144,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     setStats({ pending: null, published: null, tombstones: null, extDatabases: null });
     setModules([]);
     const results = await Promise.allSettled([
-      mayManageLifecycle ? fetchApi<{statuses: Record<string, number>}>("/catalog/entities/stats") : Promise.resolve(null),
+      mayManageLifecycle ? fetchApi<{states: Record<string, number>; pending_commits:number}>("/catalog/entities/stats") : Promise.resolve(null),
       fetchApi<{items: unknown[]}>("/catalog/external-databases"),
       fetchApi<{modules: any[]}>("/capabilities"),
     ]);
@@ -172,9 +152,9 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     let failed = results.some((result) => result.status === "rejected");
     const counts = results[0];
     if (counts.status === "fulfilled" && counts.value) {
-      const statuses = counts.value.statuses;
-      const pending = countOrNull(statuses?.pending_review);
-      const published = countOrNull(statuses?.published);
+      const statuses = counts.value.states;
+      const pending = countOrNull(counts.value.pending_commits);
+      const published = countOrNull(statuses?.active);
       const deleted = countOrNull(statuses?.deleted);
       const merged = countOrNull(statuses?.merged);
       if ([pending, published, deleted, merged].some((v) => v === null)) failed = true;
@@ -194,37 +174,11 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     setOverviewLoading(false);
   };
 
-  const loadReviewList = () => {
-    const request = ++reviewRequest.current;
-    // 服务端返回真实 total；分页避免审核队列超过首屏后，后续条目在后台永远不可操作。
-    setReviewLoading(true);
-    setReviewListFailed(false);
-    fetch(`/api/catalog/entities?status=${reviewStatus}&limit=${PAGE_SIZE}&page=${reviewPage}`, { credentials: "same-origin" })
-      .then((r) => {
-        if (!r.ok) throw new Error(String(r.status));
-        return r.json();
-      })
-      .then((d) => {
-        if (request !== reviewRequest.current) return;
-        if (!Array.isArray(d.items) || countOrNull(d.total) === null) throw new Error("invalid_response");
-        setPendingItems(d.items);
-        setReviewTotal(countOrNull(d.total));
-      })
-      .catch(() => {
-        if (request !== reviewRequest.current) return;
-        setPendingItems([]);
-        setReviewTotal(null);
-        setReviewListFailed(true);
-      })
-      .finally(() => { if (request === reviewRequest.current) setReviewLoading(false); });
-  };
-
   const loadEntities = (page = entitiesPage) => {
     const request = ++entitiesRequest.current;
     setEntitiesLoading(true);
     const params = new URLSearchParams();
     if (entitiesKind !== "all") params.set("kind", entitiesKind);
-    if (entitiesStatus !== "all") params.set("status", entitiesStatus);
     if (entitiesQ.trim()) params.set("q", entitiesQ.trim());
     params.set("limit", String(PAGE_SIZE));
     params.set("page", String(page));
@@ -263,109 +217,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     if (currentTab === "entities" && mayEnterCatalog) {
       loadEntities();
     }
-  }, [currentTab, entitiesKind, entitiesStatus, entitiesPage, mayEnterCatalog]);
-
-  useEffect(() => {
-    if (currentTab === "reviews" && mayEnterCatalog) {
-      loadReviewList();
-    }
-  }, [currentTab, reviewStatus, reviewPage, mayEnterCatalog]);
-
-  // PUT 是整份替换：先读全量再改状态，编辑凭据由管理员明确填写。
-  const submitEntityStatus = async (id: string, status: "published" | "draft", note: string, expectedVersion: number, sources: Source[]) => {
-    const full = await fetchApi<Record<string, any>>(`/catalog/entities/${id}`);
-    if (full.version !== expectedVersion) throw new Error("version_conflict");
-    const { updated_at: _updatedAt, ...doc } = full;
-    await fetchApi(`/catalog/entities/${id}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        entity: { ...doc, id, status },
-        expected_version: expectedVersion,
-        edit_note: note,
-        sources,
-      }),
-    });
-  };
-
-  // 通过（草稿/待审 → 已发布）只能走保存端点：它是唯一能把状态写成 published 的写路径；
-  // 生命周期端点 POST …/lifecycle 只做删除与合并（lifecycle.go 恒把状态置 deleted/merged）。
-  // 反向的 published → draft 被 store.go 的 use_lifecycle_endpoint 拦住，只能走
-  // POST …/unpublish（见 handleUnpublish）。
-  const handleStatusAction = async (id: string, action: "published" | "draft", expectedVersion: number, fromEntities = false) => {
-    setLifecycleNote("");
-    setLifecycleSources([{ kind: "url", citation: "", url: "" }]);
-    setReviewNotice(""); setReviewError(false);
-    setStatusTarget({ id, action, expectedVersion, fromEntities });
-  };
-  const confirmStatusAction = async () => {
-    if (!statusTarget) return;
-    const { id, action, expectedVersion, fromEntities } = statusTarget;
-    const evidenceError = catalogEvidenceError(lifecycleNote, lifecycleSources, window.location.origin);
-    if (evidenceError) {
-      setReviewError(true); setReviewNotice(localizeCatalogError(evidenceError, t)); return;
-    }
-    if (!mayManageLifecycle || statusActionBusy.current) return;
-    statusActionBusy.current = true;
-    setActingId(id);
-    setReviewNotice("");
-    setReviewError(false);
-    try {
-      await submitEntityStatus(id, action, lifecycleNote.trim(), expectedVersion, lifecycleSources);
-      setStatusTarget(null);
-      if (fromEntities) loadEntities(); else loadReviewList();
-      void loadOverview();
-      setReviewNotice(t(action === "published" ? "admin.reviews.approved" : "admin.reviews.rejected"));
-    } catch (e) {
-      setReviewError(true);
-      setReviewNotice(localizeCatalogError(String((e as Error).message || e), t));
-    } finally {
-      statusActionBusy.current = false;
-      setActingId("");
-    }
-  };
-
-  // 下架（published → draft）只能走 /unpublish：保存端点对 published 降级回
-  // 400 use_lifecycle_endpoint，生命周期端点只写 deleted/merged。expected_version 用
-  // 当前行的版本，服务端把它放进 WHERE 做乐观并发——别人先改过就是 409，不会覆盖掉。
-  const handleUnpublish = async () => {
-    if (!unpublishTarget || unpublishing) return;
-    const evidenceError = catalogEvidenceError(lifecycleNote, lifecycleSources, window.location.origin);
-    if (evidenceError) {
-      setReviewError(true); setReviewNotice(localizeCatalogError(evidenceError, t)); return;
-    }
-    setUnpublishing(true);
-    setReviewError(false);
-    setReviewNotice("");
-    try {
-      await unpublishEntity({
-        entity_id: unpublishTarget.id,
-        expected_version: Number(unpublishTarget.version) || 1,
-        edit_note: lifecycleNote.trim(),
-        sources: lifecycleSources,
-      });
-      setReviewNotice(t("admin.reviews.unpublished"));
-      setUnpublishTarget(null);
-      loadReviewList();
-      loadEntities();
-      loadOverview();
-    } catch (e) {
-      // 下架有两种拒绝最值得单独讲清：状态已经变了（列表是旧的）与版本冲突（别人先改过）。
-      // 其余错误码统一走码表，不把裸码渲染给用户。
-      setReviewError(true);
-      const raw = String((e as Error).message || e);
-      const code = raw.trim().split(":")[0]?.trim();
-      setReviewNotice(
-        code === "invalid_status"
-          ? t("admin.reviews.unpublishInvalidStatus")
-          : code === "version_conflict"
-            ? t("admin.reviews.unpublishVersionConflict")
-            : localizeCatalogError(raw, t),
-      );
-    } finally {
-      setUnpublishing(false);
-    }
-  };
-
+  }, [currentTab, entitiesKind, entitiesPage, mayEnterCatalog]);
 
   // 这里刻意没有"启停"动作：运行时模块开关已随子系统拆分退役，
   // 能力是否可用由部署决定（服务在不在、配置没配置），面板只呈现事实（enabled），
@@ -393,7 +245,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
         fetchApi<Record<string, any>>(`/catalog/entities/${encodeURIComponent(targetId)}`),
       ]);
       const [source, target] = pair;
-      if (source.status === "deleted" || source.status === "merged") {
+      if (source.state === "deleted" || source.state === "merged") {
         setMergeError(true);
         setMergeMessage(t("admin.console.mergeSourceRetired"));
         return;
@@ -513,7 +365,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                   </div>
                   <div className="text-2xl font-bold text-warn">{stats.pending ?? "—"}</div>
                 </button>
-                <button type="button" onClick={() => { setEntitiesStatus("published"); setEntitiesPage(1); selectTab("entities"); }} className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle hover:border-primary/40 hover:bg-surfaceHover text-left transition-colors cursor-pointer">
+                <button type="button" onClick={() => { setEntitiesPage(1); selectTab("entities"); }} className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle hover:border-primary/40 hover:bg-surfaceHover text-left transition-colors cursor-pointer">
                   <div className="text-xs text-text-muted font-mono mb-1">
                     {t("admin.console.publishedEntities")}
                   </div>
@@ -589,11 +441,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                 </div>
               </div>
 
-              {reviewNotice && (
-                <div role={reviewError ? "alert" : "status"} className={`p-3 rounded-xl border text-xs ${reviewError ? "border-danger/30 bg-danger/10 text-danger" : "border-success/30 bg-success/10 text-success"}`}>
-                  {reviewNotice}
-                </div>
-              )}
+
 
               {/* Filter Row */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3.5 rounded-xl bg-surfaceSubtle border border-line-subtle">
@@ -633,19 +481,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                   />
                 </div>
 
-                <div className="sm:col-span-4">
-                  <Select
-                    value={entitiesStatus}
-                    onChange={(v) => { setEntitiesStatus(v); setEntitiesPage(1); }}
-                    options={[
-                      { value: "all", label: t("catalog.allStates") },
-                      { value: "published", label: t("catalog.status.published") },
-                      { value: "pending_review", label: t("catalog.status.pending_review") },
-                      { value: "draft", label: t("catalog.status.draft") },
-                    ]}
-                    aria-label={t("catalog.status")}
-                  />
-                </div>
+
               </div>
               <p className="text-xs text-text-faint">{t("admin.entities.activeOnlyHint")}</p>
 
@@ -695,13 +531,13 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                           </td>
                           <td className="py-2.5 px-3">
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                              e.status === "published" ? "bg-emerald-500/20 text-success" :
-                              e.status === "pending_review" ? "bg-amber-500/20 text-warn" :
-                              e.status === "deleted" ? "bg-rose-500/20 text-danger" :
-                              e.status === "merged" ? "bg-purple-500/20 text-alt" :
+                              e.state === "active" ? "bg-emerald-500/20 text-success" :
+
+                              e.state === "deleted" ? "bg-rose-500/20 text-danger" :
+                              e.state === "merged" ? "bg-purple-500/20 text-alt" :
                               "bg-surfaceSubtle text-text-muted"
                             }`}>
-                              {tr(`catalog.status.${e.status}`, e.status)}
+                              {e.state === "active" ? t("catalog.review.reviewed") : tr(`catalog.status.${e.state}`, e.state)}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[11px] text-text-muted">
@@ -715,38 +551,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                               >
                                 {t("admin.entities.edit")}
                               </Link>
-                              {/* 只有草稿/待审能通过：保存端点拒绝写 deleted/merged，也拒绝
-                                  published → draft（store.go 的 use_lifecycle_endpoint）；
-                                  生命周期端点只做删除与合并。已发布条目改成走下架端点（见下），
-                                  已删除/已合并连合并入口都不给。 */}
-                              {mayManageLifecycle && (e.status === "draft" || e.status === "pending_review") && (
-                                <button
-                                  type="button"
-                                  disabled={!!actingId}
-                                  onClick={() => void handleStatusAction(e.id, "published", e.version, true)}
-                                  className="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-success text-[11px] transition-colors duration-fast ease-soft cursor-pointer"
-                                >
-                                  {t("admin.entities.approve")}
-                                </button>
-                              )}
-                              {mayManageLifecycle && e.status === "published" && (
-                                // 已发布条目现在有真正的降级入口（/unpublish），不再是禁用态：
-                                // 调用前二次确认，确认框里说明这一步的影响面。
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setReviewNotice("");
-                                    setReviewError(false);
-                                    setLifecycleNote("");
-                                    setLifecycleSources([{ kind: "url", citation: "", url: "" }]);
-                                    setUnpublishTarget(e);
-                                  }}
-                                  className="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-500/25 text-warn text-[11px] transition-colors duration-fast ease-soft cursor-pointer"
-                                >
-                                  {t("admin.entities.unpublish")}
-                                </button>
-                              )}
-                              {mayManageLifecycle && e.status !== "deleted" && e.status !== "merged" && (
+                              {mayManageLifecycle && e.state !== "deleted" && e.state !== "merged" && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -786,151 +591,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
 
           {currentTab === "ratelimits" && <RateLimitsTab />}
 
-          {currentTab === "reviews" && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-surfaceSubtle border border-line-subtle flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-text-strong">
-                    {t("admin.console.reviewWorkbench")}
-                  </h2>
-                  <p className="text-xs text-text-muted">
-                    {t("admin.console.reviewWorkbenchDesc")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    loadReviewList();
-                    loadOverview();
-                  }}
-                  aria-label={t("common.refresh")}
-                  className="p-2 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover text-xs text-text-body"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* 两个档位共用同一端点、不同 status 筛选：待审的入口是"通过/驳回"，
-                  已发布的入口是"退回草稿"（只有 /unpublish 能降级）。 */}
-              <div className="flex items-center gap-2">
-                {(["pending_review", "published"] as const).map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => { setReviewStatus(status); setReviewPage(1); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-fast ease-soft cursor-pointer ${
-                      reviewStatus === status
-                        ? "bg-primary/20 text-primary"
-                        : "bg-surfaceSubtle hover:bg-surfaceHover text-text-muted"
-                    }`}
-                  >
-                    {status === "pending_review"
-                      ? `${t("admin.reviews.pending")} (${stats.pending ?? "—"})`
-                      : t("admin.reviews.published")}
-                  </button>
-                ))}
-              </div>
-
-              {reviewNotice && (
-                <div role={reviewError ? "alert" : "status"} className={`p-3 rounded-xl border text-xs ${reviewError ? "border-danger/30 bg-danger/10 text-danger" : "border-success/30 bg-success/10 text-success"}`}>
-                  {reviewNotice}
-                </div>
-              )}
-
-              {reviewLoading ? (
-                <div className="py-8 text-center text-xs text-text-faint flex items-center justify-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-primary" />{t("catalog.loading")}
-                </div>
-              ) : reviewListFailed ? (
-                // 与实体列表同因：取数失败会被读成"队列已清空"（loadReviewList 也刻意把失败与空列表分开）。
-                <div role="alert" className="p-8 rounded-xl border border-amber-500/30 bg-amber-500/5 text-center text-xs space-y-2">
-                  <p className="text-amber-700 dark:text-warn-soft">{t("catalog.listFailed")}</p>
-                  <button type="button" onClick={() => loadReviewList()} className="font-mono text-primary hover:underline cursor-pointer">
-                    {t("catalog.retry")}
-                  </button>
-                </div>
-              ) : pendingItems.length === 0 ? (
-                <div className="p-8 rounded-xl border border-dashed border-line text-center text-xs text-text-faint font-mono">
-                  {reviewStatus === "pending_review" ? t("admin.console.noPending") : t("admin.reviews.noPublished")}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {pendingItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                    >
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-primary/20 text-primary text-[10px] font-mono uppercase">
-                            {item.kind}
-                          </span>
-                          <span className="font-semibold text-sm text-text-strong">{item.title}</span>
-                        </div>
-                        <div className="text-xs text-text-faint font-mono break-all">
-                          ID: {item.id} · v{item.version}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Link
-                          href={`/catalog/${item.id}`}
-                          className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover text-xs text-text-body"
-                        >
-                          {t("admin.console.inspect")}
-                        </Link>
-                        {/* 已发布条目不能"通过发布"（已经是发布态），也不该走保存端点降级：
-                            唯一的出口是 /unpublish，所以两个档位的操作集合不同。 */}
-                        {item.status === "published" ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReviewNotice("");
-                              setReviewError(false);
-                              setLifecycleNote("");
-                              setLifecycleSources([{ kind: "url", citation: "", url: "" }]);
-                              setUnpublishTarget(item);
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-warn text-xs font-semibold cursor-pointer"
-                          >
-                            {t("admin.entities.unpublish")}
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              disabled={!!actingId}
-                              onClick={() => void handleStatusAction(item.id, "published", item.version)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-success text-xs font-semibold"
-                            >
-                              {t("admin.reviews.approve")}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!!actingId}
-                              onClick={() => void handleStatusAction(item.id, "draft", item.version)}
-                              className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-danger text-xs font-semibold"
-                            >
-                              {t("admin.entities.reject")}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {!reviewLoading && !reviewListFailed && reviewTotal != null && reviewTotal > 0 && (
-                <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-text-muted">
-                  <span>{t("admin.pagination", { page: reviewPage, pages: Math.ceil(reviewTotal / PAGE_SIZE), total: reviewTotal })}</span>
-                  <div className="flex gap-2">
-                    <button type="button" disabled={reviewPage === 1} onClick={() => setReviewPage((p) => p - 1)} className="rounded-lg border border-line px-3 py-2 hover:bg-surfaceHover disabled:opacity-40">{t("catalog.prevPage")}</button>
-                    <button type="button" disabled={reviewPage * PAGE_SIZE >= reviewTotal} onClick={() => setReviewPage((p) => p + 1)} className="rounded-lg border border-line px-3 py-2 hover:bg-surfaceHover disabled:opacity-40">{t("catalog.nextPage")}</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {currentTab === "reviews" && <CommitReviewQueue/>}
 
           {currentTab === "merge" && (
             <div className="space-y-4">
@@ -1067,34 +728,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
         </div>}
         confirmLabel={t("admin.console.executeMerge")} busy={merging}
         onClose={() => { if (!merging) setMergePreview(null); }} onConfirm={() => void confirmMerge()} />
-      {/* 状态变更明确采集编辑说明与事实凭据。 */}
-      <ConfirmDialog
-        open={statusTarget != null}
-        title={t(statusTarget?.action === "published" ? "admin.reviews.approve" : "admin.reviews.reject")}
-        message={<div className="catalog-v2 space-y-3">
-          {statusTarget ? <Link href={`/catalog/${statusTarget.id}`} target="_blank" rel="noopener noreferrer" className="break-all text-primary hover:underline">{statusTarget.id}</Link> : null}
-          <Evidence note={lifecycleNote} setNote={setLifecycleNote} sources={lifecycleSources} setSources={setLifecycleSources} />
-          {reviewError && reviewNotice ? <p role="alert">{reviewNotice}</p> : null}
-        </div>}
-        confirmLabel={t(statusTarget?.action === "published" ? "admin.reviews.approve" : "admin.reviews.reject")}
-        busy={!!actingId}
-        onClose={() => { if (!actingId) setStatusTarget(null); }}
-        onConfirm={() => void confirmStatusAction()}
-      />
-      <ConfirmDialog
-        open={unpublishTarget != null}
-        title={t("admin.entities.unpublish")}
-        message={<div className="space-y-2"><p>{t("admin.entities.unpublishConfirm", {
-          title: unpublishTarget?.title ?? "",
-          version: String(unpublishTarget?.version ?? 1),
-        })}</p><div className="catalog-v2">
-          <Evidence note={lifecycleNote} setNote={setLifecycleNote} sources={lifecycleSources} setSources={setLifecycleSources} />
-        </div>{reviewError && reviewNotice ? <p role="alert">{reviewNotice}</p> : null}</div>}
-        confirmLabel={t("admin.entities.unpublish")}
-        busy={unpublishing}
-        onClose={() => { if (!unpublishing) setUnpublishTarget(null); }}
-        onConfirm={() => void handleUnpublish()}
-      />
+
     </div>
   );
 }

@@ -74,7 +74,8 @@ func TestPostgresIdentityCandidatesMatchAndVisibility(t *testing.T) {
 	original := f.save(Entity{Kind: "work", Title: "Original", Translations: map[string]Translation{
 		"ja": {Title: "夜明け", Aliases: []string{"  Star\tSONG　"}}}, ExternalLinks: linksFromIDMap(map[string]string{"wikidata": "Q123"}),
 		Attributes: map[string]any{"duration": 213}})
-	hidden := f.save(Entity{Kind: "work", Title: "Star song", Status: "draft"})
+	hidden := f.save(Entity{Kind: "work", Title: "Star song", Status: "active"})
+	hidden = f.retire(hidden)
 	f.save(Entity{Kind: "agent", Title: "Star song"})
 	for _, query := range []IdentityCandidateQuery{
 		{Kind: "work", Titles: []string{"star song"}},
@@ -86,6 +87,7 @@ func TestPostgresIdentityCandidatesMatchAndVisibility(t *testing.T) {
 			t.Fatalf("candidate=%+v err=%v", out, err)
 		}
 	}
+ duplicate := f.save(Entity{Kind:"work",Title:"Star song"})
 	out, err := f.s.FindIdentityCandidates(ctx, IdentityCandidateQuery{Kind: "work", Titles: []string{"star song"}, Limit: queryInt(1)}, &f.u)
 	if err != nil || out.Complete || out.Total != 2 || len(out.Items) != 1 {
 		t.Fatalf("truncation=%+v %v", out, err)
@@ -101,7 +103,7 @@ func TestPostgresIdentityCandidatesMatchAndVisibility(t *testing.T) {
 		if item.Matched.ID == original.ID && (item.Canonical == nil || item.Canonical.ID != target.ID) {
 			t.Fatalf("alias=%+v", item)
 		}
-		if item.Matched.ID != original.ID && item.Matched.ID != hidden.ID {
+		if item.Matched.ID != original.ID && item.Matched.ID != duplicate.ID {
 			t.Fatalf("wrong kind: %+v", item)
 		}
 	}
@@ -152,7 +154,7 @@ func TestPostgresIdentityCandidatesSnapshotAndConcurrentWriters(t *testing.T) {
 		go func(worker int) {
 			defer wg.Done()
 			for turn := 0; turn < 8; turn++ {
-				_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: fmt.Sprintf("Unrelated %d %d", worker, turn), Status: "draft"}, EditNote: "concurrent fixture", Sources: fixtureSources()}, f.u)
+				_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: fmt.Sprintf("Unrelated %d %d", worker, turn), Status: "active"}, EditNote: "concurrent fixture", Sources: fixtureSources()}, f.u)
 				if err != nil {
 					failures <- err
 					return

@@ -433,7 +433,7 @@ func canAttachToTarget(u User, tgt Entity) bool {
 		return false
 	}
 	// 目标端否决权：自己的条目，或持实体编辑权时对公开条目建边/拆边（旧 editor）。
-	return ownedBy(tgt, u) || tgt.Status == "published" && u.Can(PermissionEntityEdit)
+	return ownedBy(tgt, u) || tgt.Status == "active" && u.Can(PermissionEntityEdit)
 }
 
 // validateRelationAttributes 校验关系边的属性：字段码必须属于该关系声明的字段集，
@@ -534,6 +534,9 @@ func attrsOrEmpty(m map[string]any) map[string]any {
 }
 
 func (s *Store) SaveRelation(ctx context.Context, input RelationEdit, u User) (Relation, error) {
+	if !u.Can(PermissionReviewBypass) {
+		return Relation{}, fmt.Errorf("commit_required")
+	}
 	var r Relation
 	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
 		var err error
@@ -677,47 +680,52 @@ func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEd
 }
 
 func (s *Store) DeleteRelation(ctx context.Context, id string, expected int64, note string, sources []Source, u User) error {
-	return s.writeCatalog(ctx, func(tx *sql.Tx) error {
-		if err := validateSources(note, sources); err != nil {
-			return err
-		}
-		var b []byte
-		var r Relation
-		if err := tx.QueryRowContext(ctx, "SELECT document FROM catalog.relations WHERE id=$1", id).Scan(&b); err != nil {
-			return err
-		}
-		if err := json.Unmarshal(b, &r); err != nil {
-			return err
-		}
-		if expected != r.Version {
-			return errVersionConflict
-		}
-		src, err := get(ctx, tx, r.SourceID)
-		if err != nil {
-			return err
-		}
-		if !canWriteRelation(u, src) {
-			return errForbidden
-		}
-		// 删除同样受目标端否决权约束：他人已发布条目上的边不得单方面拆除。
-		tgt, err := get(ctx, tx, r.TargetID)
-		if err != nil {
-			return err
-		}
-		if !canAttachToTarget(u, tgt) {
-			return errForbidden
-		}
-		// 删除同样收敛到版本条件：读到版本与真正删除之间可能被并发更新插队，
-		// 无条件 DELETE 会把对方刚落库的写入一并抹掉（丢更新）。
-		var res sql.Result
-		if res, err = tx.ExecContext(ctx, "DELETE FROM catalog.relations WHERE id=$1 AND version=$2", id, expected); err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errVersionConflict
-		}
-		return audit(ctx, tx, id, r.Version+1, u, note, sources, r, "relation.deleted")
-	})
+	if !u.Can(PermissionReviewBypass) {
+		return fmt.Errorf("commit_required")
+	}
+	return s.writeCatalog(ctx, func(tx *sql.Tx) error { return s.deleteRelationTx(ctx, tx, id, expected, note, sources, u) })
+}
+
+func (s *Store) deleteRelationTx(ctx context.Context, tx *sql.Tx, id string, expected int64, note string, sources []Source, u User) error {
+	if err := validateSources(note, sources); err != nil {
+		return err
+	}
+	var b []byte
+	var r Relation
+	if err := tx.QueryRowContext(ctx, "SELECT document FROM catalog.relations WHERE id=$1", id).Scan(&b); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return err
+	}
+	if expected != r.Version {
+		return errVersionConflict
+	}
+	src, err := get(ctx, tx, r.SourceID)
+	if err != nil {
+		return err
+	}
+	if !canWriteRelation(u, src) {
+		return errForbidden
+	}
+	// 删除同样受目标端否决权约束：他人已发布条目上的边不得单方面拆除。
+	tgt, err := get(ctx, tx, r.TargetID)
+	if err != nil {
+		return err
+	}
+	if !canAttachToTarget(u, tgt) {
+		return errForbidden
+	}
+	// 删除同样收敛到版本条件：读到版本与真正删除之间可能被并发更新插队，
+	// 无条件 DELETE 会把对方刚落库的写入一并抹掉（丢更新）。
+	var res sql.Result
+	if res, err = tx.ExecContext(ctx, "DELETE FROM catalog.relations WHERE id=$1 AND version=$2", id, expected); err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errVersionConflict
+	}
+	return audit(ctx, tx, id, r.Version+1, u, note, sources, r, "relation.deleted")
 }
 
 // occurrenceRow 是 track_contents 上的一行收录原语（不含 release/medium/track 实体）。

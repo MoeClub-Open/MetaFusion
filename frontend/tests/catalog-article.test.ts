@@ -61,14 +61,14 @@ test("local filtering keeps records matched only by article text", () => {
 });
 
 test("article revisions identify the exact locale field and restore text alongside structured facts", () => {
-  const current = { ...emptyEntity(), id: "entry", version: 4, status: "published", translations: { en: { title: "Entry", summary: "Summary", body: "new body" }, ja: { title: "項目", body: "日本語" } }, attributes: { language: "en" } };
+  const current = { ...emptyEntity(), id: "entry", version: 4, state: "active", translations: { en: { title: "Entry", summary: "Summary", body: "new body" }, ja: { title: "項目", body: "日本語" } }, attributes: { language: "en" } };
   const historical = { ...current, version: 2, translations: { ...current.translations, en: { ...current.translations.en, body: "old body" } }, attributes: { language: "ja" } };
   const diff = revisionChanges(historical, current);
   assert.deepEqual(diff["translations.en.body"], { old: "old body", new: "new body" });
   assert.equal(diff["translations.en.title"], undefined);
   const restored = prepareRevisionRestore(current, historical);
   assert.equal(restored.version, 4);
-  assert.equal(restored.status, "published");
+  assert.equal(restored.state, "active");
   assert.equal(restored.translations.en.body, "old body");
   assert.equal(restored.translations.ja.body, "日本語");
   assert.equal(restored.attributes.language, "ja");

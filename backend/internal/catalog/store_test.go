@@ -2,8 +2,6 @@ package catalog
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"github.com/metafusion/metafusion-app/internal/testutil"
 	"sync"
@@ -113,7 +111,7 @@ func TestPostgresCatalog(t *testing.T) {
 	save := func(e Entity) Entity {
 		t.Helper()
 		if e.Status == "" {
-			e.Status = "published"
+			e.Status = "active"
 		}
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "integration fixture", Sources: sources}, admin)
 		if err != nil {
@@ -315,12 +313,12 @@ func TestPostgresCatalog(t *testing.T) {
 			t.Fatalf("relation version=%d, want %d", colVersion, rel.Version+1)
 		}
 	})
-	t.Run("private catalog remains private", func(t *testing.T) {
+	t.Run("removed publication states are rejected", func(t *testing.T) {
 		e := entity("work", "未公开个人作品")
 		e.Status = "draft"
-		e = save(e)
-		if _, err := s.Get(ctx, e.ID, nil); !errors.Is(err, sql.ErrNoRows) {
-			t.Fatal("draft leaked")
+		_, err := s.Save(ctx, Edit{Entity: e, EditNote: "retired state", Sources: sources}, admin)
+		if err == nil {
+			t.Fatal("draft state accepted")
 		}
 	})
 	t.Run("definition impacts and retired terms", func(t *testing.T) {
@@ -457,13 +455,13 @@ func TestStructuralAttributeEntrypointsCannotBeRemoved(t *testing.T) {
 func TestStructuralEntryMissingRejectsEntityData(t *testing.T) {
 	ref := func(string, []string) error { return nil }
 	mkTrack := func(locator Locator, attrs map[string]any) Entity {
-		return Entity{Kind: "track", Title: "T", Status: "draft",
+		return Entity{Kind: "track", Title: "T", Status: "active",
 			MediumID: "11111111-1111-4111-8111-111111111111",
 			Contents: []Inclusion{{ExpressionID: "22222222-2222-4222-8222-222222222222",
 				Locator: locator, Attributes: attrs}}}
 	}
 	mkRelease := func(attrs map[string]any) Entity {
-		return Entity{Kind: "release", Title: "R", Status: "draft",
+		return Entity{Kind: "release", Title: "R", Status: "active",
 			Subjects: []Subject{{WorkID: "44444444-4444-4444-8444-444444444444",
 				Role: "primary", Attributes: attrs}}}
 	}
@@ -623,7 +621,7 @@ func TestSchemeConvergenceInEntityValidation(t *testing.T) {
 	ref := func(string, []string) error { return nil }
 	mkTrack := func(locator Locator) Entity {
 		return Entity{
-			Kind: "track", Title: "A1", Status: "draft",
+			Kind: "track", Title: "A1", Status: "active",
 			MediumID: "11111111-1111-4111-8111-111111111111",
 			Contents: []Inclusion{{
 				ExpressionID: "22222222-2222-4222-8222-222222222222",
@@ -664,13 +662,13 @@ func TestSchemeConvergenceInEntityValidation(t *testing.T) {
 	}
 	// 无匹配时回退全局组：同一定位在 medium 拥有者（无 track scheme）下通过。
 	medium := Entity{
-		Kind: "medium", Title: "CD1", Status: "draft",
+		Kind: "medium", Title: "CD1", Status: "active",
 		ReleaseID:  "33333333-3333-4333-8333-333333333333",
 		Attributes: map[string]any{},
 	}
 	_ = medium
 	release := Entity{
-		Kind: "release", Title: "R", Status: "draft",
+		Kind: "release", Title: "R", Status: "active",
 		Subjects: []Subject{{
 			WorkID: "44444444-4444-4444-8444-444444444444", Role: "primary",
 			Attributes: map[string]any{},
@@ -702,86 +700,6 @@ func TestSchemeConvergenceInEntityValidation(t *testing.T) {
 	}
 }
 
-// 三层角色发布权限矩阵：user（审核制）/ editor（可发布自己条目）/ admin。
-func TestRolePublishMatrix(t *testing.T) {
-	ctx := context.Background()
-	s := &Store{DB: testutil.Database(t)}
-	if err := s.Initialize(ctx); err != nil {
-		t.Fatal(err)
-	}
-	sources := fixtureSources()
-	admin, editor, member := fixtureUser("admin"), fixtureUser("editor"), fixtureUser("user")
-
-	mk := func(title string) Entity {
-		return Entity{Kind: "work", Title: title,
-			OriginalLanguage: "ja", Translations: map[string]Translation{"ja": {Title: title}}}
-	}
-
-	// user 新建只能 draft/pending_review，不能直接 published。
-	for _, st := range []string{"draft", "pending_review"} {
-		e := mk("user-" + st)
-		e.Status = st
-		if _, err := s.Save(ctx, Edit{Entity: e, EditNote: "n", Sources: sources}, member); err != nil {
-			t.Fatalf("user create %s: %v", st, err)
-		}
-	}
-	if _, err := s.Save(ctx, Edit{Entity: func() Entity { e := mk("user-published"); e.Status = "published"; return e }(), EditNote: "n", Sources: sources}, member); err == nil {
-		t.Fatal("user direct publish must be forbidden")
-	}
-
-	// editor 新建可直接 published。
-	pub := mk("editor-published")
-	pub.Status = "published"
-	saved, err := s.Save(ctx, Edit{Entity: pub, EditNote: "n", Sources: sources}, editor)
-	if err != nil {
-		t.Fatalf("editor direct publish: %v", err)
-	}
-
-	// editor 可继续编辑自己的已发布条目（version 递增），但不可降级状态。
-	saved.Title = "editor-published-v2"
-	if _, err := s.Save(ctx, Edit{Entity: saved, ExpectedVersion: saved.Version, EditNote: "n", Sources: sources}, editor); err != nil {
-		t.Fatalf("editor edit own published: %v", err)
-	}
-	demoted := saved
-	demoted.Status = "draft"
-	if _, err := s.Save(ctx, Edit{Entity: demoted, ExpectedVersion: saved.Version + 1, EditNote: "n", Sources: sources}, editor); err == nil {
-		t.Fatal("published demotion must hit use_lifecycle_endpoint")
-	}
-
-	// 他人的未发布条目仍受保护。
-	foreign := mk("foreign-entity")
-	foreign.Status = "draft"
-	foreignSaved, err := s.Save(ctx, Edit{Entity: foreign, EditNote: "n", Sources: sources}, editor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	foreignSaved.Title = "hijacked"
-	if _, err := s.Save(ctx, Edit{Entity: foreignSaved, ExpectedVersion: foreignSaved.Version, EditNote: "n", Sources: sources}, member); err == nil {
-		t.Fatal("user editing foreign entity must be forbidden")
-	}
-
-	// user 提交审核后，admin 可发布。
-	review := mk("user-submitted")
-	review.Status = "pending_review"
-	submitted, err := s.Save(ctx, Edit{Entity: review, EditNote: "n", Sources: sources}, member)
-	if err != nil {
-		t.Fatal(err)
-	}
-	submitted.Status = "published"
-	published, err := s.Save(ctx, Edit{Entity: submitted, ExpectedVersion: submitted.Version, EditNote: "n", Sources: sources}, admin)
-	if err != nil {
-		t.Fatalf("admin publish pending_review: %v", err)
-	}
-	published.Title = "shared correction"
-	corrected, err := s.Save(ctx, Edit{Entity: published, ExpectedVersion: published.Version, EditNote: "shared correction", Sources: sources}, editor)
-	if err != nil || corrected.CreatedBy != member.ID || corrected.Version != published.Version+1 {
-		t.Fatalf("shared edit must preserve owner and advance version: %v", err)
-	}
-	if _, err = s.Save(ctx, Edit{Entity: published, ExpectedVersion: published.Version, EditNote: "stale", Sources: sources}, editor); err == nil {
-		t.Fatal("shared edits must still reject stale versions")
-	}
-}
-
 // TestExpressionDetailsBatch：批量上屏端点与单条端点语义一致——
 // 表达实体、同 Work 收录、首个署名标题都应命中；不存在/不可见 ID 不返回。
 func TestExpressionDetailsBatch(t *testing.T) {
@@ -795,7 +713,7 @@ func TestExpressionDetailsBatch(t *testing.T) {
 	save := func(e Entity) Entity {
 		t.Helper()
 		if e.Status == "" {
-			e.Status = "published"
+			e.Status = "active"
 		}
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "batch fixture", Sources: sources}, admin)
 		if err != nil {
@@ -878,7 +796,7 @@ func TestOccurrencesScopeByKind(t *testing.T) {
 	save := func(e Entity) Entity {
 		t.Helper()
 		if e.Status == "" {
-			e.Status = "published"
+			e.Status = "active"
 		}
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "scope fixture", Sources: sources}, admin)
 		if err != nil {

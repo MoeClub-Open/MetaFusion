@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,28 +46,17 @@ func TestExchangeRoutesCarryIdentityMiddleware(t *testing.T) {
 		return w
 	}
 
-	// 1) 带合法令牌提交提案：过闸门、落库、强制 pending_review，created_by 就是令牌主体
-	//    （只有 user(c) 非 nil 才可能成立）。
-	proposal := `{"entity":{"kind":"work","title":"交換提案","original_language":"ja","translations":{"ja":{"title":"交換提案"}}},"expected_version":0,"edit_note":"实例间提案","sources":[{"kind":"url","citation":"exchange fixture","url":"https://example.org/fixture"}]}`
-	w := do(http.MethodPost, "/api/exchange/proposals", proposal, token)
-	if w.Code != http.StatusOK {
-		t.Fatalf("带合法令牌的提案应 200（不再 401），实际 %d：%s", w.Code, w.Body.String())
+	created, err := s.Save(context.Background(), Edit{Entity: Entity{Kind: "work", Title: "交换导出"}, EditNote: "fixture", Sources: fixtureSources()}, User{ID: owner, Permissions: []string{permissionWildcard}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	var created Entity
-	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
-		t.Fatalf("提案响应不是实体: %v %s", err, w.Body.String())
+	if w := do(http.MethodGet, "/api/exchange/entities/"+created.ID, "", token); w.Code != 200 {
+		t.Fatalf("export: %d %s", w.Code, w.Body.String())
 	}
-	if created.Status != "pending_review" || created.CreatedBy != owner || created.ID == "" {
-		t.Fatalf("提案形状不符（身份没进处理器）: %+v", created)
+	if w := do(http.MethodPost, "/api/exchange/proposals", "{}", token); w.Code != 404 {
+		t.Fatalf("retired proposal route: %d", w.Code)
 	}
 
-	// 2) 导出走同一中间件：匿名只能看到 published，本人能导出自己创建的未发布条目。
-	if w = do(http.MethodGet, "/api/exchange/entities/"+created.ID, "", ""); w.Code != http.StatusNotFound {
-		t.Fatalf("匿名导出未发布条目应 404，实际 %d：%s", w.Code, w.Body.String())
-	}
-	if w = do(http.MethodGet, "/api/exchange/entities/"+created.ID, "", token); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), created.ID) {
-		t.Fatalf("本人导出自己的草稿应 200 + 实体快照，实际 %d：%s", w.Code, w.Body.String())
-	}
 }
 
 // 同一类失效的通杀检查：任何 /api 路由对"带合法令牌"的请求都不该回 401 authentication_required

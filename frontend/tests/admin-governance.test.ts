@@ -20,8 +20,10 @@ test("foreign management permissions and empty grants cannot enter catalog gover
 });
 
 test("lifecycle and wildcard grants expose their corresponding management work", () => {
-  for (const section of ["entities", "reviews", "merge"] as const) assert.ok(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), section));
+  for (const section of ["entities", "merge"] as const) assert.ok(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), section));
   assert.equal(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), "definitions"), false);
+  assert.equal(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), "reviews"), false);
+  assert.equal(canUseCatalogAdminTab(user(["catalog.review.manage"]), "reviews"), true);
   for (const section of ["overview", "reviews", "definitions", "shelves", "merge"] as const) assert.ok(canUseCatalogAdminTab(user(["*"]), section));
 });
 

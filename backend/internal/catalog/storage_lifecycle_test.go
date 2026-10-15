@@ -217,7 +217,7 @@ func TestStorageLifecycleRetriesCurrentCanonicalFactsOnPostgres(t *testing.T) {
 		t.Fatal("no snapshots delivered")
 	}
 	for _, state := range received {
-		if state.EntityID != target.ID || state.Status != "published" || !contains(state.Aliases, source.ID) ||
+		if state.EntityID != target.ID || state.Status != "active" || !contains(state.Aliases, source.ID) ||
 			!contains(state.CoverAssetIDs, sourceAsset) || !contains(state.CoverAssetIDs, targetAsset) || state.AliasVersions[source.ID] <= source.Version {
 			t.Fatalf("historical source event must use current canonical facts and preserve covers: %+v", state)
 		}
@@ -226,18 +226,11 @@ func TestStorageLifecycleRetriesCurrentCanonicalFactsOnPostgres(t *testing.T) {
 	if err := f.s.syncStorageLifecycle(ctx, client); err != nil || len(received) != before {
 		t.Fatalf("acknowledged batch replayed: err=%v", err)
 	}
-	target, err = f.s.Unpublish(ctx, target.ID, UnpublishEdit{ExpectedVersion: target.Version, EditNote: "unpublish", Sources: fixtureSources()}, f.u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := f.s.currentStorageLifecycle(ctx, source.ID)
-	if err != nil || state.Status != "draft" || !contains(state.CoverAssetIDs, sourceAsset) || !contains(state.CoverAssetIDs, targetAsset) {
-		t.Fatalf("draft should retain both picture references: %+v err=%v", state, err)
-	}
+
 	if _, err := f.s.Lifecycle(ctx, target.ID, LifecycleEdit{ExpectedVersion: target.Version, EditNote: "delete", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatal(err)
 	}
-	state, err = f.s.currentStorageLifecycle(ctx, source.ID)
+	state, err := f.s.currentStorageLifecycle(ctx, source.ID)
 	if err != nil || state.EntityID != target.ID || state.Status != "deleted" || !contains(state.Aliases, source.ID) {
 		t.Fatalf("canonical delete must cover historical aliases: %+v err=%v", state, err)
 	}

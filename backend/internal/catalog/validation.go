@@ -15,7 +15,7 @@ import (
 )
 
 var codePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-var reserved = map[string]bool{"id": true, "kind": true, "version": true, "status": true, "created_by": true, "work_id": true, "parent_id": true, "release_id": true, "medium_id": true, "content_unit_id": true, "contents": true, "subjects": true, "redirect_id": true}
+var reserved = map[string]bool{"id": true, "kind": true, "version": true, "status": true, "state": true, "review_status": true, "created_by": true, "work_id": true, "parent_id": true, "release_id": true, "medium_id": true, "content_unit_id": true, "contents": true, "subjects": true, "redirect_id": true}
 
 // StructuralAttributeFields 是"记录级动态结构"的入口字段码：收录位置（locator）、
 // 收录附加属性、发行对象附加属性。它们不是普通实体属性，没有独立 Go 字段或数据库列，
@@ -1118,7 +1118,7 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 	if !contains(Kinds, e.Kind) || strings.TrimSpace(e.Title) == "" || len(e.Title) > 2000 || e.Position < 0 {
 		return fmt.Errorf("invalid_entity")
 	}
-	if !contains([]string{"draft", "pending_review", "published", "deleted", "merged"}, e.Status) {
+	if !contains([]string{"active", "deleted", "merged"}, e.Status) {
 		return fmt.Errorf("invalid_status")
 	}
 	if err := d.validateEntityContent(e, reference, historical); err != nil {

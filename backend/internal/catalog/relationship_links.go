@@ -103,8 +103,8 @@ FROM (
 ) l
 JOIN catalog.entities source ON source.id=l.source_id::uuid
 JOIN catalog.entities target ON target.id=l.target_id::uuid
-WHERE ($2::boolean OR source.status='published' OR source.created_by=$3::uuid)
- AND ($2::boolean OR target.status='published' OR target.created_by=$3::uuid)
+WHERE ($2::boolean OR source.status='active' OR source.created_by=$3::uuid)
+ AND ($2::boolean OR target.status='active' OR target.created_by=$3::uuid)
  AND ($6='both' OR ($6='outgoing' AND l.source_id=$1::text)
   OR ($6='incoming' AND l.source_id<>$1::text AND (l.target_id=$1::text OR l.relation_id<>''
    OR l.code IN ('structure:release_subject','structure:track_content'))))

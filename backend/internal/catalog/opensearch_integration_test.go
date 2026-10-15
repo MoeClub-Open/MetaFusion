@@ -47,7 +47,7 @@ func TestOpenSearchIntegrationPaginationAndVisibility(t *testing.T) {
 	ctx := context.Background()
 	a := f.save(Entity{Kind: "work", Title: "検索 Alpha", Attributes: map[string]any{"tags": []string{"search-tag"}}, OriginalLanguage: "ja", Translations: map[string]Translation{"ja": {Title: "検索 Alpha"}, "en-US": {Title: "Alpha"}}})
 	f.save(Entity{Kind: "work", Title: "検索 Beta"})
-	hidden := f.save(Entity{Kind: "work", Title: "検索 Hidden", Status: "draft"})
+	hidden := f.retire(f.save(Entity{Kind: "work", Title: "検索 Hidden"}))
 	useTestSearch(t, f.s)
 	o := ListOptions{Query: "検索", Limit: 1, Sort: "created_at", Order: "asc"}
 	page, err := f.s.Search(ctx, o, nil, "")
@@ -69,7 +69,7 @@ func TestOpenSearchIntegrationPaginationAndVisibility(t *testing.T) {
 	}
 	// A published result in the PIT is now private in PostgreSQL. No stale
 	// status in the index may disclose its content.
-	if _, err := f.s.DB.ExecContext(ctx, "UPDATE catalog.entities SET status='draft' WHERE id=$1", a.ID); err != nil {
+	if _, err := f.s.DB.ExecContext(ctx, "UPDATE catalog.entities SET status='deleted' WHERE id=$1", a.ID); err != nil {
 		t.Fatal(err)
 	}
 	stale, err := f.s.Search(ctx, o, nil, "")
@@ -131,11 +131,7 @@ func TestOpenSearchIntegrationPhysicallyDeletedEventReplay(t *testing.T) {
 		(SELECT id FROM catalog.outbox WHERE entity_id=$2)`, openSearchConsumer, deleted.ID); err != nil {
 		t.Fatal(err)
 	}
-	var err error
-	deleted, err = f.s.Unpublish(ctx, deleted.ID, UnpublishEdit{ExpectedVersion: deleted.Version, EditNote: "unpublish fixture", Sources: fixtureSources()}, f.u)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	for _, entity := range []Entity{deleted, neverIndexed} {
 		if _, err := f.s.Lifecycle(ctx, entity.ID, LifecycleEdit{ExpectedVersion: entity.Version, EditNote: "delete fixture", Sources: fixtureSources()}, f.u); err != nil {
 			t.Fatal(err)
@@ -272,7 +268,7 @@ func TestOpenSearchIntegrationDeepCursor(t *testing.T) {
 	// Populate real PostgreSQL rows and run the production rebuild. This proves
 	// the result count can exceed OpenSearch's from/size window without a fallback.
 	_, err := f.s.DB.ExecContext(context.Background(), `INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document)
-	SELECT gen_random_uuid(),'work',1,'Deep pagination','published',$1,
+	SELECT gen_random_uuid(),'work',1,'Deep pagination','active',$1,
 	jsonb_build_object('kind','work','title','Deep pagination','translations',jsonb_build_object('en',jsonb_build_object('title','Deep pagination')),'attributes','{}'::jsonb)
 	FROM generate_series(1,10010)`, f.u.ID)
 	if err != nil {

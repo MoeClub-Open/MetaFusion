@@ -11,6 +11,9 @@ package catalog
 const (
 	// PermissionEntityEdit 编辑目录实体：维护自己创建的条目，并协作维护公开条目。
 	PermissionEntityEdit = "catalog.entity.edit"
+	// Review applies a sealed commit; bypass permits the submitter's own commit to apply immediately.
+	PermissionReviewManage = "catalog.review.manage"
+	PermissionReviewBypass = "catalog.review.bypass"
 	// PermissionRelationEdit 编辑实体关系：POST/PUT/DELETE /catalog/relations 的路由闸门，
 	// 与实体编辑分开。两端细粒度判定（canWriteRelation/canAttachToTarget）仍按实体口径复核。
 	PermissionRelationEdit = "catalog.relation.edit"
@@ -28,6 +31,8 @@ const (
 // catalogPermissionCodes 是本服务声明的全部目录权限码，用于区分治理操作。
 var catalogPermissionCodes = []string{
 	PermissionEntityEdit,
+	PermissionReviewManage,
+	PermissionReviewBypass,
 	PermissionRelationEdit,
 	PermissionDefinitionsManage,
 	PermissionLifecycleManage,

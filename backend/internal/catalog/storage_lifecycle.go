@@ -32,7 +32,7 @@ const storageLifecycleLockID = int64(740221)
 type storageLifecycleSnapshot struct {
 	EntityID      string           `json:"entity_id"`
 	Kind          string           `json:"kind"`
-	Status        string           `json:"status"`
+	Status        string           `json:"state"`
 	Version       int64            `json:"version"`
 	UpdatedAt     time.Time        `json:"updated_at"`
 	Aliases       []string         `json:"aliases"`

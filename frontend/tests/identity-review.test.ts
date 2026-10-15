@@ -17,7 +17,7 @@ const otherID = "22222222-2222-4222-8222-222222222222";
 const aliasID = "33333333-3333-4333-8333-333333333333";
 const scopeID = "44444444-4444-4444-8444-444444444444";
 const candidate = (id = otherID): IdentityCandidateEntity => ({
-  id, kind: "work", title: "Candidate title", status: "published", version: 3,
+  id, kind: "work", title: "Candidate title", state: "active", version: 3,
   translations: { ja: { title: "候補", aliases: ["別名"] } }, external_links: [{ kind: "database", url: "mf://external/database/123", external_id: "123" }], attributes: {},
 });
 const entity = { ...emptyEntity(), id: ownID, title: "Candidate title" };
@@ -36,7 +36,7 @@ test("lookup criteria match server titles, external identifiers and kind-specifi
 
 test("complete review filters own aliases and deduplicates canonical acknowledgement IDs", () => {
   const other = candidate();
-  const alias = { ...other, id: aliasID, status: "merged", title: "Old title" };
+  const alias = { ...other, id: aliasID, state: "merged", title: "Old title" };
   const data = readIdentityCandidates(response([match(other), match(other, alias), match(candidate(ownID))]), entity);
   assert.deepEqual(data.candidateIDs, [otherID]);
   assert.equal(data.items.length, 2);
@@ -50,8 +50,8 @@ test("incomplete, malformed and unresolved lookups cannot be acknowledged as emp
   }
   for (const unresolved of [
     response([{ matched: candidate(), canonical: null, resolution_error: "canonical_identity_unverified" }]),
-    response([match({ ...candidate(), status: "deleted" })]),
-    response([match({ ...candidate(), status: "merged" })]),
+    response([match({ ...candidate(), state: "deleted" })]),
+    response([match({ ...candidate(), state: "merged" })]),
     response([match({ ...candidate(), kind: "agent" })]),
   ]) assert.throws(() => readIdentityCandidates(unresolved, entity), /identity_candidate_unresolved/);
   for (const malformed of [{}, response([match(), match()]), response([match({ ...candidate(), external_links: [{ kind: "unsafe", url: 123 as any }] } as unknown as IdentityCandidateEntity)])]) {
@@ -104,7 +104,7 @@ test("fetchApi preserves the stable 409 receipt and the candidate API checks com
 
 test("review panel shows matched and canonical identities and starts without a checked confirmation", () => {
   const canonical = candidate();
-  const matched = { ...canonical, id: aliasID, status: "merged", title: "Historical title" };
+  const matched = { ...canonical, id: aliasID, state: "merged", title: "Historical title" };
   const review: IdentityReviewState = { key: identityReviewKey(entity), expectedIDs: [otherID], status: "ready", confirmed: false, data: readIdentityCandidates(response([match(canonical, matched)]), entity) };
   const props = { review, busy: false, definitions: null, kindLabel: (kind: string) => kind, onConfirm: () => {}, onReload: () => {} };
   const html = renderToStaticMarkup(createElement(IdentityReviewPanel, props));

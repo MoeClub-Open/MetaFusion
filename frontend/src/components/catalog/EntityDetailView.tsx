@@ -834,7 +834,7 @@ export function EntityDetailView({ id }: { id: string }) {
             )}
 
             <span className="px-2.5 py-1 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body text-xs uppercase font-semibold font-mono">
-              {entity.status}
+              {t("catalog.review.reviewed")}
             </span>
             <QualityBadge
               entityId={entity.id || id}

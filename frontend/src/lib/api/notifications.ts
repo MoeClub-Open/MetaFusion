@@ -13,7 +13,7 @@ export type NotificationType =
   | "entity.review_rejected"
   | "import.completed";
 
-export type NotificationSubjectType = "topic" | "entity" | "import" | "";
+export type NotificationSubjectType = "topic" | "entity" | "commit" | "import" | "";
 
 /**
  * 一行通知。payload 是各类型自己的键值袋（键随类型变化，且可能缺键），

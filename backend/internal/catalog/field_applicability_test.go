@@ -10,13 +10,13 @@ func allowAllRef(string, []string) error { return nil }
 func TestFieldApplicabilityUsesKindNotPublicationCategory(t *testing.T) {
 	d := Defaults()
 	for _, e := range []Entity{
-		{Kind: "work", Title: "小说", Status: "draft", Attributes: map[string]any{"language": "ja", "volume_count": float64(3), "tags": []any{"连载"}}},
-		{Kind: "work", Title: "歌曲", Status: "draft", Attributes: map[string]any{"duration": float64(200), "broadcast_start": "2024-01-01"}},
-		{Kind: "release", Title: "发行", Status: "draft", Attributes: map[string]any{"catalog_number": "ABC-001", "edition_type": "limited", "attachments": []any{map[string]any{"label": map[string]any{"en-US": "Booklet"}, "quantity": float64(1)}}}},
-		{Kind: "medium", Title: "载体", Status: "draft", Attributes: map[string]any{"format": "cd"}},
-		{Kind: "track", Title: "条目", Status: "draft", Attributes: map[string]any{"duration": float64(180), "role": "primary"}},
-		{Kind: "expression", Title: "表达", Status: "draft", Attributes: map[string]any{"duration": float64(90)}},
-		{Kind: "content_unit", Title: "章节", Status: "draft", Attributes: map[string]any{"entry_role": "main", "air_date": "2024-04-05"}},
+		{Kind: "work", Title: "小说", Status: "active", Attributes: map[string]any{"language": "ja", "volume_count": float64(3), "tags": []any{"连载"}}},
+		{Kind: "work", Title: "歌曲", Status: "active", Attributes: map[string]any{"duration": float64(200), "broadcast_start": "2024-01-01"}},
+		{Kind: "release", Title: "发行", Status: "active", Attributes: map[string]any{"catalog_number": "ABC-001", "edition_type": "limited", "attachments": []any{map[string]any{"label": map[string]any{"en-US": "Booklet"}, "quantity": float64(1)}}}},
+		{Kind: "medium", Title: "载体", Status: "active", Attributes: map[string]any{"format": "cd"}},
+		{Kind: "track", Title: "条目", Status: "active", Attributes: map[string]any{"duration": float64(180), "role": "primary"}},
+		{Kind: "expression", Title: "表达", Status: "active", Attributes: map[string]any{"duration": float64(90)}},
+		{Kind: "content_unit", Title: "章节", Status: "active", Attributes: map[string]any{"entry_role": "main", "air_date": "2024-04-05"}},
 	} {
 		if err := d.validateEntityContent(e, allowAllRef, false); err != nil {
 			t.Errorf("kind %s 的适用字段应放行：%v", e.Kind, err)
@@ -34,18 +34,18 @@ func TestFieldApplicabilityRejectsForeignAndUnscopedFields(t *testing.T) {
 		{"medium", "broadcast_start"},
 		{"agent", "duration"},
 	} {
-		e := Entity{Kind: tc.kind, Title: "X", Status: "draft", Attributes: map[string]any{tc.key: "value"}}
+		e := Entity{Kind: tc.kind, Title: "X", Status: "active", Attributes: map[string]any{tc.key: "value"}}
 		if err := d.validateEntityContent(e, allowAllRef, false); err == nil || err.Error() != "unknown_field: "+tc.key {
 			t.Errorf("kind %s 的 %s 应报 unknown_field，实际 %v", tc.kind, tc.key, err)
 		}
 	}
 	for _, kind := range Kinds {
-		if err := d.validateEntityContent(Entity{Kind: kind, Title: "X", Status: "draft", Attributes: map[string]any{"tags": []any{"开放标签"}}}, allowAllRef, false); err != nil {
+		if err := d.validateEntityContent(Entity{Kind: kind, Title: "X", Status: "active", Attributes: map[string]any{"tags": []any{"开放标签"}}}, allowAllRef, false); err != nil {
 			t.Errorf("kind %s 的自由标签应放行：%v", kind, err)
 		}
 	}
 	d.Fields["relation_only"] = Field{Names: names("仅关系", "Relation only"), Type: "text", Enabled: true}
-	if err := d.validateEntityContent(Entity{Kind: "work", Title: "X", Status: "draft", Attributes: map[string]any{"relation_only": "x"}}, allowAllRef, false); err == nil || err.Error() != "unknown_field: relation_only" {
+	if err := d.validateEntityContent(Entity{Kind: "work", Title: "X", Status: "active", Attributes: map[string]any{"relation_only": "x"}}, allowAllRef, false); err == nil || err.Error() != "unknown_field: relation_only" {
 		t.Fatalf("没有 applicable_kinds 的字段不得直接写入实体：%v", err)
 	}
 }
@@ -56,10 +56,10 @@ func TestNewFieldApplicabilityChangesWithoutCodeChange(t *testing.T) {
 	if !contains(d.attributeKeys("work"), "custom_mood") || contains(d.attributeKeys("release"), "custom_mood") {
 		t.Fatalf("字段适用层级未按声明生效：work=%v release=%v", d.attributeKeys("work"), d.attributeKeys("release"))
 	}
-	if err := d.validateEntityContent(Entity{Kind: "work", Title: "W", Status: "draft", Attributes: map[string]any{"custom_mood": "blue"}}, allowAllRef, false); err != nil {
+	if err := d.validateEntityContent(Entity{Kind: "work", Title: "W", Status: "active", Attributes: map[string]any{"custom_mood": "blue"}}, allowAllRef, false); err != nil {
 		t.Fatalf("新字段应随定义自动可写：%v", err)
 	}
-	if err := d.validateEntityContent(Entity{Kind: "release", Title: "R", Status: "draft", Attributes: map[string]any{"custom_mood": "blue"}}, allowAllRef, false); err == nil || err.Error() != "unknown_field: custom_mood" {
+	if err := d.validateEntityContent(Entity{Kind: "release", Title: "R", Status: "active", Attributes: map[string]any{"custom_mood": "blue"}}, allowAllRef, false); err == nil || err.Error() != "unknown_field: custom_mood" {
 		t.Fatalf("非适用 kind 必须拒绝新字段：%v", err)
 	}
 }

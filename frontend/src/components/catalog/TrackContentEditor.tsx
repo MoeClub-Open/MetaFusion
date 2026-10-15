@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { commitSubmitter } from "@/lib/catalogCommits";
 import { useAuth } from "@/lib/authContext";
 import { canEditEntity } from "@/lib/permissions";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -12,6 +14,8 @@ export function TrackContentEditor({track,onSaved}: {track: Entity; onSaved: (tr
   const {user} = useAuth();
   const {t} = useI18n();
   const {definitions} = useDefinitions();
+  const submit = useRef(commitSubmitter());
+  const [submission,setSubmission] = useState("");
   const [record,setRecord] = useState<Entity["contents"][number]>();
   const [oldPosition,setOldPosition] = useState<number | null>(null);
   const [note,setNote] = useState("");
@@ -38,11 +42,12 @@ export function TrackContentEditor({track,onSaved}: {track: Entity; onSaved: (tr
     if (!record) return;
     setBusy(true);setError("");
     try {
-      const path = `/catalog/tracks/${track.id}/contents${oldPosition === null ? "" : `/${oldPosition}`}`;
-      const result = await api<Entity>(path,remove ? "DELETE" : oldPosition === null ? "POST" : "PUT",{
-        inclusion:remove ? undefined : {...record,sources},expected_version:track.version,edit_note:note,sources,
-      });
-      setRecord(undefined);onSaved(result);
+      const result = await submit.current([{target:"entity",action:"content",id:track.id,base_version:track.version,
+        content_change:{action:remove ? "delete" : oldPosition===null ? "add":"replace",position:oldPosition ?? 0,
+          ...(!remove ? {inclusion:{...record,sources:sources.map(({key:_k,pointers:_p,scope:_s,...s})=>s)}}:{})},
+      }],note,sources);
+      setRecord(undefined);
+      if(result.applied) onSaved(await api<Entity>(`/catalog/entities/${track.id}`));else setSubmission(result.id);
     } catch(e) {setError((e as Error).message)} finally {setBusy(false)}
   };
   return <div className="cv-form rounded border border-line p-3">
@@ -52,6 +57,7 @@ export function TrackContentEditor({track,onSaved}: {track: Entity; onSaved: (tr
         {t("catalog.editContentPosition",{position:content.position+1})}
       </button>)}
     </div>
+    {submission && <Link className="text-primary underline" href={`/submissions/${submission}`}>{t("catalog.review.pending_review")} · {t("catalog.review.submission")}</Link>}
     {record && <form className="space-y-3" onSubmit={(e) => {e.preventDefault();void save()}}>
       <ErrorMessage error={error}/>
       <label>{t("catalog.expression")}<EntityPicker value={record.expression_id} kinds={["expression"]} onChange={(expression_id) => setRecord({...record,expression_id})}/></label>

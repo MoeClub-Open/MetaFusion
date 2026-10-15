@@ -185,8 +185,8 @@ func TestPostgresRelationshipDeepPagination(t *testing.T) {
 	// canonical entity/structural tables; avoid 10,102 irrelevant audited writes.
 	_, err := f.s.DB.Exec(`WITH inserted AS (
  INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document)
- SELECT ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'expression',1,'expression '||n,'published',$2::uuid,
- jsonb_build_object('id','00000000-0000-4000-8000-'||lpad(n::text,12,'0'),'kind','expression','version',1,'title','expression '||n,'position',n,'status','published','original_language','en','translations',jsonb_build_object('en',jsonb_build_object('title','expression '||n)))
+ SELECT ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'expression',1,'expression '||n,'active',$2::uuid,
+ jsonb_build_object('id','00000000-0000-4000-8000-'||lpad(n::text,12,'0'),'kind','expression','version',1,'title','expression '||n,'position',n,'state','active','original_language','en','translations',jsonb_build_object('en',jsonb_build_object('title','expression '||n)))
  FROM generate_series(1,10102) n RETURNING id)
  INSERT INTO catalog.expressions(id,work_id) SELECT id,$1::uuid FROM inserted`, work.ID, f.u.ID)
 	if err != nil {

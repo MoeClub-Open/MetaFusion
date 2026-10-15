@@ -56,7 +56,7 @@ func applyTrackContentPatch(ctx context.Context, q queryer, old Entity, patch *t
 	next.Contents = append([]Inclusion{}, old.Contents...)
 	if patch.action != "delete" {
 		reader := &u
-		if old.Status == "published" {
+		if old.Status == "active" {
 			reader = nil
 		}
 		if err := reference(ctx, q, reader)(patch.inclusion.ExpressionID, []string{"expression"}); err != nil {

@@ -26,15 +26,22 @@ type CatalogCommit struct {
 	Sources         []Source          `json:"sources"`
 	Operations      []CommitOperation `json:"operations"`
 }
+type CommitContentChange struct {
+	Action    string     `json:"action"`
+	Position  int        `json:"position"`
+	Inclusion *Inclusion `json:"inclusion,omitempty"`
+}
+
 type CommitOperation struct {
-	Target               string          `json:"target"`
-	Action               string          `json:"action"`
-	Ref                  string          `json:"ref,omitempty"`
-	ID                   string          `json:"id,omitempty"`
-	BaseVersion          int64           `json:"base_version,omitempty"`
-	Document             json.RawMessage `json:"document,omitempty"`
-	Patch                []CommitPatch   `json:"patch,omitempty"`
-	ReviewedCandidateIDs []string        `json:"reviewed_candidate_ids"`
+	ContentChange        *CommitContentChange `json:"content_change,omitempty"`
+	Target               string               `json:"target"`
+	Action               string               `json:"action"`
+	Ref                  string               `json:"ref,omitempty"`
+	ID                   string               `json:"id,omitempty"`
+	BaseVersion          int64                `json:"base_version,omitempty"`
+	Document             json.RawMessage      `json:"document,omitempty"`
+	Patch                []CommitPatch        `json:"patch,omitempty"`
+	ReviewedCandidateIDs []string             `json:"reviewed_candidate_ids"`
 	// SourceRefs 声明本操作由来源池里哪些来源支撑（可细到字段）；必填，至少一项。
 	SourceRefs []SourceRef `json:"source_refs"`
 }
@@ -60,10 +67,16 @@ type CommitItem struct {
 	Changed bool   `json:"changed"`
 }
 type CommitReceipt struct {
-	ID      string            `json:"id"`
-	Applied bool              `json:"applied"`
-	Refs    map[string]string `json:"refs"`
-	Items   []CommitItem      `json:"items"`
+	ID             string            `json:"id"`
+	Applied        bool              `json:"applied"`
+	Refs           map[string]string `json:"refs"`
+	Items          []CommitItem      `json:"items"`
+	ReviewStatus   string            `json:"review_status"`
+	ReviewDecision string            `json:"review_decision"`
+	ReviewedBy     string            `json:"reviewed_by,omitempty"`
+	ReviewedAt     *time.Time        `json:"reviewed_at,omitempty"`
+	ReviewNote     string            `json:"review_note,omitempty"`
+	Preview        []CommitPreview   `json:"preview,omitempty"`
 	// QualityWarnings 只在 preview 返回：对受影响实体的自动质量诊断，纯建议，不阻止提交。
 	QualityWarnings []QualityIssue `json:"quality_warnings,omitempty"`
 }
@@ -115,7 +128,7 @@ var errPreviewRollback = errors.New("preview_rollback")
 var errDefinitionsConflict = errors.New("definitions_conflict")
 var commitRef = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 
-var entityCommitFields = strings.Fields("title original_language translations attributes external_links pictures status content_unit_id parent_id position number contents subjects")
+var entityCommitFields = strings.Fields("title original_language translations attributes external_links pictures content_unit_id parent_id position number contents subjects")
 var relationCommitFields = strings.Fields("position attributes")
 
 func pointerParts(path string) ([]string, error) {
@@ -163,7 +176,19 @@ func validateCommit(in CatalogCommit) error {
 			return fail(fmt.Errorf("invalid_commit_target"))
 		}
 		key := op.Target + ":" + op.ID
+		if op.Action != "content" && op.ContentChange != nil {
+			return fail(fmt.Errorf("invalid_content_operation"))
+		}
 		switch op.Action {
+		case "content":
+			id, err := uuid.Parse(op.ID)
+			c := op.ContentChange
+			if op.Target != "entity" || err != nil || id.String() != op.ID || op.BaseVersion < 1 || op.Ref != "" || len(op.Document) != 0 || len(op.Patch) != 0 || op.ReviewedCandidateIDs != nil || c == nil {
+				return fail(fmt.Errorf("invalid_content_operation"))
+			}
+			if !contains([]string{"add", "replace", "delete"}, c.Action) || c.Position < 0 || c.Action != "delete" && c.Inclusion == nil || c.Action == "delete" && c.Inclusion != nil {
+				return fail(fmt.Errorf("invalid_content_operation"))
+			}
 		case "create":
 			key = "ref:" + op.Ref
 			if !commitRef.MatchString(op.Ref) || op.ID != "" || op.BaseVersion != 0 || len(op.Document) == 0 || len(op.Patch) != 0 {
@@ -202,6 +227,11 @@ func validateCommit(in CatalogCommit) error {
 					}
 				}
 				paths = append(paths, p.Path)
+			}
+		case "delete":
+			id, err := uuid.Parse(op.ID)
+			if op.Target != "relation" || err != nil || id.String() != op.ID || op.BaseVersion < 1 || op.Ref != "" || len(op.Document) != 0 || len(op.Patch) != 0 || op.ReviewedCandidateIDs != nil {
+				return fail(fmt.Errorf("invalid_delete_operation"))
 			}
 		default:
 			return fail(fmt.Errorf("invalid_commit_action"))
@@ -412,6 +442,9 @@ func mergeCommitPatch(base, current map[string]json.RawMessage, patch []CommitPa
 }
 
 func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, preview bool) (CommitReceipt, error) {
+	if u.ID == "" || u.IsThirdParty {
+		return CommitReceipt{}, errForbidden
+	}
 	if err := validateCommit(in); err != nil {
 		return CommitReceipt{}, err
 	}
@@ -421,20 +454,31 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 	var err error
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	review, approving := ctx.Value(commitReviewContextKey{}).(commitReviewApproval)
+	queued := !preview && !approving && !u.Can(PermissionReviewBypass)
 	var out CommitReceipt
 	err = s.writeCatalog(ctx, func(tx *sql.Tx) error {
 		// A confirmed serialization rollback restarts the complete commit. Never
 		// retain refs, items or a receipt assembled by the abandoned attempt.
 		out = CommitReceipt{ID: in.ID, Applied: !preview, Refs: map[string]string{}, Items: []CommitItem{}}
+		out.ReviewStatus, out.ReviewDecision = "reviewed", "exempt"
+		if queued || preview {
+			out.ReviewStatus, out.ReviewDecision = "pending_review", "pending"
+		}
+		if approving {
+			now := time.Now().UTC()
+			out.ReviewedBy, out.ReviewedAt, out.ReviewNote = review.Reviewer.ID, &now, review.Note
+			out.ReviewDecision = "approved"
+		}
 		if !preview {
-			res, err := tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result) VALUES($1,$2,$3,$4,'null') ON CONFLICT DO NOTHING`, in.ID, u.ID, requestHash(in), encode(in))
+			res, err := tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot) VALUES($1,$2,$3,$4,'null',$5) ON CONFLICT DO NOTHING`, in.ID, u.ID, requestHash(in), encode(in), encode(commitAuthor{u.ID, u.Username, u.Permissions}))
 			if err != nil {
 				return err
 			}
 			if n, _ := res.RowsAffected(); n == 0 {
 				var actor, hash string
 				var raw []byte
-				if err = tx.QueryRowContext(ctx, `SELECT actor_id,request_hash,result FROM catalog.commits WHERE id=$1`, in.ID).Scan(&actor, &hash, &raw); err != nil {
+				if err = tx.QueryRowContext(ctx, `SELECT actor_id,request_hash,result FROM catalog.commits WHERE id=$1 FOR UPDATE`, in.ID).Scan(&actor, &hash, &raw); err != nil {
 					return err
 				}
 				if actor != u.ID || hash != requestHash(in) {
@@ -443,9 +487,24 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 				if string(raw) == "null" {
 					return fmt.Errorf("commit_incomplete")
 				}
-				return json.Unmarshal(raw, &out)
+				var prior CommitReceipt
+				if err = json.Unmarshal(raw, &prior); err != nil {
+					return err
+				}
+				if !approving || prior.ReviewStatus != "pending_review" {
+					out = prior
+					return nil
+				}
+				out.Refs, out.Preview = prior.Refs, prior.Preview
 			}
 			if _, err = tx.ExecContext(ctx, `SELECT set_config('metafusion.commit_id',$1,true)`, in.ID); err != nil {
+				return err
+			}
+		}
+		// Validate the entire proposal using the real write path, then discard
+		// every fact/revision/outbox/notification while retaining its receipt.
+		if queued {
+			if _, err := tx.ExecContext(ctx, "SAVEPOINT proposed_facts"); err != nil {
 				return err
 			}
 		}
@@ -455,12 +514,14 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 		releaseIDs := map[string]bool{}
 		for _, op := range in.Operations {
 			if op.Action == "create" {
-				out.Refs[op.Ref] = newID()
+				if out.Refs[op.Ref] == "" {
+					out.Refs[op.Ref] = newID()
+				}
 			}
 			if op.Target == "relation" {
 				continue
 			}
-			if op.Action == "update" {
+			if op.Action == "update" || op.Action == "content" {
 				e, err := get(ctx, tx, op.ID)
 				if err != nil {
 					return err
@@ -581,17 +642,53 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 			}
 		}
 		for i, op := range in.Operations {
+			var before any
+			if !approving && op.Action != "create" {
+				if op.Target == "entity" {
+					before, err = commitPreviewEntity(ctx, tx, op.ID, u)
+				} else {
+					before, err = relationByID(ctx, tx, op.ID)
+				}
+				if err != nil {
+					return err
+				}
+			}
 			item, err := s.applyCommitOperation(ctx, tx, op, in, u, out.Refs, i, &v)
 			if err != nil {
 				return &commitOperationError{i, err}
 			}
 			out.Items = append(out.Items, item)
+			if !approving {
+				var after any
+				if op.Action != "delete" {
+					if op.Target == "entity" {
+						after, err = commitPreviewEntity(ctx, tx, item.ID, u)
+					} else {
+						after, err = relationByID(ctx, tx, item.ID)
+					}
+					if err != nil {
+						return err
+					}
+				}
+				out.Preview = append(out.Preview, CommitPreview{op.Target, op.Action, item.ID, frozenCommitPreview(before), frozenCommitPreview(after)})
+			}
 		}
 		if preview {
 			out.QualityWarnings = commitQualityWarnings(ctx, tx, v, out.Items, &u)
 			return errPreviewRollback
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE catalog.commits SET result=$2 WHERE id=$1`, in.ID, encode(out))
+		if queued {
+			if _, err = tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT proposed_facts"); err != nil {
+				return err
+			}
+			out.Applied = false
+		}
+		if approving {
+			if err = notifyCommitReview(ctx, tx, in.ID, u, review.Reviewer, true, review.Note); err != nil {
+				return err
+			}
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE catalog.commits SET result=$2,review_status=$3,review_decision=$4,reviewed_by=$5,reviewed_at=$6,review_note=$7 WHERE id=$1`, in.ID, encode(out), out.ReviewStatus, out.ReviewDecision, out.ReviewedBy, out.ReviewedAt, out.ReviewNote)
 		return err
 	})
 	if errors.Is(err, errPreviewRollback) {
@@ -605,6 +702,31 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 
 func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitOperation, in CatalogCommit, u User, refs map[string]string, index int, defs *DefinitionConfig) (CommitItem, error) {
 	item := CommitItem{Target: op.Target, ID: op.ID, Changed: true}
+	if op.Target == "relation" && !u.Can(PermissionRelationEdit) {
+		return item, errForbidden
+	}
+	if op.Action == "content" {
+		e, err := get(ctx, tx, op.ID)
+		if err != nil {
+			return item, err
+		}
+		if e.Version != op.BaseVersion {
+			return item, errVersionConflict
+		}
+		if !visible(e, &u) || !canEditEntity(u, e) {
+			return item, errForbidden
+		}
+		c := op.ContentChange
+		saved, err := s.saveEntityTx(ctx, tx, Edit{Entity: Entity{ID: e.ID, Kind: e.Kind}, ExpectedVersion: op.BaseVersion, EditNote: in.EditNote, Sources: operationSources(in, op), definitions: defs, identityLocksHeld: true, contentPatch: &trackContentPatch{action: c.Action, position: c.Position, inclusion: c.Inclusion}}, u)
+		item.Version = saved.Version
+		return item, err
+	}
+
+	if op.Action == "delete" {
+		err := s.deleteRelationTx(ctx, tx, op.ID, op.BaseVersion, in.EditNote, operationSources(in, op), u)
+		item.Version = op.BaseVersion + 1
+		return item, err
+	}
 	var raw []byte
 	version := int64(0)
 	if op.Action == "create" {
@@ -713,7 +835,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 			}
 		}
 		if op.Action == "create" {
-			if e.ID != "" || e.Version != 0 || e.CreatedBy != "" || e.RedirectID != "" {
+			if e.ID != "" || e.Version != 0 || e.CreatedBy != "" || e.RedirectID != "" || e.Status != "" || e.ReviewStatus != "" {
 				return item, fmt.Errorf("server_fields_forbidden")
 			}
 			input.createID = refs[op.Ref]
@@ -785,7 +907,7 @@ func (s *Store) CommitReceipt(ctx context.Context, id string, u User) (CommitRec
 	if _, err := uuid.Parse(id); err != nil {
 		return CommitReceipt{}, fmt.Errorf("invalid_commit_id")
 	}
-	err := s.DB.QueryRowContext(ctx, `SELECT result FROM catalog.commits WHERE id=$1 AND actor_id=$2`, id, u.ID).Scan(&raw)
+	err := s.DB.QueryRowContext(ctx, `SELECT result FROM catalog.commits WHERE id=$1 AND (actor_id=$2 OR $3::boolean)`, id, u.ID, u.Can(PermissionReviewManage)).Scan(&raw)
 	if err != nil {
 		return CommitReceipt{}, err
 	}

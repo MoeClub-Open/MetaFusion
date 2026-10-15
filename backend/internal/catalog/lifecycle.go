@@ -18,16 +18,8 @@ type LifecycleEdit struct {
 	Sources         []Source `json:"sources"`
 }
 
-// 状态机语义（当前实现，无 archived）：
-//   - draft/pending_review：未发布，他人不可见（visible 仅主人/admin）；
-//   - published：公开展示；降级只能走 admin-only Unpublish（published → draft）——
-//     已发布条目不可经 Save 改回 draft（use_lifecycle_endpoint）；
-//   - deleted/merged：主人仍可经 Get 直读（visible 对主人放行），公开 List
-//     与匿名 Get 不可见；merged 经 Resolve 跟随 RedirectID。
-// 本文件负责终态与发布后的降级。Save 与 Track 的专用状态写入共用状态门禁，
-// 不能代替 Lifecycle（删除/合并）或 Unpublish（下架）。
-// 归档（保留展示但冻结编辑）尚未设计，不属于当前状态机。
-
+// 生命周期只维护删除和合并。正常条目为 active，审核发生在提交上。
+// 终态仍由权限与身份解析控制读取；恢复事实使用新提交，不改历史快照。
 func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u User) (Entity, error) {
 	var e Entity
 	// SSI includes concurrent references and relation changes in lifecycle checks.
@@ -59,13 +51,13 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 			}
 			// 合并目标必须同 kind、同归属（Work/Release/Medium/ContentUnitID 均相等，
 			// 含 ParentID）：跨父合并会撕裂层级，由复合外键在提交时拦截，
-			// 此处提前报 invalid_merge_target。目标必须 published。
+			// 此处提前报 invalid_merge_target。目标必须 active。
 			if target.Kind != e.Kind || target.ID == e.ID || target.Status == "deleted" || target.Status == "merged" || target.WorkID != e.WorkID || target.ReleaseID != e.ReleaseID || target.MediumID != e.MediumID || target.ParentID != e.ParentID {
 				return fmt.Errorf("invalid_merge_target")
 			}
 			e.RedirectID = target.ID
 			e.Status = "merged"
-			if target.ContentUnitID != e.ContentUnitID || target.Status != "published" {
+			if target.ContentUnitID != e.ContentUnitID || target.Status != "active" {
 				return fmt.Errorf("invalid_merge_target")
 			}
 			if err = mergeReferences(ctx, tx, e, target, u, input); err != nil {
@@ -98,73 +90,6 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 			return errVersionConflict
 		}
 		return audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity."+e.Status)
-	})
-	return e, err
-}
-
-// UnpublishEdit 是下架（published → draft）的请求体，字段与 LifecycleEdit 同口径，
-// 但没有 target_id：下架只改自身状态，不指向别的实体。带上 target_id 会被 body 的
-// DisallowUnknownFields 拒成 invalid_payload，而不是被静默忽略。
-type UnpublishEdit struct {
-	ExpectedVersion int64    `json:"expected_version"`
-	EditNote        string   `json:"edit_note"`
-	Sources         []Source `json:"sources"`
-}
-
-// Unpublish 把已发布条目退回草稿：状态机里**唯一**的降级入口。
-//
-// 与 Lifecycle 的分工只有状态机方向：Lifecycle 写终态 deleted/merged（公开不可见），
-// 本方法只写 draft（未发布，创建者与 catalog.lifecycle.manage 持有者仍可见、可继续编辑）。
-// 其余口径逐条对齐 Lifecycle：同一档权限、同一套证据校验（validateSources）、同一套留痕
-// （修订行 + outbox 事件，写在同一事务）、同一套乐观并发（版本条件进 WHERE，读版本与写入
-// 是一次原子操作），返回的也是与 Save 同形状的完整实体。
-//
-// 只接受 published → draft：draft/pending_review 没有可下架的内容，deleted/merged 是终态
-// （要恢复只能新建），四种情况都返回 errInvalidStatus（400 invalid_status），不是 500。
-//
-// outbox 事件码固定为 entity.unpublished：它**不**落进 contributions 的 audit_actions
-// 口径（那只数 entity.deleted / entity.merged，见 userContributionStats），下架不是清退，
-// 不该让统计把它算成一次删除；修订行仍按 actor 快照列归属操作者，贡献流照常能查到。
-func (s *Store) Unpublish(ctx context.Context, id string, input UnpublishEdit, u User) (Entity, error) {
-	var e Entity
-	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
-		if !u.Can(PermissionLifecycleManage) {
-			return errForbidden
-		}
-		if err := validateSources(input.EditNote, input.Sources); err != nil {
-			return err
-		}
-		var err error
-		e, err = get(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if e.Version != input.ExpectedVersion {
-			return errVersionConflict
-		}
-		if e.Status != "published" {
-			return errInvalidStatus
-		}
-		e.Version++
-		e.Status = "draft"
-		e.UpdatedAt = time.Now().UTC()
-		stored := e
-		stored.WorkID = ""
-		stored.ContentUnitID = ""
-		stored.ReleaseID = ""
-		stored.MediumID = ""
-		stored.ParentID = ""
-		stored.Contents = nil
-		stored.Subjects = nil
-		// redirect_id 不动：Save 拒绝 RedirectID != ""，能走到这里的 published 行本就没有重定向。
-		var res sql.Result
-		if res, err = tx.ExecContext(ctx, "UPDATE catalog.entities SET version=$3,status=$4,document=$5,updated_at=$6 WHERE id=$1 AND version=$2", e.ID, input.ExpectedVersion, e.Version, e.Status, encode(stored), e.UpdatedAt); err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errVersionConflict
-		}
-		return audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity.unpublished")
 	})
 	return e, err
 }

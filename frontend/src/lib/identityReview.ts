@@ -13,7 +13,7 @@ export type IdentityCandidateEntity = {
   id: string;
   kind: string;
   title: string;
-  status: string;
+  state: string;
   version: number;
   translations?: Entity["translations"];
   external_links?: ExternalLink[];
@@ -84,7 +84,7 @@ function canonicalUUID(value: unknown): value is string {
 
 function candidateEntity(value: unknown): value is IdentityCandidateEntity {
   if (!record(value) || !canonicalUUID(value.id) || typeof value.kind !== "string" ||
-      typeof value.title !== "string" || typeof value.status !== "string" ||
+      typeof value.title !== "string" || typeof value.state !== "string" ||
       typeof value.version !== "number" || !Number.isSafeInteger(value.version) || value.version < 0) return false;
   for (const field of ["translations", "attributes"]) {
     if (value[field] != null && !record(value[field])) return false;
@@ -127,7 +127,7 @@ export function readIdentityCandidates(value: unknown, entity: Pick<Entity, "id"
     if (!record(item) || !candidateEntity(item.matched) || matchedIDs.has(item.matched.id)) throw new Error("invalid_identity_review");
     matchedIDs.add(item.matched.id);
     if (item.resolution_error || !candidateEntity(item.canonical) || item.canonical.kind !== entity.kind ||
-        item.matched.kind !== entity.kind || item.canonical.status === "deleted" || item.canonical.status === "merged") {
+        item.matched.kind !== entity.kind || item.canonical.state === "deleted" || item.canonical.state === "merged") {
       throw new Error("identity_candidate_unresolved");
     }
     if (item.canonical.id === entity.id) continue;

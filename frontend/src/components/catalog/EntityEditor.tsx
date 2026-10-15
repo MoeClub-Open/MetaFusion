@@ -6,9 +6,8 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { api, Entity, emptyEntity, local, Source } from "./api";
 import { changeDraftKind, hasKindSpecificDraftData } from "@/lib/draftKind";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
-import { canPublishEntity } from "@/lib/permissions";
+import { commitSubmitter, entityOperation, type CommitOperation } from "@/lib/catalogCommits";
 import { localizeCatalogError } from "@/lib/catalogErrors";
-import { newSubmissionSession, submissionKey } from "@/lib/idempotency";
 import { useAuth } from "@/lib/authContext";
 import { getAuthLoginUrl } from "@/lib/services";
 import { EntityPicker, Evidence, FieldInput, ErrorMessage, GroupFieldInput, NamesEditor } from "./Fields";
@@ -53,6 +52,7 @@ function EditorPanel({ name, active, editorId, children }: {
 export function EntityEditor({
   initial,
   initialKind,
+  base,
   onSaved,
   initialEditNote = "",
   initialSources,
@@ -60,6 +60,7 @@ export function EntityEditor({
   initialLocale = "",
 }: {
   initial?: Entity;
+  base?: Entity;
   /** 新建时的预选层级（来自 /new?kind=…，如贡献页与 /works/new 等旧入口重定向）；
    *  只接受骨架里的合法层级，非法值回落到 emptyEntity 的默认值。 */
   initialKind?: string;
@@ -134,8 +135,8 @@ export function EntityEditor({
   // 新建条目时关系先入队：条目拿到 id 之后再逐条写入（见 save）。
   const [pendingRelations, setPendingRelations] = useState<RelationDraft[]>([]);
   // 幂等键的会话部分：同一次编辑会话内稳定，载荷指纹在提交时算（见 lib/idempotency）。
-  const submitSession = React.useRef("");
-  const submissionScope = () => (submitSession.current ||= newSubmissionSession());
+  const submit = useRef(commitSubmitter());
+  const baseEntity = useRef(base || initial);
   const [sources, setSources] = useState<Source[]>(initialSources || [
     { kind: "url", citation: "", url: "" },
   ]);
@@ -514,69 +515,26 @@ export function EntityEditor({
     setBusy(true);
     setError("");
     try {
-      // 建实体带上幂等键：双击保存 / 超时重发复用同一个键，服务端只建一个实体。
-      // PUT 不带（幂等键服务端只覆盖两个 POST 端点，见 lib/idempotency 的说明）。
-      const body = {
-        entity: e, expected_version: e.version, edit_note: note, sources,
-        ...(reviewedIDs !== undefined ? { reviewed_candidate_ids: reviewedIDs } : {}),
-      };
-      const out = await api<Entity>(
-        e.id ? `/catalog/entities/${e.id}` : "/catalog/entities",
-        e.id ? "PUT" : "POST",
-        body,
-        e.id ? undefined : { "Idempotency-Key": submissionKey(submissionScope(), body) },
-      );
-      // 排队的关系：条目已在，逐条写入。失败不静默——列出失败项让用户决定重试哪条。
-      // 部分成功时：成功实体 id/version 写回状态（重试走 PUT，不重复建条目），
-      // 失败草稿保留、只重试失败项；全部成功才清空并继续跳转。
-      if ((out.id || e.id) && pendingRelations.length > 0) {
-        const savedId = out.id || e.id;
-        const failures: string[] = [];
-        const failed: RelationDraft[] = [];
-        let flushed = 0;
-        for (const d of pendingRelations) {
-          try {
-            // 同一条待提交关系在重试里复用同一个键（键 = 会话 + 关系载荷指纹），
-            // 不再每次现生成 UUID——否则超时后重试会重复建边。
-            const relation = {
-              type: d.type,
-              source_id: d.forward ? savedId : d.targetId,
-              target_id: d.forward ? d.targetId : savedId,
-              position: d.position,
-              attributes: d.attributes,
-            };
-            await api(
-              "/catalog/relations",
-              "POST",
-              { relation, expected_version: 0, edit_note: note, sources },
-              { "Idempotency-Key": submissionKey(submissionScope(), relation) },
-            );
-            flushed += 1;
-          } catch (err) {
-            failures.push(d.type + ": " + (err as Error).message);
-            failed.push(d);
-          }
-        }
-        // 写后回读：服务端返回即全量回读，写回状态使重试走 PUT。
-        setE(out);
-        setPendingRelations(failed);
-        if (failures.length > 0) {
-          setRequestedSection("relations");
-          setError(
-            flushed > 0
-              ? t("editor.relation.flushPartial", {
-                  ok: flushed,
-                  fail: failures.length,
-                  list: failures.join("；"),
-                })
-              : t("editor.relation.flushFailed", { list: failures.join("；") }),
-          );
-          setBusy(false);
-          return;
-        }
+      const op = entityOperation(e, baseEntity.current, reviewedIDs || []);
+      const operations: CommitOperation[] = op.action === "update" && !op.patch?.length ? [] : [op];
+      for (let i=0;i<pendingRelations.length;i++) {
+        const d=pendingRelations[i];
+        const self = e.id || { $ref: "entity" };
+        operations.push({target:"relation",action:"create",ref:`relation${i}`,document:{
+          type:d.type,source_id:d.forward ? self : d.targetId,target_id:d.forward ? d.targetId : self,
+          position:d.position,attributes:d.attributes,
+        }});
       }
-      if (onSaved) onSaved(out);
-      else router.push(`/catalog/${out.id}`);
+      if (!operations.length) { setError(t("editor.noChanges")); return; }
+      const receipt = await submit.current(operations,note,sources);
+      baselineRef.current = JSON.stringify({entity:e,note,sources,relations:pendingRelations});
+      if (!receipt.applied) {
+        router.push(`/submissions/${receipt.id}`);
+        return;
+      }
+      const out = await api<Entity>(`/catalog/entities/${e.id || receipt.refs.entity}`);
+      baseEntity.current = out;
+      if (onSaved) onSaved(out); else router.push(`/catalog/${out.id}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.message === "identity_candidates_changed") {
         setError(t("catalog.error.identityCandidatesChanged"));
@@ -695,25 +653,7 @@ export function EntityEditor({
             <LanguagePicker variant="field" label={languageLabel(e.original_language) || t("catalog.originalLanguage")}
               ariaLabel={t("catalog.originalLanguage")} onSelect={(code) => patch({ original_language: code })}/>
           </label>
-          <label>
-            {t("catalog.status")}
-            <Select
-              value={e.status}
-              onChange={(value) => patch({ status: value })}
-              options={(
-                initial?.status === "published"
-                  ? ["published"]
-                  : [
-                      "draft",
-                      "pending_review",
-                      // user 走审核制（草稿/待审）；editor/admin 可直接发布
-                      // 自己的条目（新建无 created_by 即视为自己）。
-                      ...(canPublishEntity(user, initial) ? ["published"] : []),
-                    ]
-              ).map((k) => ({ value: k, label: t(`catalog.state.${k}`) }))}
-              aria-label={t("catalog.status")}
-            />
-          </label>
+
         </div>
         {/* 自由标签：只承载检索/分组用标签，值落在 attributes.tags，
             详情页标签区块与 /explore?tags= 检索都读它，不兼任业务分类。

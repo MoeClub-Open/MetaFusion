@@ -138,7 +138,7 @@ func (f *auditFixture) expect(status int, w *httptest.ResponseRecorder, what str
 }
 
 func auditEntityBody(kind, status, title string, expected int64) string {
-	entity := map[string]any{"kind": kind, "title": title, "status": status}
+	entity := map[string]any{"kind": kind, "title": title, "state": "active"}
 	if status == "published" {
 		entity["translations"] = map[string]any{"en": map[string]any{"title": "audit e2e english " + title}}
 	}
@@ -206,10 +206,8 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	if err := json.Unmarshal([]byte(row.changes), &changes); err != nil {
 		t.Fatalf("changes 不是合法 JSON: %v (%s)", err, row.changes)
 	}
-	status, _ := changes["status"].(map[string]any)
-	if status["before"] != "draft" || status["after"] != "pending_review" {
-		t.Fatalf("status 的 before→after: %s", row.changes)
-	}
+ if changes["status"]!=nil || changes["state"]!=nil {t.Fatalf("ordinary edit changed lifecycle: %s",row.changes)}
+
 	title, _ := changes["title"].(map[string]any)
 	// before 侧同样脱敏：旧题名里的邮箱在审计行里必须是遮罩形态。
 	if title["before"] != "审计用例 联系 j***@example.com" || title["after"] != "审计用例 改过" {
@@ -227,24 +225,6 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	}
 	if !strings.Contains(row.changes, "\"after\": \"deleted\"") {
 		t.Fatalf("生命周期要记终态: %s", row.changes)
-	}
-
-	// 4) 下架（published → draft）
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("work", "published", "下架用例", 0), "rid-published-create")
-	f.expect(200, w, "建已发布实体")
-	audited++
-	var pub Entity
-	if err := json.Unmarshal(w.Body.Bytes(), &pub); err != nil {
-		t.Fatal(err)
-	}
-	f.waitRow("rid-published-create")
-	unpublishBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e unpublish\",\"sources\":[{\"kind\":\"url\",\"citation\":\"audit e2e\",\"url\":\"https://example.org/fixture\"}]}", pub.Version)
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities/"+pub.ID+"/unpublish", unpublishBody, "rid-entity-unpublish")
-	f.expect(200, w, "下架")
-	row = f.waitRow("rid-entity-unpublish")
-	audited++
-	if row.action != "entity.unpublished" || row.targetID != pub.ID || !strings.Contains(row.changes, "\"after\": \"draft\"") {
-		t.Fatalf("下架审计行: %#v", row)
 	}
 
 	// 5) 关系：创建 / 修改 / 删除
@@ -408,15 +388,6 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 		t.Fatalf("更新定义审计行: %#v", row)
 	}
 
-	// 10) 外部提案（服务端强制进待审）
-	w = f.do(engine, http.MethodPost, "/api/exchange/proposals", auditEntityBody("work", "draft", "提案用例", 0), "rid-proposal")
-	f.expect(200, w, "提交提案")
-	row = f.waitRow("rid-proposal")
-	audited++
-	if row.action != "proposal.submitted" || !strings.Contains(row.changes, "\"after\": \"pending_review\"") {
-		t.Fatalf("提案审计行: %#v", row)
-	}
-
 	// 11) 失败路径：版本冲突必须留 result=failure + error_code（与响应体同值）
 	w = f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("work", "published", "冲突用例", 0), "rid-conflict-create")
 	f.expect(200, w, "建冲突用例实体")
@@ -428,7 +399,7 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	f.waitRow("rid-conflict-create")
 	conflictBody, err := json.Marshal(map[string]any{
 		"entity": map[string]any{
-			"kind": "work", "title": "冲突用例改", "status": "published",
+			"kind": "work", "title": "冲突用例改",
 			"translations": map[string]any{"en": map[string]any{"title": "audit e2e english"}},
 		},
 		"expected_version": 999,

@@ -41,7 +41,7 @@ interface EntityItem extends CoverBearing {
   title: string;
   original_language?: string;
   attributes?: { tags?: string[] };
-  status: string;
+  state: string;
   version: number;
   work_id?: string;
   release_id?: string;
@@ -72,7 +72,6 @@ function ExploreInner() {
   const titleOrder = useTitleDisplayOrder();
 
   const currentKind = searchParams.get("kind") || "all";
-  const currentStatus = searchParams.get("status") || "published";
   const currentQ = searchParams.get("q") || "";
   // 标签可多选；默认任一命中，all 要求同时包含全部选中标签。
   const currentTagsMode = searchParams.get("tags_mode") || "any";
@@ -196,7 +195,6 @@ function ExploreInner() {
     setLoadError("");
     const params = new URLSearchParams();
     if (currentKind !== "all") params.set("kind", currentKind);
-    if (currentStatus) params.set("status", currentStatus);
     // 深链/手改 URL 带来的超长 q 也先截断，避免请求直接 400。
     if (currentQ) params.set("q", clampSearchQuery(currentQ));
     currentTags.forEach((tag) => params.append("tags", tag));
@@ -257,7 +255,7 @@ function ExploreInner() {
       })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [currentKind, currentStatus, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
+  }, [currentKind, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
 
   // 探索页质量圆点：仅 partial 显示；接口失败整页不显示，不影响列表。
   useEffect(() => {
@@ -319,9 +317,7 @@ function ExploreInner() {
   if (currentKind !== "all") {
     appliedFilters.push({ id: "kind", label: kindLabel(currentKind), remove: () => updateFilters({ kind: "" }) });
   }
-  if (currentStatus !== "published") {
-    appliedFilters.push({ id: "status", label: tr("catalog.status." + currentStatus, currentStatus), remove: () => updateFilters({ status: "" }) });
-  }
+
   for (const tag of Array.from(new Set(currentTags))) {
     appliedFilters.push({ id: `tag:${tag}`, label: getTagName(definitions, tag, locale), remove: () => toggleTag(tag) });
   }
@@ -394,7 +390,6 @@ function ExploreInner() {
   const listKey = [
     viewMode,
     currentKind,
-    currentStatus,
     currentQ,
     currentTags.join(","),
     currentTagsMode,
@@ -466,27 +461,6 @@ function ExploreInner() {
                   );
                 })}
               </nav>
-            </Card>
-
-            {/* 状态：与种类/标签叠加；原来在顶部检索栏，现收归侧栏统一筛选。 */}
-            <Card padding="none" className="order-2 shadow-xs overflow-hidden">
-              <div className="px-3.5 py-2.5 border-b border-line-subtle">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-text-faint">
-                  {t("catalog.status")}
-                </span>
-              </div>
-              <div className="p-2.5">
-                <Select
-                  value={currentStatus}
-                  aria-label={t("catalog.status")}
-                  onChange={(v) => updateFilters({ status: v })}
-                  options={[
-                    { value: "published", label: tr("catalog.status.published", "published") },
-                    { value: "pending_review", label: tr("catalog.status.pending_review", "pending_review") },
-                    { value: "draft", label: tr("catalog.status.draft", "draft") },
-                  ]}
-                />
-              </div>
             </Card>
 
             {/* 标签筛选：与种类筛选叠加生效；来源为真实标签聚合
@@ -805,8 +779,6 @@ function ExploreInner() {
                       title={displayTitle}
                       baseTitle={item.title}
                       tags={getTagNames(definitions, item.attributes?.tags, locale)}
-                      status={item.status}
-                      statusLabel={tr("catalog.status." + item.status, item.status)}
                       pictureUrl={cover}
                       qualityStatus={qualityById[item.id]}
                     />
@@ -853,11 +825,7 @@ function ExploreInner() {
                                 ({item.title})
                               </span>
                             )}
-                            {item.status !== "published" && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-warn text-[10px] font-mono font-medium">
-                                {tr("catalog.status." + item.status, item.status)}
-                              </span>
-                            )}
+
                           </div>
                           <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
                             {/* 列表行标签同样是本地化展示名；筛选值仍在 URL 的 tags 参数里。 */}

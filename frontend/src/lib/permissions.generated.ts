@@ -9,6 +9,8 @@ export const CATALOG_DEFINITIONS_MANAGE = "catalog.definitions.manage" as const;
 export const CATALOG_ENTITY_EDIT = "catalog.entity.edit" as const;
 export const CATALOG_LIFECYCLE_MANAGE = "catalog.lifecycle.manage" as const;
 export const CATALOG_RELATION_EDIT = "catalog.relation.edit" as const;
+export const CATALOG_REVIEW_BYPASS = "catalog.review.bypass" as const;
+export const CATALOG_REVIEW_MANAGE = "catalog.review.manage" as const;
 export const CATALOG_SHELVES_MANAGE = "catalog.shelves.manage" as const;
 
 export const CATALOG_PERMISSION_CODES = [
@@ -16,6 +18,8 @@ export const CATALOG_PERMISSION_CODES = [
   CATALOG_ENTITY_EDIT,
   CATALOG_LIFECYCLE_MANAGE,
   CATALOG_RELATION_EDIT,
+  CATALOG_REVIEW_BYPASS,
+  CATALOG_REVIEW_MANAGE,
   CATALOG_SHELVES_MANAGE,
 ] as const;
 
@@ -94,6 +98,8 @@ export const ALL_PERMISSION_CODES = [
   "catalog.entity.edit",
   "catalog.lifecycle.manage",
   "catalog.relation.edit",
+  "catalog.review.bypass",
+  "catalog.review.manage",
   "catalog.shelves.manage",
   "community.board.manage",
   "community.post.create",

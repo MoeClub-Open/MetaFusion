@@ -35,7 +35,7 @@ func TestQualityAuditReleaseWithoutTracks(t *testing.T) {
 	ctx := context.Background()
 	ref := func(name string) any { return map[string]string{"$ref": name} }
 	op := func(kind, name string, extra map[string]any) CommitOperation {
-		doc := map[string]any{"kind": kind, "title": name, "status": "published", "translations": map[string]any{"en": map[string]any{"title": name}}}
+		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}
@@ -93,7 +93,7 @@ func TestQualityAuditMediumTrackPositionsStartAt2(t *testing.T) {
 	ctx := context.Background()
 	ref := func(name string) any { return map[string]string{"$ref": name} }
 	op := func(kind, name string, extra map[string]any) CommitOperation {
-		doc := map[string]any{"kind": kind, "title": name, "status": "published", "translations": map[string]any{"en": map[string]any{"title": name}}}
+		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}
@@ -140,7 +140,7 @@ func TestQualityAuditMediumAllNonNumericTrackNumbers(t *testing.T) {
 	ctx := context.Background()
 	ref := func(name string) any { return map[string]string{"$ref": name} }
 	op := func(kind, name string, extra map[string]any) CommitOperation {
-		doc := map[string]any{"kind": kind, "title": name, "status": "published", "translations": map[string]any{"en": map[string]any{"title": name}}}
+		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}

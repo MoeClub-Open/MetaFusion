@@ -318,8 +318,8 @@ func TestPostgresCommitRetryDiscardsAbandonedRefsAndItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := fixtureCommit(f,
-		CommitOperation{Target: "entity", Action: "create", Ref: "first", Document: json.RawMessage(`{"kind":"work","title":"retry first","status":"draft"}`)},
-		CommitOperation{Target: "entity", Action: "create", Ref: "second", Document: json.RawMessage(`{"kind":"work","title":"retry second","status":"draft"}`)})
+		CommitOperation{Target: "entity", Action: "create", Ref: "first", Document: json.RawMessage(`{"kind":"work","title":"retry first"}`)},
+		CommitOperation{Target: "entity", Action: "create", Ref: "second", Document: json.RawMessage(`{"kind":"work","title":"retry second"}`)})
 	out, err := f.s.PushCommit(context.Background(), in, f.u, false)
 	if err != nil || len(out.Items) != 2 || len(out.Refs) != 2 {
 		t.Fatalf("abandoned result retained: %+v %v", out, err)

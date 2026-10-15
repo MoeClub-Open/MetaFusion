@@ -31,7 +31,7 @@ func TestPostgresIdempotentEntityCreate(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	mkEdit := func(title string) Edit {
-		return Edit{Entity: Entity{Kind: "work", Title: title, Status: "draft"}, EditNote: "r1", Sources: fixtureSources()}
+		return Edit{Entity: Entity{Kind: "work", Title: title, Status: "active"}, EditNote: "r1", Sources: fixtureSources()}
 	}
 	withKey := func(e Edit, key string) Edit {
 		e.idempotency = &IdempotencyClaim{Operation: IdempotencyOpEntityCreate, UserID: f.u.ID, Key: key, Hash: requestHash(e)}

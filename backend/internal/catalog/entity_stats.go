@@ -10,12 +10,13 @@ import "context"
 
 // entityStatuses 是 catalog.entities.status 的全集，逐字对齐迁移 000001 的 CHECK 约束；
 // 计数端点据此把"没有行"补成真实的 0：响应的键缺失与"计数为 0"因此是两件可分辨的事。
-var entityStatuses = []string{"draft", "pending_review", "published", "deleted", "merged"}
+var entityStatuses = []string{"active", "deleted", "merged"}
 
 // EntityStatusCounts 是 /api/catalog/entities/stats 的响应：按状态分组的真实计数 + 全表总数。
 type EntityStatusCounts struct {
-	Statuses map[string]int64 `json:"statuses"`
-	Total    int64            `json:"total"`
+	PendingCommits int64            `json:"pending_commits"`
+	Statuses       map[string]int64 `json:"states"`
+	Total          int64            `json:"total"`
 }
 
 // statusGroup 是 GROUP BY status 的一行。
@@ -45,7 +46,9 @@ func (s *Store) StatusCounts(ctx context.Context) (EntityStatusCounts, error) {
 	if err := rows.Err(); err != nil {
 		return EntityStatusCounts{}, err
 	}
-	return foldStatusCounts(groups), nil
+	out := foldStatusCounts(groups)
+	err = s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.commits WHERE review_status='pending_review'").Scan(&out.PendingCommits)
+	return out, err
 }
 
 // foldStatusCounts 是纯函数（不碰库）：补齐 entityStatuses 的零值，total 取所有分组之和。

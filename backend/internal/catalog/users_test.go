@@ -22,9 +22,9 @@ func fixtureUser(role string) User {
 	case "admin":
 		permissions = []string{permissionWildcard}
 	case "editor":
-		permissions = []string{PermissionEntityEdit}
+		permissions = []string{PermissionEntityEdit, PermissionReviewBypass}
 	case "moderator":
-		permissions = []string{PermissionLifecycleManage}
+		permissions = []string{PermissionLifecycleManage, PermissionReviewBypass}
 	}
 	return User{ID: uuid.NewString(), Username: name, Email: name + "@example.com", Permissions: permissions}
 }

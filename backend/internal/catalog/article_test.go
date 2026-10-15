@@ -19,7 +19,7 @@ func TestArticleBodyValidationAndSchema(t *testing.T) {
 		{"invalid utf8", string([]byte{0xff}), "invalid_article_body"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := Entity{Kind: "work", Title: "Article", Status: "draft", Translations: map[string]Translation{"zh-CN": {Title: "Article", Body: tc.body}}}
+			e := Entity{Kind: "work", Title: "Article", Status: "active", Translations: map[string]Translation{"zh-CN": {Title: "Article", Body: tc.body}}}
 			err := d.validateEntityContent(e, allowAllRef, false)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 				t.Fatalf("validation = %v, want %q", err, tc.want)
@@ -101,7 +101,8 @@ func TestPostgresArticleCommitRevisionsAndConflicts(t *testing.T) {
 	if _, err = f.s.Save(ctx, Edit{Entity: initial, ExpectedVersion: initial.Version, EditNote: "stale full replacement", Sources: fixtureSources()}, f.u); !errors.Is(err, errVersionConflict) {
 		t.Fatalf("stale replacement: %v", err)
 	}
-	draft := f.save(Entity{Kind: "work", Title: "Private article", Status: "draft", Translations: map[string]Translation{"en": {Title: "Private article", Body: "private body"}}})
+	draft := f.save(Entity{Kind: "work", Title: "Private article", Status: "active", Translations: map[string]Translation{"en": {Title: "Private article", Body: "private body"}}})
+	draft = f.retire(draft)
 	if _, err := f.s.Get(ctx, draft.ID, nil); err == nil {
 		t.Fatal("draft article leaked to anonymous reader")
 	}

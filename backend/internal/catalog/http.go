@@ -377,7 +377,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			return
 		}
 		args := []any{}
-		where := []string{"e.status='published'", "jsonb_typeof(e.document->'attributes'->'tags')='array'"}
+		where := []string{"e.status='active'", "jsonb_typeof(e.document->'attributes'->'tags')='array'"}
 		if q := strings.TrimSpace(c.Query("q")); q != "" {
 			// 与实体搜索同口径：%/_ 由 likeContains 按字面转义。
 			args = append(args, likeContains(q))
@@ -432,7 +432,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
-		o := ListOptions{Kind: c.Query("kind"), Query: strings.TrimSpace(c.Query("q")), Status: c.Query("status"), WorkID: c.Query("work_id"), ContentUnitID: c.Query("content_unit_id"), ReleaseID: c.Query("release_id"), MediumID: c.Query("medium_id"), ParentID: c.Query("parent_id"), Field: c.Query("field"), Value: c.Query("value"), OriginalLanguage: c.Query("original_language"), HasPictures: c.Query("has_pictures") == "1", Sort: c.Query("sort"), Order: c.Query("order"), Locale: c.Query("locale"), Limit: limit, Offset: offset}
+		o := ListOptions{Kind: c.Query("kind"), Query: strings.TrimSpace(c.Query("q")), Status: c.Query("state"), WorkID: c.Query("work_id"), ContentUnitID: c.Query("content_unit_id"), ReleaseID: c.Query("release_id"), MediumID: c.Query("medium_id"), ParentID: c.Query("parent_id"), Field: c.Query("field"), Value: c.Query("value"), OriginalLanguage: c.Query("original_language"), HasPictures: c.Query("has_pictures") == "1", Sort: c.Query("sort"), Order: c.Query("order"), Locale: c.Query("locale"), Limit: limit, Offset: offset}
 		// 排序参数走白名单校验：未知字段/方向返回 400 invalid_sort / invalid_order，
 		// 而不是静默按 updated_at 返回另一套顺序（调用方会以为排序生效了）。
 		if err := normalizeListSort(&o); err != nil {
@@ -537,28 +537,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	cat.POST("/tracks/:id/contents", required(""), contentEdit("add"))
 	cat.PUT("/tracks/:id/contents/:position", required(""), contentEdit("replace"))
 	cat.DELETE("/tracks/:id/contents/:position", required(""), contentEdit("delete"))
-	cat.PATCH("/tracks/:id/status", required(""), func(c *gin.Context) {
-		auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
-		var in TrackStatusEdit
-		if !body(c, &in) {
-			return
-		}
-		if err := validateTrackStatusEdit(in); err != nil {
-			respond(c, nil, err)
-			return
-		}
-		// This read is only an audit summary. The status writer reads full facts
-		// from its own transaction and never copies a filtered public payload.
-		var before *Entity
-		if prev, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); err == nil {
-			before = &prev
-		}
-		e, err := s.EditTrackStatus(c.Request.Context(), c.Param("id"), in, *user(c))
-		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: e.ID, Changes: entityChangeDetail(before, &e)})
-		}
-		respond(c, e, err)
-	})
 	cat.GET("/entities/:id/resolve", func(c *gin.Context) {
 		e, err := s.Resolve(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, e, err)
@@ -676,23 +654,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		respond(c, e, err)
 	})
-	cat.POST("/entities/:id/unpublish", required(PermissionLifecycleManage), func(c *gin.Context) {
-		auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
-		var in UnpublishEdit
-		if !body(c, &in) {
-			return
-		}
-		// 与 lifecycle 同理：published → draft 之后读不到"曾经 published"这件事的 before。
-		var before *Entity
-		if prev, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); err == nil {
-			before = &prev
-		}
-		e, err := s.Unpublish(c.Request.Context(), c.Param("id"), in, *user(c))
-		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: e.ID, Changes: entityChangeDetail(before, &e)})
-		}
-		respond(c, e, err)
-	})
+
 	cat.GET("/entities/:id/revisions", func(c *gin.Context) {
 		v, err := s.Revisions(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, gin.H{"items": v}, err)

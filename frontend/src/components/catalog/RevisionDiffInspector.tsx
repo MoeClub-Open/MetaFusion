@@ -10,6 +10,7 @@ import { revisionChanges } from "./revisionData";
 import { Check, Code, Copy, Eye, GitCompare } from "lucide-react";
 
 export interface DiffSnapshot {
+  label?: string;
   snapshot?: any;
   version: number;
   actor_name?: string;
@@ -123,8 +124,8 @@ export function RevisionDiffInspector({
     const baseSnap = base ? base.snapshot || base : {};
     const currSnap = current.snapshot || current;
     const fields = computeDiff(baseSnap, currSnap);
-    const oldLabel = base ? "v" + base.version + " (" + (base.actor_name || systemActor) + ")" : initialLabel;
-    const newLabel = "v" + current.version + " (" + (current.actor_name || systemActor) + ")";
+    const oldLabel = base?.label || (base ? "v" + base.version + " (" + (base.actor_name || systemActor) + ")" : initialLabel);
+    const newLabel = current.label || "v" + current.version + " (" + (current.actor_name || systemActor) + ")";
     const unified = generateUnifiedDiff(baseSnap, currSnap, oldLabel, newLabel);
     return { fields, unified, oldLabel, newLabel };
   }, [base, current, systemActor, initialLabel]);
@@ -202,7 +203,7 @@ export function RevisionDiffInspector({
                     {diffVal(f.oldVal)}
                   </div>
                   <div className="p-2 rounded bg-emerald-500/[0.06] dark:bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft break-words whitespace-pre-wrap max-h-96 overflow-y-auto">
-                    <div className="text-[9px] uppercase tracking-wider text-emerald-500 font-bold mb-0.5">{t("revisions.newVersion", { version: current.version })}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-emerald-500 font-bold mb-0.5">{current.label || t("revisions.newVersion", { version: current.version })}</div>
                     {diffVal(f.newVal)}
                   </div>
                 </div>

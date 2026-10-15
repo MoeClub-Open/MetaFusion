@@ -12,7 +12,7 @@ import (
 // 并且确认存量形态（没有新增可选键）照常放行。
 
 func pictureOnlyEntity(pics ...Picture) Entity {
-	return Entity{Kind: "work", Title: "W", Status: "draft", Pictures: pics}
+	return Entity{Kind: "work", Title: "W", Status: "active", Pictures: pics}
 }
 
 func testPicture(url string) Picture {

@@ -19,8 +19,6 @@ export interface EntityCardProps {
   tags?: string[];
   /** 无封面占位层的副行（如首个标签） */
   fallbackSubtitle?: string;
-  status?: string;
-  statusLabel?: string;
   pictureUrl?: string;
   /** 探索页质量提示：仅 partial 显示小圆点。 */
   qualityStatus?: string;
@@ -37,8 +35,6 @@ export function EntityCard({
   baseTitle,
   tags,
   fallbackSubtitle,
-  status,
-  statusLabel,
   pictureUrl,
   qualityStatus,
 }: EntityCardProps) {
@@ -62,13 +58,6 @@ export function EntityCard({
             <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
             <span className="truncate max-w-[85px]">{badgeLabel}</span>
           </span>
-        }
-        statusBadge={
-          status && status !== "published" ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-amber-500/90 text-black keep-white text-[9px] font-mono font-bold shadow-2xs">
-              {statusLabel || status}
-            </span>
-          ) : undefined
         }
         fallbackContent={
           <div className="w-full h-full" aria-hidden>

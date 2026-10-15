@@ -52,7 +52,7 @@ export function canEditRevision(
 // definitions、引用和审计校验；不修改旧修订、不直接写库或另建还原接口。
 export function prepareRevisionRestore(current: Entity, snapshot: Entity): Entity {
   if (!snapshot || snapshot.id !== current.id || snapshot.kind !== current.kind ||
-      ["deleted", "merged"].includes(current.status) || ["deleted", "merged"].includes(snapshot.status)) {
+      ["deleted", "merged"].includes(current.state) || ["deleted", "merged"].includes((snapshot.state || (snapshot as any).status))) {
     throw new Error("revision_incompatible");
   }
   for (const key of ["work_id", "release_id", "medium_id"] as const) {

@@ -23,11 +23,11 @@ func TestFoldStatusCounts(t *testing.T) {
 			t.Fatalf("没有行的状态 %s 应补齐为 0: %+v", code, empty.Statuses)
 		}
 	}
-	got := foldStatusCounts([]statusGroup{{Status: "published", Count: 3070}, {Status: "deleted", Count: 288}, {Status: "unexpected", Count: 5}})
-	if got.Statuses["published"] != 3070 || got.Statuses["deleted"] != 288 {
+	got := foldStatusCounts([]statusGroup{{Status: "active", Count: 3070}, {Status: "deleted", Count: 288}, {Status: "unexpected", Count: 5}})
+	if got.Statuses["active"] != 3070 || got.Statuses["deleted"] != 288 {
 		t.Fatalf("已知状态应原样带出: %+v", got.Statuses)
 	}
-	for _, code := range []string{"draft", "pending_review", "merged"} {
+	for _, code := range []string{"merged"} {
 		if got.Statuses[code] != 0 {
 			t.Fatalf("缺失状态 %s 应补 0: %+v", code, got.Statuses)
 		}
@@ -47,8 +47,8 @@ func TestEntityStatsMatchesDirectSQLOnPostgres(t *testing.T) {
 	published := f.save(Entity{Kind: "work", Title: "计数用例·将成墓碑"})
 	// 另留一条已发布：墓碑数要与"仍在线的数量"分开，别把清退写成发布态消失。
 	f.save(Entity{Kind: "work", Title: "计数用例·已发布"})
-	f.save(Entity{Kind: "work", Title: "计数用例·草稿", Status: "draft"})
-	f.save(Entity{Kind: "work", Title: "计数用例·待审", Status: "pending_review"})
+	f.save(Entity{Kind: "work", Title: "计数用例·草稿", Status: "active"})
+	f.save(Entity{Kind: "work", Title: "计数用例·待审", Status: "active"})
 	if _, err := f.s.Lifecycle(ctx, published.ID, LifecycleEdit{ExpectedVersion: published.Version, EditNote: "计数用例清退", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatalf("造墓碑行: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestEntityStatsMatchesDirectSQLOnPostgres(t *testing.T) {
 	if err := f.s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.entities").Scan(&wantTotal); err != nil {
 		t.Fatal(err)
 	}
-	if want["deleted"] != 1 || want["published"] != 1 || want["draft"] != 1 || want["pending_review"] != 1 {
+	if want["deleted"] != 1 || want["active"] != 3 {
 		t.Fatalf("夹具没造出预期的状态分布: %+v", want)
 	}
 

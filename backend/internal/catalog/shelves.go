@@ -403,10 +403,10 @@ func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User
 func shelfVisibilityWhere(u *User, args *[]any) []string {
 	where := []string{}
 	if u == nil {
-		where = append(where, "e.status='published'")
+		where = append(where, "e.status='active'")
 	} else if !u.Can(PermissionShelvesManage) {
 		*args = append(*args, u.ID)
-		where = append(where, fmt.Sprintf("(e.status='published' OR e.created_by=$%d)", len(*args)))
+		where = append(where, fmt.Sprintf("(e.status='active' OR e.created_by=$%d)", len(*args)))
 	}
 	where = append(where, "e.status NOT IN ('deleted','merged')")
 	return where

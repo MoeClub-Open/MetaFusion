@@ -26,7 +26,7 @@ func TestReleaseTableOfContents(t *testing.T) {
 		return v
 	}
 	entity := func(kind, title, status string) Entity {
-		return Entity{Kind: kind, Title: title, Status: status, Attributes: map[string]any{}, Translations: map[string]Translation{"en": {Title: title}}}
+		return Entity{Kind: kind, Title: title, Status: "active", Attributes: map[string]any{}, Translations: map[string]Translation{"en": {Title: title}}}
 	}
 	work := save(entity("work", "album", "published"))
 	expression := entity("expression", "recording", "published")
@@ -48,7 +48,7 @@ func TestReleaseTableOfContents(t *testing.T) {
 	last.MediumID, last.Position = first.ID, 2
 	last.Contents = []Inclusion{{ExpressionID: expression.ID}, {ExpressionID: hiddenExpression.ID, Position: 2}}
 	last = save(last)
-	if _, err := s.Unpublish(ctx, hiddenExpression.ID, UnpublishEdit{
+	if _, err := s.Lifecycle(ctx, hiddenExpression.ID, LifecycleEdit{
 		ExpectedVersion: hiddenExpression.Version, EditNote: "release toc fixture", Sources: sources,
 	}, admin); err != nil {
 		t.Fatalf("unpublish recording: %v", err)

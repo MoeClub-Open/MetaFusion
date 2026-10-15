@@ -5,12 +5,7 @@ import (
 	"fmt"
 )
 
-// 目录编辑的权限档位。业务函数只问"持有哪个权限码能做什么"，不比角色字符串，
-// 也没有角色兜底（判定只看令牌里的 permissions，见 permission.go）：
-//
-//   - catalog.lifecycle.manage：任意非终止态条目，含他人未发布草稿；
-//   - catalog.entity.edit：公开条目可协作维护，自己创建的条目不受状态限制；
-//   - 无码（仅登录）：只能改自己创建的未发布条目（自助草稿）。
+// 协作编辑由权限码判定；作者可提交自己条目的修改。免审与审核另行授权。
 
 // ownedBy 要求 CreatedBy 非空：匿名（ID 为空）与历史脏行（created_by 为空）不得互相认领。
 func ownedBy(e Entity, u User) bool { return e.CreatedBy != "" && e.CreatedBy == u.ID }
@@ -24,42 +19,31 @@ func canEditEntity(u User, e Entity) bool {
 		return true
 	}
 	if u.Can(PermissionEntityEdit) {
-		return e.Status == "published" || ownedBy(e, u)
+		return true
 	}
-	return ownedBy(e, u) && e.Status != "published"
+	return ownedBy(e, u)
 }
 
-// prepareEntityWriteStatus is shared by whole-entity and status-only edits.
-// Publication and demotion permissions must not depend on the payload shape.
+// Applied facts always have an active lifecycle and a reviewed marker.
 func prepareEntityWriteStatus(old Entity, next *Entity, u User) error {
-	if !u.Can(PermissionLifecycleManage) {
-		if old.ID != "" && !canEditEntity(u, old) {
-			return errForbidden
-		}
-		if !u.Can(PermissionEntityEdit) {
-			if old.Status == "published" || next.Status != "draft" && next.Status != "pending_review" {
-				return errForbidden
-			}
-		}
+	if old.ID != "" && !canEditEntity(u, old) {
+		return errForbidden
 	}
 	if next.Status == "" {
-		next.Status = "draft"
+		next.Status = "active"
 	}
-	if next.Status == "deleted" || next.Status == "merged" || next.RedirectID != "" ||
-		old.Status == "published" && next.Status != "published" {
+	if next.Status != "active" || next.RedirectID != "" {
 		return fmt.Errorf("use_lifecycle_endpoint")
 	}
+	// Only applied facts are materialized. Pending commits never replace this head.
+	next.ReviewStatus = "reviewed"
 	return nil
 }
 
-// Published writes resolve validated references against anonymous visibility.
-// Status-only edits supply full facts, including unchanged inclusions.
+// Applied facts resolve validated references against public visibility.
 func entityWriteReference(ctx context.Context, q queryer, e Entity, u User) (func(string, []string) error, error) {
 	reader := &u
-	if e.Status == "published" {
-		if len(e.Translations) == 0 {
-			return nil, fmt.Errorf("translation_required")
-		}
+	if e.Status == "active" {
 		reader = nil
 	}
 	return reference(ctx, q, reader), nil

@@ -17,6 +17,7 @@ import {
   CATALOG_DEFINITIONS_MANAGE,
   CATALOG_ENTITY_EDIT,
   CATALOG_LIFECYCLE_MANAGE,
+  CATALOG_REVIEW_MANAGE,
   CATALOG_SHELVES_MANAGE,
   COMMUNITY_BOARD_MANAGE,
   COMMUNITY_POST_MODERATE,
@@ -39,6 +40,8 @@ export {
   CATALOG_DEFINITIONS_MANAGE,
   CATALOG_ENTITY_EDIT,
   CATALOG_LIFECYCLE_MANAGE,
+  CATALOG_REVIEW_MANAGE,
+  CATALOG_REVIEW_BYPASS,
   CATALOG_RELATION_EDIT,
   CATALOG_SHELVES_MANAGE,
   COMMUNITY_BOARD_MANAGE,
@@ -96,7 +99,8 @@ export const CATALOG_CONSOLE_CODES = [
   CATALOG_DEFINITIONS_MANAGE,
   CATALOG_SHELVES_MANAGE,
   CATALOG_LIFECYCLE_MANAGE,
-] as const;
+  CATALOG_REVIEW_MANAGE,
+ ] as const;
 
 /** 账号域控制台的准入码，与 metafusion-auth/admin 的 SECTION_PERMISSIONS 同集合。 */
 export const ACCOUNT_CONSOLE_CODES = [
@@ -135,18 +139,10 @@ export function canEnterAdmin(user: AnyUser | null | undefined): boolean {
 }
 
 /** 能否编辑这个实体：审核/生命周期码放行一切；编辑码放行（含协作维护已发布条目）；否则只能改自己的草稿。 */
-export function canEditEntity(user: AnyUser | null | undefined, entity: { status?: string; created_by?: string } | null | undefined): boolean {
+export function canEditEntity(user: AnyUser | null | undefined, entity: { state?: string; created_by?: string } | null | undefined): boolean {
   if (!user || !entity) return false;
-  if (entity.status === "deleted" || entity.status === "merged") return false;
+  if (entity.state === "deleted" || entity.state === "merged") return false;
   if (can(user, CATALOG_LIFECYCLE_MANAGE)) return true;
   if (can(user, CATALOG_ENTITY_EDIT)) return true;
-  return entity.created_by === user.id && entity.status !== "published";
-}
-
-/** 能否把条目直接置为已发布（草稿/待审之外的状态选项）。 */
-export function canPublishEntity(user: AnyUser | null | undefined, entity: { created_by?: string } | null | undefined): boolean {
-  if (!user) return false;
-  if (can(user, CATALOG_LIFECYCLE_MANAGE)) return true;
-  if (!can(user, CATALOG_ENTITY_EDIT)) return false;
-  return !entity?.created_by || entity.created_by === user.id;
+  return entity.created_by === user.id;
 }

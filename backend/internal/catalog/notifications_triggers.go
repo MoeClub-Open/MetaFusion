@@ -1,15 +1,6 @@
 package catalog
 
-// 通知的**产生端**：目录服务侧的三类事件（审核结果、收录、导入完成）在此收口。
-// 每个产生点都在**已经持锁/已开事务**的写路径里调用，通知行与业务行同事务提交：
-// 要么"条目已发布且通知已入箱"，要么两者都没有——不存在"发布了但通知丢了"的半成品。
-//
-// 接收者解析规则（唯一实现，不允许各处自己猜）：
-//   - 审核结果 → 实体 owner（catalog.entities.created_by）。提案创建的新实体 owner 就是提交者，
-//     因此"提案被通过/驳回"落在这条规则上；编辑他人实体时被通知的是条目 owner。
-//   - 收录 → 被收录实体（release.subjects 的 work、includes 关系的 target）的 owner。
-//   - 导入完成 → 发起导入的人自己（系统回执，不是"别人对你做了什么"）。
-// 所有规则都跳过"收件人 = 操作者"：自己改自己的东西不该收到通知。
+// 收录通知与事实写入同事务；审核通知由 commit_review.go 发给提交者。
 
 import (
 	"context"
@@ -28,40 +19,11 @@ func entityNotificationPayload(e Entity) map[string]any {
 	}
 }
 
-// notifySaveOutcome 在 Save 事务内按"状态跃迁 + 收录变化"产生通知。before 为 nil 表示新建。
+// notifySaveOutcome only observes changes to release subjects.
 func notifySaveOutcome(ctx context.Context, tx *sql.Tx, before *Entity, after Entity, actor User) error {
 	if before == nil {
 		// 新建只可能带出"收录"事件（新建 release 声明了 subjects），审核结果需要一次跃迁。
 		return notifyIncludedSubjects(ctx, tx, nil, after, actor)
-	}
-	owner := after.CreatedBy
-	if owner != "" && owner != actor.ID {
-		switch {
-		case before.Status != "published" && after.Status == "published":
-			// 审核通过：从 draft/pending_review 变成公开可见，且不是 owner 自己做的。
-			payload := entityNotificationPayload(after)
-			payload["from_status"] = before.Status
-			if err := notify(ctx, tx, NotificationInput{
-				RecipientID: owner, Type: NotificationReviewApproved,
-				ActorID: actor.ID, ActorName: actor.Username,
-				SubjectType: "entity", SubjectID: after.ID, Payload: payload,
-				DedupeKey: fmt.Sprintf("%s:%s:v%d", NotificationReviewApproved, after.ID, after.Version),
-			}); err != nil {
-				return err
-			}
-		case before.Status == "pending_review" && after.Status == "draft":
-			// 审核驳回：待审被退回草稿（发布中条目的降级走 Unpublish，不在这里）。
-			payload := entityNotificationPayload(after)
-			payload["from_status"] = before.Status
-			if err := notify(ctx, tx, NotificationInput{
-				RecipientID: owner, Type: NotificationReviewRejected,
-				ActorID: actor.ID, ActorName: actor.Username,
-				SubjectType: "entity", SubjectID: after.ID, Payload: payload,
-				DedupeKey: fmt.Sprintf("%s:%s:v%d", NotificationReviewRejected, after.ID, after.Version),
-			}); err != nil {
-				return err
-			}
-		}
 	}
 	return notifyIncludedSubjects(ctx, tx, before, after, actor)
 }
@@ -130,5 +92,3 @@ func notifyIncludedRelation(ctx context.Context, tx *sql.Tx, r Relation, src, tg
 		DedupeKey: fmt.Sprintf("%s:%s:%s", NotificationEntityIncluded, tgt.ID, src.ID),
 	})
 }
-
-

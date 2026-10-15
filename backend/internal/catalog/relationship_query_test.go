@@ -91,7 +91,7 @@ func TestRelationshipQueryStrictHTTPInput(t *testing.T) {
 
 func hideQueryEntity(t *testing.T, f fixture, id string) {
 	t.Helper()
-	if _, err := f.s.DB.Exec(`UPDATE catalog.entities SET status='draft',document=jsonb_set(document,'{status}','"draft"'::jsonb) WHERE id=$1`, id); err != nil {
+	if _, err := f.s.DB.Exec(`UPDATE catalog.entities SET status='deleted',document=jsonb_set(document,'{status}','"draft"'::jsonb) WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -150,8 +150,8 @@ func TestRelationshipQueryExtensibleDefinition(t *testing.T) {
 				return nil
 			}
 			for _, entity := range []Entity{
-				{Kind: "release", Title: "query release", Status: "published", Translations: map[string]Translation{"en": {Title: "query release"}}, Subjects: []Subject{{WorkID: workID, Role: "primary", Attributes: map[string]any{"query_reference": hiddenReferenceID}}}},
-				{Kind: "track", Title: "query track", Status: "published", MediumID: uuid.NewString(), Translations: map[string]Translation{"en": {Title: "query track"}}, Contents: relationshipQueryFixtureContents(expressionID, hiddenExpressionID, hiddenReferenceID)},
+				{Kind: "release", Title: "query release", Status: "active", Translations: map[string]Translation{"en": {Title: "query release"}}, Subjects: []Subject{{WorkID: workID, Role: "primary", Attributes: map[string]any{"query_reference": hiddenReferenceID}}}},
+				{Kind: "track", Title: "query track", Status: "active", MediumID: uuid.NewString(), Translations: map[string]Translation{"en": {Title: "query track"}}, Contents: relationshipQueryFixtureContents(expressionID, hiddenExpressionID, hiddenReferenceID)},
 			} {
 				if err := d.validateEntity(entity, ref, false); err != nil {
 					t.Fatalf("complete %s fixture must satisfy writes: %v", entity.Kind, err)

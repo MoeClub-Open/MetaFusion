@@ -48,9 +48,9 @@ test("failed and malformed detail responses are distinct from empty success", as
 
 test("merge preview accepts only another published record with matching ownership", () => {
   const source = { id: "source", kind: "track", work_id: "work", medium_id: "medium" };
-  const target = { ...source, id: "target", status: "published" };
+  const target = { ...source, id: "target", state: "active" };
   assert.ok(isCompatibleMergeTarget(source, target));
-  for (const changed of [{ id: "SOURCE" }, { kind: "work" }, { status: "draft" }, { status: "merged" }, { medium_id: "other" }, { work_id: "other" }, { parent_id: "other" }, { content_unit_id: "other" }, { release_id: "other" }]) assert.equal(isCompatibleMergeTarget(source, { ...target, ...changed }), false);
+  for (const changed of [{ id: "SOURCE" }, { kind: "work" }, { state: "deleted" }, { state: "merged" }, { medium_id: "other" }, { work_id: "other" }, { parent_id: "other" }, { content_unit_id: "other" }, { release_id: "other" }]) assert.equal(isCompatibleMergeTarget(source, { ...target, ...changed }), false);
 });
 
 test("picker identity differentiates same-title records without inferred metadata", () => {

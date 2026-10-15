@@ -37,9 +37,9 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 		t.Fatal(err)
 	}
 	owner := fixtureUser("member")
-	owner.Permissions = []string{PermissionEntityEdit}
+	owner.Permissions = []string{PermissionEntityEdit, PermissionReviewBypass}
 	reviewer := fixtureUser("moderator")
-	reviewer.Permissions = []string{PermissionEntityEdit, PermissionRelationEdit, PermissionLifecycleManage}
+	reviewer.Permissions = []string{PermissionEntityEdit, PermissionRelationEdit, PermissionLifecycleManage, PermissionReviewBypass, PermissionReviewManage}
 	return &notifyFixture{t: t, s: s, owner: owner, reviewer: reviewer}
 }
 
@@ -47,9 +47,9 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 func (f *notifyFixture) saveAs(u User, e Entity) Entity {
 	f.t.Helper()
 	if e.Status == "" {
-		e.Status = "published"
+		e.Status = "active"
 	}
-	if e.Status == "published" && len(e.Translations) == 0 {
+	if e.Status == "active" && len(e.Translations) == 0 {
 		e.Translations = map[string]Translation{"en": {Title: e.Title}}
 	}
 	var copyE Entity
@@ -294,32 +294,31 @@ func TestNotificationProducersOnPostgres(t *testing.T) {
 	f := newNotifyFixture(t)
 	ctx := context.Background()
 
-	// 审核通过：owner 交一个待审条目，reviewer 把它发布。
-	pending := f.saveAs(f.owner, Entity{Kind: "work", Title: "待审作品", Status: "pending_review"})
-	f.saveAs(f.reviewer, Entity{ID: pending.ID, Version: pending.Version, Kind: "work", Title: "待审作品", Status: "published", Translations: map[string]Translation{"zh-CN": {Title: "待审作品"}}})
+	fixture := fixture{t, f.s, f.owner}
+	submitter := f.owner
+	submitter.Permissions = []string{PermissionEntityEdit}
+	pending := fixtureCommit(fixture, CommitOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"待审作品"}`), ReviewedCandidateIDs: []string{}})
+	if _, err := f.s.PushCommit(ctx, pending, submitter, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.ReviewCommit(ctx, pending.ID, CommitReviewEdit{Decision: "approve"}, f.reviewer); err != nil {
+		t.Fatal(err)
+	}
 	items := f.notifs(f.owner)
-	if len(items) != 1 || items[0].Type != NotificationReviewApproved || items[0].ActorID != f.reviewer.ID {
-		t.Fatalf("审核通过应给 owner 一条 review_approved: %+v", items)
+	if len(items) != 1 || items[0].SubjectType != "commit" || items[0].SubjectID != pending.ID {
+		t.Fatalf("review notification: %+v", items)
 	}
-	if items[0].Payload["from_status"] != "pending_review" {
-		t.Fatalf("审核通过通知应记来自哪个状态: %+v", items[0].Payload)
+	rejected := fixtureCommit(fixture, CommitOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"待退回作品"}`), ReviewedCandidateIDs: []string{}})
+	if _, err := f.s.PushCommit(ctx, rejected, submitter, false); err != nil {
+		t.Fatal(err)
 	}
-
-	// 审核驳回：owner 再交一个待审条目，reviewer 退回草稿。
-	rejected := f.saveAs(f.owner, Entity{Kind: "work", Title: "将被驳回的作品", Status: "pending_review"})
-	f.saveAs(f.reviewer, Entity{ID: rejected.ID, Version: rejected.Version, Kind: "work", Title: "将被驳回的作品", Status: "draft"})
+	if _, err := f.s.ReviewCommit(ctx, rejected.ID, CommitReviewEdit{Decision: "reject"}, f.reviewer); err != nil {
+		t.Fatal(err)
+	}
 	items = f.notifs(f.owner)
 	if len(items) != 2 || items[0].Type != NotificationReviewRejected {
-		t.Fatalf("审核驳回应给 owner 一条 review_rejected: %+v", items)
+		t.Fatalf("reject notification: %+v", items)
 	}
-
-	// 自己发布自己的草稿不产生审核通知（不该给自己发"你的条目通过了审核"）。
-	own := f.saveAs(f.owner, Entity{Kind: "work", Title: "自己发的作品", Status: "pending_review"})
-	f.saveAs(f.owner, Entity{ID: own.ID, Version: own.Version, Kind: "work", Title: "自己发的作品", Status: "published", Translations: map[string]Translation{"zh-CN": {Title: "自己发的作品"}}})
-	if items = f.notifs(f.owner); len(items) != 2 {
-		t.Fatalf("自审不该产生通知: %+v", items)
-	}
-
 	// 收录（release 声明 subjects）：owner 的作品被 reviewer 放进发行 → owner 收到 included。
 	work := f.saveAs(f.owner, Entity{Kind: "work", Title: "被收录的作品"})
 	rel := f.saveAs(f.reviewer, Entity{Kind: "release", Title: "收录它的发行", Subjects: []Subject{{WorkID: work.ID, Role: "primary"}}})

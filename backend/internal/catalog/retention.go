@@ -146,7 +146,7 @@ func (s *Store) CleanupRetention(ctx context.Context, policy RetentionPolicy) (R
 		updated, err := tx.ExecContext(ctx, `WITH expired AS (
 			SELECT id FROM catalog.commits
 			WHERE created_at < now() - make_interval(days => $1)
-			  AND request <> 'null'::jsonb AND result <> 'null'::jsonb
+			  AND request <> 'null'::jsonb AND result <> 'null'::jsonb AND review_status <> 'pending_review'
 			ORDER BY created_at, id LIMIT $2 FOR UPDATE SKIP LOCKED
 		) UPDATE catalog.commits c SET request = 'null'::jsonb
 		  FROM expired WHERE c.id = expired.id`, policy.CommitRequestDays, retentionBatchSize)

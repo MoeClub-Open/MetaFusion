@@ -43,7 +43,7 @@ export function EntityRevisions({
 }) {
   const { t } = useI18n();
   const { user } = useAuth();
-  const [restore, setRestore] = useState<{ entity: Entity; revision: RevisionItem } | null>(null);
+  const [restore, setRestore] = useState<{ entity: Entity; base: Entity; revision: RevisionItem } | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreError, setRestoreError] = useState("");
   const beginRestore = async (revision: RevisionItem) => {
@@ -54,7 +54,7 @@ export function EntityRevisions({
       const current = await api<Entity>(`/catalog/entities/${currentEntity.id}`);
       // useAuth 的 user 是 User | null，canEditRevision 收 undefined 表示未登录。
       if (!canEditRevision(current, user ?? undefined)) throw new Error("forbidden");
-      setRestore({ entity: prepareRevisionRestore(current, revision.snapshot), revision });
+      setRestore({ entity: prepareRevisionRestore(current, revision.snapshot), base:current, revision });
     } catch {
       setRestoreError(t("revisions.restoreFailed"));
     } finally {
@@ -130,6 +130,7 @@ export function EntityRevisions({
           <EntityEditor
             key={`${restore.revision.id}:${restore.entity.version}`}
             initial={restore.entity}
+            base={restore.base}
             initialEditNote={t("revisions.restoreNote", { version: restore.revision.version, id: String(restore.revision.id) })}
             initialSources={[{ kind: "publication", citation: `catalog:${restore.entity.id}/revisions/${restore.revision.id}` }]}
             onSaved={() => window.location.reload()}
@@ -378,7 +379,7 @@ export function EntityRevisions({
                     </label>
 
                     {currentEntity && canEditRevision(currentEntity, user ?? undefined) && rev.id && rev.snapshot &&
-                      rev.version < currentEntity.version && !["deleted", "merged"].includes(rev.snapshot.status) && (
+                      rev.version < currentEntity.version && !["deleted", "merged"].includes((rev.snapshot.state || rev.snapshot.status)) && (
                       <button type="button" disabled={restoreBusy} onClick={() => beginRestore(rev)}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-primary hover:bg-primary/10 disabled:opacity-50">
                         <History className="w-3 h-3" />{t("revisions.restore")}

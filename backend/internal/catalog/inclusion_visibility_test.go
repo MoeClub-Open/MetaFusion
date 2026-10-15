@@ -34,7 +34,7 @@ func TestPostgresUnpublishedExpressionInclusionVisibility(t *testing.T) {
 	track.Title = "Two takes revised"
 	track.Contents[0].Locator = Locator{"relative_to": "track", "chapter": "main take"}
 	track = f.save(track)
-	if _, err := f.s.Unpublish(ctx, hidden.ID, UnpublishEdit{
+	if _, err := f.s.Lifecycle(ctx, hidden.ID, LifecycleEdit{
 		ExpectedVersion: hidden.Version, EditNote: "remove alternate take from public view", Sources: fixtureSources(),
 	}, f.u); err != nil {
 		t.Fatal(err)

@@ -13,7 +13,7 @@ import (
 // 权限码是账号服务与目录侧的共享契约：改名等于改两边，这里把拼写钉死
 // （对照 metafusion-auth/internal/store/access.go 的 PermissionCatalog 与 seed_groups.go）。
 func TestCatalogPermissionCodesMatchAccountService(t *testing.T) {
-	want := []string{"catalog.entity.edit", "catalog.relation.edit", "catalog.definitions.manage", "catalog.lifecycle.manage", "catalog.shelves.manage"}
+	want := []string{"catalog.entity.edit", "catalog.review.manage", "catalog.review.bypass", "catalog.relation.edit", "catalog.definitions.manage", "catalog.lifecycle.manage", "catalog.shelves.manage"}
 	if len(catalogPermissionCodes) != len(want) {
 		t.Fatalf("catalog permission code drift: %v", catalogPermissionCodes)
 	}
@@ -121,12 +121,12 @@ func TestEditingDecidedByPermissionCode(t *testing.T) {
 		e    Entity
 		want bool
 	}{
-		{"entity.edit maintains foreign published", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{Status: "published", CreatedBy: "other"}, true},
-		{"no code cannot maintain foreign published", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "published", CreatedBy: "other"}, false},
-		{"no code may still edit own draft", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "draft", CreatedBy: "self"}, true},
-		{"own published needs the code", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "published", CreatedBy: "self"}, false},
-		{"entity.edit stays out of foreign drafts", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{Status: "draft", CreatedBy: "other"}, false},
-		{"lifecycle.manage reaches foreign drafts", User{ID: "self", Permissions: []string{PermissionLifecycleManage}}, Entity{Status: "draft", CreatedBy: "other"}, true},
+		{"entity.edit maintains foreign published", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{Status: "active", CreatedBy: "other"}, true},
+		{"no code cannot maintain foreign published", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "active", CreatedBy: "other"}, false},
+		{"no code may still edit own draft", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "active", CreatedBy: "self"}, true},
+		{"own published needs the code", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "active", CreatedBy: "self"}, true},
+		{"entity.edit maintains active heads", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{Status: "active", CreatedBy: "other"}, true},
+		{"lifecycle.manage reaches foreign drafts", User{ID: "self", Permissions: []string{PermissionLifecycleManage}}, Entity{Status: "active", CreatedBy: "other"}, true},
 		{"terminated status stays closed", User{ID: "self", Permissions: []string{permissionWildcard}}, Entity{Status: "merged", CreatedBy: "self"}, false},
 	} {
 		if got := canEditEntity(tc.u, tc.e); got != tc.want {
@@ -137,7 +137,7 @@ func TestEditingDecidedByPermissionCode(t *testing.T) {
 		}
 	}
 	// 关系目标端否决权：持实体编辑权可挂他人公开条目，无码者不可。
-	published := Entity{Status: "published", CreatedBy: "other"}
+	published := Entity{Status: "active", CreatedBy: "other"}
 	if !canAttachToTarget(User{ID: "self", Permissions: []string{PermissionEntityEdit}}, published) {
 		t.Fatal("catalog.entity.edit must attach to published targets")
 	}

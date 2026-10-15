@@ -747,9 +747,9 @@ export default function ReleaseDetailLayout() {
             <div className="space-y-1.5 min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] tracking-wide">
                 <span className="px-2 py-0.5 rounded-sm bg-primary text-white font-semibold">{t("release.detail.badge")}</span>
-                {release?.status && (
+                {release?.review_status && (
                   <span className="px-2 py-0.5 rounded-sm bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body uppercase font-semibold">
-                    {release.status}
+                    {t("catalog.review.reviewed")}
                   </span>
                 )}
                 <QualityBadge

@@ -31,10 +31,10 @@ func newFixture(t *testing.T) fixture {
 func (f fixture) save(e Entity) Entity {
 	f.t.Helper()
 	if e.Status == "" {
-		e.Status = "published"
+		e.Status = "active"
 	}
 	// 发布态要求至少一条翻译（真实契约）：在这里补齐，免得每个调用点各自记这件事。
-	if e.Status == "published" && len(e.Translations) == 0 {
+	if e.Status == "active" && len(e.Translations) == 0 {
 		e.Translations = map[string]Translation{"en": {Title: e.Title}}
 	}
 	// Match HTTP decoding for dynamic JSON values.
@@ -96,7 +96,7 @@ func TestPostgresDynamicDefinitions(t *testing.T) {
 	if w.Attributes["custom_format"] != "cassette" {
 		t.Fatal("retired term lost during unrelated edit")
 	}
-	if _, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: "invalid reuse", Status: "draft", Attributes: map[string]any{"custom_format": "cassette"}}, Sources: fixtureSources(), EditNote: "invalid"}, f.u); err == nil {
+	if _, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: "invalid reuse", Status: "active", Attributes: map[string]any{"custom_format": "cassette"}}, Sources: fixtureSources(), EditNote: "invalid"}, f.u); err == nil {
 		t.Fatal("retired field reused")
 	}
 	v, _ = f.s.Definitions(ctx)
@@ -106,42 +106,23 @@ func TestPostgresDynamicDefinitions(t *testing.T) {
 	}
 }
 
-func TestPostgresEditReviewAndVersions(t *testing.T) {
+func TestPostgresLegacyPublicationStateRejected(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	editor := fixtureUser("editor")
-	for _, typ := range []string{"photobook", "indie_game", "song"} {
-		e, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: typ, Status: "draft"}, EditNote: "author draft", Sources: fixtureSources()}, editor)
-		if err != nil {
-			t.Fatal(err)
-		}
-		e.Title += " revised"
-		e.Status = "pending_review"
-		e, err = f.s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "submit author draft", Sources: fixtureSources()}, editor)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err = f.s.Get(ctx, e.ID, nil); err == nil {
-			t.Fatal("pending draft publicly visible")
-		}
-		e.Status = "published"
-		e = f.save(e)
-		if _, err = f.s.Get(ctx, e.ID, nil); err != nil {
-			t.Fatal(err)
-		}
-		revisions, err := f.s.Revisions(ctx, e.ID, &f.u)
-		if err != nil || len(revisions) != 3 {
-			t.Fatalf("revision history: %v %d", err, len(revisions))
-		}
-		publicHistory, err := f.s.Revisions(ctx, e.ID, nil)
-		if err != nil || len(publicHistory) != 1 {
-			t.Fatal("unpublished revisions leaked to the public")
+	for _, state := range []string{"draft", "pending_review", "published"} {
+		_, err := f.s.Save(context.Background(), Edit{Entity: Entity{Kind: "work", Title: "retired state", Status: state}, EditNote: "fixture", Sources: fixtureSources()}, f.u)
+		if err == nil {
+			t.Fatalf("legacy publication state %s accepted", state)
 		}
 	}
-	items, err := f.s.List(ctx, ListOptions{Status: "pending_review"}, &f.u)
-	if err != nil || len(items) != 0 {
-		t.Fatalf("review queue: %v", err)
+}
+
+func (f fixture) retire(e Entity) Entity {
+	f.t.Helper()
+	out, err := f.s.Lifecycle(context.Background(), e.ID, LifecycleEdit{ExpectedVersion: e.Version, EditNote: "retire visibility fixture", Sources: fixtureSources()}, f.u)
+	if err != nil {
+		f.t.Fatal(err)
 	}
+	return out
 }
 
 func TestPostgresReleaseComparisonAndReuse(t *testing.T) {
@@ -229,7 +210,7 @@ func TestPostgresAccountRoutesAreGone(t *testing.T) {
 	// 裸 entity 会被严格解析拒掉，这正是这一条要守住的行为。
 	body := `{"entity":{"kind":"work","title":"验签写入","translations":{"en":{"title":"verified write"}}},"expected_version":0,"edit_note":"acceptance fixture","sources":[{"kind":"url","citation":"acceptance fixture","url":"https://example.org/fixture"}]}`
 	editToken := signTestToken(t, key, func(c Claims) Claims {
-		c.Permissions = []string{PermissionEntityEdit}
+		c.Permissions = []string{PermissionEntityEdit, PermissionReviewBypass}
 		return c
 	})
 	if res := request(http.MethodPost, "/api/catalog/entities", body, editToken); res.Code != http.StatusOK {

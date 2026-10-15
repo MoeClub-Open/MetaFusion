@@ -72,7 +72,8 @@ func TestResolveDanglingReferenceOnPostgres(t *testing.T) {
 	}
 
 	// 3) 不可见（草稿）走同一出口：否则匿名者能靠状态码区分"不存在"与"存在但未发布"。
-	draft := f.save(Entity{Kind: "agent", Title: "Unreleased Label", Status: "draft"})
+	draft := f.save(Entity{Kind: "agent", Title: "Unreleased Label", Status: "active"})
+	draft = f.retire(draft)
 	if code, body = resolveOnce(t, anon, draft.ID); code != http.StatusNotFound || !strings.Contains(body, "not_found") {
 		t.Fatalf("不可见实体的引用应 404 not_found，实际 %d（%s）", code, body)
 	}

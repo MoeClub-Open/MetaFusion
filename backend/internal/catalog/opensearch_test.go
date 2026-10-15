@@ -86,7 +86,7 @@ func TestSearchPageOnlyRequestsOnePage(t *testing.T) {
 		if !strings.Contains(string(body), "search_text_exact") {
 			t.Error("search query does not include exact substring fallback")
 		}
-		if !strings.Contains(string(body), "published") {
+		if !strings.Contains(string(body), `"state":"active"`) {
 			t.Error("anonymous search query does not restrict to published entities")
 		}
 		w.Header().Set("Content-Type", "application/json")

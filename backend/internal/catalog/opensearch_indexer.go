@@ -224,7 +224,7 @@ func (c *OpenSearchClient) ensureIndex(ctx context.Context) error {
 			"entity_id":         map[string]any{"type": "keyword"},
 			"entity_version":    map[string]any{"type": "long"},
 			"kind":              map[string]any{"type": "keyword"},
-			"status":            map[string]any{"type": "keyword"},
+			"state":             map[string]any{"type": "keyword"},
 			"created_by":        map[string]any{"type": "keyword"},
 			"tags":              map[string]any{"type": "keyword"},
 			"original_language": map[string]any{"type": "keyword"},

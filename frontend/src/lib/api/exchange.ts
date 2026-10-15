@@ -65,7 +65,8 @@ export interface ExchangeEntity {
   attributes?: Record<string, unknown>;
   external_links?: { kind: string; url: string; external_id?: string; role?: string }[];
   pictures?: ExchangePicture[];
-  status?: string;
+  state?: string;
+  review_status?: string;
   created_by?: string;
   redirect_id?: string;
   work_id?: string;
@@ -97,38 +98,6 @@ export interface ExchangeSource {
   kind: ExchangeSourceKind;
   citation: string;
   url?: string;
-}
-
-export interface ExchangeProposalInput {
-  entity: ExchangeEntity;
-  expectedVersion: number;
-  editNote: string;
-  sources: ExchangeSource[];
-}
-
-/**
- * POST /exchange/proposals —— 提交外部编辑提案。
- *
- * 顶层键必须与 Edit 结构体逐字一致：http.body() 用 DisallowUnknownFields，
- * 多一个顶层键（snapshot / payload / document 之类）就是 400 invalid_payload
- * —— 粘贴的实体对象放在 entity 里，不叫别的名字。
- * url 为空时不发该键，避免把空串当成"给了链接"。
- */
-export function submitExchangeProposal(input: ExchangeProposalInput): Promise<ExchangeEntity> {
-  const sources = input.sources.map((source) =>
-    source.url && source.url.trim() !== ""
-      ? { kind: source.kind, citation: source.citation, url: source.url.trim() }
-      : { kind: source.kind, citation: source.citation }
-  );
-  return fetchApi<ExchangeEntity>("/exchange/proposals", {
-    method: "POST",
-    body: JSON.stringify({
-      entity: input.entity,
-      expected_version: input.expectedVersion,
-      edit_note: input.editNote,
-      sources,
-    }),
-  });
 }
 
 /**

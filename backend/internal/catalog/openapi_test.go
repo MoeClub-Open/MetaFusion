@@ -85,7 +85,7 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 		{"/catalog/entities/stats", "get", true},
 		{"/catalog/me/home-preferences", "get", true},
 		{"/catalog/me/home-preferences", "put", true},
-		{"/exchange/proposals", "post", true},
+		{"/catalog/commits/{id}/review", "post", true},
 		{"/external-sources", "get", true},
 	} {
 		op := paths[p.path].(map[string]any)[p.method].(map[string]any)
@@ -209,47 +209,7 @@ func TestOpenAPIHomeSectionFields(t *testing.T) {
 // 下架端点（published → draft）的文档必须冻结：它是已发布条目唯一的降级入口，
 // 漏记 requestBody 会让按文档做严格校验的客户端发不出请求；错误码与事件码写进 summary，
 // 前端与 Agent 只按文档对接。
-func TestOpenAPIUnpublishEndpoint(t *testing.T) {
-	doc := OpenAPI()
-	op, ok := doc["paths"].(map[string]any)["/catalog/entities/{id}/unpublish"].(map[string]any)
-	if !ok {
-		t.Fatal("下架端点未进 OpenAPI 文档")
-	}
-	post, ok := op["post"].(map[string]any)
-	if !ok {
-		t.Fatal("下架端点必须是 POST")
-	}
-	if _, ok := post["security"]; !ok {
-		t.Fatal("下架端点必须声明 security（需要登录 + catalog.lifecycle.manage）")
-	}
-	body, _ := post["requestBody"].(map[string]any)
-	ref, _ := body["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"].(string)
-	if ref != "#/components/schemas/UnpublishEdit" {
-		t.Fatalf("下架端点请求体 schema=%q, want UnpublishEdit", ref)
-	}
-	props, ok := doc["components"].(map[string]any)["schemas"].(map[string]any)["UnpublishEdit"].(map[string]any)["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("UnpublishEdit schema 缺失")
-	}
-	// 与既有写端点同口径的三个字段；下架不指向别的实体，target_id 不属于它的契约。
-	for _, k := range []string{"expected_version", "edit_note", "sources"} {
-		if props[k] == nil {
-			t.Fatalf("UnpublishEdit schema 缺 %s 字段", k)
-		}
-	}
-	if props["target_id"] != nil {
-		t.Fatal("下架没有合并目标，不该有 target_id")
-	}
-	summary, _ := post["summary"].(string)
-	for _, want := range []string{"published", "invalid_status", "version_conflict", "entity.unpublished", "revisions"} {
-		if !strings.Contains(summary, want) {
-			t.Fatalf("下架端点说明未覆盖 %q：%q", want, summary)
-		}
-	}
-}
 
-// 状态计数端点的文档必须冻结：它是墓碑数唯一的来源，五个状态键与 total 的 schema
-// （additionalProperties:false）漏一个，按文档做严格校验的客户端就会判失败。
 func TestOpenAPIEntityStatsEndpoint(t *testing.T) {
 	doc := OpenAPI()
 	op, ok := doc["paths"].(map[string]any)["/catalog/entities/stats"].(map[string]any)
@@ -272,11 +232,11 @@ func TestOpenAPIEntityStatsEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("EntityStatusCounts schema 缺失")
 	}
-	if props["statuses"] == nil || props["total"] == nil {
+	if props["states"] == nil || props["total"] == nil {
 		t.Fatalf("EntityStatusCounts schema 缺 statuses/total: %+v", props)
 	}
 	// 五个状态键逐个冻结，且与 Go 侧 entityStatuses（迁移 CHECK 的全集）逐字一致。
-	statusProps, ok := props["statuses"].(map[string]any)["properties"].(map[string]any)
+	statusProps, ok := props["states"].(map[string]any)["properties"].(map[string]any)
 	if !ok || len(statusProps) != len(entityStatuses) {
 		t.Fatalf("statuses 应逐个声明 %d 个状态: %+v", len(entityStatuses), statusProps)
 	}

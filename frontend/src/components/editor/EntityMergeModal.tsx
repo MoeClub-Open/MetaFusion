@@ -204,7 +204,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
             />
           </div>
 
-          <EntityPicker value={targetId} onChange={setTargetId} kinds={[targetType]} query="&status=published" />
+          <EntityPicker value={targetId} onChange={setTargetId} kinds={[targetType]} query="&state=active" />
           {previewLoading && <p role="status">{t("catalog.loading")}</p>}
           {previewFailed && <div role="alert" className="text-danger-soft"><p>{t("catalog.connectionError")}</p><button type="button" onClick={() => setPreviewAttempt((n) => n + 1)}>{t("catalog.retry")}</button></div>}
           {target && (

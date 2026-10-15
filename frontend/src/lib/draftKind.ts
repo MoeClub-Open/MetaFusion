@@ -23,7 +23,7 @@ export function changeDraftKind(entity: Entity, targetDefaults: Entity): Entity 
   return {
     ...targetDefaults,
     title: entity.title,
-    status: entity.status,
+    state: entity.state,
     original_language: entity.original_language,
     translations: structuredClone(entity.translations),
     external_links: structuredClone(entity.external_links || []),

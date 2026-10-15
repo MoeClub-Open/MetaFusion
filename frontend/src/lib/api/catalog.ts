@@ -139,38 +139,6 @@ export interface GraphLink {
   is_hierarchical?: boolean;
 }
 
-/**
- * 下架：把已发布条目退回草稿（POST /catalog/entities/:id/unpublish）。
- *
- * 这是状态机里**唯一**的降级入口：保存端点拒绝 published→draft（回 400 use_lifecycle_endpoint），
- * 生命周期端点 POST …/lifecycle 只写终态 deleted/merged。服务端只接受 published→draft：
- * draft/pending_review 没有可下架的内容、deleted/merged 是终态，四种情况一律 400 invalid_status。
- *
- * 请求体字段与 LifecycleEdit 同口径，但**没有 target_id**——带上它会被严格解码拒成
- * invalid_payload（不是被忽略）。证据（edit_note + 至少一条 sources）照常校验，
- * 下架会留一条修订行与 entity.unpublished 事件。
- */
-export async function unpublishEntity(payload: {
-  entity_id: string;
-  /** 乐观并发的版本号；语义是"我下架的是我看到的那一版"。 */
-  expected_version: number;
-  edit_note: string;
-  /** 用户填写的外部链接或出版物凭据。 */
-  sources: Source[];
-}): Promise<Record<string, any>> {
-  const note = (payload.edit_note || "").trim();
-  const error = catalogEvidenceError(note, payload.sources);
-  if (error) throw new Error(error);
-  return fetchApi<Record<string, any>>(`/catalog/entities/${payload.entity_id}/unpublish`, {
-    method: "POST",
-    body: JSON.stringify({
-      expected_version: payload.expected_version,
-      edit_note: note,
-      sources: payload.sources,
-    }),
-  });
-}
-
 // 合并走实体生命周期端点：POST /catalog/entities/:id/lifecycle（action=merge 语义由
 // target_id 表达，服务端把 source 并入 target 并改写引用）。
 export async function mergeEntities(payload: {

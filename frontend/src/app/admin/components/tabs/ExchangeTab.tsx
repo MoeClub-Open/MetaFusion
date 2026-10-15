@@ -10,35 +10,21 @@
 
 import { useState } from "react";
 import {
-  AlertTriangle,
   ArrowLeftRight,
-  CheckCircle2,
   ClipboardCopy,
   Download,
-  FileJson,
   Info,
   Loader2,
-  Plus,
-  Send,
-  Trash2,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
-import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
-import { Select } from "@/components/ui/Select";
 import {
-  EXCHANGE_SOURCE_KINDS,
   describeExchangeError,
   fetchExchangeEntity,
-  isValidSourceUrl,
-  submitExchangeProposal,
   type ExchangeEntity,
-  type ExchangeSource,
-  type ExchangeSourceKind,
 } from "@/lib/api/exchange";
 import { ErrorNotice, SectionHeader, StatusMessage } from "@/components/common/Blocks";
 
 /** 新建（entity.id 为空）时 expected_version 必须是 0，非 0 会被判成版本冲突。 */
-const NEW_ENTITY_VERSION = 0;
 
 const FIELD_CLASS =
   "w-full px-2.5 py-1.5 rounded-lg bg-surfaceSubtle border border-line text-xs text-text-strong placeholder:text-text-faint focus:border-primary outline-none";
@@ -68,7 +54,7 @@ export function ExchangeTab() {
       </div>
 
       <ExportPanel />
-      <ProposalPanel />
+
     </div>
   );
 }
@@ -146,7 +132,7 @@ function ExportPanel() {
         { label: t("admin.exchange.fieldId"), value: snapshot.id || "—" },
         { label: t("admin.entities.colKind"), value: snapshot.kind || "—" },
         { label: t("admin.entities.colVersion"), value: snapshot.version != null ? String(snapshot.version) : "—" },
-        { label: t("admin.entities.colStatus"), value: snapshot.status || "—" },
+        { label: t("admin.entities.colStatus"), value: snapshot.review_status || "—" },
         { label: t("admin.entities.colTitle"), value: snapshot.title || "—" },
       ]
     : [];
@@ -218,290 +204,6 @@ function ExportPanel() {
           ) : null}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function ProposalPanel() {
-  const { t, tr } = useI18n();
-  const [entityJson, setEntityJson] = useState("");
-  const [editNote, setEditNote] = useState("");
-  const [expectedVersion, setExpectedVersion] = useState(String(NEW_ENTITY_VERSION));
-  const [sources, setSources] = useState<ExchangeSource[]>([{ kind: "url", citation: "", url: "" }]);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ExchangeEntity | null>(null);
-  const [pending, setPending] = useState<{ entity: ExchangeEntity; expectedVersion: number } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const updateSource = (index: number, patch: Partial<ExchangeSource>) => {
-    setSources((prev) => prev.map((source, i) => (i === index ? { ...source, ...patch } : source)));
-  };
-
-  /**
-   * 本地预检与后端同一口径（validation.go:176）。
-   * 解析不了、缺说明、缺来源、来源不合法都在这里拦住，省一次注定 400 的往返；
-   * 服务端返回的 evidence_required / invalid_source 仍会照实显示，不做本地替代。
-   */
-  const prepare = (): { entity: ExchangeEntity; expectedVersion: number } | null => {
-    setLocalError(null);
-    setError(null);
-    const raw = entityJson.trim();
-    if (raw === "") {
-      setLocalError(t("admin.exchange.errEntityRequired"));
-      return null;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      setLocalError(
-        t("admin.exchange.errJsonInvalid", { message: err instanceof Error ? err.message : String(err) })
-      );
-      return null;
-    }
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      setLocalError(t("admin.exchange.errEntityNotObject"));
-      return null;
-    }
-    if (editNote.trim() === "") {
-      setLocalError(t("admin.exchange.errEditNoteRequired"));
-      return null;
-    }
-    const version = Number(expectedVersion.trim() === "" ? String(NEW_ENTITY_VERSION) : expectedVersion.trim());
-    if (!Number.isInteger(version) || version < 0) {
-      setLocalError(t("admin.exchange.errExpectedVersion"));
-      return null;
-    }
-    if (sources.length === 0) {
-      setLocalError(t("admin.exchange.errSourcesRequired"));
-      return null;
-    }
-    for (let index = 0; index < sources.length; index += 1) {
-      const source = sources[index];
-      const url = (source.url ?? "").trim();
-      if (source.citation.trim() === "") {
-        setLocalError(t("admin.exchange.errSourceCitation", { index: index + 1 }));
-        return null;
-      }
-      if (source.kind === "url" && url === "") {
-        setLocalError(t("admin.exchange.errSourceUrlRequired", { index: index + 1 }));
-        return null;
-      }
-      if (url !== "" && !isValidSourceUrl(url)) {
-        setLocalError(t("admin.exchange.errSourceUrl", { index: index + 1 }));
-        return null;
-      }
-    }
-    return { entity: parsed as ExchangeEntity, expectedVersion: version };
-  };
-
-  const handleSubmitClick = () => {
-    const prepared = prepare();
-    if (!prepared) return;
-    // 提交会落库并进待审队列，属于破坏性动作：先弹二次确认再发请求。
-    setPending(prepared);
-  };
-
-  const handleConfirm = async () => {
-    if (!pending) return;
-    setBusy(true);
-    try {
-      const saved = await submitExchangeProposal({
-        entity: pending.entity,
-        expectedVersion: pending.expectedVersion,
-        editNote: editNote.trim(),
-        sources: sources.map((source) => ({
-          kind: source.kind,
-          citation: source.citation.trim(),
-          url: (source.url ?? "").trim(),
-        })),
-      });
-      setResult(saved);
-      setError(null);
-    } catch (err) {
-      setResult(null);
-      setError(describeExchangeError(err, t));
-    } finally {
-      setBusy(false);
-      setPending(null);
-    }
-  };
-
-  // 粘贴进来的 JSON 由用户提供，id 可能是任意类型：先确认为字符串再放进确认框，避免渲染时抛错。
-  const pendingId = pending && typeof pending.entity.id === "string" ? pending.entity.id.trim() : "";
-
-  const resultFields = result
-    ? [
-        { label: t("admin.exchange.fieldId"), value: result.id || "—" },
-        { label: t("admin.entities.colVersion"), value: result.version != null ? String(result.version) : "—" },
-        { label: t("admin.entities.colStatus"), value: result.status || "—" },
-      ]
-    : [];
-
-  return (
-    <div className="space-y-3">
-      <SectionHeader
-        icon={<FileJson className="w-4 h-4 text-alt" />}
-        title={t("admin.exchange.proposalTitle")}
-        desc={t("admin.exchange.proposalDesc")}
-      />
-
-      <div className="space-y-1">
-        <label className="block text-[11px] font-mono text-text-muted">{t("admin.exchange.entityJsonLabel")}</label>
-        <textarea
-          rows={8}
-          value={entityJson}
-          onChange={(e) => setEntityJson(e.target.value)}
-          placeholder={t("admin.exchange.entityJsonPlaceholder")}
-          className={`${FIELD_CLASS} font-mono resize-y`}
-        />
-        <p className="text-[10px] text-text-faint leading-relaxed">{t("admin.exchange.entityJsonHint")}</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="block text-[11px] font-mono text-text-muted">{t("admin.exchange.editNoteLabel")}</label>
-          <input
-            type="text"
-            value={editNote}
-            onChange={(e) => setEditNote(e.target.value)}
-            placeholder={t("admin.exchange.editNotePlaceholder")}
-            className={FIELD_CLASS}
-          />
-          <p className="text-[10px] text-text-faint leading-relaxed">{t("admin.exchange.editNoteHint")}</p>
-        </div>
-        <div className="space-y-1">
-          <label className="block text-[11px] font-mono text-text-muted">
-            {t("admin.exchange.expectedVersionLabel")}
-          </label>
-          <input
-            type="number"
-            min={0}
-            value={expectedVersion}
-            onChange={(e) => setExpectedVersion(e.target.value)}
-            className={`${FIELD_CLASS} font-mono`}
-          />
-          <p className="text-[10px] text-text-faint leading-relaxed">{t("admin.exchange.expectedVersionHint")}</p>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <label className="block text-[11px] font-mono text-text-muted">{t("admin.exchange.sourcesLabel")}</label>
-          <button type="button" onClick={() => setSources((prev) => [...prev, { kind: "url", citation: "", url: "" }])} className={BUTTON_CLASS}>
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t("admin.exchange.sourceAdd")}</span>
-          </button>
-        </div>
-        <p className="text-[10px] text-text-faint leading-relaxed">{t("admin.exchange.sourcesHint")}</p>
-
-        {sources.map((source, index) => (
-          <div key={index} className="grid grid-cols-1 sm:grid-cols-[132px_1fr_1fr_auto] gap-2 items-start">
-            <Select
-              value={source.kind}
-              onChange={(v) => updateSource(index, { kind: v as ExchangeSourceKind })}
-              options={EXCHANGE_SOURCE_KINDS.map((kind) => ({
-                value: kind,
-                label: tr(`admin.exchange.sourceKind.${kind}`, kind),
-              }))}
-              aria-label={t("catalog.sourceKind")}
-            />
-            <input
-              type="text"
-              value={source.citation}
-              onChange={(e) => updateSource(index, { citation: e.target.value })}
-              placeholder={t("admin.exchange.sourceCitationPlaceholder")}
-              className={FIELD_CLASS}
-            />
-            <input
-              type="text"
-              value={source.url ?? ""}
-              onChange={(e) => updateSource(index, { url: e.target.value })}
-              placeholder={t("admin.exchange.sourceUrlPlaceholder")}
-              className={`${FIELD_CLASS} font-mono`}
-            />
-            <button
-              type="button"
-              onClick={() => setSources((prev) => prev.filter((_, i) => i !== index))}
-              title={t("common.delete")}
-              className={`${BUTTON_CLASS} justify-center`}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ))}
-
-        {sources.length === 0 ? (
-          <p className="flex items-start gap-1.5 text-[11px] text-amber-500 leading-relaxed">
-            <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-            <span>{t("admin.exchange.sourcesEmpty")}</span>
-          </p>
-        ) : null}
-      </div>
-
-      {localError ? <ErrorNotice message={localError} /> : null}
-      {error ? <ErrorNotice message={error} permissionHint={t("admin.exchange.proposalForbiddenHint")} /> : null}
-
-      {result ? (
-        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-success-soft">
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span>{t("admin.exchange.successTitle")}</span>
-          </div>
-          <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/70 leading-relaxed">
-            {t("admin.exchange.successDesc")}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {resultFields.map((field) => (
-              <div key={field.label} className="p-2 rounded-lg bg-surfaceSubtle border border-line-subtle min-w-0">
-                <div className="text-[10px] font-mono text-text-faint">{field.label}</div>
-                <div className="text-xs text-text-strong break-all">{field.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handleSubmitClick}
-          disabled={busy}
-          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-400 text-black font-semibold text-xs transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
-        >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          <span>{busy ? t("admin.exchange.submitting") : t("admin.exchange.submit")}</span>
-        </button>
-        <span className="text-[11px] text-text-faint leading-relaxed">{t("admin.exchange.proposalApiHint")}</span>
-      </div>
-
-      <ConfirmDialog
-        open={pending !== null}
-        title={t("admin.exchange.confirmTitle")}
-        message={
-          <div className="space-y-2">
-            <p>{t("admin.exchange.confirmMessage")}</p>
-            <ul className="space-y-1 font-mono text-[11px]">
-              <li>
-                {t("admin.exchange.confirmEntityId", {
-                  id: pendingId !== "" ? pendingId : t("admin.exchange.confirmNewEntity"),
-                })}
-              </li>
-              <li>
-                {t("admin.exchange.confirmExpectedVersion", {
-                  version: String(pending?.expectedVersion ?? NEW_ENTITY_VERSION),
-                })}
-              </li>
-            </ul>
-          </div>
-        }
-        confirmLabel={t("admin.exchange.confirmAction")}
-        busy={busy}
-        // 提交中不允许关掉确认框：关掉并不能取消已发出的请求，只会让用户以为取消了。
-        onClose={() => { if (!busy) setPending(null); }}
-        onConfirm={handleConfirm}
-      />
     </div>
   );
 }

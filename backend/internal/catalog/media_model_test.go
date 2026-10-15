@@ -131,14 +131,14 @@ func TestMediaProjectionsAndRuleReplay(t *testing.T) {
 		t.Fatalf("cross-code edition cardinality: %v", err)
 	}
 	// Hiding one chapter/edition never reveals its ID through these projections.
-	if _, err := f.s.Unpublish(ctx, first.ID, UnpublishEdit{ExpectedVersion: first.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
+	if _, err := f.s.Lifecycle(ctx, first.ID, LifecycleEdit{ExpectedVersion: first.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatal(err)
 	}
 	got, err = f.s.ExpressionComposition(ctx, whole.ID, nil)
 	if err != nil || len(got.Parts) != 1 || got.Parts[0].Entity.ID != second.ID {
 		t.Fatalf("hidden part leaked: %+v %v", got, err)
 	}
-	if _, err := f.s.Unpublish(ctx, limited.ID, UnpublishEdit{ExpectedVersion: limited.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
+	if _, err := f.s.Lifecycle(ctx, limited.ID, LifecycleEdit{ExpectedVersion: limited.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatal(err)
 	}
 	editions, err = f.s.ReleaseEditions(ctx, regular.ID, nil)
@@ -156,7 +156,7 @@ func TestSingleInclusionEditsPreserveHiddenRecordsAndEvidence(t *testing.T) {
 	release := f.save(Entity{Kind: "release", Title: "CD", Subjects: []Subject{{WorkID: work.ID, Role: "primary"}}})
 	medium := f.save(Entity{Kind: "medium", Title: "Disc", ReleaseID: release.ID})
 	track := f.save(Entity{Kind: "track", Title: "Track", MediumID: medium.ID, Contents: []Inclusion{{ExpressionID: first.ID, Position: 0, Locator: Locator{}}, {ExpressionID: hidden.ID, Position: 1, Locator: Locator{}}}})
-	if _, err := f.s.Unpublish(ctx, hidden.ID, UnpublishEdit{ExpectedVersion: hidden.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
+	if _, err := f.s.Lifecycle(ctx, hidden.ID, LifecycleEdit{ExpectedVersion: hidden.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatal(err)
 	}
 	editor := fixtureUser("editor")
@@ -238,7 +238,7 @@ func TestMergeReplaysCrossCodeCycleRules(t *testing.T) {
 		t.Fatalf("merge bypassed cycle group: %v", err)
 	}
 	current, err := f.s.Get(ctx, c.ID, &f.u)
-	if err != nil || current.Status != "published" || current.Version != c.Version {
+	if err != nil || current.Status != "active" || current.Version != c.Version {
 		t.Fatal("failed merge changed source")
 	}
 	relations, err := f.s.Relations(ctx, b.ID, &f.u)
