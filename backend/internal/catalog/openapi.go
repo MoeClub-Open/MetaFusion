@@ -87,7 +87,7 @@ func OpenAPI() map[string]any {
 		inputProps["key"] = props["key"]
 		delete(inputProps, "pointers")
 		delete(inputProps, "scope")
-		schemas["SourceInput"] = map[string]any{"type": "object", "properties": inputProps, "required": []string{"kind", "citation"}, "description": "Externally eligible evidence; self and URLs on the configured instance host (including subdomains) return source_not_eligible. Publication citations may omit URL. Community sources are eligible."}
+		schemas["SourceInput"] = map[string]any{"type": "object", "properties": inputProps, "required": []string{"kind", "citation", "key"}, "description": "Externally eligible evidence; every source needs a unique commit-local key (source_key_required). self and URLs on the configured instance host (including subdomains) return source_not_eligible. Publication citations may omit URL. Community sources are eligible."}
 		for _, name := range []string{"Edit", "RelationEdit", "LifecycleEdit", "UnpublishEdit", "TrackContentEdit", "TrackStatusEdit", "CommitOperation", "RateLimitSave", "ExternalSourceQueryRequest"} {
 			if obj, ok := schemas[name].(map[string]any); ok {
 				if p, ok := obj["properties"].(map[string]any); ok {
