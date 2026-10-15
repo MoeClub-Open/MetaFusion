@@ -102,4 +102,6 @@ CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默�
 
 首次部署先备份，库 owner 执行 deploy/sql/mcp-role.sql 建角色及默认权限，再运行 mcp-migrate，最后执行 verify-mcp-role.sql。运行服务只持 mcp schema 的 CRUD；不能把迁移 DSN 注入常驻服务。常规部署入口先构建 MCP，再显式迁移，后启动业务服务。公开核验 `/health/mcp`、两份 OAuth 发现文档、未授权 `/mcp` 的401挑战及 `/mcp/manage`。
 
+个人 Key 与 MCP 委托管理升级须同批发布 auth、MCP 与前端，先显式执行账号迁移，新增 `purpose`、`deleted_at` 并按既有 `mcp.connect` scope 分类旧 MCP 凭据。个人列表不再包含委托凭据；缩权更新原凭据，撤销失败可在管理页重试清理。技能文件已迁至 `references/*.md`、本地工具迁至 `scripts/`；版本锁中的技能 SHA 必须包含该目录调整，导出的 `MCP_SKILLS_REVISION` 须与之相同，否则云端引用会返回不可用。验收应包含读取新引用路径、满额个人 Key 下建立 MCP 连接、缩权与撤销；`/mcp/manage` 应转至 `/developer?tab=mcp`。
+
 账号旧显式 auth_rate_limit_per_minute=15 不会随代码默认值自动改变；升级时按已批准配置改为180。目录旧显式策略同样保留，须通过管理 API 核对实际全局、组和账号规则。目录同主体读写共用每分钟默认180预算，并由 PostgreSQL 跨副本计数；admin 默认无限，但显式账号或 admin 组规则可覆盖。身份来自验签，不依据调用方传入的 role 或通配 scope。

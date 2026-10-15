@@ -21,14 +21,12 @@
 # 锁里的 sha，自然与锁一致——"本机检出比锁新/旧"只能由 deploy.sh 的那一步拦。
 #
 # 当前锚点：各部署输入的已验证 HEAD；刷新时使用各仓远端同步后的提交。
-# 注意：`../metafusion-sdk` 目前**不是部署输入**（没有任何服务 import），
-# 因此不进这份锁；等 SDK 接入服务后必须补一行，否则“锁住了”只是错觉。
 # 更新时按各仓库 git rev-parse --short HEAD 重写，并在同一次提交里跑一遍 python scripts/check_versions.py。
-.=e41d8e6285ff379d888a6ecf8767ea73017fa792
-../metafusion-auth=16e6edb28be2ee0d72591976d7fbab2c875b443d
-../metafusion-community=7281d9f7c4ad8daf3a86c0d814fb340da661e39e
-../metafusion-storage=b3457267b39b81a2c646b5067e752159a08f2785
+.=839092a6cc36d248fafcefdcbe21047ac078bcf8
+../metafusion-auth=3b86b2133df62acb64990a0fc01d35c273291c94
+../metafusion-community=a1a25f8395de95d4c0f46503442eb68b8eef6801
+../metafusion-storage=ee7d431361962e8bf9aab98753269b37383fc714
 ../metafusion-api-gateway=851b7422efe7482cda9be39b8ea9edcf9aa92fd4
-../metafusion-docs=fb126da8e80da7fc81866d9f2333b35bca4c363e
-../metafusion-mcp=3132fe8503213d47562dfa6258c18c4ab2a09a2c
-../metafusion-skills=2d25ddaa0b29e34a67ac958dd0cd81c992ec6549
+../metafusion-docs=f3f3c736f2e5dfdbf98883c773382c6fd8725338
+../metafusion-mcp=ff70e0817279bffda9f44407b712dbf59e561b4e
+../metafusion-skills=540525e096e06744288a9edbdacfeb84ee73b5df
