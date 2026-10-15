@@ -26,7 +26,7 @@ func TestReleaseTableOfContents(t *testing.T) {
 		return v
 	}
 	entity := func(kind, title, status string) Entity {
-		return Entity{Kind: kind, Title: title, Status: "active", Attributes: map[string]any{}, Translations: map[string]Translation{"en": {Title: title}}}
+		return Entity{Kind: kind, Title: title, State: "active", Attributes: map[string]any{}, Translations: map[string]Translation{"en": {Title: title}}}
 	}
 	work := save(entity("work", "album", "published"))
 	expression := entity("expression", "recording", "published")

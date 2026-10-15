@@ -51,15 +51,15 @@ func getManyFrom(ctx context.Context, q queryer, ids []string, u *User) (map[str
 	if len(uniq) == 0 {
 		return out, nil
 	}
-	rows, err := q.QueryContext(ctx, "SELECT id::text, document, status, created_by::text FROM catalog.entities WHERE id = ANY($1::uuid[])", pq.Array(uniq))
+	rows, err := q.QueryContext(ctx, "SELECT id::text, document, state, created_by::text FROM catalog.entities WHERE id = ANY($1::uuid[])", pq.Array(uniq))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, status, createdBy string
+		var id, state, createdBy string
 		var b []byte
 		var e Entity
-		if err = rows.Scan(&id, &b, &status, &createdBy); err != nil {
+		if err = rows.Scan(&id, &b, &state, &createdBy); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -67,7 +67,7 @@ func getManyFrom(ctx context.Context, q queryer, ids []string, u *User) (map[str
 			rows.Close()
 			return nil, err
 		}
-		e.ID, e.Status, e.CreatedBy = id, status, createdBy
+		e.ID, e.State, e.CreatedBy = id, state, createdBy
 		if !visible(e, u) {
 			continue
 		}
@@ -429,11 +429,11 @@ func canAttachToTarget(u User, tgt Entity) bool {
 	if u.Can(PermissionLifecycleManage) {
 		return true
 	}
-	if tgt.Status == "deleted" || tgt.Status == "merged" {
+	if tgt.State == "deleted" || tgt.State == "merged" {
 		return false
 	}
 	// 目标端否决权：自己的条目，或持实体编辑权时对公开条目建边/拆边（旧 editor）。
-	return ownedBy(tgt, u) || tgt.Status == "active" && u.Can(PermissionEntityEdit)
+	return ownedBy(tgt, u) || tgt.State == "active" && u.Can(PermissionEntityEdit)
 }
 
 // validateRelationAttributes 校验关系边的属性：字段码必须属于该关系声明的字段集，
@@ -618,7 +618,7 @@ func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEd
 		if err != nil {
 			return err
 		}
-		if !visible(src, &u) || !visible(tgt, &u) || src.Status == "deleted" || src.Status == "merged" || tgt.Status == "deleted" || tgt.Status == "merged" {
+		if !visible(src, &u) || !visible(tgt, &u) || src.State == "deleted" || src.State == "merged" || tgt.State == "deleted" || tgt.State == "merged" {
 			return errForbidden
 		}
 		if !canWriteRelation(u, src) {

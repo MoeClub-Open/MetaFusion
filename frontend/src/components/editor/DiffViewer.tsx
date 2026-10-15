@@ -20,7 +20,7 @@ export function DiffViewer({ diff, editType = "update", className = "" }: Props)
   const getFieldLabel = (key: string): string => {
     const map: Record<string, string> = {
       title: t("editor.diff.fieldTitle"),
-      status: t("editor.diff.fieldStatus"),
+      state: t("editor.diff.fieldState"),
       translations: t("editor.diff.fieldTranslations"),
       external_links: t("editor.diff.fieldExternalLinks"),
     };

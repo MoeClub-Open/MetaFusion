@@ -206,7 +206,9 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	if err := json.Unmarshal([]byte(row.changes), &changes); err != nil {
 		t.Fatalf("changes 不是合法 JSON: %v (%s)", err, row.changes)
 	}
- if changes["status"]!=nil || changes["state"]!=nil {t.Fatalf("ordinary edit changed lifecycle: %s",row.changes)}
+	if changes["status"] != nil || changes["state"] != nil {
+		t.Fatalf("ordinary edit changed lifecycle: %s", row.changes)
+	}
 
 	title, _ := changes["title"].(map[string]any)
 	// before 侧同样脱敏：旧题名里的邮箱在审计行里必须是遮罩形态。

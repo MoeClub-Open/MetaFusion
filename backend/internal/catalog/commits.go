@@ -526,7 +526,7 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 				if err != nil {
 					return err
 				}
-				if !visible(e, &u) || e.Status == "deleted" || e.Status == "merged" {
+				if !visible(e, &u) || e.State == "deleted" || e.State == "merged" {
 					return errForbidden
 				}
 				existing = append(existing, op.ID)
@@ -749,7 +749,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 			if err != nil {
 				return item, err
 			}
-			if !visible(e, &u) || e.Status == "deleted" || e.Status == "merged" {
+			if !visible(e, &u) || e.State == "deleted" || e.State == "merged" {
 				return item, errForbidden
 			}
 			version = e.Version
@@ -835,7 +835,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 			}
 		}
 		if op.Action == "create" {
-			if e.ID != "" || e.Version != 0 || e.CreatedBy != "" || e.RedirectID != "" || e.Status != "" || e.ReviewStatus != "" {
+			if e.ID != "" || e.Version != 0 || e.CreatedBy != "" || e.RedirectID != "" || e.State != "" || e.ReviewStatus != "" {
 				return item, fmt.Errorf("server_fields_forbidden")
 			}
 			input.createID = refs[op.Ref]
@@ -986,7 +986,7 @@ func (s *Store) Checkout(ctx context.Context, in CheckoutRequest, u User) (Catal
 	}
 	for _, id := range in.EntityIDs {
 		e, ok := entities[id]
-		if !ok || e.Status == "deleted" || e.Status == "merged" {
+		if !ok || e.State == "deleted" || e.State == "merged" {
 			return out, sql.ErrNoRows
 		}
 		out.Entities = append(out.Entities, e)

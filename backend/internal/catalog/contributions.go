@@ -39,12 +39,12 @@ type ContributionDiffEntry struct {
 
 // ContributionItem 是贡献流的一项，两种项共用一个结构体：
 //   - 创建项（works / releases / artists 三类 tab，以及 all 里的创建事件）：id 就是实体 id，
-//     带 status 与实体自身的 updated_at；
+//     带 state 与实体自身的 updated_at；
 //   - 修订项（revisions tab，以及 all 里的后续改动）：id 是修订行 id（列表去重与排序的键），
 //     带 version 与 diff，实体 id 落在 target_id。
 //
 // 字段命名沿用既有端点：修订项复用 GET /catalog/entities/:id/revisions 的 version/edit_note/
-// sources/created_at，实体项复用实体列表的 kind/title/status/updated_at；动作取 edit_type
+// sources/created_at，实体项复用实体列表的 kind/title/state/updated_at；动作取 edit_type
 // （create/update，与前端 edit_type 徽章同一套取值），不新造一套字段名。
 type ContributionItem struct {
 	ID        string                           `json:"id"`
@@ -56,7 +56,7 @@ type ContributionItem struct {
 	EditType  string                           `json:"edit_type"`
 	EditNote  string                           `json:"edit_note"`
 	Sources   []Source                         `json:"sources,omitempty"`
-	Status    string                           `json:"state,omitempty"`
+	State     string                           `json:"state,omitempty"`
 	CreatedAt time.Time                        `json:"created_at"`
 	UpdatedAt *time.Time                       `json:"updated_at,omitempty"`
 	Diff      map[string]ContributionDiffEntry `json:"diff,omitempty"`
@@ -163,12 +163,12 @@ func contributionPage(page, pageSize int) (int, int) {
 // $1 恒为该用户的 actor_id，由调用方先放进 args；非管理员的登录查看者会再追加一个参数。
 // 可见性与 listFilter 逐条对应：先剔墓碑状态，匿名只看已发布，登录非管理员额外放行自己创建的未发布项。
 func contributionWhere(u *User, args *[]any) string {
-	parts := []string{"r.actor_id = $1", "e.status NOT IN ('deleted','merged')"}
+	parts := []string{"r.actor_id = $1", "e.state NOT IN ('deleted','merged')"}
 	if u == nil {
-		parts = append(parts, "e.status = 'active'")
+		parts = append(parts, "e.state = 'active'")
 	} else if !u.Can(PermissionLifecycleManage) {
 		*args = append(*args, u.ID)
-		parts = append(parts, fmt.Sprintf("(e.status = 'active' OR e.created_by = $%d)", len(*args)))
+		parts = append(parts, fmt.Sprintf("(e.state = 'active' OR e.created_by = $%d)", len(*args)))
 	}
 	return strings.Join(parts, " AND ")
 }
@@ -180,7 +180,7 @@ func contributionWhere(u *User, args *[]any) string {
 const contributionFrom = " FROM catalog.revisions r JOIN catalog.entities e ON e.id::text = r.target_id "
 
 // contributionSelectColumns 与上面的 FROM 配套，供 userContributionRows 扫描。
-const contributionSelectColumns = "r.id, r.version, e.id::text, e.kind, e.title, e.status, r.edit_note, r.sources, r.created_at, e.updated_at, r.snapshot"
+const contributionSelectColumns = "r.id, r.version, e.id::text, e.kind, e.title, e.state, r.edit_note, r.sources, r.created_at, e.updated_at, r.snapshot"
 
 // contributionRow 是贡献流的原始行：snapshot 只用于算差异，不进响应（整份实体 JSON 按页返回
 // 会让响应体随快照大小失控）。
@@ -190,7 +190,7 @@ type contributionRow struct {
 	entityID  string
 	kind      string
 	title     string
-	status    string
+	state     string
 	editNote  string
 	sources   []byte
 	createdAt time.Time
@@ -230,7 +230,7 @@ func (s *Store) userContributionRows(ctx context.Context, userID, tab string, li
 	out := []contributionRow{}
 	for rows.Next() {
 		var row contributionRow
-		if err = rows.Scan(&row.revID, &row.version, &row.entityID, &row.kind, &row.title, &row.status, &row.editNote, &row.sources, &row.createdAt, &row.updatedAt, &row.snapshot); err != nil {
+		if err = rows.Scan(&row.revID, &row.version, &row.entityID, &row.kind, &row.title, &row.state, &row.editNote, &row.sources, &row.createdAt, &row.updatedAt, &row.snapshot); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, row)
@@ -308,7 +308,7 @@ func (s *Store) userContributionItems(ctx context.Context, rows []contributionRo
 		}
 		if creationMode && row.version == 1 {
 			updated := row.updatedAt
-			item.ID, item.Tab, item.EditType, item.Status, item.UpdatedAt = row.entityID, contributionKindTab(row.kind), "create", row.status, &updated
+			item.ID, item.Tab, item.EditType, item.State, item.UpdatedAt = row.entityID, contributionKindTab(row.kind), "create", row.state, &updated
 		} else {
 			item.ID = strconv.FormatInt(row.revID, 10)
 			item.EditType = "create"

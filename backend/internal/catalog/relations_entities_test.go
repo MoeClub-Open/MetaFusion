@@ -126,7 +126,7 @@ func TestPostgresRelationListEntitiesCoverBothEnds(t *testing.T) {
 	if err := json.Unmarshal(selfRaw, &self); err != nil {
 		t.Fatal(err)
 	}
-	if self.ID != subject.ID || self.Kind != "agent" || self.Title != subject.Title || self.Status != "active" {
+	if self.ID != subject.ID || self.Kind != "agent" || self.Title != subject.Title || self.State != "active" {
 		t.Errorf("主体摘要与库内实体不一致：%+v", self)
 	}
 	// 同 kind 的两条摘要（主体与另一 agent 对端）键集必须一致：形状随 kind 走，不因"是自己"缩水。
@@ -195,7 +195,7 @@ func TestPostgresRelationAttributeQueryHidesDraftEndpoint(t *testing.T) {
 	character := f.save(Entity{Kind: "agent", Title: "公开角色"})
 	work := f.save(Entity{Kind: "work", Title: "公开作品"})
 	publicActor := f.save(Entity{Kind: "agent", Title: "公开演员"})
-	draftActor := f.save(Entity{Kind: "agent", Title: "未公开演员", Status: "active"})
+	draftActor := f.save(Entity{Kind: "agent", Title: "未公开演员", State: "active"})
 	for _, actor := range []Entity{publicActor, draftActor} {
 		if _, err := f.s.SaveRelation(ctx, RelationEdit{
 			Relation: Relation{Type: "voiced_by", SourceID: work.ID, TargetID: actor.ID,
@@ -210,7 +210,7 @@ func TestPostgresRelationAttributeQueryHidesDraftEndpoint(t *testing.T) {
 	if err != nil || len(ownerRelations) != 2 {
 		t.Fatalf("有权限的编辑者应看到两条关系：count=%d err=%v", len(ownerRelations), err)
 	}
- draftActor=f.retire(draftActor)
+	draftActor = f.retire(draftActor)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	HTTP{Store: f.s}.Register(r)

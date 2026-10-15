@@ -30,11 +30,11 @@ func newFixture(t *testing.T) fixture {
 }
 func (f fixture) save(e Entity) Entity {
 	f.t.Helper()
-	if e.Status == "" {
-		e.Status = "active"
+	if e.State == "" {
+		e.State = "active"
 	}
 	// 发布态要求至少一条翻译（真实契约）：在这里补齐，免得每个调用点各自记这件事。
-	if e.Status == "active" && len(e.Translations) == 0 {
+	if e.State == "active" && len(e.Translations) == 0 {
 		e.Translations = map[string]Translation{"en": {Title: e.Title}}
 	}
 	// Match HTTP decoding for dynamic JSON values.
@@ -96,7 +96,7 @@ func TestPostgresDynamicDefinitions(t *testing.T) {
 	if w.Attributes["custom_format"] != "cassette" {
 		t.Fatal("retired term lost during unrelated edit")
 	}
-	if _, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: "invalid reuse", Status: "active", Attributes: map[string]any{"custom_format": "cassette"}}, Sources: fixtureSources(), EditNote: "invalid"}, f.u); err == nil {
+	if _, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: "invalid reuse", State: "active", Attributes: map[string]any{"custom_format": "cassette"}}, Sources: fixtureSources(), EditNote: "invalid"}, f.u); err == nil {
 		t.Fatal("retired field reused")
 	}
 	v, _ = f.s.Definitions(ctx)
@@ -109,7 +109,7 @@ func TestPostgresDynamicDefinitions(t *testing.T) {
 func TestPostgresLegacyPublicationStateRejected(t *testing.T) {
 	f := newFixture(t)
 	for _, state := range []string{"draft", "pending_review", "published"} {
-		_, err := f.s.Save(context.Background(), Edit{Entity: Entity{Kind: "work", Title: "retired state", Status: state}, EditNote: "fixture", Sources: fixtureSources()}, f.u)
+		_, err := f.s.Save(context.Background(), Edit{Entity: Entity{Kind: "work", Title: "retired state", State: state}, EditNote: "fixture", Sources: fixtureSources()}, f.u)
 		if err == nil {
 			t.Fatalf("legacy publication state %s accepted", state)
 		}

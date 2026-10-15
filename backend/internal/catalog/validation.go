@@ -1118,8 +1118,8 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 	if !contains(Kinds, e.Kind) || strings.TrimSpace(e.Title) == "" || len(e.Title) > 2000 || e.Position < 0 {
 		return fmt.Errorf("invalid_entity")
 	}
-	if !contains([]string{"active", "deleted", "merged"}, e.Status) {
-		return fmt.Errorf("invalid_status")
+	if !contains([]string{"active", "deleted", "merged"}, e.State) {
+		return fmt.Errorf("invalid_state")
 	}
 	if err := d.validateEntityContent(e, reference, historical); err != nil {
 		return err

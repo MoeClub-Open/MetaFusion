@@ -62,7 +62,7 @@ func projectionRoot(ctx context.Context, tx *sql.Tx, id, kind string, u *User) (
 	if err != nil {
 		return e, DefinitionConfig{}, err
 	}
-	if !visible(e, u) || e.Status == "deleted" || e.Status == "merged" {
+	if !visible(e, u) || e.State == "deleted" || e.State == "merged" {
 		return e, DefinitionConfig{}, sql.ErrNoRows
 	}
 	if e.Kind != kind {
@@ -92,7 +92,7 @@ func visibleUsagePeers(ctx context.Context, q queryer, d Definitions, items []Re
 			id = r.SourceID
 		}
 		e, ok := entities[id]
-		if !ok || e.Status == "deleted" || e.Status == "merged" {
+		if !ok || e.State == "deleted" || e.State == "merged" {
 			continue
 		}
 		if err := d.attributes(d.Relations[r.Type].Fields, r.Attributes, reference(ctx, q, u), true); err != nil {

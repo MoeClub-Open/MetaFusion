@@ -170,7 +170,7 @@ func pruneOutbox(ctx context.Context, tx *sql.Tx, policy RetentionPolicy) (event
 		AND (
 		  o.type IN ('relation.saved','relation.deleted','definitions.updated','rate_limits.updated')
 		  OR (
-		    o.type IN ('entity.saved','entity.deleted','entity.merged','entity.unpublished')
+		    o.type IN ('entity.saved','entity.deleted','entity.merged')
 		    AND NOT EXISTS (
 		      SELECT 1 FROM unnest($2::text[]) AS required(consumer)
 		      WHERE NOT EXISTS (SELECT 1 FROM catalog.deliveries d

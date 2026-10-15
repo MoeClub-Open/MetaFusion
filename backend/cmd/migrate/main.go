@@ -83,7 +83,7 @@ func main() {
 	case "seed":
 		// 显式内容种子入口（无 DDL）：空库发布内置定义，存量只增不改
 		// （定义/外部库/货架，后台自定义不被覆盖），最后再合并种子新增的定义键。
-		// 结构迁移用 up，HTTP 进程只做只读兼容检查（见 CheckCompatibleVersion），
+		// 结构迁移用 up，HTTP 进程只做只读兼容检查（见 CheckSchemaContract），
 		// 空库安装顺序：mf-migrate up → mf-migrate seed → mf-migrate check-refs。
 		log.Println("开始补齐内容种子（无 DDL，只增不改）...")
 		s, err := catalog.Open(ctx, dsn)

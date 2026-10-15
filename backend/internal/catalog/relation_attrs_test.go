@@ -11,8 +11,8 @@ func TestRelationAttributesNilEqualsEmpty(t *testing.T) {
 		t.Fatal("有属性的边不应与空属性边判为同一条")
 	}
 	d := Defaults()
-	a := Entity{ID: "aaaaaaaa-1111-1111-1111-111111111111", Kind: "work", Title: "A", Status: "active", Translations: map[string]Translation{"ja": {Title: "A"}}}
-	b := Entity{ID: "bbbbbbbb-2222-2222-2222-222222222222", Kind: "work", Title: "B", Status: "active", Translations: map[string]Translation{"ja": {Title: "B"}}}
+	a := Entity{ID: "aaaaaaaa-1111-1111-1111-111111111111", Kind: "work", Title: "A", State: "active", Translations: map[string]Translation{"ja": {Title: "A"}}}
+	b := Entity{ID: "bbbbbbbb-2222-2222-2222-222222222222", Kind: "work", Title: "B", State: "active", Translations: map[string]Translation{"ja": {Title: "B"}}}
 	// 库里已有的是"属性缺省"那条，写入的是"显式空对象"，两者是同一条边。
 	existing := []Relation{{ID: "r1", Type: "adaptation_of", SourceID: a.ID, TargetID: b.ID}}
 	candidate := Relation{Type: "adaptation_of", SourceID: a.ID, TargetID: b.ID, Attributes: map[string]any{}}

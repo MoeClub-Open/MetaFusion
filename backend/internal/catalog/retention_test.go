@@ -62,7 +62,7 @@ func TestRetentionPolicyConfiguration(t *testing.T) {
 func TestPostgresRetentionConsumersAndLifecycleFacts(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	deleted := f.save(Entity{Kind: "work", Title: "retention deleted", Status: "active"})
+	deleted := f.save(Entity{Kind: "work", Title: "retention deleted", State: "active"})
 	merged := f.save(Entity{Kind: "work", Title: "retention duplicate"})
 	canonical := f.save(Entity{Kind: "work", Title: "retention canonical"})
 	_ = f.save(Entity{Kind: "work", Title: "retention unpublished"})
@@ -109,7 +109,7 @@ func TestPostgresRetentionConsumersAndLifecycleFacts(t *testing.T) {
 		t.Fatalf("unconsumed config/relation events only: %+v %v", result, err)
 	}
 	var entityEvents int64
-	if err := f.s.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.outbox WHERE type IN ('entity.saved','entity.deleted','entity.merged','entity.unpublished')`).Scan(&entityEvents); err != nil {
+	if err := f.s.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.outbox WHERE type IN ('entity.saved','entity.deleted','entity.merged')`).Scan(&entityEvents); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.deliveries(consumer,event_id)
@@ -152,7 +152,7 @@ func TestPostgresRetentionPreservesCommitAndCreateReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edit := Edit{Entity: Entity{Kind: "work", Title: "retention idempotent", Status: "active"},
+	edit := Edit{Entity: Entity{Kind: "work", Title: "retention idempotent", State: "active"},
 		EditNote: "create guard", Sources: fixtureSources()}
 	edit.idempotency = &IdempotencyClaim{Operation: IdempotencyOpEntityCreate, UserID: f.u.ID, Key: "retention-key", Hash: requestHash(edit)}
 	created, err := f.s.Save(ctx, edit, f.u)
@@ -251,9 +251,7 @@ func TestPostgresLifecycleRetentionMigrationBackfill(t *testing.T) {
 	if err := migrator.New(s.DB, before).Up(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SeedContent(ctx); err != nil {
-		t.Fatal(err)
-	}
+	seedMigrationFixture(t, s)
 	// Build the historical rows directly: current Save requires the latest schema.
 	f := fixture{t: t, s: s, u: fixtureUser("admin")}
 	id := uuid.NewString()

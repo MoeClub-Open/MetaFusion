@@ -86,7 +86,7 @@ export function RevisionDiffInspector({
       const known: Record<string, string> = {
         title: t("revisions.fieldTitle"),
         kind: t("revisions.fieldKind"),
-        status: t("revisions.fieldStatus"),
+        state: t("revisions.fieldState"),
         original_language: t("revisions.fieldOriginalLanguage"),
         pictures: t("revisions.fieldPictures"),
         contents: t("catalog.contents"),

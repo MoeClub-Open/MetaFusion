@@ -47,7 +47,7 @@ MetaFusion 是类似 MusicBrainz / Bangumi 的开放元数据目录与受控资�
 
 涉及 API 或数据行为时，以目标实例响应 + 实际处理器 + 已执行迁移为准；有矛盾记差异、停掉依赖写入，不改文案掩盖。接口或外部行为变化时，只同步直接受影响的 OpenAPI、用户和开发者文档及主仓内部契约说明。
 
-- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000031_commit_review`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
+- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000032_catalog_state`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
 
 ## 3.1 提交证据（破坏性，无兼容）
 
@@ -71,4 +71,4 @@ CatalogCommit：`sources[]` 每条必须有唯一 `key`；每个操作必须有�
 
 ## 提交审核
 
-条目没有发布状态；公开字段 `state` 仅 active/deleted/merged，`review_status=reviewed` 只读。普通 commit 返回 202 pending_review/applied=false，保留当前事实、版本、历史和事件。`catalog.review.bypass` 免审应用，`catalog.review.manage` 审核不可变提交，批准重新验证并保留原作者；拒绝不改条目，旧 ID 不得应用。单对象事实写入口需要免审权限。存量正常条目迁为 active/reviewed，历史快照不改。
+条目没有发布状态；公开字段 `state` 仅 active/deleted/merged，`review_status=reviewed` 只读。普通 commit 返回 202 pending_review/applied=false，保留当前事实、版本、历史和事件。`catalog.review.bypass` 免审应用，`catalog.review.manage` 审核不可变提交，批准重新验证并保留原作者；拒绝不改条目，旧 ID 不得应用。单对象事实写入口需要免审权限。存量正常条目为 active/reviewed；032 将实体列与历史条目快照统一为 state，运行时不读取旧 status。不可变提交请求与摘要仍是原始证据，不用于执行已结案提交。

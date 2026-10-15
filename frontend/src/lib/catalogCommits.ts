@@ -12,7 +12,7 @@ export type CommitOperation = {
 export type CommitReceipt = {
   id: string; applied: boolean; refs: Record<string,string>;
   review_status: "pending_review" | "reviewed";
-  review_decision: "pending" | "approved" | "rejected" | "exempt" | "legacy";
+  review_decision: "pending" | "approved" | "rejected" | "exempt";
   reviewed_by?: string; reviewed_at?: string; review_note?: string;
   preview?: {target: string; action: string; id: string; before: any; after: any}[];
 };

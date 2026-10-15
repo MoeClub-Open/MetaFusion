@@ -46,7 +46,7 @@ func validateMediumSchemeChange(ctx context.Context, q queryer, d Definitions, o
 		if err != nil {
 			return err
 		}
-		if track.Status == "deleted" || track.Status == "merged" {
+		if track.State == "deleted" || track.State == "merged" {
 			continue
 		}
 		if err = d.validateEntity(track, allowReference, true, format); err != nil {

@@ -119,7 +119,7 @@ func TestStorageLifecycleBootstrapsExistingBindingsWithoutEventsOnPostgres(t *te
 	}
 	for _, state := range received {
 		if state.EntityID == missing {
-			if state.Status != "deleted" {
+			if state.State != "deleted" {
 				t.Fatal("physically missing identity was not a deletion snapshot")
 			}
 		} else if state.EntityID != target.ID || !contains(state.Aliases, source.ID) {
@@ -135,7 +135,7 @@ func TestStorageLifecycleBootstrapsExistingBindingsWithoutEventsOnPostgres(t *te
 	}
 	for i := 0; i < before; i++ {
 		original, replayed := received[i], received[before+i]
-		if replayed.EntityID != original.EntityID || replayed.Status != original.Status || replayed.Version != original.Version ||
+		if replayed.EntityID != original.EntityID || replayed.State != original.State || replayed.Version != original.Version ||
 			!reflect.DeepEqual(replayed.Aliases, original.Aliases) || !reflect.DeepEqual(replayed.AliasVersions, original.AliasVersions) {
 			t.Fatalf("restart changed lifecycle identity facts: original=%+v replayed=%+v", original, replayed)
 		}
@@ -217,7 +217,7 @@ func TestStorageLifecycleRetriesCurrentCanonicalFactsOnPostgres(t *testing.T) {
 		t.Fatal("no snapshots delivered")
 	}
 	for _, state := range received {
-		if state.EntityID != target.ID || state.Status != "active" || !contains(state.Aliases, source.ID) ||
+		if state.EntityID != target.ID || state.State != "active" || !contains(state.Aliases, source.ID) ||
 			!contains(state.CoverAssetIDs, sourceAsset) || !contains(state.CoverAssetIDs, targetAsset) || state.AliasVersions[source.ID] <= source.Version {
 			t.Fatalf("historical source event must use current canonical facts and preserve covers: %+v", state)
 		}
@@ -231,7 +231,7 @@ func TestStorageLifecycleRetriesCurrentCanonicalFactsOnPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, err := f.s.currentStorageLifecycle(ctx, source.ID)
-	if err != nil || state.EntityID != target.ID || state.Status != "deleted" || !contains(state.Aliases, source.ID) {
+	if err != nil || state.EntityID != target.ID || state.State != "deleted" || !contains(state.Aliases, source.ID) {
 		t.Fatalf("canonical delete must cover historical aliases: %+v err=%v", state, err)
 	}
 }

@@ -50,13 +50,13 @@ type ExternalSourceSearchItem struct {
 
 // ExternalSourceQueryResponse 是统一查询响应。
 type ExternalSourceQueryResponse struct {
-	Source  string                     `json:"source"`
-	Op      string                     `json:"op"`
-	Fetch   *FetchMeta                 `json:"fetch,omitempty"`
-	Fetches []FetchMeta                `json:"fetches,omitempty"`
-	Raw     any                        `json:"raw,omitempty"`
-	Preview *ExternalSourcePreviewResponse   `json:"preview,omitempty"`
-	Items   []ExternalSourceSearchItem `json:"items,omitempty"`
+	Source  string                         `json:"source"`
+	Op      string                         `json:"op"`
+	Fetch   *FetchMeta                     `json:"fetch,omitempty"`
+	Fetches []FetchMeta                    `json:"fetches,omitempty"`
+	Raw     any                            `json:"raw,omitempty"`
+	Preview *ExternalSourcePreviewResponse `json:"preview,omitempty"`
+	Items   []ExternalSourceSearchItem     `json:"items,omitempty"`
 	// Limit 是 search 实际生效的分页大小（我方 clamp 后、或上游回显）。
 	Limit int `json:"limit,omitempty"`
 	// Clamped 表示请求的 limit 与实际生效不一致（我方上限 50，或上游钳制）。

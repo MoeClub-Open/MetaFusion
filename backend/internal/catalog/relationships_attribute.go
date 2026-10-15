@@ -131,7 +131,7 @@ func attributeEntityLinksSQL(d Definitions, filters relationshipFilters, args *[
  JOIN catalog.entities ref_target ON ref_target.id=%s
  WHERE %s AND (e.id=$1::uuid OR ref_target.id=$1::uuid)
   AND e.kind=ANY(%s::text[]) AND ref_target.kind=ANY(%s::text[])
-  AND ref_target.status NOT IN ('deleted','merged')`, bind(projection.rule.Code), position, path, strings.Join(joins, "\n"), targetID, candidate, bind(pq.Array(projection.rule.SourceKinds)), bind(pq.Array(projection.field.Kinds))))
+  AND ref_target.state NOT IN ('deleted','merged')`, bind(projection.rule.Code), position, path, strings.Join(joins, "\n"), targetID, candidate, bind(pq.Array(projection.rule.SourceKinds)), bind(pq.Array(projection.field.Kinds))))
 	}
 	return strings.Join(branches, "\n")
 }

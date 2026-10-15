@@ -117,7 +117,7 @@ func TestPostgresIdentityCreateUpdateRace(t *testing.T) {
 		for turn := 0; turn < 3; turn++ {
 			f := newFixture(t)
 			ctx := context.Background()
-			own := f.save(Entity{Kind: "work", Title: "Before rename", Status: "active"})
+			own := f.save(Entity{Kind: "work", Title: "Before rename", State: "active"})
 			update := fixtureCommit(f, updateCommit(own, patchValue("/title", "Shared identity")))
 			create := fixtureCommit(f, CommitOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"Shared identity"}`)})
 			start := make(chan struct{})
@@ -167,8 +167,8 @@ func TestPostgresIdentityCreateUpdateRace(t *testing.T) {
 func TestPostgresIdentityUpdateUpdateRace(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	first := f.save(Entity{Kind: "work", Title: "First original", Status: "active"})
-	second := f.save(Entity{Kind: "work", Title: "Second original", Status: "active"})
+	first := f.save(Entity{Kind: "work", Title: "First original", State: "active"})
+	second := f.save(Entity{Kind: "work", Title: "Second original", State: "active"})
 	commits := []CatalogCommit{
 		fixtureCommit(f, updateCommit(first, patchValue("/title", "Shared renamed identity"))),
 		fixtureCommit(f, updateCommit(second, patchValue("/title", "Shared renamed identity"))),
@@ -209,7 +209,7 @@ func TestPostgresEntitySaveSharesIdentityTermLocks(t *testing.T) {
 	f := newFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	e := Entity{Kind: "work", Title: "Locked entity identity", Status: "active"}
+	e := Entity{Kind: "work", Title: "Locked entity identity", State: "active"}
 	holder, err := f.s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestPostgresEntitySaveSharesIdentityTermLocks(t *testing.T) {
 func TestPostgresPublicEntityIdentityReviewAndReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	f := newFixture(t)
-	taken := f.save(Entity{Kind: "work", Title: "Taken public identity", Status: "active"})
+	taken := f.save(Entity{Kind: "work", Title: "Taken public identity", State: "active"})
 	r := gin.New()
 	r.Use(func(c *gin.Context) { c.Set("catalog_user", &f.u); c.Next() })
 	HTTP{Store: f.s}.Register(r)
@@ -294,7 +294,7 @@ func TestPostgresPublicEntityIdentityReviewAndReplay(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	own := f.save(Entity{Kind: "work", Title: "Before public rename", Status: "active"})
+	own := f.save(Entity{Kind: "work", Title: "Before public rename", State: "active"})
 	own.Title = taken.Title
 	put := Edit{Entity: own, ExpectedVersion: own.Version, EditNote: "rename", Sources: fixtureSources()}
 	if w := call(http.MethodPut, "/api/catalog/entities/"+own.ID, put, ""); w.Code != 409 || !strings.Contains(w.Body.String(), "identity_candidates_changed") {

@@ -23,7 +23,7 @@ func filterVisibleTrackContents(ctx context.Context, q queryer, entities map[str
 	if len(ids) == 0 {
 		return nil
 	}
-	rows, err := q.QueryContext(ctx, `SELECT id::text,kind,status,created_by::text
+	rows, err := q.QueryContext(ctx, `SELECT id::text,kind,state,created_by::text
 		FROM catalog.entities WHERE id = ANY($1::uuid[])`, pq.Array(keysOf(ids)))
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func filterVisibleTrackContents(ctx context.Context, q queryer, entities map[str
 	readable := map[string]bool{}
 	for rows.Next() {
 		var e Entity
-		if err = rows.Scan(&e.ID, &e.Kind, &e.Status, &e.CreatedBy); err != nil {
+		if err = rows.Scan(&e.ID, &e.Kind, &e.State, &e.CreatedBy); err != nil {
 			rows.Close()
 			return err
 		}

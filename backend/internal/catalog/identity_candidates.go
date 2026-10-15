@@ -41,7 +41,7 @@ type IdentityCandidateEntity struct {
 	Translations  map[string]Translation `json:"translations"`
 	ExternalLinks []ExternalLink         `json:"external_links"`
 	Attributes    map[string]any         `json:"attributes"`
-	Status        string                 `json:"state"`
+	State         string                 `json:"state"`
 	WorkID        string                 `json:"work_id,omitempty"`
 	ContentUnitID string                 `json:"content_unit_id,omitempty"`
 	ReleaseID     string                 `json:"release_id,omitempty"`
@@ -64,7 +64,7 @@ type IdentityCandidateResponse struct {
 
 func identityCandidateSummary(e Entity) IdentityCandidateEntity {
 	return IdentityCandidateEntity{ID: e.ID, Kind: e.Kind, Version: e.Version, Title: e.Title,
-		Translations: e.Translations, ExternalLinks: e.ExternalLinks, Attributes: e.Attributes, Status: e.Status,
+		Translations: e.Translations, ExternalLinks: e.ExternalLinks, Attributes: e.Attributes, State: e.State,
 		WorkID: e.WorkID, ContentUnitID: e.ContentUnitID, ReleaseID: e.ReleaseID, MediumID: e.MediumID, ParentID: e.ParentID}
 }
 
@@ -189,11 +189,11 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
             SELECT id FROM catalog.entities WHERE id=NULLIF($9::text,'')::uuid
             UNION
             SELECT e.id FROM catalog.entities e JOIN excluded x ON e.document->>'redirect_id'=x.id::text
-                WHERE e.status='merged'
+                WHERE e.state='merged'
         )
         SELECT id::text,count(*) OVER () FROM catalog.entities
-        WHERE kind=$1 AND status <> 'deleted'
-        AND ($3::boolean OR status='active' OR created_by=$4::uuid)
+        WHERE kind=$1 AND state <> 'deleted'
+        AND ($3::boolean OR state='active' OR created_by=$4::uuid)
         AND ($5::text='' OR EXISTS(SELECT 1 FROM catalog.expressions x WHERE x.id=entities.id AND x.work_id::text=$5) OR EXISTS(SELECT 1 FROM catalog.content_units x WHERE x.id=entities.id AND x.work_id::text=$5))
         AND ($7::text='' OR EXISTS(SELECT 1 FROM catalog.mediums m WHERE m.id=entities.id AND m.release_id::text=$7))
         AND ($8::text='' OR EXISTS(SELECT 1 FROM catalog.tracks t WHERE t.id=entities.id AND t.medium_id::text=$8))
@@ -234,7 +234,7 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 		item := IdentityCandidateMatch{Matched: identityCandidateSummary(original)}
 		canonical := original
 		var err error
-		if original.Status == "merged" {
+		if original.State == "merged" {
 			canonical, err = resolveFrom(ctx, q, id, u)
 		}
 		if err != nil {
@@ -242,7 +242,7 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 				return out, err
 			}
 			item.ResolutionError = "canonical_identity_unverified"
-		} else if canonical.Kind != in.Kind || canonical.Status == "deleted" || canonical.Status == "merged" {
+		} else if canonical.Kind != in.Kind || canonical.State == "deleted" || canonical.State == "merged" {
 			item.ResolutionError = "canonical_identity_unverified"
 		} else {
 			summary := identityCandidateSummary(canonical)

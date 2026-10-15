@@ -132,7 +132,7 @@ func relationshipEntitiesFrom(ctx context.Context, q queryer, ids []string, u *U
 	rows, err := q.QueryContext(ctx, `SELECT id::text,kind,coalesce((document->>'version')::bigint,0),
 	 coalesce(document->>'title',''),coalesce(document->>'original_language',''),coalesce(document->'translations','{}'::jsonb)
 	 FROM catalog.entities WHERE id=ANY($1::uuid[])
-	 AND ($2::boolean OR status='active' OR created_by=$3::uuid)`, pq.Array(ids), manage, userID)
+	 AND ($2::boolean OR state='active' OR created_by=$3::uuid)`, pq.Array(ids), manage, userID)
 	if err != nil {
 		return nil, err
 	}

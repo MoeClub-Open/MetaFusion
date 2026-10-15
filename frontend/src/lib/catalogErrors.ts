@@ -41,9 +41,9 @@ const CODE_KEYS: Record<string, string> = {
   use_lifecycle_endpoint: "catalog.error.useLifecycle",
   id_must_be_empty: "catalog.error.idMustBeEmpty",
   // 合并/生命周期两条路径的拒绝码：目标不同归属或非同层级（invalid_merge_target）、
-  // 源已删除或已合并、或状态值不在允许集合内（invalid_status）。
+  // 源已删除或已合并、或状态值不在允许集合内（invalid_state）。
   invalid_merge_target: "catalog.error.invalidMergeTarget",
-  invalid_status: "catalog.error.invalidStatus",
+  invalid_state: "catalog.error.invalidState",
   // 证据/来源校验：下架与合并都要求 edit_note + 至少一条合法 sources。
   invalid_source: "catalog.error.invalidSource",
   source_not_eligible: "catalog.error.sourceNotEligible",

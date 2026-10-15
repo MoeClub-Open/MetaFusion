@@ -15,7 +15,7 @@ import (
 //     000021 是不可变的安装基线，后续只加有序增量）；
 //  2. 内容种子：`mf-migrate seed`（Store.SeedContent，无 DDL：空库发布内置定义，存量定义/外部库/货架只增不改，D2 保证不夺回人工配置）；
 //  3. 完整性扫描：`mf-migrate check-refs`（Store.DanglingReferences，只读体检）；
-//  4. HTTP 启动：本文件的 CheckCompatibleVersion（只读，不写库、不全表扫描）。
+//  4. HTTP 启动：本文件的 CheckSchemaContract（只读，不写库、不全表扫描）。
 //
 // Store.Initialize 是本地安装/测试的显式组合入口（基线 + 增量 + 空库种子 + 种子升级），
 // 生产常驻进程不再调用它。先调职责再谈撤权：运行角色的 DDL 权限本次不动，
@@ -38,10 +38,10 @@ var requiredCatalogTables = []string{
 	"catalog.api_rate_windows",
 }
 
-// CheckCompatibleVersion 是 HTTP 进程启动的唯一前置检查：只读校验必需表、已发布契约与
+// CheckSchemaContract 是 HTTP 进程启动的唯一前置检查：只读校验必需表、已发布契约与
 // 已发布定义存在，不写库、不加载实体/关系全集（EnsureSeedDefinitions 的启动扫描在此之后
 // 不再执行）。失败即 Fatal：库没准备好时拒绝服务，而不是降级成“能起但行为不对”。
-func (s *Store) CheckCompatibleVersion(ctx context.Context) error {
+func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	var hasInclusionSources bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='track_contents' AND column_name='sources')`).Scan(&hasInclusionSources); err != nil {
 		return err
@@ -62,8 +62,8 @@ func (s *Store) CheckCompatibleVersion(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 31 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 31 required (run mf-migrate up)")
+	if contractVersion != 32 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 32 required (run mf-migrate up)")
 	}
 	var hasCommitProvenance bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='revisions' AND column_name='commit_id')`).Scan(&hasCommitProvenance); err != nil {

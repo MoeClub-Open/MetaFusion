@@ -103,8 +103,8 @@ FROM (
 ) l
 JOIN catalog.entities source ON source.id=l.source_id::uuid
 JOIN catalog.entities target ON target.id=l.target_id::uuid
-WHERE ($2::boolean OR source.status='active' OR source.created_by=$3::uuid)
- AND ($2::boolean OR target.status='active' OR target.created_by=$3::uuid)
+WHERE ($2::boolean OR source.state='active' OR source.created_by=$3::uuid)
+ AND ($2::boolean OR target.state='active' OR target.created_by=$3::uuid)
  AND ($6='both' OR ($6='outgoing' AND l.source_id=$1::text)
   OR ($6='incoming' AND l.source_id<>$1::text AND (l.target_id=$1::text OR l.relation_id<>''
    OR l.code IN ('structure:release_subject','structure:track_content'))))
@@ -438,17 +438,17 @@ func (c *relationshipReferenceCache) load(ctx context.Context, q queryer, sites 
 	if len(ids) == 0 {
 		return nil
 	}
-	rows, err := q.QueryContext(ctx, "SELECT id::text,kind,status,created_by::text FROM catalog.entities WHERE id=ANY($1::uuid[])", pq.Array(ids))
+	rows, err := q.QueryContext(ctx, "SELECT id::text,kind,state,created_by::text FROM catalog.entities WHERE id=ANY($1::uuid[])", pq.Array(ids))
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var e Entity
-		if err = rows.Scan(&e.ID, &e.Kind, &e.Status, &e.CreatedBy); err != nil {
+		if err = rows.Scan(&e.ID, &e.Kind, &e.State, &e.CreatedBy); err != nil {
 			return err
 		}
-		if visible(e, u) && e.Status != "deleted" && e.Status != "merged" {
+		if visible(e, u) && e.State != "deleted" && e.State != "merged" {
 			c.entities[e.ID] = e
 		}
 	}

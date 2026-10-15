@@ -15,7 +15,7 @@ import (
 func entityListTitles(t *testing.T, f fixture, o ListOptions) []string {
 	t.Helper()
 	o.Kind = "work"
-	o.Status = "active"
+	o.State = "active"
 	items, err := f.s.List(context.Background(), o, &f.u)
 	if err != nil {
 		t.Fatalf("list: %v", err)

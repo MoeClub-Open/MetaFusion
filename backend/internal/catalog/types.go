@@ -122,7 +122,7 @@ type Entity struct {
 	Attributes       map[string]any         `json:"attributes"`
 	ExternalLinks    []ExternalLink         `json:"external_links"`
 	Pictures         PicturesJSON           `json:"pictures"`
-	Status           string                 `json:"state"`
+	State            string                 `json:"state"`
 	ReviewStatus     string                 `json:"review_status"`
 	CreatedBy        string                 `json:"created_by"`
 	RedirectID       string                 `json:"redirect_id,omitempty"`

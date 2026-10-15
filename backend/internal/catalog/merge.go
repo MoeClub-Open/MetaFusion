@@ -190,7 +190,7 @@ func mergeReferences(ctx context.Context, tx *sql.Tx, source, target Entity, u U
 	if err != nil {
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT id FROM catalog.entities WHERE status NOT IN ('deleted','merged') ORDER BY id")
+	rows, err := tx.QueryContext(ctx, "SELECT id FROM catalog.entities WHERE state NOT IN ('deleted','merged') ORDER BY id")
 	if err != nil {
 		return err
 	}

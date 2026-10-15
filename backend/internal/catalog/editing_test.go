@@ -25,12 +25,12 @@ func TestSharedEditingRoles(t *testing.T) {
 		case "editor":
 			u.Permissions = []string{PermissionEntityEdit}
 		}
-		e := Entity{Status: tc.status, CreatedBy: tc.owner}
+		e := Entity{State: tc.status, CreatedBy: tc.owner}
 		if canEditEntity(u, e) != tc.allowed || canWriteRelation(u, e) != tc.allowed {
 			t.Errorf("role=%s status=%s owner=%s want=%v", tc.role, tc.status, tc.owner, tc.allowed)
 		}
 	}
-	if canAttachToTarget(User{ID: "self"}, Entity{Status: "active", CreatedBy: "other"}) {
+	if canAttachToTarget(User{ID: "self"}, Entity{State: "active", CreatedBy: "other"}) {
 		t.Fatal("ordinary user must not gain shared relationship editing")
 	}
 }

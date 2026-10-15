@@ -28,10 +28,10 @@ import (
 
 // 通知类型枚举（对外稳定码，与前端四语字典的键一一对应；只增不改）。
 const (
-	NotificationCommentReplied  = "comment.replied"
-	NotificationEntityIncluded  = "entity.included"
-	NotificationReviewApproved  = "entity.review_approved"
-	NotificationReviewRejected  = "entity.review_rejected"
+	NotificationCommentReplied = "comment.replied"
+	NotificationEntityIncluded = "entity.included"
+	NotificationReviewApproved = "entity.review_approved"
+	NotificationReviewRejected = "entity.review_rejected"
 )
 
 // 列表分页口径：缺省 20、上限 100（越界静默收敛，与 /catalog/entities 风格一致）。
@@ -47,10 +47,10 @@ var (
 		NotificationReviewRejected,
 	}
 	notificationTypes = map[string]bool{
-		NotificationCommentReplied:  true,
-		NotificationEntityIncluded:  true,
-		NotificationReviewApproved:  true,
-		NotificationReviewRejected:  true,
+		NotificationCommentReplied: true,
+		NotificationEntityIncluded: true,
+		NotificationReviewApproved: true,
+		NotificationReviewRejected: true,
 	}
 )
 

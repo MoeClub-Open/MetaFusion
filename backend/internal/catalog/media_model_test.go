@@ -238,7 +238,7 @@ func TestMergeReplaysCrossCodeCycleRules(t *testing.T) {
 		t.Fatalf("merge bypassed cycle group: %v", err)
 	}
 	current, err := f.s.Get(ctx, c.ID, &f.u)
-	if err != nil || current.Status != "active" || current.Version != c.Version {
+	if err != nil || current.State != "active" || current.Version != c.Version {
 		t.Fatal("failed merge changed source")
 	}
 	relations, err := f.s.Relations(ctx, b.ID, &f.u)

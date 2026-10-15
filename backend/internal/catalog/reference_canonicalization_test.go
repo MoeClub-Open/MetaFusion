@@ -258,7 +258,7 @@ func TestPostgresReferenceCanonicalizationPreservesDanglingAndRetired(t *testing
 	owner := f.save(Entity{Kind: "work", Title: "owner"})
 	missing := uuid.NewString()
 	attrs := map[string]any{"normalization_payload": map[string]any{"ref": strings.ToUpper(retired.ID), "refs": []any{[]any{strings.ToUpper(missing)}}}}
-	normalizationExec(t, f.s.DB, `UPDATE catalog.entities SET status='merged',document=jsonb_set(document,'{status}','"merged"',true) WHERE id=$1`, retired.ID)
+	normalizationExec(t, f.s.DB, `UPDATE catalog.entities SET state='merged',document=jsonb_set(document,'{state}','"merged"',true) WHERE id=$1`, retired.ID)
 	normalizationExec(t, f.s.DB, `UPDATE catalog.entities SET document=jsonb_set(document,'{attributes}',$2::jsonb,false) WHERE id=$1`, owner.ID, encode(attrs))
 	if err = replayReferenceCanonicalization(t, f.s.DB); err != nil {
 		t.Fatal(err)

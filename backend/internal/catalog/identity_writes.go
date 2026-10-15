@@ -82,7 +82,7 @@ func lockEntityIdentityWrite(ctx context.Context, tx *sql.Tx, e Entity, u User) 
 		if err != nil {
 			return err
 		}
-		if !visible(old, &u) || old.Status == "deleted" || old.Status == "merged" {
+		if !visible(old, &u) || old.State == "deleted" || old.State == "merged" {
 			return errForbidden
 		}
 		if encode(identityWriteDocument(old)) == encode(identityWriteDocument(e)) {

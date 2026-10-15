@@ -110,8 +110,8 @@ func TestPostgresCatalog(t *testing.T) {
 	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
-		if e.Status == "" {
-			e.Status = "active"
+		if e.State == "" {
+			e.State = "active"
 		}
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "integration fixture", Sources: sources}, admin)
 		if err != nil {
@@ -315,7 +315,7 @@ func TestPostgresCatalog(t *testing.T) {
 	})
 	t.Run("removed publication states are rejected", func(t *testing.T) {
 		e := entity("work", "未公开个人作品")
-		e.Status = "draft"
+		e.State = "draft"
 		_, err := s.Save(ctx, Edit{Entity: e, EditNote: "retired state", Sources: sources}, admin)
 		if err == nil {
 			t.Fatal("draft state accepted")
@@ -455,13 +455,13 @@ func TestStructuralAttributeEntrypointsCannotBeRemoved(t *testing.T) {
 func TestStructuralEntryMissingRejectsEntityData(t *testing.T) {
 	ref := func(string, []string) error { return nil }
 	mkTrack := func(locator Locator, attrs map[string]any) Entity {
-		return Entity{Kind: "track", Title: "T", Status: "active",
+		return Entity{Kind: "track", Title: "T", State: "active",
 			MediumID: "11111111-1111-4111-8111-111111111111",
 			Contents: []Inclusion{{ExpressionID: "22222222-2222-4222-8222-222222222222",
 				Locator: locator, Attributes: attrs}}}
 	}
 	mkRelease := func(attrs map[string]any) Entity {
-		return Entity{Kind: "release", Title: "R", Status: "active",
+		return Entity{Kind: "release", Title: "R", State: "active",
 			Subjects: []Subject{{WorkID: "44444444-4444-4444-8444-444444444444",
 				Role: "primary", Attributes: attrs}}}
 	}
@@ -621,7 +621,7 @@ func TestSchemeConvergenceInEntityValidation(t *testing.T) {
 	ref := func(string, []string) error { return nil }
 	mkTrack := func(locator Locator) Entity {
 		return Entity{
-			Kind: "track", Title: "A1", Status: "active",
+			Kind: "track", Title: "A1", State: "active",
 			MediumID: "11111111-1111-4111-8111-111111111111",
 			Contents: []Inclusion{{
 				ExpressionID: "22222222-2222-4222-8222-222222222222",
@@ -662,13 +662,13 @@ func TestSchemeConvergenceInEntityValidation(t *testing.T) {
 	}
 	// 无匹配时回退全局组：同一定位在 medium 拥有者（无 track scheme）下通过。
 	medium := Entity{
-		Kind: "medium", Title: "CD1", Status: "active",
+		Kind: "medium", Title: "CD1", State: "active",
 		ReleaseID:  "33333333-3333-4333-8333-333333333333",
 		Attributes: map[string]any{},
 	}
 	_ = medium
 	release := Entity{
-		Kind: "release", Title: "R", Status: "active",
+		Kind: "release", Title: "R", State: "active",
 		Subjects: []Subject{{
 			WorkID: "44444444-4444-4444-8444-444444444444", Role: "primary",
 			Attributes: map[string]any{},
@@ -712,8 +712,8 @@ func TestExpressionDetailsBatch(t *testing.T) {
 	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
-		if e.Status == "" {
-			e.Status = "active"
+		if e.State == "" {
+			e.State = "active"
 		}
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "batch fixture", Sources: sources}, admin)
 		if err != nil {
@@ -795,8 +795,8 @@ func TestOccurrencesScopeByKind(t *testing.T) {
 	sources := fixtureSources()
 	save := func(e Entity) Entity {
 		t.Helper()
-		if e.Status == "" {
-			e.Status = "active"
+		if e.State == "" {
+			e.State = "active"
 		}
 		v, err := s.Save(ctx, Edit{Entity: e, ExpectedVersion: e.Version, EditNote: "scope fixture", Sources: sources}, admin)
 		if err != nil {

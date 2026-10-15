@@ -123,7 +123,7 @@ func TestCanAttachToTargetVeto(t *testing.T) {
 	owner := User{ID: "owner"}
 	other := User{ID: "other", Permissions: []string{PermissionEntityEdit}}
 	admin := User{ID: "admin", Permissions: []string{PermissionLifecycleManage}}
-	foreignPublished := Entity{ID: "x", Kind: "work", Status: "active", CreatedBy: "owner"}
+	foreignPublished := Entity{ID: "x", Kind: "work", State: "active", CreatedBy: "owner"}
 	// 受信任 editor 可在公开条目之间建立关系。
 	if !canAttachToTarget(other, foreignPublished) {
 		t.Fatal("editor attaching to published target must pass")
@@ -136,7 +136,7 @@ func TestCanAttachToTargetVeto(t *testing.T) {
 		t.Fatal("admin must always pass")
 	}
 	// 其它人的未发布内容仍受保护。
-	draft := Entity{ID: "y", Kind: "work", Status: "deleted", CreatedBy: "owner"}
+	draft := Entity{ID: "y", Kind: "work", State: "deleted", CreatedBy: "owner"}
 	if canAttachToTarget(other, draft) {
 		t.Fatal("foreign draft target must be protected")
 	}
@@ -194,19 +194,19 @@ func TestValidateEntityStructuralDedup(t *testing.T) {
 	mid := "22222222-2222-4222-8222-222222222222"
 	eid := "33333333-3333-4333-8333-333333333333"
 	// Subjects 同 (work,role) 重复 → 拒绝（position 不同也不行）。
-	rel := Entity{Kind: "release", Title: "R", Status: "active",
+	rel := Entity{Kind: "release", Title: "R", State: "active",
 		Subjects: []Subject{{WorkID: wid, Role: "primary"}, {WorkID: wid, Role: "primary", Position: 1}}}
 	if err := d.validateEntity(rel, ref, true); err == nil || !strings.Contains(err.Error(), "duplicate_subject") {
 		t.Fatalf("duplicate subject must be rejected, got %v", err)
 	}
 	// Contents 同 expression 相同 locator（如均为空 locator）多 position 重复 → 拒绝。
-	tr := Entity{Kind: "track", Title: "T", Status: "active", MediumID: mid,
+	tr := Entity{Kind: "track", Title: "T", State: "active", MediumID: mid,
 		Contents: []Inclusion{{ExpressionID: eid, Position: 0}, {ExpressionID: eid, Position: 1}}}
 	if err := d.validateEntity(tr, ref, true); err == nil || !strings.Contains(err.Error(), "duplicate_content") {
 		t.Fatalf("duplicate content must be rejected, got %v", err)
 	}
 	// 同 expression 但不同 locator 切片（如不同时间区间）→ 合法放行。
-	okTr := Entity{Kind: "track", Title: "T", Status: "active", MediumID: mid,
+	okTr := Entity{Kind: "track", Title: "T", State: "active", MediumID: mid,
 		Contents: []Inclusion{
 			{ExpressionID: eid, Position: 0, Locator: Locator{"relative_to": "track", "time_start_ms": float64(0), "time_end_ms": float64(30000)}},
 			{ExpressionID: eid, Position: 1, Locator: Locator{"relative_to": "track", "time_start_ms": float64(60000), "time_end_ms": float64(90000)}},
@@ -267,13 +267,13 @@ func TestMergeConflictKeys(t *testing.T) {
 	d := Defaults()
 	ref := func(string, []string) error { return nil }
 	wid := "11111111-1111-4111-8111-111111111111"
-	dup := Entity{Kind: "release", Title: "R", Status: "active",
+	dup := Entity{Kind: "release", Title: "R", State: "active",
 		Subjects: []Subject{{WorkID: wid, Role: "primary"}, {WorkID: wid, Role: "primary", Position: 1}}}
 	if err := d.validateEntity(dup, ref, true); err == nil || !strings.Contains(err.Error(), "duplicate_subject") {
 		t.Fatalf("merge subject key must match validateEntity duplicate_subject, got %v", err)
 	}
 	// 同角色不同作品不是冲突（键含 work）。
-	ok := Entity{Kind: "release", Title: "R", Status: "active",
+	ok := Entity{Kind: "release", Title: "R", State: "active",
 		Subjects: []Subject{{WorkID: wid, Role: "primary"}, {WorkID: "22222222-2222-4222-8222-222222222222", Role: "primary", Position: 1}}}
 	if err := d.validateEntity(ok, ref, true); err != nil {
 		t.Fatalf("different works same role wrongly rejected: %v", err)
@@ -320,7 +320,7 @@ func TestLifecycleSemanticsLocked(t *testing.T) {
 	// deleted/merged 主人仍可 Get 直读：visible 对主人放行（锁定现状）。
 	owner := &User{ID: "owner"}
 	for _, st := range []string{"deleted", "merged"} {
-		e := Entity{ID: "x", Kind: "work", Status: st, CreatedBy: "owner"}
+		e := Entity{ID: "x", Kind: "work", State: st, CreatedBy: "owner"}
 		if !visible(e, owner) {
 			t.Fatalf("status %s must remain Get-readable by owner (locked)", st)
 		}
@@ -329,7 +329,7 @@ func TestLifecycleSemanticsLocked(t *testing.T) {
 		}
 	}
 	// archived 状态码仍非法（锁定：不私自加状态）。
-	bad := Entity{Kind: "work", Title: "T", Status: "archived"}
+	bad := Entity{Kind: "work", Title: "T", State: "archived"}
 	if err := d.validateEntity(bad, ref, true); err == nil {
 		t.Fatal("archived status silently accepted")
 	}

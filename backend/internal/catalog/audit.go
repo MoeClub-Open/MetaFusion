@@ -115,15 +115,15 @@ func summaryFields(names []string, before, after []string) map[string]any {
 	return out
 }
 
-// entityChangeDetail 是实体变更摘要：只记 kind / status / title（契约要求的最少信息，
+// entityChangeDetail 是实体变更摘要：只记 kind / state / title（契约要求的最少信息，
 // 题名可读且不算敏感），不塞整份 attributes——体积与脱敏都不可控。
 func entityChangeDetail(before, after *Entity) map[string]any {
 	var b, a []string
 	if before != nil {
-		b = []string{before.Kind, before.Status, before.Title}
+		b = []string{before.Kind, before.State, before.Title}
 	}
 	if after != nil {
-		a = []string{after.Kind, after.Status, after.Title}
+		a = []string{after.Kind, after.State, after.Title}
 	}
 	return summaryFields([]string{"kind", "state", "title"}, b, a)
 }

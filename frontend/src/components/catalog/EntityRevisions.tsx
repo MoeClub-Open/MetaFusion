@@ -28,7 +28,6 @@ export interface RevisionItem {
   actor_name?: string;
   edit_note?: string;
   summary?: string;
-  status?: string;
   sources?: Array<{ kind?: string; citation?: string; url?: string; key?: string; pointers?: string[]; scope?: "commit" }>;
   snapshot?: any;
   created_at: string;
@@ -379,7 +378,7 @@ export function EntityRevisions({
                     </label>
 
                     {currentEntity && canEditRevision(currentEntity, user ?? undefined) && rev.id && rev.snapshot &&
-                      rev.version < currentEntity.version && !["deleted", "merged"].includes((rev.snapshot.state || rev.snapshot.status)) && (
+                      rev.version < currentEntity.version && !["deleted", "merged"].includes(rev.snapshot.state) && (
                       <button type="button" disabled={restoreBusy} onClick={() => beginRestore(rev)}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-primary hover:bg-primary/10 disabled:opacity-50">
                         <History className="w-3 h-3" />{t("revisions.restore")}

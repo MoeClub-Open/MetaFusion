@@ -133,8 +133,8 @@ func (s *Store) ReviewCommit(ctx context.Context, id string, in CommitReviewEdit
 			return CommitReceipt{}, err
 		}
 		if a.ID == "" {
-			return s.CommitReceipt(ctx, id, reviewer)
-		} // legacy receipt, already applied
+			return CommitReceipt{}, fmt.Errorf("invalid_commit_author")
+		}
 		ctx = context.WithValue(ctx, commitReviewContextKey{}, commitReviewApproval{reviewer, in.Note})
 		return s.PushCommit(ctx, commit, User{ID: a.ID, Username: a.Username, Permissions: a.Permissions}, false)
 	}

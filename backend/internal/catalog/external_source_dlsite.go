@@ -540,12 +540,12 @@ func dlsiteArtistPreviews(p *dlsiteParsed) []ExternalSourceArtistPreview {
 			}
 			seen[key] = true
 			out = append(out, ExternalSourceArtistPreview{
-				Name:         name,
-				OriginalName: name,
-				Role:         role,
-				EntityType:   entityType,
-				Language:     "ja",
-				RelationType: relationType,
+				Name:          name,
+				OriginalName:  name,
+				Role:          role,
+				EntityType:    entityType,
+				Language:      "ja",
+				RelationType:  relationType,
 				ExternalLinks: previewLinks(external),
 			})
 		}

@@ -69,7 +69,7 @@ func impactReference(ctx context.Context, q queryer, u *User) func(string, []str
 			}
 			return fmt.Errorf("invalid_reference")
 		}
-		if !contains(kinds, e.Kind) || !visible(e, u) || e.Status == "deleted" || e.Status == "merged" {
+		if !contains(kinds, e.Kind) || !visible(e, u) || e.State == "deleted" || e.State == "merged" {
 			return fmt.Errorf("invalid_reference")
 		}
 		return nil

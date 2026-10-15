@@ -27,10 +27,10 @@ import (
 var (
 	errForbidden       = errors.New("forbidden")
 	errVersionConflict = errors.New("version_conflict")
-	// errInvalidStatus 是"当前状态不允许这个动作"的稳定码（如 Unpublish 只接受 published）。
+	// errInvalidState 是"当前状态不允许这个动作"的稳定码（删除或合并不接受终态条目）。
 	// 它不需要 respond 特判——默认分支就是 400 + 错误文本；登记成哨兵是为了让调用方与
 	// 测试能 errors.Is 判定，而不是比较字符串（%w 包裹后字符串比较会失效）。
-	errInvalidStatus = errors.New("invalid_status")
+	errInvalidState = errors.New("invalid_state")
 )
 
 type Store struct {
@@ -106,7 +106,7 @@ func (s *Store) Authenticate(token string) (*User, error) {
 }
 
 // Initialize 是本地安装与测试的显式组合入口（S1）：基线 + 结构增量 + 空库内容种子 +
-// 种子增量合并，一次到达可服务状态。生产常驻进程不再调用它，改走 CheckCompatibleVersion
+// 种子增量合并，一次到达可服务状态。生产常驻进程不再调用它，改走 CheckSchemaContract
 // （只读，见 startup.go 的职责映射）；生产的结构/种子/体检分别由 mf-migrate up、
 // mf-migrate seed、mf-migrate check-refs 承担。Existing catalog data are untouched.
 // 其写入职责与 mf-migrate up 分工：migrate 只负责结构迁移（backend/migrations），
@@ -350,8 +350,8 @@ func get(ctx context.Context, q queryer, id string) (Entity, error) {
 	return e, err
 }
 func visible(e Entity, u *User) bool {
-	// 未发布条目只有创建者与持审核/生命周期权者（旧 admin）可见。
-	return e.Status == "active" || u != nil && (u.Can(PermissionLifecycleManage) || ownedBy(e, *u))
+	// 正常条目公开可见；终态条目仅供创建者与生命周期管理者查阅。
+	return e.State == "active" || u != nil && (u.Can(PermissionLifecycleManage) || ownedBy(e, *u))
 }
 
 // GetManyVisible 一次查询批量取实体，仅返回 u 可见者。
@@ -362,23 +362,23 @@ func (s *Store) GetManyVisible(ctx context.Context, ids []string, u *User) (map[
 		return out, nil
 	}
 	rows, err := s.DB.QueryContext(ctx,
-		"SELECT id::text, document, status, created_by::text FROM catalog.entities WHERE id = ANY($1::uuid[])", pq.Array(ids))
+		"SELECT id::text, document, state, created_by::text FROM catalog.entities WHERE id = ANY($1::uuid[])", pq.Array(ids))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, status, createdBy string
+		var id, state, createdBy string
 		var b []byte
-		if err = rows.Scan(&id, &b, &status, &createdBy); err != nil {
+		if err = rows.Scan(&id, &b, &state, &createdBy); err != nil {
 			return nil, err
 		}
 		var e Entity
 		if err = json.Unmarshal(b, &e); err != nil {
 			return nil, err
 		}
-		// 可见性以库列为准（document 里的 status 可能滞后）。
-		e.ID, e.Status, e.CreatedBy = id, status, createdBy
+		// 可见性以库列为准（document 里的 state 可能滞后）。
+		e.ID, e.State, e.CreatedBy = id, state, createdBy
 		if visible(e, u) {
 			out[id] = e
 		}
@@ -408,7 +408,7 @@ func reference(ctx context.Context, q queryer, u *User) func(string, []string) e
 			return fmt.Errorf("invalid_reference")
 		}
 		e, err := get(ctx, q, id)
-		if err != nil || !contains(kinds, e.Kind) || !visible(e, u) || e.Status == "deleted" || e.Status == "merged" {
+		if err != nil || !contains(kinds, e.Kind) || !visible(e, u) || e.State == "deleted" || e.State == "merged" {
 			return fmt.Errorf("invalid_reference")
 		}
 		return nil
@@ -511,7 +511,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			if err != nil {
 				return err
 			}
-			if !visible(old, &u) || old.Status == "deleted" || old.Status == "merged" {
+			if !visible(old, &u) || old.State == "deleted" || old.State == "merged" {
 				return errForbidden
 			}
 			if old.Version != input.ExpectedVersion {
@@ -532,7 +532,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			e.CreatedBy = old.CreatedBy
 			e.Version = old.Version + 1
 		}
-		if err = prepareEntityWriteStatus(old, &e, u); err != nil {
+		if err = prepareEntityWriteState(old, &e, u); err != nil {
 			return err
 		}
 		if !input.preserveContents {
@@ -612,12 +612,12 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		// 版本条件进 WHERE 后，后到者先在行锁上排队，锁释放时重算条件、版本已变 → 0 行 →
 		// version_conflict，整个事务（含侧表与审计行）一起回滚。
 		if create {
-			if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, e.Kind, e.Version, e.Title, e.Status, e.CreatedBy, encode(stored), e.UpdatedAt); err != nil {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.entities(id,kind,version,title,state,created_by,document,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, e.Kind, e.Version, e.Title, e.State, e.CreatedBy, encode(stored), e.UpdatedAt); err != nil {
 				return err
 			}
 		} else {
 			var res sql.Result
-			if res, err = tx.ExecContext(ctx, `UPDATE catalog.entities SET version=$3,title=$4,status=$5,document=$6,updated_at=$7 WHERE id=$1 AND version=$2`, e.ID, input.ExpectedVersion, e.Version, e.Title, e.Status, encode(stored), e.UpdatedAt); err != nil {
+			if res, err = tx.ExecContext(ctx, `UPDATE catalog.entities SET version=$3,title=$4,state=$5,document=$6,updated_at=$7 WHERE id=$1 AND version=$2`, e.ID, input.ExpectedVersion, e.Version, e.Title, e.State, encode(stored), e.UpdatedAt); err != nil {
 				return err
 			}
 			if n, _ := res.RowsAffected(); n == 0 {
@@ -683,8 +683,8 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			}
 		}
 		// 通知与实体写入**同一事务**：审核结果与收录事件不会出现"改了却没通知"的半成品。
-		// create 时 old 是零值，用 nil 表示"没有旧版本"（零值 Entity 的 Status 也是空串，
-		// 直接传会被当成一次"从空状态变成 published"的跃迁）。
+		// create 时 old 是零值，用 nil 表示"没有旧版本"（零值 Entity 的 State 也是空串，
+		// 明确区分新建事件与已有条目的资料修订）。
 		var before *Entity
 		if !create {
 			prior := old
@@ -729,7 +729,7 @@ func undeclaredReleaseSubject(ctx context.Context, tx *sql.Tx, e Entity) (bool, 
 }
 
 type ListOptions struct {
-	Kind, Query, Status, WorkID, ContentUnitID, ReleaseID, MediumID, ParentID, Field, Value string
+	Kind, Query, State, WorkID, ContentUnitID, ReleaseID, MediumID, ParentID, Field, Value string
 	// SearchIDs 是 OpenSearch 提供的候选 ID 顺序。它仅由 HTTP 列表处理器内部填写，
 	// 最终查询仍用数据库可见性和筛选谓词收口，不作为外部参数暴露。
 	SearchIDs []string
@@ -874,16 +874,16 @@ func nestedFieldPredicate(doc Definitions, o ListOptions, args *[]any) (string, 
 }
 
 func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]any) ([]string, error) {
-	parts := []string{"status NOT IN ('deleted','merged')"}
+	parts := []string{"state NOT IN ('deleted','merged')"}
 	add := func(clause string, value any) {
 		*args = append(*args, value)
 		parts = append(parts, fmt.Sprintf(clause, len(*args)))
 	}
 	if u == nil {
-		parts = append(parts, "status='active'")
+		parts = append(parts, "state='active'")
 	} else if !u.Can(PermissionLifecycleManage) {
-		// 未发布条目只有创建者能列；持审核/生命周期权者与旧 admin 同口径，看全量。
-		add("(status='active' OR created_by=$%d)", u.ID)
+		// 当前仅有 active 与已排除的终态；使用同一主体可见性口径。
+		add("(state='active' OR created_by=$%d)", u.ID)
 	}
 	if o.Kind != "" {
 		add("kind=$%d", o.Kind)
@@ -891,8 +891,8 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 	if len(o.Kinds) > 0 {
 		add("kind = ANY($%d)", pq.Array(o.Kinds))
 	}
-	if o.Status != "" {
-		add("status=$%d", o.Status)
+	if o.State != "" {
+		add("state=$%d", o.State)
 	}
 	if o.OriginalLanguage != "" {
 		add("document->>'original_language'=$%d", o.OriginalLanguage)
@@ -1155,7 +1155,7 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 			return nil, terr
 		}
 		if !visible(src, u) || !visible(tgt, u) ||
-			src.Status == "deleted" || src.Status == "merged" || tgt.Status == "deleted" || tgt.Status == "merged" {
+			src.State == "deleted" || src.State == "merged" || tgt.State == "deleted" || tgt.State == "merged" {
 			return nil, sql.ErrNoRows
 		}
 		entityScoped = false
@@ -1190,16 +1190,7 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 			if err = json.Unmarshal(snapshot, &historical); err != nil {
 				return nil, err
 			}
-			if historical.Status == "" {
-				var legacy struct {
-					Status string `json:"status"`
-				}
-				_ = json.Unmarshal(snapshot, &legacy)
-				historical.Status = "active"
-				if legacy.Status == "deleted" || legacy.Status == "merged" {
-					historical.Status = legacy.Status
-				}
-			}
+
 			if !visible(historical, u) {
 				continue
 			}
@@ -1237,7 +1228,7 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 		if !ok {
 			continue
 		}
-		// Preserve unrelated and legacy snapshot fields verbatim as JSON values;
+		// Preserve unrelated snapshot fields verbatim as JSON values;
 		// only the structural contents projection is replaced.
 		var document map[string]json.RawMessage
 		if err = json.Unmarshal(revision["snapshot"].(json.RawMessage), &document); err != nil {

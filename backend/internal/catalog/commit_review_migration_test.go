@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/migrator"
 	"github.com/metafusion/metafusion-app/internal/testutil"
-	"github.com/metafusion/metafusion-app/migrations"
 )
 
 func TestCommitReviewMigrationPreservesFactsVersionsAndHistory(t *testing.T) {
@@ -35,7 +34,7 @@ func TestCommitReviewMigrationPreservesFactsVersionsAndHistory(t *testing.T) {
 	if err := db.QueryRow(`SELECT md5(string_agg(to_jsonb(r)::text,'' ORDER BY id)) FROM catalog.revisions r`).Scan(&history); err != nil {
 		t.Fatal(err)
 	}
-	upgrade := migrator.New(db, migrations.FS)
+	upgrade := migrator.New(db, catalogMigrationsBefore(t, "000032"))
 	if err := upgrade.Up(ctx); err != nil {
 		t.Fatal(err)
 	}

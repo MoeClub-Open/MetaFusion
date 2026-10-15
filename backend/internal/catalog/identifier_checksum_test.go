@@ -3,7 +3,6 @@ package catalog
 import (
 	"encoding/json"
 	"testing"
-
 )
 
 func TestISBNAndGTINChecksums(t *testing.T) {
@@ -63,4 +62,3 @@ func TestExternalSourceISBNConversionAndRawPreservation(t *testing.T) {
 		t.Fatalf("valid infobox ISBN-10 must recompute EAN check digit: %v", got)
 	}
 }
-

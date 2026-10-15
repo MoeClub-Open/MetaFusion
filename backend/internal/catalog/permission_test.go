@@ -121,13 +121,13 @@ func TestEditingDecidedByPermissionCode(t *testing.T) {
 		e    Entity
 		want bool
 	}{
-		{"entity.edit maintains foreign published", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{Status: "active", CreatedBy: "other"}, true},
-		{"no code cannot maintain foreign published", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "active", CreatedBy: "other"}, false},
-		{"no code may still edit own draft", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "active", CreatedBy: "self"}, true},
-		{"own published needs the code", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{Status: "active", CreatedBy: "self"}, true},
-		{"entity.edit maintains active heads", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{Status: "active", CreatedBy: "other"}, true},
-		{"lifecycle.manage reaches foreign drafts", User{ID: "self", Permissions: []string{PermissionLifecycleManage}}, Entity{Status: "active", CreatedBy: "other"}, true},
-		{"terminated status stays closed", User{ID: "self", Permissions: []string{permissionWildcard}}, Entity{Status: "merged", CreatedBy: "self"}, false},
+		{"entity.edit maintains foreign published", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{State: "active", CreatedBy: "other"}, true},
+		{"no code cannot maintain foreign published", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{State: "active", CreatedBy: "other"}, false},
+		{"no code may still edit own draft", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{State: "active", CreatedBy: "self"}, true},
+		{"own published needs the code", User{ID: "self", Permissions: []string{"community.post.create"}}, Entity{State: "active", CreatedBy: "self"}, true},
+		{"entity.edit maintains active heads", User{ID: "self", Permissions: []string{PermissionEntityEdit}}, Entity{State: "active", CreatedBy: "other"}, true},
+		{"lifecycle.manage reaches foreign drafts", User{ID: "self", Permissions: []string{PermissionLifecycleManage}}, Entity{State: "active", CreatedBy: "other"}, true},
+		{"terminated status stays closed", User{ID: "self", Permissions: []string{permissionWildcard}}, Entity{State: "merged", CreatedBy: "self"}, false},
 	} {
 		if got := canEditEntity(tc.u, tc.e); got != tc.want {
 			t.Errorf("%s: canEditEntity=%v want=%v", tc.name, got, tc.want)
@@ -137,7 +137,7 @@ func TestEditingDecidedByPermissionCode(t *testing.T) {
 		}
 	}
 	// 关系目标端否决权：持实体编辑权可挂他人公开条目，无码者不可。
-	published := Entity{Status: "active", CreatedBy: "other"}
+	published := Entity{State: "active", CreatedBy: "other"}
 	if !canAttachToTarget(User{ID: "self", Permissions: []string{PermissionEntityEdit}}, published) {
 		t.Fatal("catalog.entity.edit must attach to published targets")
 	}

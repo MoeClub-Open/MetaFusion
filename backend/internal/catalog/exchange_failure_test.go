@@ -66,7 +66,7 @@ func TestPostgresIdentityBatchDoesNotReturnPartialSuccessOnReadFailure(t *testin
 	f := newFixture(t)
 	ctx := context.Background()
 	public := f.save(Entity{Kind: "work", Title: "Visible identity"})
-	hidden := f.save(Entity{Kind: "work", Title: "Private identity", Status: "active"})
+	hidden := f.save(Entity{Kind: "work", Title: "Private identity", State: "active"})
 	hidden = f.retire(hidden)
 	broken := f.save(Entity{Kind: "work", Title: "Unreadable identity"})
 	engine := gin.New()

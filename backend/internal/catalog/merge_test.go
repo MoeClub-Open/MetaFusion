@@ -80,7 +80,7 @@ func TestPostgresPublicReferences(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	draft := f.retire(f.save(Entity{Kind: "work", Title: "Retired identity"}))
-	_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "expression", Title: "Public recording", Status: "active", WorkID: draft.ID}, EditNote: "test disclosure", Sources: fixtureSources()}, f.u)
+	_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "expression", Title: "Public recording", State: "active", WorkID: draft.ID}, EditNote: "test disclosure", Sources: fixtureSources()}, f.u)
 	if err == nil {
 		t.Fatal("published reference disclosed draft")
 	}

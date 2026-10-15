@@ -377,7 +377,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			return
 		}
 		args := []any{}
-		where := []string{"e.status='active'", "jsonb_typeof(e.document->'attributes'->'tags')='array'"}
+		where := []string{"e.state='active'", "jsonb_typeof(e.document->'attributes'->'tags')='array'"}
 		if q := strings.TrimSpace(c.Query("q")); q != "" {
 			// 与实体搜索同口径：%/_ 由 likeContains 按字面转义。
 			args = append(args, likeContains(q))
@@ -432,7 +432,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
-		o := ListOptions{Kind: c.Query("kind"), Query: strings.TrimSpace(c.Query("q")), Status: c.Query("state"), WorkID: c.Query("work_id"), ContentUnitID: c.Query("content_unit_id"), ReleaseID: c.Query("release_id"), MediumID: c.Query("medium_id"), ParentID: c.Query("parent_id"), Field: c.Query("field"), Value: c.Query("value"), OriginalLanguage: c.Query("original_language"), HasPictures: c.Query("has_pictures") == "1", Sort: c.Query("sort"), Order: c.Query("order"), Locale: c.Query("locale"), Limit: limit, Offset: offset}
+		o := ListOptions{Kind: c.Query("kind"), Query: strings.TrimSpace(c.Query("q")), State: c.Query("state"), WorkID: c.Query("work_id"), ContentUnitID: c.Query("content_unit_id"), ReleaseID: c.Query("release_id"), MediumID: c.Query("medium_id"), ParentID: c.Query("parent_id"), Field: c.Query("field"), Value: c.Query("value"), OriginalLanguage: c.Query("original_language"), HasPictures: c.Query("has_pictures") == "1", Sort: c.Query("sort"), Order: c.Query("order"), Locale: c.Query("locale"), Limit: limit, Offset: offset}
 		// 排序参数走白名单校验：未知字段/方向返回 400 invalid_sort / invalid_order，
 		// 而不是静默按 updated_at 返回另一套顺序（调用方会以为排序生效了）。
 		if err := normalizeListSort(&o); err != nil {
@@ -484,7 +484,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	// 放在 /entities/:id 之前：静态段与参数段在 gin 的路由树里是可共存的兄弟节点，
 	// 顺序不影响匹配（静态优先），但先声明静态路径省得日后读代码时以为 stats 会被当成 id。
 	cat.GET("/entities/stats", required(PermissionLifecycleManage), func(c *gin.Context) {
-		stats, err := s.StatusCounts(c.Request.Context())
+		stats, err := s.StateCounts(c.Request.Context())
 		respond(c, stats, err)
 	})
 	cat.GET("/entities/:id", func(c *gin.Context) { e, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); respond(c, e, err) })
@@ -630,8 +630,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		respondEntityWrite(c, e, err)
 	})
-	// 生命周期只做删除/合并；下架（published → draft）是唯一的状态降级入口，
-	// Save 对降级一律回 use_lifecycle_endpoint（store.go）。两者同档权限：能清退的人才能下架。
+	// 生命周期只处理删除与合并；资料修订通过提交及审核流程应用。
 	cat.POST("/entities/:id/lifecycle", required(PermissionLifecycleManage), func(c *gin.Context) {
 		auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
 		var in LifecycleEdit

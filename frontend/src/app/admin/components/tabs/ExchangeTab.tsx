@@ -1,30 +1,22 @@
 "use client";
 
-// 「实例交换」管理台页签：导出实体快照 + 提交外部编辑提案。
-//
-// 两块能力彼此独立（导出是匿名可达的 GET，提案是只要求登录的 POST），
-// 所以各自持有自己的请求状态：导出失败不阻塞粘贴提案，反之亦然。
-//
-// 文案一律走 t()/tr()；状态码与错误码交给 exchange.ts 的映射翻成人话，
-// 未登记的码带上状态码原样显示，不把失败说成成功。
+// 导出当前条目快照。
 
 import { useState } from "react";
+import type { Entity } from "@/components/catalog/api";
 import {
   ArrowLeftRight,
   ClipboardCopy,
   Download,
-  Info,
   Loader2,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
   describeExchangeError,
   fetchExchangeEntity,
-  type ExchangeEntity,
 } from "@/lib/api/exchange";
 import { ErrorNotice, SectionHeader, StatusMessage } from "@/components/common/Blocks";
 
-/** 新建（entity.id 为空）时 expected_version 必须是 0，非 0 会被判成版本冲突。 */
 
 const FIELD_CLASS =
   "w-full px-2.5 py-1.5 rounded-lg bg-surfaceSubtle border border-line text-xs text-text-strong placeholder:text-text-faint focus:border-primary outline-none";
@@ -42,15 +34,7 @@ export function ExchangeTab() {
         </h2>
         <p className="text-xs text-text-muted leading-relaxed">{t("admin.exchange.subtitle")}</p>
 
-        <div className="p-3 rounded-xl bg-amber-500/[0.08] border border-amber-500/25 space-y-1">
-          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-warn-soft">
-            <Info className="w-3.5 h-3.5 shrink-0" />
-            <span>{t("admin.exchange.noticeTitle")}</span>
-          </div>
-          <p className="text-[11px] text-amber-800/80 dark:text-amber-100/70 leading-relaxed">
-            {t("admin.exchange.noticeDesc")}
-          </p>
-        </div>
+
       </div>
 
       <ExportPanel />
@@ -64,7 +48,7 @@ function ExportPanel() {
   const [entityId, setEntityId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<ExchangeEntity | null>(null);
+  const [snapshot, setSnapshot] = useState<Entity | null>(null);
   const [snapshotJson, setSnapshotJson] = useState("");
   const [expanded, setExpanded] = useState(true);
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);

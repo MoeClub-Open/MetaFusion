@@ -74,7 +74,7 @@ func TestPostgresIdentityCandidatesMatchAndVisibility(t *testing.T) {
 	original := f.save(Entity{Kind: "work", Title: "Original", Translations: map[string]Translation{
 		"ja": {Title: "夜明け", Aliases: []string{"  Star\tSONG　"}}}, ExternalLinks: linksFromIDMap(map[string]string{"wikidata": "Q123"}),
 		Attributes: map[string]any{"duration": 213}})
-	hidden := f.save(Entity{Kind: "work", Title: "Star song", Status: "active"})
+	hidden := f.save(Entity{Kind: "work", Title: "Star song", State: "active"})
 	hidden = f.retire(hidden)
 	f.save(Entity{Kind: "agent", Title: "Star song"})
 	for _, query := range []IdentityCandidateQuery{
@@ -87,7 +87,7 @@ func TestPostgresIdentityCandidatesMatchAndVisibility(t *testing.T) {
 			t.Fatalf("candidate=%+v err=%v", out, err)
 		}
 	}
- duplicate := f.save(Entity{Kind:"work",Title:"Star song"})
+	duplicate := f.save(Entity{Kind: "work", Title: "Star song"})
 	out, err := f.s.FindIdentityCandidates(ctx, IdentityCandidateQuery{Kind: "work", Titles: []string{"star song"}, Limit: queryInt(1)}, &f.u)
 	if err != nil || out.Complete || out.Total != 2 || len(out.Items) != 1 {
 		t.Fatalf("truncation=%+v %v", out, err)
@@ -154,7 +154,7 @@ func TestPostgresIdentityCandidatesSnapshotAndConcurrentWriters(t *testing.T) {
 		go func(worker int) {
 			defer wg.Done()
 			for turn := 0; turn < 8; turn++ {
-				_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: fmt.Sprintf("Unrelated %d %d", worker, turn), Status: "active"}, EditNote: "concurrent fixture", Sources: fixtureSources()}, f.u)
+				_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: fmt.Sprintf("Unrelated %d %d", worker, turn), State: "active"}, EditNote: "concurrent fixture", Sources: fixtureSources()}, f.u)
 				if err != nil {
 					failures <- err
 					return
@@ -182,7 +182,7 @@ func TestPostgresIdentityCandidatesSnapshotAndConcurrentWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(docs)
-	rows, err := explainTx.QueryContext(ctx, `EXPLAIN SELECT id FROM catalog.entities WHERE status<>'deleted'
+	rows, err := explainTx.QueryContext(ctx, `EXPLAIN SELECT id FROM catalog.entities WHERE state<>'deleted'
         AND catalog.identity_candidate_terms(document) && ARRAY(SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($1::jsonb))`, string(encoded))
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +214,7 @@ func TestPostgresIdentityCandidatesFailureDoesNotLookEmpty(t *testing.T) {
 	if _, err := f.s.DB.Exec(`DROP INDEX catalog.entities_identity_candidates_idx`); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.CheckCompatibleVersion(context.Background()); err == nil || !strings.Contains(err.Error(), "identity candidate") {
+	if err := f.s.CheckSchemaContract(context.Background()); err == nil || !strings.Contains(err.Error(), "identity candidate") {
 		t.Fatalf("missing index: %v", err)
 	}
 }

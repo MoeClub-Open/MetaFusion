@@ -63,8 +63,8 @@ func TestResolveDanglingReferenceOnPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("删除实体: %v", err)
 	}
-	if deleted.Status != "deleted" {
-		t.Fatalf("删除后状态 = %q，期望 deleted", deleted.Status)
+	if deleted.State != "deleted" {
+		t.Fatalf("删除后状态 = %q，期望 deleted", deleted.State)
 	}
 	code, body = resolveOnce(t, anon, label.ID)
 	if code != http.StatusNotFound || !strings.Contains(body, "not_found") {
@@ -72,7 +72,7 @@ func TestResolveDanglingReferenceOnPostgres(t *testing.T) {
 	}
 
 	// 3) 不可见（草稿）走同一出口：否则匿名者能靠状态码区分"不存在"与"存在但未发布"。
-	draft := f.save(Entity{Kind: "agent", Title: "Unreleased Label", Status: "active"})
+	draft := f.save(Entity{Kind: "agent", Title: "Unreleased Label", State: "active"})
 	draft = f.retire(draft)
 	if code, body = resolveOnce(t, anon, draft.ID); code != http.StatusNotFound || !strings.Contains(body, "not_found") {
 		t.Fatalf("不可见实体的引用应 404 not_found，实际 %d（%s）", code, body)

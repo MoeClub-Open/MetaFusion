@@ -174,7 +174,7 @@ func relationsForRule(ctx context.Context, q queryer, d Definitions, typ string)
 	}
 	rows, err := q.QueryContext(ctx, "SELECT r.document FROM catalog.relations r "+
 		"JOIN catalog.entities s ON s.id=r.source_id JOIN catalog.entities t ON t.id=r.target_id "+
-		"WHERE s.status NOT IN ('deleted','merged') AND t.status NOT IN ('deleted','merged') AND r.type IN ("+
+		"WHERE s.state NOT IN ('deleted','merged') AND t.state NOT IN ('deleted','merged') AND r.type IN ("+
 		entityPlaceholders(codes, 1)+") ORDER BY r.id", entityArgs(codes)...)
 	if err != nil {
 		return nil, err
@@ -206,13 +206,13 @@ func relationsForSave(ctx context.Context, q queryer, d Definitions, r Relation)
 		JOIN catalog.entities src ON src.id=edge.source_id
 		JOIN catalog.entities tgt ON tgt.id=edge.target_id
 		WHERE edge.type=ANY($5::text[]) AND edge.id IS DISTINCT FROM $3::uuid
-		AND src.status NOT IN ('deleted','merged') AND tgt.status NOT IN ('deleted','merged')
+		AND src.state NOT IN ('deleted','merged') AND tgt.state NOT IN ('deleted','merged')
 	)
 	SELECT edge.document FROM catalog.relations edge
 	JOIN catalog.entities src ON src.id=edge.source_id
 	JOIN catalog.entities tgt ON tgt.id=edge.target_id
 	WHERE edge.id IS DISTINCT FROM $3::uuid
-	AND src.status NOT IN ('deleted','merged') AND tgt.status NOT IN ('deleted','merged')
+	AND src.state NOT IN ('deleted','merged') AND tgt.state NOT IN ('deleted','merged')
 	AND ((edge.type=ANY($4::text[]) AND (edge.source_id=$1::uuid OR edge.target_id=$2::uuid
 		OR (edge.source_id=$2::uuid AND edge.target_id=$1::uuid)))
 		OR (edge.type=ANY($5::text[]) AND edge.source_id IN (SELECT id FROM reachable)))

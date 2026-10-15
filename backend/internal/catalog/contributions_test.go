@@ -104,7 +104,7 @@ func TestContributionItemShapes(t *testing.T) {
 	s := &Store{}
 	entityID := "11111111-1111-1111-1111-111111111111"
 	rows := []contributionRow{{
-		revID: 7, version: 1, entityID: entityID, kind: "work", title: "作品", status: "active",
+		revID: 7, version: 1, entityID: entityID, kind: "work", title: "作品", state: "active",
 		editNote: "建立条目", sources: []byte(`[{"kind":"self","citation":"作者自述"}]`),
 		createdAt: time.Unix(0, 0).UTC(), updatedAt: time.Unix(1, 0).UTC(),
 	}}
@@ -112,7 +112,7 @@ func TestContributionItemShapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created[0].ID != entityID || created[0].Tab != "works" || created[0].EditType != "create" || created[0].Status != "active" || created[0].UpdatedAt == nil {
+	if created[0].ID != entityID || created[0].Tab != "works" || created[0].EditType != "create" || created[0].State != "active" || created[0].UpdatedAt == nil {
 		t.Fatalf("创建项字段不符: %+v", created[0])
 	}
 	if len(created[0].Sources) != 1 || created[0].Sources[0].Citation != "作者自述" {
@@ -125,7 +125,7 @@ func TestContributionItemShapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revised[0].ID != "7" || revised[0].Tab != "revisions" || revised[0].TargetID != entityID || revised[0].EditType != "create" || revised[0].Status != "" {
+	if revised[0].ID != "7" || revised[0].Tab != "revisions" || revised[0].TargetID != entityID || revised[0].EditType != "create" || revised[0].State != "" {
 		t.Fatalf("修订项字段不符: %+v", revised[0])
 	}
 	raw, _ := json.Marshal(revised[0])
@@ -165,11 +165,11 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 	other := fixtureUser("editor")
 
 	save := func(u User, e Entity) Entity {
-		if e.Status == "" {
-			e.Status = "active"
+		if e.State == "" {
+			e.State = "active"
 		}
 		// 发布态要求至少一条翻译（真实契约）：在夹具里补齐，免得每个调用点各记这件事。
-		if e.Status == "active" && len(e.Translations) == 0 {
+		if e.State == "active" && len(e.Translations) == 0 {
 			e.Translations = map[string]Translation{"en": {Title: e.Title}}
 		}
 		// 与 HTTP 解码同形：动态值经 JSON 往返。
@@ -186,7 +186,7 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 	work := save(author, Entity{Kind: "work", Title: "初版题名"})
 	save(author, Entity{Kind: "release", Title: "发行版"})
 	save(author, Entity{Kind: "agent", Title: "作者"})
-	save(author, Entity{Kind: "work", Title: "普通条目", Status: "active"})
+	save(author, Entity{Kind: "work", Title: "普通条目", State: "active"})
 	work.Title = "初版题名2"
 	work = save(author, work)
 	work.Title = "初版题名3"
@@ -216,7 +216,7 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 	if item.Kind != "work" || item.Title != "初版题名3" || item.Tab != "works" || item.EditType != "create" {
 		t.Fatalf("创建项字段不符: %+v", item)
 	}
-	if item.Status != "active" || item.UpdatedAt == nil || item.Version != 1 {
+	if item.State != "active" || item.UpdatedAt == nil || item.Version != 1 {
 		t.Fatalf("创建项应带 status/updated_at 且版本为首次修订: %+v", item)
 	}
 	if st := anon.Stats; st.WorksCreated != 2 || st.ReleasesCreated != 1 || st.ArtistsCreated != 1 || st.AuditActions != 0 {
@@ -245,7 +245,7 @@ func TestUserContributionsFeedAndStats(t *testing.T) {
 	}
 	updates := 0
 	for _, it := range revs.Items {
-		if it.Tab != "revisions" || it.TargetID == "" || it.Status != "" {
+		if it.Tab != "revisions" || it.TargetID == "" || it.State != "" {
 			t.Fatalf("修订项字段不符: %+v", it)
 		}
 		if it.EditType == "update" {

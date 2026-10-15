@@ -22,7 +22,7 @@ function CandidateSummary({ candidate, label, definitions, kindLabel }: {
       {candidate.title}
     </a>
     <p className="text-xs text-text-muted break-all">
-      {kindLabel(candidate.kind)} · {tr(`catalog.status.${candidate.state}`, candidate.state)} · {candidate.id}
+      {kindLabel(candidate.kind)} · {tr(`catalog.state.${candidate.state}`, candidate.state)} · {candidate.id}
     </p>
     <dl className="space-y-1 text-sm">
       {Object.entries(candidate.translations || {}).map(([language, translation]) =>

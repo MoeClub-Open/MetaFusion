@@ -171,7 +171,7 @@ func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) erro
 }
 
 func (s *Store) searchIndexEntities(ctx context.Context, ids []string) (map[string]Entity, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT id::text,kind,version,title,status,created_by,updated_at,document FROM catalog.entities WHERE id=ANY($1::uuid[])", pq.Array(ids))
+	rows, err := s.DB.QueryContext(ctx, "SELECT id::text,kind,version,title,state,created_by,updated_at,document FROM catalog.entities WHERE id=ANY($1::uuid[])", pq.Array(ids))
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (s *Store) searchIndexEntities(ctx context.Context, ids []string) (map[stri
 	for rows.Next() {
 		var e Entity
 		var doc []byte
-		if err := rows.Scan(&e.ID, &e.Kind, &e.Version, &e.Title, &e.Status, &e.CreatedBy, &e.UpdatedAt, &doc); err != nil {
+		if err := rows.Scan(&e.ID, &e.Kind, &e.Version, &e.Title, &e.State, &e.CreatedBy, &e.UpdatedAt, &doc); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -189,7 +189,7 @@ func (s *Store) searchIndexEntities(ctx context.Context, ids []string) (map[stri
 			return nil, err
 		}
 		content.ID, content.Kind, content.Version, content.Title = e.ID, e.Kind, e.Version, e.Title
-		content.Status, content.CreatedBy, content.UpdatedAt = e.Status, e.CreatedBy, e.UpdatedAt
+		content.State, content.CreatedBy, content.UpdatedAt = e.State, e.CreatedBy, e.UpdatedAt
 		entities[e.ID] = content
 	}
 	err = rows.Err()
@@ -332,13 +332,13 @@ func (c *OpenSearchClient) clearEntityDocuments(ctx context.Context) error {
 func (s *Store) rebuildOpenSearchIndex(ctx context.Context, c *OpenSearchClient) error {
 	lastID := ""
 	for {
-		query := "SELECT id::text,kind,version,title,status,created_by,updated_at,document FROM catalog.entities ORDER BY id LIMIT 500"
+		query := "SELECT id::text,kind,version,title,state,created_by,updated_at,document FROM catalog.entities ORDER BY id LIMIT 500"
 		var rows *sql.Rows
 		var err error
 		if lastID == "" {
 			rows, err = s.DB.QueryContext(ctx, query)
 		} else {
-			rows, err = s.DB.QueryContext(ctx, "SELECT id::text,kind,version,title,status,created_by,updated_at,document FROM catalog.entities WHERE id>$1::uuid ORDER BY id LIMIT 500", lastID)
+			rows, err = s.DB.QueryContext(ctx, "SELECT id::text,kind,version,title,state,created_by,updated_at,document FROM catalog.entities WHERE id>$1::uuid ORDER BY id LIMIT 500", lastID)
 		}
 		if err != nil {
 			return err
@@ -361,7 +361,7 @@ func (s *Store) rebuildOpenSearchIndex(ctx context.Context, c *OpenSearchClient)
 			}
 			// These values live in relational columns as well as in the API DTO.
 			e.ID, e.Kind, e.Version, e.Title = id, kind, version, title
-			e.Status, e.CreatedBy, e.UpdatedAt = status, createdBy, updatedAt
+			e.State, e.CreatedBy, e.UpdatedAt = status, createdBy, updatedAt
 			entities[e.ID] = e
 			lastID = e.ID
 		}

@@ -14,7 +14,7 @@ import (
 func TestAssessMatchActions(t *testing.T) {
 	base := IdentityCandidateMatch{Matched: IdentityCandidateEntity{
 		ID: "a", Kind: "work", Title: "Star Song",
-		Translations: map[string]Translation{"en": {Title: "Star Song", Aliases: []string{"star theme"}}},
+		Translations:  map[string]Translation{"en": {Title: "Star Song", Aliases: []string{"star theme"}}},
 		ExternalLinks: []ExternalLink{linkFromID("wikidata", "Q1")},
 		Attributes:    map[string]any{"catalog_number": "TECI-1", "publisher": "label-1"},
 	}}

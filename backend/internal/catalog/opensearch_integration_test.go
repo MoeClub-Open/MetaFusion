@@ -69,7 +69,7 @@ func TestOpenSearchIntegrationPaginationAndVisibility(t *testing.T) {
 	}
 	// A published result in the PIT is now private in PostgreSQL. No stale
 	// status in the index may disclose its content.
-	if _, err := f.s.DB.ExecContext(ctx, "UPDATE catalog.entities SET status='deleted' WHERE id=$1", a.ID); err != nil {
+	if _, err := f.s.DB.ExecContext(ctx, "UPDATE catalog.entities SET state='deleted' WHERE id=$1", a.ID); err != nil {
 		t.Fatal(err)
 	}
 	stale, err := f.s.Search(ctx, o, nil, "")
@@ -138,7 +138,7 @@ func TestOpenSearchIntegrationPhysicallyDeletedEventReplay(t *testing.T) {
 		}
 	}
 	// A delayed deletion notification cannot override a row that exists now.
-	old := Entity{ID: live.ID, Kind: "work", Version: 1, Status: "deleted", Title: "Obsolete deleted payload"}
+	old := Entity{ID: live.ID, Kind: "work", Version: 1, State: "deleted", Title: "Obsolete deleted payload"}
 	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.outbox(id,type,entity_id,version,payload) VALUES($1,'entity.deleted',$2,$3,$4)`,
 		uuid.NewString(), old.ID, old.Version, encode(old)); err != nil {
 		t.Fatal(err)
@@ -267,7 +267,7 @@ func TestOpenSearchIntegrationDeepCursor(t *testing.T) {
 	f := newFixture(t)
 	// Populate real PostgreSQL rows and run the production rebuild. This proves
 	// the result count can exceed OpenSearch's from/size window without a fallback.
-	_, err := f.s.DB.ExecContext(context.Background(), `INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document)
+	_, err := f.s.DB.ExecContext(context.Background(), `INSERT INTO catalog.entities(id,kind,version,title,state,created_by,document)
 	SELECT gen_random_uuid(),'work',1,'Deep pagination','active',$1,
 	jsonb_build_object('kind','work','title','Deep pagination','translations',jsonb_build_object('en',jsonb_build_object('title','Deep pagination')),'attributes','{}'::jsonb)
 	FROM generate_series(1,10010)`, f.u.ID)

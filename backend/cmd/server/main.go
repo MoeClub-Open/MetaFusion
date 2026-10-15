@@ -49,7 +49,7 @@ func main() {
 	// 结构迁移（mf-migrate up）、种子升级（mf-migrate seed）、完整性扫描（mf-migrate check-refs）
 	// 是显式运维任务，不再由每次启动/扩容执行。检查失败即 Fatal：库没准备好时拒绝服务。
 	// 2026-09 CrashLoop 的根治：启动路径不再合并种子，无降级分支；种子状态仍由 /health 暴露。
-	if err = s.CheckCompatibleVersion(ctx); err != nil {
+	if err = s.CheckSchemaContract(ctx); err != nil {
 		log.Fatalf("catalog schema incompatible: %v", err)
 	}
 	log.Print("catalog schema compatible; seed upgrades run via mf-migrate seed, integrity scans via mf-migrate check-refs")

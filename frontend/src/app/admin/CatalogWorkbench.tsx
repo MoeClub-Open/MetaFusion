@@ -107,10 +107,10 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
   // 四个计数各为 null 表示"还没拿到或取不到"：卡片显示占位符，不把没取到的数当成 0 讲成事实。
   const [stats, setStats] = useState<{
     pending: number | null;
-    published: number | null;
+    active: number | null;
     tombstones: number | null;
     extDatabases: number | null;
-  }>({ pending: null, published: null, tombstones: null, extDatabases: null });
+  }>({ pending: null, active: null, tombstones: null, extDatabases: null });
   const [modules, setModules] = useState<any[]>([]);
   // Entities management state
   const [entitiesList, setEntitiesList] = useState<any[]>([]);
@@ -141,7 +141,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     const request = ++overviewRequest.current;
     setOverviewLoading(true);
     setOverviewFailed(false);
-    setStats({ pending: null, published: null, tombstones: null, extDatabases: null });
+    setStats({ pending: null, active: null, tombstones: null, extDatabases: null });
     setModules([]);
     const results = await Promise.allSettled([
       mayManageLifecycle ? fetchApi<{states: Record<string, number>; pending_commits:number}>("/catalog/entities/stats") : Promise.resolve(null),
@@ -154,11 +154,11 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     if (counts.status === "fulfilled" && counts.value) {
       const statuses = counts.value.states;
       const pending = countOrNull(counts.value.pending_commits);
-      const published = countOrNull(statuses?.active);
+      const active = countOrNull(statuses?.active);
       const deleted = countOrNull(statuses?.deleted);
       const merged = countOrNull(statuses?.merged);
-      if ([pending, published, deleted, merged].some((v) => v === null)) failed = true;
-      setStats((prev) => ({...prev, pending, published, tombstones: deleted !== null && merged !== null ? deleted + merged : null}));
+      if ([pending, active, deleted, merged].some((v) => v === null)) failed = true;
+      setStats((prev) => ({...prev, pending, active, tombstones: deleted !== null && merged !== null ? deleted + merged : null}));
     }
     const external = results[1];
     if (external.status === "fulfilled") {
@@ -239,7 +239,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     try {
       // 前置校验与 lifecycle.go 的合并约束同一口径：源与目标要读得到、同 kind、
       // 同归属（作品/发行版/载体/父级/内容单元）、目标已发布、源不是已删除/已合并。
-      // 少任何一条，服务端只会回 invalid_merge_target / invalid_status——先在本地讲清楚。
+      // 少任何一条，服务端只会回 invalid_merge_target / invalid_state——先在本地讲清楚。
       const pair = await Promise.all([
         fetchApi<Record<string, any>>(`/catalog/entities/${encodeURIComponent(sourceId)}`),
         fetchApi<Record<string, any>>(`/catalog/entities/${encodeURIComponent(targetId)}`),
@@ -367,9 +367,9 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                 </button>
                 <button type="button" onClick={() => { setEntitiesPage(1); selectTab("entities"); }} className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle hover:border-primary/40 hover:bg-surfaceHover text-left transition-colors cursor-pointer">
                   <div className="text-xs text-text-muted font-mono mb-1">
-                    {t("admin.console.publishedEntities")}
+                    {t("admin.console.activeEntities")}
                   </div>
-                  <div className="text-2xl font-bold text-success">{stats.published ?? "—"}</div>
+                  <div className="text-2xl font-bold text-success">{stats.active ?? "—"}</div>
                 </button>
                 {/* 墓碑 = deleted + merged，只来自 GET /catalog/entities/stats：列表端点的过滤固定带
                     status NOT IN ('deleted','merged')（backend/internal/catalog/store.go listFilter），
@@ -537,7 +537,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                               e.state === "merged" ? "bg-purple-500/20 text-alt" :
                               "bg-surfaceSubtle text-text-muted"
                             }`}>
-                              {e.state === "active" ? t("catalog.review.reviewed") : tr(`catalog.status.${e.state}`, e.state)}
+                              {e.state === "active" ? t("catalog.review.reviewed") : tr(`catalog.state.${e.state}`, e.state)}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[11px] text-text-muted">

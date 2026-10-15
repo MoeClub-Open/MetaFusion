@@ -123,7 +123,7 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 	}
 	term("kind", o.Kind)
 	terms("kind", o.Kinds)
-	term("state", o.Status)
+	term("state", o.State)
 	term("original_language", o.OriginalLanguage)
 	term("work_ids", o.WorkID)
 	term("content_unit_id", o.ContentUnitID)

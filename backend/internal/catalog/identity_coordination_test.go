@@ -10,8 +10,8 @@ import (
 
 func batch2Import(t *testing.T, f fixture, e Entity) Entity {
 	t.Helper()
-	if e.Status == "" {
-		e.Status = "draft"
+	if e.State == "" {
+		e.State = "draft"
 	}
 	out, err := f.s.Save(context.Background(), Edit{Entity: e, EditNote: "batch2 fixture", Sources: fixtureSources()}, f.u)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestPostgresSaveBlocksOnHeldReleaseLock(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := f.s.Save(ctx, Edit{
-			Entity:   Entity{Kind: "track", Title: "曲目", MediumID: m.ID, Status: "active"},
+			Entity:   Entity{Kind: "track", Title: "曲目", MediumID: m.ID, State: "active"},
 			EditNote: "m01 wiring", Sources: fixtureSources(),
 		}, f.u)
 		done <- err
@@ -318,7 +318,7 @@ func TestPostgresSaveRespectsDefinitionsLock(t *testing.T) {
 	ctx := context.Background()
 	saveWork := func() error {
 		_, err := f.s.Save(ctx, Edit{
-			Entity:   Entity{Kind: "work", Title: "并发作品", Status: "active"},
+			Entity:   Entity{Kind: "work", Title: "并发作品", State: "active"},
 			EditNote: "m02 wiring", Sources: fixtureSources(),
 		}, f.u)
 		return err

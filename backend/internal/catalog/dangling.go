@@ -109,7 +109,7 @@ func (s *Store) DanglingReferences(ctx context.Context) (DanglingReport, error) 
 // 全量实体上跑，逐条访问在十万级目录上是分钟级开销，而这份开销要出现在**每次部署**的启动路径上。
 // 顺序按 id 固定：报告与校验结论必须可复现。
 func liveEntities(ctx context.Context, q queryer) ([]Entity, error) {
-	rows, err := q.QueryContext(ctx, "SELECT id::text, document FROM catalog.entities WHERE status NOT IN ('deleted','merged') ORDER BY id")
+	rows, err := q.QueryContext(ctx, "SELECT id::text, document FROM catalog.entities WHERE state NOT IN ('deleted','merged') ORDER BY id")
 	if err != nil {
 		return nil, err
 	}

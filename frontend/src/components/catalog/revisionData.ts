@@ -48,11 +48,11 @@ export function canEditRevision(
   return canEditEntity(user, entity);
 }
 
-// 载入历史内容，保留当前版本锁、实体身份与生命周期。仍由普通 PUT 执行权限、
+// 载入历史内容，保留当前版本锁、实体身份与生命周期。仍由普通提交执行权限、
 // definitions、引用和审计校验；不修改旧修订、不直接写库或另建还原接口。
 export function prepareRevisionRestore(current: Entity, snapshot: Entity): Entity {
   if (!snapshot || snapshot.id !== current.id || snapshot.kind !== current.kind ||
-      ["deleted", "merged"].includes(current.state) || ["deleted", "merged"].includes((snapshot.state || (snapshot as any).status))) {
+      ["deleted", "merged"].includes(current.state) || ["deleted", "merged"].includes(snapshot.state)) {
     throw new Error("revision_incompatible");
   }
   for (const key of ["work_id", "release_id", "medium_id"] as const) {

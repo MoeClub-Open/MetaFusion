@@ -169,6 +169,19 @@ jobs:
             failed=1
           done < <(grep -E '^\.\./[A-Za-z0-9_.-]+=' deploy/versions.lock)
           exit "$failed"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: 锁定技能的 TypeScript 工具检查
+        working-directory: ../metafusion-skills
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun run test
+          test -z "$(git ls-files '*.mjs')"
       - name: 版本锁一致性（兄弟仓就位，无缺席跳过）
         run: python3 scripts/check_versions.py
       - name: 环境变量矩阵（注入↔读取两个方向）

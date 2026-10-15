@@ -13,26 +13,26 @@ import (
 // 纯函数口径：五个状态键一定齐全（没有行就是真实的 0），total 取所有分组之和，
 // 未知状态值也计入 total——"这个状态是 0"与"没拿到这个状态"必须是两件事，
 // 前者是事实，后者在响应里表现为键缺失（前端据此显示占位符而不是 0）。
-func TestFoldStatusCounts(t *testing.T) {
-	empty := foldStatusCounts(nil)
-	if len(empty.Statuses) != len(entityStatuses) || empty.Total != 0 {
+func TestFoldStateCounts(t *testing.T) {
+	empty := foldStateCounts(nil)
+	if len(empty.States) != len(entityStates) || empty.Total != 0 {
 		t.Fatalf("空表应给出齐全的五键与 total=0: %+v", empty)
 	}
-	for _, code := range entityStatuses {
-		if empty.Statuses[code] != 0 {
-			t.Fatalf("没有行的状态 %s 应补齐为 0: %+v", code, empty.Statuses)
+	for _, code := range entityStates {
+		if empty.States[code] != 0 {
+			t.Fatalf("没有行的状态 %s 应补齐为 0: %+v", code, empty.States)
 		}
 	}
-	got := foldStatusCounts([]statusGroup{{Status: "active", Count: 3070}, {Status: "deleted", Count: 288}, {Status: "unexpected", Count: 5}})
-	if got.Statuses["active"] != 3070 || got.Statuses["deleted"] != 288 {
-		t.Fatalf("已知状态应原样带出: %+v", got.Statuses)
+	got := foldStateCounts([]stateGroup{{State: "active", Count: 3070}, {State: "deleted", Count: 288}, {State: "unexpected", Count: 5}})
+	if got.States["active"] != 3070 || got.States["deleted"] != 288 {
+		t.Fatalf("已知状态应原样带出: %+v", got.States)
 	}
 	for _, code := range []string{"merged"} {
-		if got.Statuses[code] != 0 {
-			t.Fatalf("缺失状态 %s 应补 0: %+v", code, got.Statuses)
+		if got.States[code] != 0 {
+			t.Fatalf("缺失状态 %s 应补 0: %+v", code, got.States)
 		}
 	}
-	if got.Total != 3363 || got.Statuses["unexpected"] != 5 {
+	if got.Total != 3363 || got.States["unexpected"] != 5 {
 		t.Fatalf("total 必须含未预期的状态值，不静默丢行: %+v", got)
 	}
 }
@@ -47,15 +47,15 @@ func TestEntityStatsMatchesDirectSQLOnPostgres(t *testing.T) {
 	published := f.save(Entity{Kind: "work", Title: "计数用例·将成墓碑"})
 	// 另留一条已发布：墓碑数要与"仍在线的数量"分开，别把清退写成发布态消失。
 	f.save(Entity{Kind: "work", Title: "计数用例·已发布"})
-	f.save(Entity{Kind: "work", Title: "计数用例·草稿", Status: "active"})
-	f.save(Entity{Kind: "work", Title: "计数用例·待审", Status: "active"})
+	f.save(Entity{Kind: "work", Title: "计数用例·草稿", State: "active"})
+	f.save(Entity{Kind: "work", Title: "计数用例·待审", State: "active"})
 	if _, err := f.s.Lifecycle(ctx, published.ID, LifecycleEdit{ExpectedVersion: published.Version, EditNote: "计数用例清退", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatalf("造墓碑行: %v", err)
 	}
 
 	// 直接 SQL 是判据：逐状态与总数各比一次。
 	want := map[string]int64{}
-	rows, err := f.s.DB.QueryContext(ctx, "SELECT status, count(*) FROM catalog.entities GROUP BY status")
+	rows, err := f.s.DB.QueryContext(ctx, "SELECT state, count(*) FROM catalog.entities GROUP BY state")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,21 +81,21 @@ func TestEntityStatsMatchesDirectSQLOnPostgres(t *testing.T) {
 		t.Fatalf("夹具没造出预期的状态分布: %+v", want)
 	}
 
-	got, err := f.s.StatusCounts(ctx)
+	got, err := f.s.StateCounts(ctx)
 	if err != nil {
-		t.Fatalf("StatusCounts: %v", err)
+		t.Fatalf("StateCounts: %v", err)
 	}
 	if got.Total != wantTotal {
 		t.Fatalf("total=%d, 直接 SQL=%d", got.Total, wantTotal)
 	}
-	for _, code := range entityStatuses {
-		if got.Statuses[code] != want[code] {
-			t.Fatalf("状态 %s: 聚合=%d, 直接 SQL=%d", code, got.Statuses[code], want[code])
+	for _, code := range entityStates {
+		if got.States[code] != want[code] {
+			t.Fatalf("状态 %s: 聚合=%d, 直接 SQL=%d", code, got.States[code], want[code])
 		}
 	}
 	for code, n := range want {
-		if got.Statuses[code] != n {
-			t.Fatalf("聚合漏掉直接 SQL 里的状态 %s=%d: %+v", code, n, got.Statuses)
+		if got.States[code] != n {
+			t.Fatalf("聚合漏掉直接 SQL 里的状态 %s=%d: %+v", code, n, got.States)
 		}
 	}
 
@@ -131,24 +131,24 @@ func TestEntityStatsMatchesDirectSQLOnPostgres(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("掌码者应拿到 200: status=%d body=%s", w.Code, w.Body.String())
 	}
-	var body EntityStatusCounts
+	var body EntityStateCounts
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("响应不是 EntityStatusCounts 的形状: %v %s", err, w.Body.String())
+		t.Fatalf("响应不是 EntityStateCounts 的形状: %v %s", err, w.Body.String())
 	}
 	if body.Total != wantTotal {
 		t.Fatalf("响应 total=%d, 直接 SQL=%d", body.Total, wantTotal)
 	}
-	for _, code := range entityStatuses {
-		if body.Statuses[code] != want[code] {
-			t.Fatalf("响应状态 %s=%d, 直接 SQL=%d", code, body.Statuses[code], want[code])
+	for _, code := range entityStates {
+		if body.States[code] != want[code] {
+			t.Fatalf("响应状态 %s=%d, 直接 SQL=%d", code, body.States[code], want[code])
 		}
 	}
 
 	// 列表口径未被改动：墓碑行照样不出现在列表里，计数只能由本端点给出。
-	if n, err := f.s.Count(ctx, ListOptions{Status: "deleted"}, &f.u); err != nil || n != 0 {
+	if n, err := f.s.Count(ctx, ListOptions{State: "deleted"}, &f.u); err != nil || n != 0 {
 		t.Fatalf("status=deleted 的列表总数应仍为 0: %v %d", err, n)
 	}
-	if items, err := f.s.List(ctx, ListOptions{Status: "deleted"}, &f.u); err != nil || len(items) != 0 {
+	if items, err := f.s.List(ctx, ListOptions{State: "deleted"}, &f.u); err != nil || len(items) != 0 {
 		t.Fatalf("listFilter 语义被改动: %v %d", err, len(items))
 	}
 }

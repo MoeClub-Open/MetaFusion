@@ -35,9 +35,7 @@ func TestUpgradeFrom18PreservesCatalogAndEditing(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Store{DB: db}
-	if err = s.SeedContent(ctx); err != nil {
-		t.Fatal(err)
-	}
+	seedMigrationFixture(t, s)
 	legacy := Defaults()
 	delete(legacy.Fields, "creation_form")
 	delete(legacy.Vocabularies, "creation_form")
@@ -64,8 +62,8 @@ func TestUpgradeFrom18PreservesCatalogAndEditing(t *testing.T) {
 	user := fixtureUser("admin")
 	raw := func(kind, title string) Entity {
 		t.Helper()
-		e := Entity{ID: uuid.NewString(), Kind: kind, Version: 7, Title: title, Status: "published", CreatedBy: user.ID, OriginalLanguage: "ja", Translations: map[string]Translation{"ja": {Title: title}}, Attributes: map[string]any{}}
-		if _, err = db.ExecContext(ctx, "INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document) VALUES($1,$2,$3,$4,$5,$6,$7)", e.ID, e.Kind, e.Version, e.Title, e.Status, e.CreatedBy, encode(e)); err != nil {
+		e := Entity{ID: uuid.NewString(), Kind: kind, Version: 7, Title: title, State: "published", CreatedBy: user.ID, OriginalLanguage: "ja", Translations: map[string]Translation{"ja": {Title: title}}, Attributes: map[string]any{}}
+		if _, err = db.ExecContext(ctx, "INSERT INTO catalog.entities(id,kind,version,title,status,created_by,document) VALUES($1,$2,$3,$4,$5,$6,$7)", e.ID, e.Kind, e.Version, e.Title, e.State, e.CreatedBy, encode(e)); err != nil {
 			t.Fatal(err)
 		}
 		return e
@@ -91,10 +89,10 @@ func TestUpgradeFrom18PreservesCatalogAndEditing(t *testing.T) {
 		}
 	}
 	var snapshot string
-	if err = db.QueryRowContext(ctx, "SELECT snapshot::text FROM catalog.revisions WHERE target_id=$1", track.ID).Scan(&snapshot); err != nil {
+	if err = db.QueryRowContext(ctx, "SELECT (snapshot-'status'-'state'-'review_status')::text FROM catalog.revisions WHERE target_id=$1", track.ID).Scan(&snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.CheckCompatibleVersion(ctx); err == nil || !strings.Contains(err.Error(), "inclusion sources") {
+	if err = s.CheckSchemaContract(ctx); err == nil || !strings.Contains(err.Error(), "inclusion sources") {
 		t.Fatalf("old binary/schema mismatch not detected: %v", err)
 	}
 	if err = migrator.New(db, testutil.LegacyMigrations()).Up(ctx); err != nil {
@@ -118,7 +116,7 @@ func TestUpgradeFrom18PreservesCatalogAndEditing(t *testing.T) {
 		}
 	}
 	var afterSnapshot string
-	if err = db.QueryRowContext(ctx, "SELECT snapshot::text FROM catalog.revisions WHERE target_id=$1", track.ID).Scan(&afterSnapshot); err != nil || snapshot != afterSnapshot {
+	if err = db.QueryRowContext(ctx, "SELECT (snapshot-'status'-'state'-'review_status')::text FROM catalog.revisions WHERE target_id=$1", track.ID).Scan(&afterSnapshot); err != nil || snapshot != afterSnapshot {
 		t.Fatal("migration changed revision history")
 	}
 	if err = s.SeedContent(ctx); err != nil {
@@ -141,7 +139,7 @@ func TestUpgradeFrom18PreservesCatalogAndEditing(t *testing.T) {
 	if err != nil || configuration.ETag != etag {
 		t.Fatal("repeat seed changed live definitions")
 	}
-	if err = s.CheckCompatibleVersion(ctx); err != nil {
+	if err = s.CheckSchemaContract(ctx); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := s.EditTrackContent(ctx, track.ID, "replace", 0, TrackContentEdit{

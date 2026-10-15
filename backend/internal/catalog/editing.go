@@ -12,7 +12,7 @@ func ownedBy(e Entity, u User) bool { return e.CreatedBy != "" && e.CreatedBy ==
 
 // canEditEntity 报告 u 能否改动实体 e。
 func canEditEntity(u User, e Entity) bool {
-	if e.Status == "deleted" || e.Status == "merged" {
+	if e.State == "deleted" || e.State == "merged" {
 		return false
 	}
 	if u.Can(PermissionLifecycleManage) {
@@ -25,14 +25,14 @@ func canEditEntity(u User, e Entity) bool {
 }
 
 // Applied facts always have an active lifecycle and a reviewed marker.
-func prepareEntityWriteStatus(old Entity, next *Entity, u User) error {
+func prepareEntityWriteState(old Entity, next *Entity, u User) error {
 	if old.ID != "" && !canEditEntity(u, old) {
 		return errForbidden
 	}
-	if next.Status == "" {
-		next.Status = "active"
+	if next.State == "" {
+		next.State = "active"
 	}
-	if next.Status != "active" || next.RedirectID != "" {
+	if next.State != "active" || next.RedirectID != "" {
 		return fmt.Errorf("use_lifecycle_endpoint")
 	}
 	// Only applied facts are materialized. Pending commits never replace this head.
@@ -43,7 +43,7 @@ func prepareEntityWriteStatus(old Entity, next *Entity, u User) error {
 // Applied facts resolve validated references against public visibility.
 func entityWriteReference(ctx context.Context, q queryer, e Entity, u User) (func(string, []string) error, error) {
 	reader := &u
-	if e.Status == "active" {
+	if e.State == "active" {
 		reader = nil
 	}
 	return reference(ctx, q, reader), nil

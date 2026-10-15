@@ -1,8 +1,8 @@
 package catalog
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -214,7 +214,6 @@ func TestNormalizeExternalSourceDefinition(t *testing.T) {
 		t.Fatal("bangumi detect")
 	}
 }
-
 
 func mustList(t *testing.T, f fixture, o ListOptions) []Entity {
 	t.Helper()

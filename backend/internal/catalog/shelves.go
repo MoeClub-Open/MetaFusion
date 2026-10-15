@@ -397,18 +397,17 @@ func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User
 	return out, nil
 }
 
-// shelfVisibilityWhere 构建货架求值共用的可见性条件：匿名仅 published，登录者
-// 另可见自己创建的草稿，持货架管理权者可见未发布条目（便于配置后预览）；
-// deleted / merged 一律排除。计数与列表用同一份条件，数量才与实际筛选一致。
+// shelfVisibilityWhere 构建货架求值共用的可见性条件，排除 deleted / merged。
+// 计数与列表使用同一份条件。
 func shelfVisibilityWhere(u *User, args *[]any) []string {
 	where := []string{}
 	if u == nil {
-		where = append(where, "e.status='active'")
+		where = append(where, "e.state='active'")
 	} else if !u.Can(PermissionShelvesManage) {
 		*args = append(*args, u.ID)
-		where = append(where, fmt.Sprintf("(e.status='active' OR e.created_by=$%d)", len(*args)))
+		where = append(where, fmt.Sprintf("(e.state='active' OR e.created_by=$%d)", len(*args)))
 	}
-	where = append(where, "e.status NOT IN ('deleted','merged')")
+	where = append(where, "e.state NOT IN ('deleted','merged')")
 	return where
 }
 

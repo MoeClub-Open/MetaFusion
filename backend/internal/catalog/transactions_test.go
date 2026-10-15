@@ -284,7 +284,7 @@ func TestPostgresConcurrentDeleteAndNewRelationCannotLeaveLiveEdge(t *testing.T)
 	if _, err = delTx.Exec(`DELETE FROM catalog.relations WHERE source_id=$1 OR target_id=$1`, a.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = delTx.Exec(`UPDATE catalog.entities SET status='deleted',document=jsonb_set(document,'{status}','"deleted"'),version=version+1 WHERE id=$1`, a.ID); err != nil {
+	if _, err = delTx.Exec(`UPDATE catalog.entities SET state='deleted',document=jsonb_set(document,'{state}','"deleted"'),version=version+1 WHERE id=$1`, a.ID); err != nil {
 		t.Fatal(err)
 	}
 	e1, e2 := relTx.Commit(), delTx.Commit()

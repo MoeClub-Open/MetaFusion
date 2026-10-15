@@ -46,10 +46,10 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 // saveAs 以指定身份写一个实体（published 时补齐翻译，与真实契约一致）。
 func (f *notifyFixture) saveAs(u User, e Entity) Entity {
 	f.t.Helper()
-	if e.Status == "" {
-		e.Status = "active"
+	if e.State == "" {
+		e.State = "active"
 	}
-	if e.Status == "active" && len(e.Translations) == 0 {
+	if e.State == "active" && len(e.Translations) == 0 {
 		e.Translations = map[string]Translation{"en": {Title: e.Title}}
 	}
 	var copyE Entity

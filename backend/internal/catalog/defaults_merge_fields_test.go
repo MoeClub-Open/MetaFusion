@@ -67,7 +67,7 @@ func TestPostgresSeedMergeBackfillsAirDateIntoExistingDocument(t *testing.T) {
 	work := f.save(Entity{Kind: "work", Title: "动画作品"})
 	newUnit := func() Entity {
 		return Entity{Kind: "content_unit", WorkID: work.ID, Title: "第1话", Number: "1", Position: 1,
-			Status: "active", Translations: map[string]Translation{"ja": {Title: "第1话"}},
+			State: "active", Translations: map[string]Translation{"ja": {Title: "第1话"}},
 			Attributes: map[string]any{"language": "ja", "entry_role": "main", "air_date": "2017-01-21"}}
 	}
 	// 反证：合并之前写 air_date 必须被校验拒绝，否则本用例证明不了合并的作用。

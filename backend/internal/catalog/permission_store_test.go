@@ -27,7 +27,7 @@ func TestPermissionCodesAuthorizeCatalogWrites(t *testing.T) {
 
 	// 目录编辑组可直接发布（旧 editor 语义）；无目录码的成员仍走审核制。
 	pub := mk("permission-editor-published")
-	pub.Status = "active"
+	pub.State = "active"
 	if _, err := s.Save(ctx, Edit{Entity: pub, EditNote: "n", Sources: sources}, member); err == nil {
 		t.Fatal("member without catalog.entity.edit must not publish")
 	}

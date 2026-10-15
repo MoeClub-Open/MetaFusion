@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"reflect"
@@ -35,6 +36,15 @@ func catalogMigrationsBefore(t *testing.T, version string) fs.FS {
 	return before
 }
 
+// Historical migration fixtures seed configuration rows without invoking current-schema readers.
+func seedMigrationFixture(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := context.Background()
+	if err := s.write(ctx, func(tx *sql.Tx) error { return seedContentTx(ctx, tx) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestExternalLinksMigrationPreservesDocumentsAndSources(t *testing.T) {
 	ctx := context.Background()
 	db := testutil.Database(t)
@@ -42,9 +52,7 @@ func TestExternalLinksMigrationPreservesDocumentsAndSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Store{DB: db}
-	if err := s.SeedContent(ctx); err != nil {
-		t.Fatal(err)
-	}
+	seedMigrationFixture(t, s)
 	id, emptyID, actor := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	document := map[string]any{"id": id, "kind": "work", "title": "retained title", "version": 7,
 		"external_ids": map[string]any{"bangumi": "123", "fandom": "https://example.org/wiki/A_(B)", "historical_code": "unlisted/value"},

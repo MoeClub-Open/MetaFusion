@@ -38,11 +38,11 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 		if e.Version != input.ExpectedVersion {
 			return errVersionConflict
 		}
-		if e.Status == "merged" || e.Status == "deleted" {
-			return errInvalidStatus
+		if e.State == "merged" || e.State == "deleted" {
+			return errInvalidState
 		}
 		e.Version++
-		e.Status = "deleted"
+		e.State = "deleted"
 		e.UpdatedAt = time.Now().UTC()
 		if input.TargetID != "" {
 			target, err := get(ctx, tx, input.TargetID)
@@ -52,12 +52,12 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 			// 合并目标必须同 kind、同归属（Work/Release/Medium/ContentUnitID 均相等，
 			// 含 ParentID）：跨父合并会撕裂层级，由复合外键在提交时拦截，
 			// 此处提前报 invalid_merge_target。目标必须 active。
-			if target.Kind != e.Kind || target.ID == e.ID || target.Status == "deleted" || target.Status == "merged" || target.WorkID != e.WorkID || target.ReleaseID != e.ReleaseID || target.MediumID != e.MediumID || target.ParentID != e.ParentID {
+			if target.Kind != e.Kind || target.ID == e.ID || target.State == "deleted" || target.State == "merged" || target.WorkID != e.WorkID || target.ReleaseID != e.ReleaseID || target.MediumID != e.MediumID || target.ParentID != e.ParentID {
 				return fmt.Errorf("invalid_merge_target")
 			}
 			e.RedirectID = target.ID
-			e.Status = "merged"
-			if target.ContentUnitID != e.ContentUnitID || target.Status != "active" {
+			e.State = "merged"
+			if target.ContentUnitID != e.ContentUnitID || target.State != "active" {
 				return fmt.Errorf("invalid_merge_target")
 			}
 			if err = mergeReferences(ctx, tx, e, target, u, input); err != nil {
@@ -83,13 +83,13 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 		// 与 Save 同一原则：版本条件进 WHERE，读版本与写入是同一次原子操作。
 		// 事务重试之后也要复核业务版本。
 		var res sql.Result
-		if res, err = tx.ExecContext(ctx, "UPDATE catalog.entities SET version=$3,status=$4,document=$5,updated_at=$6 WHERE id=$1 AND version=$2", e.ID, input.ExpectedVersion, e.Version, e.Status, encode(stored), e.UpdatedAt); err != nil {
+		if res, err = tx.ExecContext(ctx, "UPDATE catalog.entities SET version=$3,state=$4,document=$5,updated_at=$6 WHERE id=$1 AND version=$2", e.ID, input.ExpectedVersion, e.Version, e.State, encode(stored), e.UpdatedAt); err != nil {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return errVersionConflict
 		}
-		return audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity."+e.Status)
+		return audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity."+e.State)
 	})
 	return e, err
 }
@@ -139,7 +139,7 @@ func (s *Store) ResolveIdentity(ctx context.Context, id string, u *User) (Identi
 		if err != nil {
 			return out, err
 		}
-		if e.Status == "merged" {
+		if e.State == "merged" {
 			out.Aliases = append(out.Aliases, cur)
 			cur = e.RedirectID
 			continue
@@ -175,7 +175,7 @@ func (s *Store) reverseAliases(ctx context.Context, canonical string, seen map[s
 	extra := []string{}
 	frontier := []string{canonical}
 	for len(frontier) > 0 {
-		rows, err := s.DB.QueryContext(ctx, `SELECT id::text FROM catalog.entities WHERE status='merged' AND document->>'redirect_id' = ANY($1::text[])`, pq.Array(frontier))
+		rows, err := s.DB.QueryContext(ctx, `SELECT id::text FROM catalog.entities WHERE state='merged' AND document->>'redirect_id' = ANY($1::text[])`, pq.Array(frontier))
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +220,7 @@ func resolveFrom(ctx context.Context, q queryer, id string, u *User) (Entity, er
 		if err != nil {
 			return e, err
 		}
-		if e.Status == "merged" {
+		if e.State == "merged" {
 			id = e.RedirectID
 			continue
 		}

@@ -224,23 +224,23 @@ func TestOpenAPIEntityStatsEndpoint(t *testing.T) {
 		t.Fatal("状态计数端点必须声明 security（需要登录 + catalog.lifecycle.manage）")
 	}
 	ref, _ := get["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"].(string)
-	if ref != "#/components/schemas/EntityStatusCounts" {
-		t.Fatalf("状态计数端点 200 响应 schema=%q, want EntityStatusCounts", ref)
+	if ref != "#/components/schemas/EntityStateCounts" {
+		t.Fatalf("状态计数端点 200 响应 schema=%q, want EntityStateCounts", ref)
 	}
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	props, ok := schemas["EntityStatusCounts"].(map[string]any)["properties"].(map[string]any)
+	props, ok := schemas["EntityStateCounts"].(map[string]any)["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("EntityStatusCounts schema 缺失")
+		t.Fatal("EntityStateCounts schema 缺失")
 	}
 	if props["states"] == nil || props["total"] == nil {
-		t.Fatalf("EntityStatusCounts schema 缺 statuses/total: %+v", props)
+		t.Fatalf("EntityStateCounts schema 缺 statuses/total: %+v", props)
 	}
-	// 五个状态键逐个冻结，且与 Go 侧 entityStatuses（迁移 CHECK 的全集）逐字一致。
+	// 五个状态键逐个冻结，且与 Go 侧 entityStates（迁移 CHECK 的全集）逐字一致。
 	statusProps, ok := props["states"].(map[string]any)["properties"].(map[string]any)
-	if !ok || len(statusProps) != len(entityStatuses) {
-		t.Fatalf("statuses 应逐个声明 %d 个状态: %+v", len(entityStatuses), statusProps)
+	if !ok || len(statusProps) != len(entityStates) {
+		t.Fatalf("statuses 应逐个声明 %d 个状态: %+v", len(entityStates), statusProps)
 	}
-	for _, code := range entityStatuses {
+	for _, code := range entityStates {
 		if statusProps[code] == nil {
 			t.Fatalf("statuses 缺状态键 %s", code)
 		}

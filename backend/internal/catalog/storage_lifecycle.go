@@ -28,11 +28,11 @@ const StorageLifecycleConsumer = "storage-lifecycle-v1"
 const storageLifecycleLockID = int64(740221)
 
 // Only storage reference facts cross the service boundary. Inclusions refer to
-// Expressions, not assets, and unpublishing preserves editable draft pictures.
+// Expressions, not assets; pending submissions never change applied asset references.
 type storageLifecycleSnapshot struct {
 	EntityID      string           `json:"entity_id"`
 	Kind          string           `json:"kind"`
-	Status        string           `json:"state"`
+	State         string           `json:"state"`
 	Version       int64            `json:"version"`
 	UpdatedAt     time.Time        `json:"updated_at"`
 	Aliases       []string         `json:"aliases"`
@@ -224,7 +224,7 @@ func (s *Store) syncStorageLifecycle(ctx context.Context, c *storageLifecycleCli
 		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", storageLifecycleLockID)
 	}()
 	rows, err := s.DB.QueryContext(ctx, `SELECT id::text,entity_id::text FROM catalog.outbox o
-		WHERE o.type IN ('entity.saved','entity.deleted','entity.merged','entity.unpublished')
+		WHERE o.type IN ('entity.saved','entity.deleted','entity.merged')
 		AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
 		ORDER BY o.created_at,o.id LIMIT 100`, StorageLifecycleConsumer)
 	if err != nil {
@@ -284,7 +284,7 @@ func (s *Store) currentStorageLifecycle(ctx context.Context, id string) (storage
 		if errors.Is(err, sql.ErrNoRows) {
 			// A physically removed row has no current references to retain. Do not
 			// invent aliases or infer deletion from a visibility-filtered HTTP 404.
-			state := storageLifecycleSnapshot{EntityID: cur, Status: "deleted", Version: math.MaxInt64,
+			state := storageLifecycleSnapshot{EntityID: cur, State: "deleted", Version: math.MaxInt64,
 				UpdatedAt: time.Now().UTC(), Aliases: []string{}, AliasVersions: map[string]int64{}, CoverAssetIDs: []string{}}
 			for alias := range seen {
 				if alias != cur {
@@ -297,19 +297,19 @@ func (s *Store) currentStorageLifecycle(ctx context.Context, id string) (storage
 		if err != nil {
 			return storageLifecycleSnapshot{}, err
 		}
-		if e.Status != "merged" {
+		if e.State != "merged" {
 			break
 		}
 		cur = e.RedirectID
 	}
-	state := storageLifecycleSnapshot{EntityID: e.ID, Kind: e.Kind, Status: e.Status, Version: e.Version,
+	state := storageLifecycleSnapshot{EntityID: e.ID, Kind: e.Kind, State: e.State, Version: e.Version,
 		UpdatedAt: e.UpdatedAt, Aliases: []string{}, AliasVersions: map[string]int64{}, CoverAssetIDs: []string{}}
 	// A merge preserves source pictures in its historical identity. Keep their
 	// assets while canonicalizing all file roles; a normal target Save must not
 	// erase an old source cover. This read uses one database snapshot throughout.
 	rows, err := tx.QueryContext(ctx, `WITH RECURSIVE identities(id) AS (
 		SELECT $1::uuid UNION SELECT e.id FROM catalog.entities e JOIN identities i
-		ON e.status='merged' AND e.document->>'redirect_id'=i.id::text)
+		ON e.state='merged' AND e.document->>'redirect_id'=i.id::text)
 		SELECT e.id::text,e.version,e.document FROM catalog.entities e JOIN identities i ON e.id=i.id
 		ORDER BY e.id`, e.ID)
 	if err != nil {

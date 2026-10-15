@@ -109,7 +109,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
         window.location.href = UUID_PATTERN.test(id) ? catalogEntityHref(id) : "/home";
       }
     } catch (err: any) {
-      // 后端给稳定错误码（invalid_merge_target / invalid_status / evidence_required …）：
+      // 后端给稳定错误码（invalid_merge_target / invalid_state / evidence_required …）：
       // 走码表翻成人话，未知码才回退原文，不把裸码直接贴给用户。
       setError(localizeCatalogError(String(err?.message || ""), t) || t("editor.merge.failedMsg"));
     } finally {
