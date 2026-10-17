@@ -1454,8 +1454,8 @@ export function EntityDetailView({ id }: { id: string }) {
                 </SectionTitle>
 
                 {relationViewMode === "graph" ? (
-                  <Card tone="subtle" padding="none" className="h-[360px] overflow-hidden">
                     <InteractiveRelationGraph
+                      height="clamp(360px, 65dvh, 640px)"
                       centerEntityId={entity.id || id}
                       centerEntityType={entity.kind}
                       orientation={
@@ -1473,7 +1473,6 @@ export function EntityDetailView({ id }: { id: string }) {
                         }
                       }}
                     />
-                  </Card>
                 ) : (
                   <EntityRelationDirectory subjectId={entity.id || id} relations={mediaRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
                 )}

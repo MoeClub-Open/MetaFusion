@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/authContext";
 import { EntityEditor } from "./EntityEditor";
 import { canEditRevision, prepareRevisionRestore } from "./revisionData";
 import { RevisionDiffInspector } from "./RevisionDiffInspector";
+import { RevisionSnapshotView } from "./RevisionSnapshotView";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
   GitBranch,
@@ -13,8 +14,6 @@ import {
   History,
   ExternalLink,
   FileText,
-  Check,
-  Copy,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -79,7 +78,6 @@ export function EntityRevisions({
   const pickedSorted = useMemo(() => [...picked].sort((a, b) => (a.version || 0) - (b.version || 0)), [picked]);
 
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Sort revisions newest first
   const sortedRevisions = useMemo(() => {
@@ -98,14 +96,6 @@ export function EntityRevisions({
     }
     return Array.from(map.values());
   }, [sortedRevisions, anonymousName]);
-
-  const handleCopy = (text: string, id: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
-    }
-  };
 
   // Compare with previous revision
   const handleCompareWithPrev = (curr: RevisionItem, idx: number) => {
@@ -204,8 +194,8 @@ export function EntityRevisions({
       {/* Snapshot Inspector Modal / Banner (If Active) */}
       {inspectingRev && (
         <div className="p-5 rounded-xl border border-sky-500/30 bg-sky-500/[0.02] dark:bg-sky-500/[0.04] space-y-3 animate-scale-in shadow-soft">
-          <div className="flex items-center justify-between border-b border-sky-500/20 pb-3">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sky-500/20 pb-3">
+            <div className="flex flex-wrap items-center gap-2">
               <FileText className="w-4 h-4 text-sky-500" />
               <h3 className="font-semibold text-text-strong text-sm">
                 {t("revisions.snapshotAt", { version: inspectingRev.version })}
@@ -217,14 +207,6 @@ export function EntityRevisions({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleCopy(JSON.stringify(inspectingRev.snapshot || inspectingRev, null, 2), "snap-copy")}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-surface text-xs font-mono text-text-body hover:text-primary transition-colors duration-fast ease-soft shadow-2xs"
-              >
-                {copiedId === "snap-copy" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                <span>{copiedId === "snap-copy" ? t("revisions.copied") : t("revisions.copyJson")}</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => setInspectingRev(null)}
                 className="px-2.5 py-1 rounded-lg text-xs font-mono bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-text-body transition-colors duration-fast ease-soft"
               >
@@ -233,9 +215,7 @@ export function EntityRevisions({
             </div>
           </div>
 
-          <pre className="p-3.5 rounded-lg bg-black/[0.04] dark:bg-black/50 border border-line font-mono text-[11px] text-text-strong overflow-x-auto max-h-80 leading-relaxed">
-            {JSON.stringify(inspectingRev.snapshot || inspectingRev, null, 2)}
-          </pre>
+          <RevisionSnapshotView key={inspectingRev.id || inspectingRev.version} snapshot={inspectingRev.snapshot} />
         </div>
       )}
 

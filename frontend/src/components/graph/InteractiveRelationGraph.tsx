@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useTheme } from "@/lib/themeContext";
 import { GraphNode, GraphLink, catalogEntityHref } from "@/lib/api";
@@ -253,6 +254,8 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
 
   // 拖拽平移手势追踪
   const dragRef = useRef<{
@@ -827,25 +830,23 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     setIsFullscreen((prev) => !prev);
   }, []);
 
-  // 监听 ESC 键在窗口内最大化模式下退出
+  // 对话框挂到 body 并进入浏览器顶层，不受页面祖先的 transform / contain 裁剪。
+  // 原生 dialog 约束焦点与背景交互；滚动锁只在打开期间生效，退出或卸载均恢复。
   useEffect(() => {
-    if (!isFullscreen || typeof window === "undefined") return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsFullscreen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen]);
-
-  // 窗口内最大化时锁定主页面背景滚动
-  useEffect(() => {
-    if (!isFullscreen || typeof document === "undefined") return;
+    if (!isFullscreen) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const prevOverflow = document.body.style.overflow;
+    dialog.showModal();
     document.body.style.overflow = "hidden";
+    fullscreenButtonRef.current?.focus({ preventScroll: true });
     return () => {
+      dialog.close();
       document.body.style.overflow = prevOverflow;
+      // Portal 切换会重新挂载按钮，不能依赖已从文档移除的旧按钮。
+      const restoreFocus = fullscreenButtonRef.current ?? previousFocus;
+      if (restoreFocus?.isConnected) restoreFocus.focus({ preventScroll: true });
     };
   }, [isFullscreen]);
 
@@ -871,21 +872,6 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       if (rafId) cancelAnimationFrame(rafId);
       observer.disconnect();
     };
-  }, [fitToView]);
-
-  // 最大化状态切换后自适应校准，确保动效与渲染稳定
-  useEffect(() => {
-    let rafId: number | null = null;
-    rafId = requestAnimationFrame(() => {
-      fitToView();
-    });
-    const timer = setTimeout(() => {
-      fitToView();
-    }, 80);
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      clearTimeout(timer);
-    };
   }, [isFullscreen, fitToView]);
 
   // 以指定 SVG 锚点为基准的定点缩放算法 (Anchor Zooming Math)
@@ -906,12 +892,14 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     });
   }, []);
 
-  // 鼠标滚轮以光标所在 SVG 真实坐标为原点进行定点缩放
+  // 内嵌图谱让普通滚轮滚动页面；按 Ctrl / ⌘ 或放大查看时才接管缩放。
   useEffect(() => {
     const el = canvasContainerRef.current;
     if (!el) return;
 
     const handleNativeWheel = (e: WheelEvent) => {
+      if (!isFullscreen && !e.ctrlKey && !e.metaKey) return;
+      if (e.deltaY === 0) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -924,11 +912,12 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     return () => {
       el.removeEventListener("wheel", handleNativeWheel);
     };
-  }, [getSvgPoint, handleZoomAnchor]);
+  }, [isFullscreen, getSvgPoint, handleZoomAnchor]);
 
   // 鼠标 / 触控指针拖拽平移事件处理
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    if (!isFullscreen && e.pointerType === "touch") return;
 
     const target = e.target as HTMLElement | SVGElement;
     if (target.closest("[data-node-interactive='true']")) {
@@ -999,18 +988,18 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     return list;
   }, [selectedNode, filteredLinks, layoutNodes, nodes]);
 
-  return (
+  const graph = (
     <div
       ref={containerRef}
-      className={`relative flex flex-col overflow-hidden select-none transition-all duration-base ease-soft ${
+      className={`relative min-h-0 flex flex-col overflow-hidden select-none ${
         isFullscreen
-          ? "fixed top-[var(--mf-header-h)] left-0 right-0 bottom-0 z-30 w-full h-[calc(100dvh-var(--mf-header-h))] max-w-none max-h-none m-0 rounded-none border-t border-border/60 bg-background/98 backdrop-blur-md text-foreground shadow-2xl"
+          ? "h-full w-full bg-background text-foreground"
           : `rounded-card border border-border/80 bg-card/60 backdrop-blur-md shadow-sm ${className}`
       }`}
       style={isFullscreen ? undefined : { height }}
     >
       {/* 顶部工具栏与控制面板 */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-background/85 border-b border-border/60 backdrop-blur-md z-10">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-background/85 border-b border-border/60 backdrop-blur-md z-10">
         <div className="flex items-center gap-2 min-w-0">
           <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
             <Network className="w-4 h-4" />
@@ -1106,8 +1095,10 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
             {/* 窗口内全屏/最大化切换按钮 */}
             <button
+              ref={fullscreenButtonRef}
               type="button"
               onClick={toggleFullscreen}
+              aria-label={isFullscreen ? t("graph.exitFullscreen") : t("graph.fullscreen")}
               title={isFullscreen ? t("graph.exitFullscreen") : t("graph.fullscreen")}
               className={`p-1.5 rounded-lg transition-all font-medium inline-flex items-center gap-1.5 ${
                 isFullscreen
@@ -1136,7 +1127,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
       {/* 关系筛选：维度与选项由连线数据与 definitions 动态生成，数据里没有的维度不出现 */}
       {relationFilter.filterable && (
-        <div className="px-4 pt-2 pb-1 border-b border-border/60 bg-background/60">
+        <div className="shrink-0 max-h-[30dvh] overflow-y-auto px-4 pt-2 pb-1 border-b border-border/60 bg-background/60">
           <RelationFilterBar
             facets={relationFilter.facets}
             selection={relationFilter.selection}
@@ -1148,7 +1139,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       {/* 图谱主体 SVG 交互画布 */}
       <div
         ref={canvasContainerRef}
-        className="flex-1 w-full h-full relative cursor-grab active:cursor-grabbing overflow-hidden touch-none select-none"
+        className={`min-h-0 flex-1 w-full relative cursor-grab active:cursor-grabbing overflow-hidden select-none ${isFullscreen ? "touch-none" : "touch-pan-y touch-pinch-zoom"}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -1614,7 +1605,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
       {/* 侧边节点详细信息检查器 (Property Inspector Popover) */}
       {showInspector && selectedNode && (
-        <div className="absolute top-14 right-4 w-80 max-w-[calc(100vw-2rem)] rounded-panel border border-border bg-card/98 backdrop-blur-xl p-4 shadow-2xl z-20 space-y-3.5 animate-in duration-200">
+        <div className="absolute top-14 right-4 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100%-4.5rem)] overflow-y-auto rounded-panel border border-border bg-card/98 backdrop-blur-xl p-4 shadow-2xl z-20 space-y-3.5 animate-in duration-200">
           <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-border/60">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1">
@@ -1742,5 +1733,29 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         </div>
       )}
     </div>
+  );
+
+  if (!isFullscreen) return graph;
+
+  return (
+    <>
+      {/* 保留内嵌位置的高度，关闭放大视图后页面仍处于原来的滚动位置。 */}
+      <div aria-hidden="true" className={className} style={{ height }} />
+      {createPortal(
+        <dialog
+          ref={dialogRef}
+          aria-label={title || t("graph.title")}
+          aria-modal="true"
+          onCancel={(event) => {
+            event.preventDefault();
+            setIsFullscreen(false);
+          }}
+          className="fixed inset-0 m-0 h-dvh w-screen max-h-none max-w-none overflow-hidden border-0 bg-background p-0 text-foreground backdrop:bg-black/50"
+        >
+          {graph}
+        </dialog>,
+        document.body,
+      )}
+    </>
   );
 };

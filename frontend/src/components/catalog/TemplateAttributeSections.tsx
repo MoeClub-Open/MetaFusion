@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DynamicDefinitions, resolveLocalizedName, getTermName } from "@/lib/definitions";
 import { EntityLink } from "./Fields";
 import { formatDuration } from "@/lib/duration";
+import { safeExternalAuthorityURL } from "@/lib/externalAuthorityURL";
 import { Calendar, Hash, Clock, ExternalLink, Link2, Check, Minus } from "lucide-react";
 
 // 说明：属性分区渲染已统一到 @/components/work/WorkFacts（两个详情页共用）。
@@ -19,12 +20,18 @@ export function FieldValue({
   defs,
   locale,
   field,
+  resolveReferences = true,
+  includeHidden = false,
 }: {
   code: string;
   value: any;
   defs: DynamicDefinitions | null | undefined;
   locale: string;
   field?: any;
+  /** 历史快照只展示自身保存的引用信息，不解析成当前条目事实。 */
+  resolveReferences?: boolean;
+  /** 历史检视包含曾保存的全部字段，不受当前详情页的隐藏配置影响。 */
+  includeHidden?: boolean;
 }) {
   const def = field || defs?.fields?.[code];
   const type = def?.type;
@@ -69,6 +76,7 @@ export function FieldValue({
   }
   if (type === "url") {
     const url = String(value);
+    if (!safeExternalAuthorityURL(url)) return <span className="break-all">{url}</span>;
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-mono break-all inline-flex items-center gap-1">
         {url.replace(/^https?:\/\//, "")}
@@ -90,11 +98,11 @@ export function FieldValue({
     const id = typeof v === "string" ? v : v?.id;
     const label = typeof v === "object" ? v?.title || v?.name : "";
     if (!id) return <span>—</span>;
-    if (label) {
+    if (label || !resolveReferences) {
       return (
         <Link href={`/catalog/${id}`} className="text-primary hover:underline inline-flex items-center gap-1">
           <Link2 className="w-3 h-3" />
-          {label}
+          {label || id}
         </Link>
       );
     }
@@ -116,7 +124,7 @@ export function FieldValue({
           <li key={i} className="flex items-start gap-1.5">
             <span className="shrink-0 text-text-muted font-mono text-[10px] leading-5">{i + 1}.</span>
             <span className="min-w-0">
-              <FieldValue code={code} value={item} defs={defs} locale={locale} field={def.items} />
+              <FieldValue code={code} value={item} defs={defs} locale={locale} field={def.items} resolveReferences={resolveReferences} includeHidden={includeHidden} />
             </span>
           </li>
         ))}
@@ -125,7 +133,7 @@ export function FieldValue({
   }
   if (type === "group" || (value && typeof value === "object" && !Array.isArray(value))) {
     const entries = Object.entries(value as Record<string, any>).filter(
-      ([k, v]) => v !== undefined && v !== null && v !== "" && !def?.fields?.[k]?.hidden,
+      ([k, v]) => v !== undefined && v !== null && v !== "" && (includeHidden || !def?.fields?.[k]?.hidden),
     );
     if (entries.length === 0) return <span className="text-text-muted">—</span>;
     return (
@@ -134,7 +142,7 @@ export function FieldValue({
           <div key={k} className="flex items-baseline gap-1">
             <dt className="text-[11px] text-text-faint">{resolveLocalizedName(def?.fields?.[k]?.names, locale, k)}</dt>
             <dd className="m-0">
-              <FieldValue code={k} value={v} defs={defs} locale={locale} field={def?.fields?.[k]} />
+              <FieldValue code={k} value={v} defs={defs} locale={locale} field={def?.fields?.[k]} resolveReferences={resolveReferences} includeHidden={includeHidden} />
             </dd>
           </div>
         ))}
@@ -147,7 +155,7 @@ export function FieldValue({
       <ul className="space-y-1 list-none pl-0">
         {value.map((item, i) => (
           <li key={i}>
-            <FieldValue code={code} value={item} defs={defs} locale={locale} field={def?.items} />
+            <FieldValue code={code} value={item} defs={defs} locale={locale} field={def?.items} resolveReferences={resolveReferences} includeHidden={includeHidden} />
           </li>
         ))}
       </ul>
