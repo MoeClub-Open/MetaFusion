@@ -11,6 +11,7 @@ import {
   createPost,
 } from "@/lib/api";
 import { Entity, api } from "@/components/catalog/api";
+import { PageContainer } from "@/components/ui/PageShell";
 import {
   Bold,
   Italic,
@@ -28,6 +29,8 @@ import {
   Check,
   ChevronDown,
   Tag as TagIcon,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
 const MarkdownRenderer = dynamic(() => import("@/components/MarkdownRenderer"), {
   loading: () => <div className="h-4 my-1.5 rounded bg-black/[0.04] dark:bg-white/[0.04] animate-pulse" />,
@@ -190,6 +193,61 @@ function draftKey(mode: Mode, topicId?: string): string {
 
 // ── Component ──────────────────────────────────────────────────────────
 
+function ComposerEditor({ contentRef, content, onChange, placeholder, t }: {
+  contentRef: React.RefObject<HTMLTextAreaElement | null>;
+  content: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  t: PostComposerProps["t"];
+}) {
+  const [share, setShare] = useState(50);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const changeShare = (value: number) => setShare(Math.min(80, Math.max(20, Math.round(value))));
+  return (
+    <div ref={editorRef} className="flex-1 grid grid-cols-1 md:grid-cols-[minmax(0,var(--composer-editor-share))_0.75rem_minmax(0,1fr)] min-h-[200px] md:min-h-[240px]" style={{ "--composer-editor-share": `${share}%` } as React.CSSProperties}>
+      <textarea
+        ref={contentRef}
+        required
+        aria-label={placeholder}
+        placeholder={placeholder}
+        value={content}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 w-full h-full p-3.5 bg-background border border-line rounded-lg text-emphasis text-sm focus:outline-none focus:border-primary resize-none font-mono leading-relaxed overflow-y-auto"
+      />
+      <div
+        role="separator"
+        aria-label={t("community.composerSplit")}
+        aria-orientation="vertical"
+        aria-valuemin={20}
+        aria-valuemax={80}
+        aria-valuenow={share}
+        tabIndex={0}
+        className="mf-focus hidden md:flex items-center justify-center touch-none cursor-col-resize text-text-faint hover:text-primary rounded"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.currentTarget.focus();
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const box = editorRef.current?.getBoundingClientRect();
+          if (box?.width) changeShare((event.clientX - box.left) / box.width * 100);
+        }}
+        onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          changeShare(event.key === "Home" ? 20 : event.key === "End" ? 80 : share + (event.key === "ArrowLeft" ? -5 : 5));
+        }}
+      >
+        <GripVertical className="w-3 h-5" aria-hidden />
+      </div>
+      <div className="hidden md:block min-w-0 h-full p-3.5 bg-background border border-line rounded-lg overflow-y-auto">
+        {content ? <MarkdownRenderer content={content} /> : <span className="text-text-faint font-mono">{t("community.livePreview")}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function PostComposer({
   mode,
   topicId,
@@ -208,6 +266,20 @@ export default function PostComposer({
   const [newContent, setNewContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const [widthPercent, setWidthPercent] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem("mf_community_composer_width"));
+      if (Number.isInteger(saved) && saved >= 50 && saved <= 100) setWidthPercent(saved);
+    } catch {}
+  }, []);
+  const changeWidth = (value: number | null) => {
+    setWidthPercent(value);
+    try {
+      if (value === null) localStorage.removeItem("mf_community_composer_width");
+      else localStorage.setItem("mf_community_composer_width", String(value));
+    } catch {}
+  };
 
   // ── createTopic-only state ──
   const [newTitle, setNewTitle] = useState("");
@@ -428,20 +500,32 @@ export default function PostComposer({
 
   // ── Render ──
   return (
+    <PageContainer className="fixed bottom-3 inset-x-0 z-50 pointer-events-none md:w-[var(--composer-width)]" style={{ "--composer-width": expanded ? "100%" : widthPercent === null ? "100%" : `${widthPercent}vw`, maxWidth: expanded || widthPercent !== null ? "100%" : undefined } as React.CSSProperties}>
     <div
-      className={`fixed bottom-0 left-0 right-0 z-50 bg-surface border-t-2 border-line shadow-2xl transition-all flex flex-col pb-[env(safe-area-inset-bottom)] ${expanded ? "h-[85vh]" : "h-[min(560px,85vh)]"}`}
+      role="dialog"
+      aria-label={headerTitle}
+      className={`pointer-events-auto w-full bg-surface border border-line rounded-xl shadow-elevated flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] ${expanded ? "h-[calc(100dvh-var(--mf-header-h)-2rem)]" : "h-[min(640px,calc(100dvh-var(--mf-header-h)-2rem))]"}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-background border-b border-line shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <MessageSquare className="w-4 h-4 text-success" />
-          <span className="font-bold text-emphasis text-xs">{headerTitle}</span>
+          <span className="font-bold text-emphasis text-xs truncate">{headerTitle}</span>
         </div>
         <div className="flex items-center gap-2">
+          <label className={`hidden md:flex items-center gap-2 text-xs text-text-muted ${expanded ? "opacity-50" : ""}`}>
+            <span>{t("community.composerWidth")}</span>
+            <input type="range" min={50} max={100} step={5} value={widthPercent ?? 80} disabled={expanded} onChange={(event) => changeWidth(Number(event.target.value))} aria-label={t("community.composerWidth")} aria-valuetext={widthPercent === null ? t("community.composerWidthPage") : `${widthPercent}%`} className="w-24 accent-primary cursor-ew-resize disabled:cursor-default" />
+            <span className="min-w-14 text-right tabular-nums">{widthPercent === null ? t("community.composerWidthPage") : `${widthPercent}%`}</span>
+          </label>
+          <button type="button" onClick={() => changeWidth(null)} disabled={expanded || widthPercent === null} title={t("community.composerWidthPage")} aria-label={t("community.composerWidthPage")} className="hidden md:block mf-focus p-1.5 rounded text-text-muted hover:text-emphasis disabled:opacity-40">
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             onClick={() => onExpandedChange(!expanded)}
-            className="p-1 text-text-muted hover:text-emphasis"
+            className="mf-focus p-2 text-text-muted hover:text-emphasis"
+            aria-label={expanded ? t("community.composerCollapse") : t("community.composerExpand")}
             title={expanded ? t("community.composerCollapse") : t("community.composerExpand")}
           >
             {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -449,7 +533,8 @@ export default function PostComposer({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-text-muted hover:text-emphasis"
+            className="mf-focus p-2 text-text-muted hover:text-emphasis"
+            aria-label={t("community.closeComposer")}
             title={t("community.closeComposer")}
           >
             <X className="w-4 h-4" />
@@ -459,10 +544,9 @@ export default function PostComposer({
 
       {/* Body */}
       {mode === "createTopic" ? (
-        <form onSubmit={handleCreateTopic} className="flex-1 flex flex-col p-4 gap-3.5 overflow-hidden">
-          {/* Title + Board + Work */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 shrink-0">
-            <div className="md:col-span-5">
+        <form onSubmit={handleCreateTopic} className="flex-1 min-h-0 flex flex-col p-4 gap-3.5 overflow-y-auto">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3 shrink-0">
+            <div className="min-w-0">
               <input
                 type="text"
                 required
@@ -473,10 +557,65 @@ export default function PostComposer({
               />
             </div>
 
+            {/* Work link */}
+            <div className="relative min-w-0">
+              {selectedWork ? (
+                <div className="flex items-center justify-between px-3.5 h-10 rounded-lg bg-background border border-emerald-500/40 text-success-soft">
+                  <span className="flex items-center gap-2 truncate text-sm font-semibold">
+                    <BookOpen className="w-4 h-4 text-success shrink-0" />
+                    <span className="truncate">{selectedWork.title}</span>
+                  </span>
+                  <button type="button" onClick={() => setSelectedWork(null)} className="text-text-muted hover:text-emphasis ml-1.5 cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="text"
+                    placeholder={t("community.workSearchPlaceholder")}
+                    value={workSearchQuery}
+                    onChange={(e) => setWorkSearchQuery(e.target.value)}
+                    className="w-full px-3.5 h-10 bg-background border border-line rounded-lg text-emphasis text-sm focus:outline-none focus:border-gray-600"
+                  />
+                  {searchedWorks.length > 0 && (
+                    <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-xl shadow-elevated max-h-48 overflow-y-auto z-50 isolate animate-slide-up divide-y divide-line-subtle">
+                      {searchedWorks.map((w) => (
+                        <div
+                          key={w.id}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.currentTarget.click();
+                            }
+                          }}
+                          onClick={() => {
+                            setSelectedWork(w);
+                            setWorkSearchQuery("");
+                            setSearchedWorks([]);
+                            setNewBoardCode("comment");
+                          }}
+                          className="p-2.5 hover:bg-emphasis/[0.04] cursor-pointer flex items-center justify-between text-text-body hover:text-emphasis text-sm"
+                        >
+                          <span className="font-medium truncate">{w.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] gap-3 shrink-0" data-mf-composer-meta="">
             {/* Searchable board selector */}
-            <div className="md:col-span-3 relative" ref={boardDropdownRef}>
+            <div className="relative min-w-0" data-mf-composer-board="" ref={boardDropdownRef}>
               <button
                 type="button"
+                aria-label={t("community.board")}
+                aria-expanded={boardDropdownOpen}
                 onClick={() => setBoardDropdownOpen((v) => !v)}
                 className="w-full px-3.5 h-10 bg-background border border-line rounded-lg text-emphasis text-sm flex items-center justify-between gap-2 hover:border-gray-600 transition-colors duration-fast ease-soft cursor-pointer"
               >
@@ -545,61 +684,9 @@ export default function PostComposer({
               )}
             </div>
 
-            {/* Work link */}
-            <div className="md:col-span-4 relative">
-              {selectedWork ? (
-                <div className="flex items-center justify-between px-3.5 h-10 rounded-lg bg-background border border-emerald-500/40 text-success-soft">
-                  <span className="flex items-center gap-2 truncate text-sm font-semibold">
-                    <BookOpen className="w-4 h-4 text-success shrink-0" />
-                    <span className="truncate">{selectedWork.title}</span>
-                  </span>
-                  <button type="button" onClick={() => setSelectedWork(null)} className="text-text-muted hover:text-emphasis ml-1.5 cursor-pointer">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <input
-                    type="text"
-                    placeholder={t("community.workSearchPlaceholder")}
-                    value={workSearchQuery}
-                    onChange={(e) => setWorkSearchQuery(e.target.value)}
-                    className="w-full px-3.5 h-10 bg-background border border-line rounded-lg text-emphasis text-sm focus:outline-none focus:border-gray-600"
-                  />
-                  {searchedWorks.length > 0 && (
-                    <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-xl shadow-elevated max-h-48 overflow-y-auto z-50 isolate animate-slide-up divide-y divide-line-subtle">
-                      {searchedWorks.map((w) => (
-                        <div
-                          key={w.id}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              e.currentTarget.click();
-                            }
-                          }}
-                          onClick={() => {
-                            setSelectedWork(w);
-                            setWorkSearchQuery("");
-                            setSearchedWorks([]);
-                            setNewBoardCode("comment");
-                          }}
-                          className="p-2.5 hover:bg-emphasis/[0.04] cursor-pointer flex items-center justify-between text-text-body hover:text-emphasis text-sm"
-                        >
-                          <span className="font-medium truncate">{w.title}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Tags */}
-          <div className="shrink-0 space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="min-w-0 space-y-2" data-mf-composer-tags="">
+            <div className="flex min-h-10 items-center gap-2 flex-wrap">
               <span className="text-xs font-mono text-text-faint flex items-center gap-1 shrink-0 ml-1">
                 <TagIcon className="w-3.5 h-3.5" />
                 {t("community.tags")}
@@ -622,7 +709,7 @@ export default function PostComposer({
                   </button>
                 </span>
               ))}
-              <div className="relative flex-1 min-w-[180px] max-w-[260px]">
+              <div className="relative flex-1 min-w-[150px]">
                 <input
                   ref={tagInputRef}
                   type="text"
@@ -645,7 +732,7 @@ export default function PostComposer({
                       setTagDropdownOpen(false);
                     }
                   }}
-                  className="w-full pl-3.5 pr-2.5 h-9 bg-background border border-line rounded-full text-emphasis text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-500/50"
+                  className="w-full pl-3.5 pr-2.5 h-10 bg-background border border-line rounded-lg text-emphasis text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-500/50"
                 />
                 {tagDropdownOpen && tagInput.trim() && (
                   <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-card shadow-elevated z-50 isolate animate-slide-up max-h-40 overflow-y-auto divide-y divide-line-subtle">
@@ -678,21 +765,11 @@ export default function PostComposer({
             </div>
           </div>
 
+          </div>
+
           <MarkdownToolbar textareaRef={contentRef} onInsert={setContentFromToolbar} t={t} />
 
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 min-h-0">
-            <textarea
-              ref={contentRef}
-              required
-              placeholder={t("community.contentPlaceholder")}
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              className="w-full h-full p-3.5 bg-background border border-line rounded-lg text-emphasis text-sm focus:outline-none focus:border-gray-600 resize-none font-mono leading-relaxed overflow-y-auto"
-            />
-            <div className="hidden md:block h-full p-3.5 bg-background/50 border border-line rounded-lg overflow-y-auto">
-              {newContent ? <MarkdownRenderer content={newContent} /> : <span className="text-gray-600 font-mono">{t("community.livePreview")}</span>}
-            </div>
-          </div>
+          <ComposerEditor contentRef={contentRef} content={newContent} onChange={setNewContent} placeholder={t("community.contentPlaceholder")} t={t} />
 
           <div className="flex items-center justify-end pt-2.5 border-t border-line shrink-0">
             <div className="flex items-center gap-2.5">
@@ -709,7 +786,7 @@ export default function PostComposer({
               <button
                 type="submit"
                 disabled={submitting || !selectedBoardObj}
-                className="px-5 h-10 rounded-lg bg-white hover:bg-gray-200 text-black font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
+                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-white font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>{submitting ? t("community.creating") : t("community.createTopic")}</span>
@@ -718,7 +795,7 @@ export default function PostComposer({
           </div>
         </form>
       ) : (
-        <form onSubmit={handleReply} className="flex-1 flex flex-col p-4 gap-3.5 overflow-hidden">
+        <form onSubmit={handleReply} className="flex-1 min-h-0 flex flex-col p-4 gap-3.5 overflow-y-auto">
           {/* Quoted banner */}
           {activeQuotedPost && (
             <div className="flex items-center justify-between px-3.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-warn-soft text-xs sm:text-sm shrink-0">
@@ -741,19 +818,7 @@ export default function PostComposer({
 
           <MarkdownToolbar textareaRef={contentRef} onInsert={setContentFromToolbar} t={t} />
 
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 min-h-0">
-            <textarea
-              ref={contentRef}
-              required
-              placeholder={t("community.replyPlaceholder")}
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              className="w-full h-full p-3.5 bg-background border border-line rounded-lg text-emphasis text-sm focus:outline-none focus:border-gray-600 resize-none font-mono leading-relaxed overflow-y-auto"
-            />
-            <div className="hidden md:block h-full p-3.5 bg-background/50 border border-line rounded-lg overflow-y-auto">
-              {newContent ? <MarkdownRenderer content={newContent} /> : <span className="text-gray-600 font-mono">{t("community.livePreview")}</span>}
-            </div>
-          </div>
+          <ComposerEditor contentRef={contentRef} content={newContent} onChange={setNewContent} placeholder={t("community.replyPlaceholder")} t={t} />
 
           <div className="flex items-center justify-end pt-2.5 border-t border-line shrink-0">
             <div className="flex items-center gap-2.5">
@@ -770,7 +835,7 @@ export default function PostComposer({
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 h-10 rounded-lg bg-white hover:bg-gray-200 text-black font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
+                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-white font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>{submitting ? t("community.creating") : t("community.reply")}</span>
@@ -780,6 +845,7 @@ export default function PostComposer({
         </form>
       )}
     </div>
+    </PageContainer>
   );
 }
 

@@ -218,9 +218,6 @@ export default function TopicDetailPage() {
 
  return (
  <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white pb-24 text-sm">
- <div className="absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
- <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
- <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
  <Navbar />
 
  <PageShell width="page">

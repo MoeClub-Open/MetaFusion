@@ -25,7 +25,6 @@ import {
  Menu,
  Hash,
  Archive,
-  ChevronRight,
   ChevronDown,
   Tag as TagIcon,
   Megaphone,
@@ -40,7 +39,7 @@ import {
 } from "lucide-react";
 import { TabPanel } from "@/components/ui/TabPanel";
 import ReportButton from "@/components/report/ReportButton";
-import { PageContainer } from "@/components/ui/PageShell";
+import { PageShell } from "@/components/ui/PageShell";
 
 // 列表页宽：与后端 /community/topics 的缺省 limit 一致，翻页后第一页窗口与改动前完全相同；
 // 显式传窗口取代「缺省 = 第一页」的假设，第 31 条起才取得到（后端上限 100）。
@@ -292,37 +291,15 @@ function CommunityContent() {
 
  return (
  <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white text-sm">
- {/* 装饰背景只在 lg 以上铺：本页的内容列（侧栏 + 主题流）自写 bg-background，
-     比视口窄一个 PageContainer 内边距。小屏上那 16px 会把光晕重新露出来，
-     读成左边缘一条竖向色差带（首页/设置页的列不写背景，所以只有本页有）。 */}
- <div className="hidden lg:block absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
- <div className="hidden lg:block absolute -top-40 -left-40 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
- <div className="hidden lg:block absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
  <Navbar />
 
  {/* Forum layout: sidebar + topic stream */}
- <PageContainer className="relative z-10 flex-1 flex items-stretch lg:gap-6">
+ <PageShell spacing="none" contentClassName="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-5 items-start">
  {/* ===================== Left board sidebar ===================== */}
  {/* Desktop */}
- <aside className="hidden lg:flex w-[280px] shrink-0 flex-col border-r border-line bg-background sticky top-[var(--mf-header-h)] h-[calc(100vh-var(--mf-header-h))] overflow-hidden">
+ <aside className="hidden lg:flex min-w-0 flex-col rounded-xl border border-line bg-surface sticky top-[calc(var(--mf-header-h)+1rem)] max-h-[calc(100dvh-var(--mf-header-h)-2rem)] overflow-hidden">
  <div className="flex-1 overflow-y-auto">
  <div className="p-4 space-y-5">
- {/* CTA */}
- {user ? (
- <button
- onClick={() => setIsComposerOpen(true)}
- disabled={!canCreateTopic}
- className="w-full py-2 rounded-lg bg-white hover:bg-gray-100 text-black text-sm font-bold flex items-center justify-center gap-2 transition-colors duration-fast ease-soft shadow-sm disabled:opacity-50"
- >
- <Plus className="w-4 h-4 stroke-[2.5]" />
- <span>{t("community.publishNew")}</span>
- </button>
- ) : (
- <div className="rounded-lg border border-dashed border-line bg-surface/60 p-4 text-center">
- <p className="text-sm text-text-faint leading-relaxed">{t("community.loginToCreate")}</p>
- </div>
- )}
-
  {/* Board list — single source: Latest-Top / search live in top bar */}
  <div className="space-y-1">
  <h3 className="px-2.5 text-xs font-mono font-bold tracking-widest text-text-faint uppercase flex items-center justify-between">
@@ -375,7 +352,6 @@ function CommunityContent() {
 	 {badge}
 	 </span>
 	 )}
-	 {isActive && <ChevronRight className="w-4 h-4 text-text-faint shrink-0" />}
 	 </button>
 	 );
 	 })}
@@ -383,13 +359,6 @@ function CommunityContent() {
 	 </div>
 
 	 </div>
-	 </div>
-	 <div className="p-4 border-t border-line text-xs font-mono text-gray-600 flex items-center justify-between">
-	 <span>MetaFusion Forum</span>
-	 <span className="flex items-center gap-2">
-	 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-	 {t("community.online")}
-	 </span>
 	 </div>
 	 </aside>
 
@@ -452,15 +421,15 @@ function CommunityContent() {
 	 )}
 
 	{/* ===================== Main Topic List ===================== */}
-	<main className="mf-enter flex-1 min-w-0 flex flex-col bg-background">
+	<div className="min-w-0 flex flex-col">
 	  {/* Discourse-style Hero Search & Filter Header */}
-	  <div className="sticky top-[var(--mf-header-h)] z-20 bg-background/95 backdrop-blur border-b border-line">
-	    <div className="py-4 space-y-3.5 w-full">
+	  <div className="sticky top-[var(--mf-header-h)] z-20 rounded-xl border border-line bg-surface/95 backdrop-blur">
+	    <div className="p-4 space-y-3.5 w-full">
 	      {/* Row 1: Discourse-style Prominent Centered Search Bar */}
 	      <div className="flex items-center gap-2.5">
 	        <button
 	          onClick={() => setSidebarOpen(true)}
-	          className="lg:hidden p-2 rounded-md border border-line bg-surface text-text-muted hover:text-emphasis"
+	          aria-label={t("community.boardNav")} className="lg:hidden p-2 rounded-md border border-line bg-surface text-text-muted hover:text-emphasis"
 	        >
 	          <Menu className="w-4 h-4" />
 	        </button>
@@ -920,8 +889,8 @@ function CommunityContent() {
  )}
  </TabPanel>
  </div>
- </main>
- </PageContainer>
+ </div>
+ </PageShell>
 
  {/* Composer Drawer — unified PostComposer */}
  {isComposerOpen && (

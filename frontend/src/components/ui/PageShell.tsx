@@ -22,15 +22,18 @@ export function PageContainer({
   width = "page",
   as: Tag = "div",
   className = "",
+  style,
   children,
 }: {
   width?: PageWidth;
   as?: "div" | "main" | "header" | "footer" | "section";
   className?: string;
+  /** 可调宽度的页面浮层可覆盖尺寸，仍复用本容器的默认宽度与水平留白。 */
+  style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   return (
-    <Tag data-mf-pagecontainer={width} className={`mx-auto w-full max-w-page px-4 sm:px-6 lg:px-8 ${className}`}>
+    <Tag data-mf-pagecontainer={width} style={style} className={`mx-auto w-full max-w-page px-4 sm:px-6 lg:px-8 ${className}`}>
       {width === "narrow" ? <div className="mx-auto w-full max-w-narrow">{children}</div> : children}
     </Tag>
   );
