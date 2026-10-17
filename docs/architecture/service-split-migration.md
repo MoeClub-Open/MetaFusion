@@ -76,7 +76,7 @@
 
 community/storage 通过目录 HTTP 解析当前实体身份与可见性，使用 `/api/catalog/entities/{id}/identity` 的 canonical、kind 与别名。404 表示不存在或不可见，超时与上游故障必须明确失败，不能默认公开、返回假空集合或无限重试。capabilities 只声明部署状态，不探活外围服务。
 
-账号隐私偏好由 auth 持有，`GET/PATCH /api/auth/privacy` 仅允许本人站内会话管理 `favorites_public` / `email_public`。公开账号资料按邮箱偏好投影；community 每次读取收藏列表或统计时通过 auth 公开资料取得最新偏好，不缓存、不跨库查询。收藏不公开时向非本人返回 `visible=false` 的空列表及 `favorites_count=null`，本人读取不受影响；依赖故障明确失败，不默认公开。
+账号隐私偏好由 auth 持有，`GET/PATCH /api/auth/privacy` 仅允许本人站内会话管理 `favorites_public` / `email_public`。公开账号资料按邮箱偏好投影，仅第一方本人会话可读取私有邮箱；community 每次读取收藏列表或统计时通过 auth 公开资料取得最新偏好，不缓存、不跨库查询。收藏不公开时向非本人返回 `visible=false` 的空列表及 `favorites_count=null`，本人站内会话或合法 PAT 读取不受影响，第三方身份没有本人豁免；依赖故障明确失败，不默认公开。
 
 目录合并写入 entity.merged outbox，修订和事件与事实同事务。OpenSearch 与启用的 storage-lifecycle-v1 分别以 consumer/event_id 的 deliveries 确认成功；存储生命周期通过受密钥保护的内部 HTTP 投递，详情见[存储运行约定](./storage-operations.md)。尚无通用跨业务广播消费者。搜索消费与重投细节见[核心实现](./catalog-core-implementation.md#搜索与索引同步)。
 
