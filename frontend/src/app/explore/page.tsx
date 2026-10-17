@@ -692,7 +692,7 @@ function ExploreInner() {
             </div>
 
             {appliedFilters.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {currentTags.length > 1 && (
                   <span className="text-xs font-medium text-text-body">{t("catalog.tagMatchSummary", { mode: t(currentTagsMode === "all" ? "catalog.tagMatchAll" : "catalog.tagMatchAny") })}</span>
                 )}
@@ -704,13 +704,13 @@ function ExploreInner() {
                     onClick={filter.remove}
                     aria-label={t("catalog.removeFilter", { filter: filter.label })}
                     title={filter.label}
-                    className="mf-focus inline-flex min-w-0 max-w-full items-center gap-1.5 min-h-9 max-sm:min-h-[44px] rounded-full border border-primary/25 bg-primary/10 px-3 text-xs text-primary hover:bg-primary/20 transition-colors duration-fast ease-soft"
+                    className="mf-focus inline-flex min-w-0 max-w-full items-center gap-1 min-h-6 rounded-chip border border-primary/25 bg-primary/10 px-2 text-xs text-primary hover:bg-primary/20 transition-colors duration-fast ease-soft"
                   >
                     <span className="truncate">{filter.label}</span>
-                    <X className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                    <X className="w-3 h-3 shrink-0" aria-hidden />
                   </button>
                 ))}
-                <button type="button" onClick={clearFilters} className="mf-focus min-h-9 max-sm:min-h-[44px] px-2 text-xs text-text-muted hover:text-primary hover:underline">{t("catalog.clearFilters")}</button>
+                <button type="button" onClick={clearFilters} className="mf-focus min-h-6 rounded-chip px-1 text-xs text-text-muted hover:text-primary hover:underline">{t("catalog.clearFilters")}</button>
               </div>
             )}
 
