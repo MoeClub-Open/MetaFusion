@@ -190,7 +190,7 @@ export function Select({
             aria-activedescendant={`${listId}-${activeIndex}`}
             style={menuStyle}
             className={cx(
-              "list-none overflow-y-auto rounded-md border border-line bg-surface shadow-elevated py-1",
+              "list-none overflow-y-auto rounded-panel border border-line bg-surface shadow-elevated py-1",
               menuClassName
             )}
           >

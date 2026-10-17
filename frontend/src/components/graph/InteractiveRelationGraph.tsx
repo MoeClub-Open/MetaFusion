@@ -1005,7 +1005,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       className={`relative flex flex-col overflow-hidden select-none transition-all duration-base ease-soft ${
         isFullscreen
           ? "fixed top-[var(--mf-header-h)] left-0 right-0 bottom-0 z-30 w-full h-[calc(100dvh-var(--mf-header-h))] max-w-none max-h-none m-0 rounded-none border-t border-border/60 bg-background/98 backdrop-blur-md text-foreground shadow-2xl"
-          : `rounded-2xl border border-border/80 bg-card/60 backdrop-blur-md shadow-sm ${className}`
+          : `rounded-card border border-border/80 bg-card/60 backdrop-blur-md shadow-sm ${className}`
       }`}
       style={isFullscreen ? undefined : { height }}
     >
@@ -1614,7 +1614,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
       {/* 侧边节点详细信息检查器 (Property Inspector Popover) */}
       {showInspector && selectedNode && (
-        <div className="absolute top-14 right-4 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card/98 backdrop-blur-xl p-4 shadow-2xl z-20 space-y-3.5 animate-in duration-200">
+        <div className="absolute top-14 right-4 w-80 max-w-[calc(100vw-2rem)] rounded-panel border border-border bg-card/98 backdrop-blur-xl p-4 shadow-2xl z-20 space-y-3.5 animate-in duration-200">
           <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-border/60">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1">

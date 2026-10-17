@@ -37,7 +37,7 @@ export default function DirectMessageModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
       <div
-        className="w-full max-w-lg bg-surface border border-line rounded-2xl shadow-2xl flex flex-col h-[600px] max-h-[90vh] overflow-hidden animate-scale-up"
+        className="w-full max-w-lg bg-surface border border-line rounded-panel shadow-2xl flex flex-col h-[600px] max-h-[90vh] overflow-hidden animate-scale-up"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

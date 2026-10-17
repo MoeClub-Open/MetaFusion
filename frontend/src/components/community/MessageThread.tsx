@@ -249,7 +249,7 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
                 <div key={msg.id} className="flex flex-col" style={{ alignItems: mine ? "flex-end" : "flex-start" }}>
                   <div
                     className={
-                      "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm " +
+                      "max-w-[80%] rounded-card px-3.5 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm " +
                       (mine
                         ? "bg-primary text-white rounded-tr-xs"
                         : "bg-surface border border-line text-text-strong rounded-tl-xs")

@@ -236,7 +236,7 @@ export function Combobox({
             ref={menuRef}
             style={menuStyle}
             className={cx(
-              "overflow-hidden rounded-md border border-line bg-surface shadow-elevated",
+              "overflow-hidden rounded-panel border border-line bg-surface shadow-elevated",
               menuClassName
             )}
           >

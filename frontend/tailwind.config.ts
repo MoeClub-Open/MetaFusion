@@ -129,25 +129,25 @@ const config: Config = {
           "serif",
         ],
       },
-      // 紧凑目录的圆角层级：标签 4 / 控件 6 / 卡片 8 / 面板 10。
-      // 旧的尺寸别名与语义名同值，避免不同页面的同类容器曲率不一致。
+      // 圆角只来自 globals.css 的语义变量：小标记 4 / 控件与卡片 8 / 浮层 12。
+      // 常用尺寸类共享同一套弧度，页面不再因选择 md/lg/xl 而出现不同曲率。
       borderRadius: {
         none: "0px",
-        xs: "3px",
-        sm: "4px",
-        DEFAULT: "6px",
-        md: "6px",
-        lg: "8px",
-        xl: "10px",
-        "2xl": "12px",
-        "3xl": "16px",
-        card: "8px",
-        panel: "10px",
-        control: "6px",
-        chip: "4px",
-        tech: "6px",
-        pill: "9999px",
-        full: "9999px",
+        xs: "var(--radius-chip)",
+        sm: "var(--radius-chip)",
+        DEFAULT: "var(--radius-control)",
+        md: "var(--radius-control)",
+        lg: "var(--radius-card)",
+        xl: "var(--radius-card)",
+        "2xl": "var(--radius-panel)",
+        "3xl": "var(--radius-panel)",
+        card: "var(--radius-card)",
+        panel: "var(--radius-panel)",
+        control: "var(--radius-control)",
+        chip: "var(--radius-chip)",
+        tech: "var(--radius-control)",
+        pill: "var(--radius-round)",
+        full: "var(--radius-round)",
       },
       // v3 默认间距刻度没有 15 与 6.5：顶栏 sm:h-15（3.75rem，与 --mf-header-h 对齐）
       // 与 h-6.5（1.625rem）原本不生成，等于 h-15/h-6.5 写了没效果。

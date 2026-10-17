@@ -173,7 +173,7 @@ export function LanguagePicker({
 
       {open && (
         <div
-          className={`${inline ? "relative" : "relative sm:absolute sm:min-w-[19rem]"} left-0 z-50 mt-1 w-full rounded-card border border-line bg-surface shadow-elevated p-1.5`}
+          className={`${inline ? "relative" : "relative sm:absolute sm:min-w-[19rem]"} left-0 z-50 mt-1 w-full rounded-panel border border-line bg-surface shadow-elevated p-1.5`}
           onClick={(event) => event.stopPropagation()}
         >
           <input

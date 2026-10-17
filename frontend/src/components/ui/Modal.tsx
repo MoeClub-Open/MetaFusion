@@ -109,7 +109,7 @@ export function Modal({
  aria-labelledby={titleId}
  tabIndex={-1}
  onClick={(e) => e.stopPropagation()}
- className={`w-full min-w-0 ${maxWidth} rounded-lg border border-line bg-surface p-5 sm:p-6 space-y-4 shadow-elevated max-h-[90dvh] ${footer ? "flex flex-col overflow-hidden" : "overflow-y-auto"} outline-none`}
+ className={`w-full min-w-0 ${maxWidth} rounded-panel border border-line bg-surface p-5 sm:p-6 space-y-4 shadow-elevated max-h-[90dvh] ${footer ? "flex flex-col overflow-hidden" : "overflow-y-auto"} outline-none`}
  >
  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line-subtle pb-3">
  <h3 id={titleId} className="min-w-0 text-sm font-semibold text-text-strong flex items-center gap-2 break-words">

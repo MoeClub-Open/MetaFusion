@@ -191,7 +191,7 @@ export function SearchSuggest({
           id={listId}
           role="listbox"
           aria-label={t("search.suggestions")}
-          className="absolute left-0 right-0 top-full mt-2 z-50 max-h-[45dvh] overflow-y-auto rounded-xl border border-line bg-surface shadow-elevated"
+          className="absolute left-0 right-0 top-full mt-2 z-50 max-h-[45dvh] overflow-y-auto rounded-panel border border-line bg-surface shadow-elevated"
         >
           {items.map((item, i) => {
             const KindIcon = kindIcon(item.kind);

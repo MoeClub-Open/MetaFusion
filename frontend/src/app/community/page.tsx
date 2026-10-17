@@ -503,7 +503,7 @@ function CommunityContent() {
 	            </button>
 
 	            {boardDropdownOpen && (
-	              <div className="absolute left-0 top-full mt-1.5 w-72 rounded-lg bg-surface border border-line shadow-xl z-50 p-2 space-y-2 animate-in duration-100">
+	              <div className="absolute left-0 top-full mt-1.5 w-72 rounded-panel bg-surface border border-line shadow-xl z-50 p-2 space-y-2 animate-in duration-100">
 	                <div className="relative">
 	                  <Search className="w-3.5 h-3.5 text-text-faint absolute left-2.5 top-2.5" />
 	                  <input
@@ -595,7 +595,7 @@ function CommunityContent() {
 	            </button>
 
 	            {tagDropdownOpen && (
-	              <div className="absolute left-0 top-full mt-1.5 w-64 rounded-lg bg-surface border border-line shadow-xl z-50 p-2 space-y-2 animate-in duration-100">
+	              <div className="absolute left-0 top-full mt-1.5 w-64 rounded-panel bg-surface border border-line shadow-xl z-50 p-2 space-y-2 animate-in duration-100">
 	                <div className="relative">
 	                  <Search className="w-3.5 h-3.5 text-text-faint absolute left-2.5 top-2.5" />
 	                  <input

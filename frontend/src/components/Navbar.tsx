@@ -365,7 +365,7 @@ export const Navbar: React.FC<{
               {isUserMenuOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 mt-2 w-56 rounded-xl border border-line bg-surface shadow-elevated py-1.5 z-50 animate-slide-up text-xs"
+                  className="absolute right-0 mt-2 w-56 rounded-panel border border-line bg-surface shadow-elevated py-1.5 z-50 animate-slide-up text-xs"
                 >
                   <div className="px-3.5 py-2.5 border-b border-line-subtle flex items-center gap-2.5">
                     <UserAvatar user={user} size="md" shape="rounded" ring />

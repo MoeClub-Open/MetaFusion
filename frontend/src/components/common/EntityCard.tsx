@@ -58,7 +58,7 @@ export function EntityCard({
         /* 3:4 仅用于加载中与无图占位，实际封面按原图比例撑开。 */
         aspectRatio={GRID_COVER_ASPECT}
         badge={
-          <span className="px-2 py-0.5 rounded-md bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
+          <span className="px-2 py-0.5 rounded-chip bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
             <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
             <span className="truncate max-w-[85px]">{badgeLabel}</span>
           </span>

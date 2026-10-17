@@ -53,7 +53,7 @@ export function LocaleSwitcher({ compact }: { compact?: boolean }) {
  {isOpen && (
  <div
  onClick={(e) => e.stopPropagation()}
- className="absolute right-0 mt-2 w-48 rounded-card border border-line bg-surface shadow-elevated p-1.5 z-50 animate-slide-up text-sm"
+ className="absolute right-0 mt-2 w-48 rounded-panel border border-line bg-surface shadow-elevated p-1.5 z-50 animate-slide-up text-sm"
  >
  <div className="px-3.5 py-2 font-mono text-xs tracking-[0.14em] text-text-muted border-b border-line-subtle mb-1">
  {t("locale.languageChoice")}

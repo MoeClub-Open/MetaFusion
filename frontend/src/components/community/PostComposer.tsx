@@ -504,7 +504,7 @@ export default function PostComposer({
     <div
       role="dialog"
       aria-label={headerTitle}
-      className={`pointer-events-auto w-full bg-surface border border-line rounded-xl shadow-elevated flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] ${expanded ? "h-[calc(100dvh-var(--mf-header-h)-2rem)]" : "h-[min(640px,calc(100dvh-var(--mf-header-h)-2rem))]"}`}
+      className={`pointer-events-auto w-full bg-surface border border-line rounded-panel shadow-elevated flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] ${expanded ? "h-[calc(100dvh-var(--mf-header-h)-2rem)]" : "h-[min(640px,calc(100dvh-var(--mf-header-h)-2rem))]"}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-background border-b border-line shrink-0">
@@ -579,7 +579,7 @@ export default function PostComposer({
                     className="w-full px-3.5 h-10 bg-background border border-line rounded-lg text-emphasis text-sm focus:outline-none focus:border-gray-600"
                   />
                   {searchedWorks.length > 0 && (
-                    <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-xl shadow-elevated max-h-48 overflow-y-auto z-50 isolate animate-slide-up divide-y divide-line-subtle">
+                    <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-panel shadow-elevated max-h-48 overflow-y-auto z-50 isolate animate-slide-up divide-y divide-line-subtle">
                       {searchedWorks.map((w) => (
                         <div
                           key={w.id}
@@ -632,7 +632,7 @@ export default function PostComposer({
                 <ChevronDown className={`w-4 h-4 text-text-faint shrink-0 transition-transform duration-base ease-soft ${boardDropdownOpen ? "rotate-180" : ""}`} />
               </button>
               {boardDropdownOpen && (
-                <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-card shadow-elevated z-50 isolate animate-slide-up overflow-hidden flex flex-col">
+                <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-panel shadow-elevated z-50 isolate animate-slide-up overflow-hidden flex flex-col">
                   <div className="p-2 border-b border-line">
                     <div className="relative">
                       <Search className="w-3 h-3 text-text-faint absolute left-2 top-2.5" />
@@ -735,7 +735,7 @@ export default function PostComposer({
                   className="w-full pl-3.5 pr-2.5 h-10 bg-background border border-line rounded-lg text-emphasis text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-500/50"
                 />
                 {tagDropdownOpen && tagInput.trim() && (
-                  <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-card shadow-elevated z-50 isolate animate-slide-up max-h-40 overflow-y-auto divide-y divide-line-subtle">
+                  <div className="absolute top-full mt-2 left-0 right-0 bg-surface/95 backdrop-blur-2xl border border-line rounded-panel shadow-elevated z-50 isolate animate-slide-up max-h-40 overflow-y-auto divide-y divide-line-subtle">
                     {filteredAvailableTags.slice(0, 8).map((ftag) => (
                       <button
                         key={ftag.id}

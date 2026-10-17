@@ -45,6 +45,8 @@
      - 这些定义的名称在后台配置并保存多语言字典（`Names map[string]string`，含 `zh-CN` / `zh-TW` / `ja-JP` / `en-US` 四语，见下 §2.3）。
      - 前端展示时按当前 `locale` 统一调用 `resolveLocalizedName`（`frontend/src/lib/localizedNames.ts`）；**严禁前端写死方案或字典映射**。
 
+主站圆角统一引用 `frontend/src/app/globals.css` 的 `--radius-*`，Tailwind 仅映射语义变量：小标记 4px、普通控件和卡片 8px、弹窗与浮层 12px。圆形头像、胶囊标签与直角拼接保留自身形状；编辑器原生 CSS 同样引用变量，页面不再单独指定圆角数值。
+
 2. **探索中心 (`/explore`) 规范**：
    - 实体骨架筛选器（Kinds）按结构化规范呈现，名称走服务端 `definitions.kinds`（四语）。
    - 描述性分类与主题筛选使用开放标签 `attributes.tags`；货架规则承担策展式收录。字段可写性按 `applicable_kinds`，不按标签或隐含媒体分类推断。
