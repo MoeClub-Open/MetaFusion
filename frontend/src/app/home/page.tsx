@@ -172,20 +172,6 @@ export default function HomePage() {
           )}
         </div>
 
-        {!showSkeleton && visibleSections.length > 1 && (
-          <nav aria-label={t("home.sections")} className="flex flex-wrap items-center gap-2">
-            {visibleSections.map(({ shelf }) => {
-              const Icon = iconFor(shelf);
-              return (
-                <a key={shelf.slug} href={`#shelf-${shelf.slug}`} className="mf-focus inline-flex items-center gap-1.5 min-h-9 max-sm:min-h-[44px] rounded-full border border-line bg-surface px-3 text-xs font-medium text-text-body hover:border-primary/40 hover:text-primary transition-colors duration-fast ease-soft">
-                  <Icon className="hidden sm:block w-3.5 h-3.5" aria-hidden />
-                  <span>{shelfTitle(shelf, locale)}</span>
-                </a>
-              );
-            })}
-          </nav>
-        )}
-
         {failed && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-warn-soft text-xs">
             <span>{t("catalog.connectionError")}</span>
