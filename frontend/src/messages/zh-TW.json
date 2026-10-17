@@ -2128,5 +2128,9 @@
   "revisions.fieldState": "生命週期",
   "editor.diff.fieldState": "生命週期",
   "catalog.pageSize": "每頁顯示筆數",
-  "catalog.pageSizeOption": "{n} 筆/頁"
+  "catalog.pageSizeOption": "{n} 筆/頁",
+  "developer.apiKeyScope.catalog.review.bypass": "目錄提交免審",
+  "developer.apiKeyScope.catalog.review.manage": "審核目錄提交",
+  "developer.apiKeyScope.community.rate_limits.manage": "管理互動限流",
+  "developer.apiKeyReviewHint": "編目提交是否免審取決於帳號目前權限組，無須為 Key 另行勾選免審。Key 仍只允許所選操作。"
 }

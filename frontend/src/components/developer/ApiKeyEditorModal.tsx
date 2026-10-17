@@ -58,6 +58,7 @@ export function ApiKeyEditorModal({ open, token, onClose, onCreated, onSaved }: 
       </select></label>}
       <PermissionScopePicker options={options} grantable={grantable} value={scopes} onChange={setScopes} disabled={busy} />
       <p className="text-xs text-text-faint">{t("developer.apiKeyScopesHint")}</p>
+      <p className="text-xs text-text-faint">{t("developer.apiKeyReviewHint")}</p>
       <p className="text-xs text-text-faint">{t(token ? "developer.apiKeyEditHint" : "developer.apiKeyLimitHint")}</p>
     </form>
   </Modal>;

@@ -19,6 +19,38 @@ func reviewEditor() User {
 	return u
 }
 
+func TestPostgresPATAccountReviewExemptionAndScopedEditing(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	e := f.save(Entity{Kind: "work", Title: "PAT account exemption"})
+	u := User{ID: f.u.ID, Username: f.u.Username, FromPAT: true, CatalogReviewExempt: true, Permissions: []string{PermissionEntityEdit}}
+	in := fixtureCommit(f, updateCommit(e, patchValue("/attributes/tags", []string{"exempt"})))
+	out, err := f.s.PushCommit(ctx, in, u, false)
+	if err != nil || !out.Applied || out.ReviewDecision != "exempt" {
+		t.Fatalf("account-exempt PAT queued: %+v %v", out, err)
+	}
+	e, err = f.s.Get(ctx, e.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.CatalogReviewExempt = false
+	queued := fixtureCommit(f, updateCommit(e, patchValue("/attributes/tags", []string{"pending"})))
+	out, err = f.s.PushCommit(ctx, queued, u, false)
+	if err != nil || out.Applied || out.ReviewStatus != "pending_review" {
+		t.Fatalf("ordinary PAT did not queue: %+v %v", out, err)
+	}
+	u.CatalogReviewExempt = true
+	u.Permissions = []string{"auth.audit.read"}
+	denied := fixtureCommit(f, updateCommit(e, patchValue("/attributes/tags", []string{"forbidden"})))
+	if _, err := f.s.PushCommit(ctx, denied, u, false); err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("read-only owner PAT edited: %v", err)
+	}
+	current, err := f.s.Get(ctx, e.ID, nil)
+	if err != nil || current.Version != e.Version || encode(current.Attributes) != encode(e.Attributes) {
+		t.Fatalf("pending/read-only submission changed facts: %+v %v", current, err)
+	}
+}
+
 func TestPostgresCommitReviewHTTPAndRelationDeletion(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

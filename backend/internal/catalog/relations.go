@@ -422,7 +422,12 @@ func attributeReferencingField(attrs map[string]any, fields []string, id string)
 
 // 关系源端遵循实体编辑权限（catalog.entity.edit）；公开目标可由受信任编辑员建立关系。
 // 两端的实际可见性与生命周期仍在 SaveRelation 中复核。
-func canWriteRelation(u User, src Entity) bool { return canEditEntity(u, src) }
+func canWriteRelation(u User, src Entity) bool {
+	if u.FromPAT && u.Can(PermissionRelationEdit) && ownedBy(src, u) && src.State == "active" {
+		return true
+	}
+	return canEditEntity(u, src)
+}
 
 func canAttachToTarget(u User, tgt Entity) bool {
 	// 审核/生命周期权（旧 admin）不受目标端否决权约束。
@@ -534,7 +539,7 @@ func attrsOrEmpty(m map[string]any) map[string]any {
 }
 
 func (s *Store) SaveRelation(ctx context.Context, input RelationEdit, u User) (Relation, error) {
-	if !u.Can(PermissionReviewBypass) {
+	if !u.CanBypassReview() {
 		return Relation{}, fmt.Errorf("commit_required")
 	}
 	var r Relation
@@ -680,7 +685,7 @@ func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEd
 }
 
 func (s *Store) DeleteRelation(ctx context.Context, id string, expected int64, note string, sources []Source, u User) error {
-	if !u.Can(PermissionReviewBypass) {
+	if !u.CanBypassReview() {
 		return fmt.Errorf("commit_required")
 	}
 	return s.writeCatalog(ctx, func(tx *sql.Tx) error { return s.deleteRelationTx(ctx, tx, id, expected, note, sources, u) })

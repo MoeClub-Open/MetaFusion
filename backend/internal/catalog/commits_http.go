@@ -45,7 +45,11 @@ func respondCommit(c *gin.Context, v CommitReceipt, err error) {
 	if errors.As(err, &opErr) {
 		code := opErr.Cause.Error()
 		auditlog.Fail(c, code)
-		c.JSON(400, gin.H{"error": code, "applied": false, "operation": opErr.Index})
+		status := 400
+		if errors.Is(opErr.Cause, errForbidden) {
+			status = 403
+		}
+		c.JSON(status, gin.H{"error": code, "applied": false, "operation": opErr.Index})
 		return
 	}
 	respond(c, v, err)

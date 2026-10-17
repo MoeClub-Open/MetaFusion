@@ -411,6 +411,8 @@ type User struct {
 	Permissions []string `json:"permissions,omitempty"`
 	// FromPAT 标记身份来自 PAT 内省，用于审计，不进 JSON 输出。
 	FromPAT bool `json:"-"`
+	// Supplied only by account-service introspection; never accepted from edits.
+	CatalogReviewExempt bool `json:"-"`
 	// IsThirdParty 标记身份来自第三方 OAuth 授权（token_use=oauth/id_token）。
 	// 管理 API 默认拒绝此类身份（见 permission.go），
 	// 因此不进 JSON 输出、不暴露给调用方。

@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -56,6 +57,51 @@ func TestCanDeniesEmptyPermissions(t *testing.T) {
 	limited := User{Permissions: []string{PermissionEntityEdit}}
 	if !limited.Can(PermissionEntityEdit) || limited.Can(PermissionLifecycleManage) {
 		t.Fatalf("permission set must be authoritative: %+v", limited)
+	}
+}
+
+func TestAccountReviewExemptionDoesNotGrantMachineEditing(t *testing.T) {
+	admin := User{ID: "owner", Permissions: []string{permissionWildcard}}
+	if !admin.CanBypassReview() {
+		t.Fatal("admin session must be exempt")
+	}
+	limited := User{ID: "owner", FromPAT: true, CatalogReviewExempt: true, Permissions: []string{"auth.audit.read"}}
+	if !limited.CanBypassReview() || limited.Can(PermissionEntityEdit) || canEditEntity(limited, Entity{State: "active", CreatedBy: "owner"}) {
+		t.Fatal("account exemption must not grant an edit scope or ownership fallback")
+	}
+	if _, err := (&Store{}).saveEntityTx(context.Background(), nil, Edit{}, limited); err != errForbidden {
+		t.Fatalf("read-only PAT creation: %v", err)
+	}
+	relationOnly := User{ID: "owner", FromPAT: true, Permissions: []string{PermissionRelationEdit}}
+	if !canWriteRelation(relationOnly, Entity{State: "active", CreatedBy: "owner"}) || canEditEntity(relationOnly, Entity{State: "active", CreatedBy: "owner"}) {
+		t.Fatal("a relationship scope may maintain its owner's relations but cannot edit entity facts")
+	}
+	for _, u := range []User{
+		{ID: "owner", Groups: []string{"admin"}, FromPAT: true},
+		{ID: "owner", Permissions: []string{PermissionReviewBypass}, FromPAT: true},
+		{ID: "owner", CatalogReviewExempt: true},
+		{ID: "owner", FromPAT: true, CatalogReviewExempt: true, IsThirdParty: true},
+	} {
+		if u.CanBypassReview() {
+			t.Fatalf("unverified review exemption: %+v", u)
+		}
+	}
+}
+
+func TestCommitOperationPermissionFailureRemainsForbidden(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	respondCommit(c, CommitReceipt{}, &commitOperationError{Index: 1, Cause: errForbidden})
+	var body struct {
+		Error     string `json:"error"`
+		Operation int    `json:"operation"`
+		Applied   bool   `json:"applied"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 403 || body.Error != "forbidden" || body.Operation != 1 || body.Applied {
+		t.Fatalf("permission error lost its status or operation: %d %s", w.Code, w.Body.String())
 	}
 }
 

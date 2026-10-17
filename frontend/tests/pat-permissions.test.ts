@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { can, grantablePermissionCodes } from "../src/lib/permissions";
+import { ALL_PERMISSION_CODES } from "../src/lib/permissions.generated";
+import { readFileSync } from "node:fs";
 
 const user = (permissions: string[]) => ({ id: "fixture", permissions });
 
@@ -23,7 +25,20 @@ test("wildcard ownership expands only to delegable concrete PAT scopes", () => {
   assert.ok(scopes.includes("community.report.review"));
   assert.ok(scopes.every((scope) => scope !== "*" && !scope.endsWith(".manage")));
   assert.ok(!scopes.includes("mcp.connect"));
+  assert.ok(!scopes.includes("catalog.review.bypass"));
   assert.ok(can(admin, "catalog.lifecycle.manage"));
+});
+
+test("permission names exist in every locale, including permissions on existing keys", () => {
+  for (const locale of ["zh-CN", "zh-TW", "en-US", "ja-JP"]) {
+    const messages = JSON.parse(readFileSync(new URL(`../src/messages/${locale}.json`, import.meta.url), "utf8"));
+    for (const code of ALL_PERMISSION_CODES) {
+      if (code === "mcp.connect") continue;
+      const label = messages[`developer.apiKeyScope.${code}`];
+      assert.ok(typeof label === "string" && label.trim() && label !== code, `${locale}: ${code}`);
+    }
+  }
+  assert.deepEqual(grantablePermissionCodes(user(["catalog.entity.edit", "catalog.review.bypass"])), ["catalog.entity.edit"]);
 });
 
 test("PAT selector preserves custom business scopes and filters custom management scopes", () => {

@@ -2128,5 +2128,9 @@
   "revisions.fieldState": "ライフサイクル",
   "editor.diff.fieldState": "ライフサイクル",
   "catalog.pageSize": "1ページの表示件数",
-  "catalog.pageSizeOption": "{n} 件/ページ"
+  "catalog.pageSizeOption": "{n} 件/ページ",
+  "developer.apiKeyScope.catalog.review.bypass": "カタログ変更の審査免除",
+  "developer.apiKeyScope.catalog.review.manage": "カタログ変更の審査",
+  "developer.apiKeyScope.community.rate_limits.manage": "コミュニティのレート制限を管理",
+  "developer.apiKeyReviewHint": "審査免除は現在のアカウント権限グループに従います。Keyで個別に指定する必要はなく、選択した操作だけが許可されます。"
 }

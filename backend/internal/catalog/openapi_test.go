@@ -41,6 +41,34 @@ func TestOpenAPIRouteCoverage(t *testing.T) {
 	}
 }
 
+func TestOpenAPIReviewWorkflowContract(t *testing.T) {
+	doc := OpenAPI()
+	paths := doc["paths"].(map[string]any)
+	list := paths["/catalog/commits"].(map[string]any)["get"].(map[string]any)
+	params := map[string]bool{}
+	for _, p := range list["parameters"].([]any) {
+		params[p.(map[string]any)["name"].(string)] = true
+	}
+	for _, name := range []string{"review_status", "limit", "offset"} {
+		if !params[name] {
+			t.Fatalf("missing submission filter: %s", name)
+		}
+	}
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	review := schemas["CommitReviewEdit"].(map[string]any)
+	decision := review["properties"].(map[string]any)["decision"].(map[string]any)
+	if encode(decision["enum"]) != `["approve","reject"]` {
+		t.Fatalf("review decisions: %+v", decision)
+	}
+	if schemas["CommitSubmissionList"].(map[string]any)["type"] != "array" {
+		t.Fatal("submission list must match its actual array response")
+	}
+	push := paths["/catalog/commits"].(map[string]any)["post"].(map[string]any)
+	if push["responses"].(map[string]any)["202"] == nil || !strings.Contains(push["description"].(string), "catalog_review_exempt") {
+		t.Fatal("missing queue or account exemption contract")
+	}
+}
+
 func TestOpenAPIReverseCoverage(t *testing.T) {
 	// 反向检查：文档中的每条 path+method 必须在 gin 路由中真实注册，
 	// 防止文档残留已删除端点（如重复的 /catalog/shelves）。

@@ -52,6 +52,18 @@ func (u User) Can(code string) bool {
 	return u.HasPermission(code)
 }
 
+// CanBypassReview follows the account's current group permissions. PAT scopes
+// still govern each operation; account eligibility never grants editing rights.
+func (u User) CanBypassReview() bool {
+	if u.ID == "" || u.IsThirdParty {
+		return false
+	}
+	if u.FromPAT {
+		return u.CatalogReviewExempt
+	}
+	return u.Can(PermissionReviewBypass)
+}
+
 // isGovernanceCode 报告是否为治理类（管理）权限码：目录侧全部自有码都是管理动作，
 // 第三方令牌默认拒绝；跨服务的码不归本服务判定（HasPermission 只认 * 通配）。
 func isGovernanceCode(code string) bool { return contains(catalogPermissionCodes, code) }

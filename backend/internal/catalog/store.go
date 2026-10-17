@@ -427,7 +427,7 @@ func audit(ctx context.Context, tx *sql.Tx, id string, version int64, u User, no
 	return err
 }
 func (s *Store) Save(ctx context.Context, input Edit, u User) (Entity, error) {
-	if !u.Can(PermissionReviewBypass) {
+	if !u.CanBypassReview() {
 		return Entity{}, fmt.Errorf("commit_required")
 	}
 	var e Entity
@@ -442,6 +442,9 @@ func (s *Store) Save(ctx context.Context, input Edit, u User) (Entity, error) {
 // saveEntityTx shares validation, facts, revisions, outbox and notifications.
 // The caller owns transaction boundaries and scoped lock order.
 func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User) (Entity, error) {
+	if u.FromPAT && !u.Can(PermissionEntityEdit) && !u.Can(PermissionLifecycleManage) {
+		return Entity{}, errForbidden
+	}
 	// Validation and evidence inheritance may mutate nested maps/slices. Every
 	// attempt owns a fresh copy; retries cannot change the request or prior state.
 	var e Entity

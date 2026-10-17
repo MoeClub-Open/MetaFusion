@@ -21,7 +21,7 @@ func canEditEntity(u User, e Entity) bool {
 	if u.Can(PermissionEntityEdit) {
 		return true
 	}
-	return ownedBy(e, u)
+	return !u.FromPAT && ownedBy(e, u)
 }
 
 // Applied facts always have an active lifecycle and a reviewed marker.

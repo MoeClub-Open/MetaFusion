@@ -18,6 +18,7 @@ import {
   CATALOG_ENTITY_EDIT,
   CATALOG_LIFECYCLE_MANAGE,
   CATALOG_REVIEW_MANAGE,
+  CATALOG_REVIEW_BYPASS,
   CATALOG_SHELVES_MANAGE,
   COMMUNITY_BOARD_MANAGE,
   COMMUNITY_POST_MODERATE,
@@ -78,7 +79,7 @@ export function grantablePermissionCodes(user: AnyUser | null | undefined): stri
   if (!user) return [];
   const perms = user.permissions || [];
   const known = ALL_PERMISSION_CODES as readonly string[];
-  const delegable = (code: string) => code !== "*" && code !== MCP_CONNECT && !code.endsWith(".manage");
+  const delegable = (code: string) => code !== "*" && code !== MCP_CONNECT && code !== CATALOG_REVIEW_BYPASS && !code.endsWith(".manage");
   if (perms.includes("*")) return known.filter(delegable);
   if (perms.length > 0) {
     const listed = known.filter((code) => delegable(code) && perms.includes(code));

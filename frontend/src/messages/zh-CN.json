@@ -2128,5 +2128,9 @@
   "revisions.fieldState": "生命周期",
   "editor.diff.fieldState": "生命周期",
   "catalog.pageSize": "每页显示条数",
-  "catalog.pageSizeOption": "{n} 条/页"
+  "catalog.pageSizeOption": "{n} 条/页",
+  "developer.apiKeyScope.catalog.review.bypass": "目录提交免审",
+  "developer.apiKeyScope.catalog.review.manage": "审核目录提交",
+  "developer.apiKeyScope.community.rate_limits.manage": "管理互动限流",
+  "developer.apiKeyReviewHint": "编目提交是否免审取决于账号当前权限组，无需为 Key 单独勾选免审。Key 仍只允许所选操作。"
 }

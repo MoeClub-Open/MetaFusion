@@ -2128,5 +2128,9 @@
   "revisions.fieldState": "Lifecycle",
   "editor.diff.fieldState": "Lifecycle",
   "catalog.pageSize": "Items per page",
-  "catalog.pageSizeOption": "{n} / page"
+  "catalog.pageSizeOption": "{n} / page",
+  "developer.apiKeyScope.catalog.review.bypass": "Bypass catalog review",
+  "developer.apiKeyScope.catalog.review.manage": "Review catalog submissions",
+  "developer.apiKeyScope.community.rate_limits.manage": "Manage community rate limits",
+  "developer.apiKeyReviewHint": "Catalog review exemption follows your account's current permission groups. Keys need no separate review exemption and still allow only the selected operations."
 }

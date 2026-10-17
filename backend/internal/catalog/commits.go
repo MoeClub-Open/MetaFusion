@@ -455,7 +455,7 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	review, approving := ctx.Value(commitReviewContextKey{}).(commitReviewApproval)
-	queued := !preview && !approving && !u.Can(PermissionReviewBypass)
+	queued := !preview && !approving && !u.CanBypassReview()
 	var out CommitReceipt
 	err = s.writeCatalog(ctx, func(tx *sql.Tx) error {
 		// A confirmed serialization rollback restarts the complete commit. Never

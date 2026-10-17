@@ -26,12 +26,38 @@ func patToken(fill byte) string {
 
 // fakeAuthDoc 与账号服务内省响应同形。
 type fakeAuthDoc struct {
-	Valid       bool     `json:"valid"`
-	UserID      string   `json:"user_id"`
-	Username    string   `json:"username"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"permissions"`
-	ExpiresAt   string   `json:"expires_at,omitempty"`
+	Valid               bool     `json:"valid"`
+	UserID              string   `json:"user_id"`
+	Username            string   `json:"username"`
+	Role                string   `json:"role"`
+	Permissions         []string `json:"permissions"`
+	CatalogReviewExempt bool     `json:"catalog_review_exempt"`
+	ExpiresAt           string   `json:"expires_at,omitempty"`
+}
+
+func TestPATAccountReviewExemptionSurvivesIntrospectionAndExpiresWithCache(t *testing.T) {
+	now := time.Now()
+	token := patToken('x')
+	f, srv := newFakeAuth(t, map[string]fakeAuthDoc{token: {Valid: true, UserID: "admin-owner", Permissions: []string{PermissionEntityEdit}, CatalogReviewExempt: true}})
+	p := newPATIntrospector(srv.URL, func() time.Time { return now })
+	ident, err := p.Introspect(context.Background(), token)
+	if err != nil || ident == nil {
+		t.Fatalf("introspection: %v", err)
+	}
+	u := ident.catalogUser()
+	if !u.CanBypassReview() || u.Can(PermissionReviewManage) || u.Can(PermissionReviewBypass) {
+		t.Fatalf("exemption changed delegated permissions: %+v", u)
+	}
+	f.mu.Lock()
+	doc := f.byToken[token]
+	doc.CatalogReviewExempt = false
+	f.byToken[token] = doc
+	f.mu.Unlock()
+	now = now.Add(PATCacheTTL + time.Second)
+	ident, err = p.Introspect(context.Background(), token)
+	if err != nil || ident == nil || ident.catalogUser().CanBypassReview() {
+		t.Fatalf("revoked exemption survived cache expiry: %+v %v", ident, err)
+	}
 }
 
 // fakeAuth 是内省端点桩：按明文查表判定，并统计被调用次数（缓存/单飞的断言全靠它）。
