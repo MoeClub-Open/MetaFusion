@@ -14,3 +14,5 @@ cf7d8c6963063c6c854dbc2e9031f7364ede843a:deploy/versions.lock:generic-api-key:28
 fb812aea608fd7d6552f611b9db352258751d3b8:deploy/versions.lock:generic-api-key:26
 # auth 仓公开 Git SHA a51d217 已与 origin/main 核对；仅忽略本次版本锁行的误报。
 6b7e53167a5a485c6d8fc933bd6f412fa3d29031:deploy/versions.lock:generic-api-key:26
+# auth 仓公开 Git SHA f5fd177 已与 origin/main 核对；仅忽略这条版本锁指纹。
+21a202701b2263a5f58fdd7a9b48e7a962b6b416:deploy/versions.lock:generic-api-key:26
