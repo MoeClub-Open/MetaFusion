@@ -1,6 +1,6 @@
 "use client";
 
-// 调色板只管理配色与背景/表面色调，显示模式使用独立入口。
+// 调色板管理配色、表面色调与背景图案，显示模式使用独立入口。
 import { Palette } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ThemeControls } from "./ThemeControls";

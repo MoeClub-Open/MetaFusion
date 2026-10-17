@@ -15,7 +15,7 @@ export default function DevelopersRedirectPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 font-mono text-sm text-text-faint">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 font-mono text-sm text-text-faint">
       <div className="flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
         <span>{t("developers.redirecting")}</span>

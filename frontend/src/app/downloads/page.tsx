@@ -22,7 +22,7 @@ function DownloadsInner() {
   }, [configured, targetUrl]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-text-strong">
+    <div className="min-h-screen flex flex-col text-text-strong">
       <Navbar />
 
       <PageShell width="narrow" center className="py-16">
@@ -53,7 +53,7 @@ function DownloadsInner() {
 
 export default function DownloadsPage() {
   return (
-    <Suspense fallback={<LoadingFallback className="min-h-screen bg-background grid place-items-center text-xs font-mono text-text-faint" />}>
+    <Suspense fallback={<LoadingFallback className="min-h-screen grid place-items-center text-xs font-mono text-text-faint" />}>
       <DownloadsInner />
     </Suspense>
   );

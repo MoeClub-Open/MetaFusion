@@ -101,7 +101,7 @@ export default function MyReportsPage() {
     item.appeal ? t(`report.appealStatus.${item.appeal.status}`) : "";
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col">
       <Navbar />
       <PageShell width="narrow" spacing="none" contentClassName="space-y-4">
         <div className="space-y-1">

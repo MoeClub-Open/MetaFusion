@@ -5,7 +5,7 @@ import { ApplicationBoundary } from "@/components/ApplicationBoundary";
 import { CatalogProvider } from "@/components/catalog/CatalogProvider";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { ThemeProvider } from "@/lib/themeContext";
-import { DEFAULT_ACCENT, DEFAULT_TONE } from "@/lib/theme.generated";
+import { DEFAULT_ACCENT, DEFAULT_TONE, DEFAULT_PATTERN } from "@/lib/theme.generated";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site";
 
 // 字体走 next/font 自托管：构建期把 woff2 落到 /_next/static/media，
@@ -63,6 +63,7 @@ export default function RootLayout({
       data-theme-mode="dark"
       data-theme-accent={DEFAULT_ACCENT}
       data-theme-tone={DEFAULT_TONE}
+      data-theme-pattern={DEFAULT_PATTERN}
       suppressHydrationWarning
     >
       <head>

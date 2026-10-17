@@ -237,31 +237,33 @@ html.light .shadow-soft {
   box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* ——— Archive Cosmos: subtle noise + hairline grid ——— */
+/* 静态矢量底纹：所有页面共用一层，不使用渐变、渐隐蒙版或噪声滤镜。 */
+:root {
+  --page-pattern-image: url("/patterns/catalog.svg");
+  --page-pattern-size: 240px 240px;
+  --page-pattern-opacity: 0.14;
+}
+html.light { --page-pattern-opacity: 0.075; }
+[data-theme-pattern="dots"] {
+  --page-pattern-image: url("/patterns/dots.svg");
+  --page-pattern-size: 32px 32px;
+}
+[data-theme-pattern="none"] body::before { display: none; }
+
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
-  background-size: 256px 256px;
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.06;
-  background-image:
-    linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px);
-  background-size: 80px 80px;
-  mask-image: radial-gradient(ellipse 85% 70% at 50% 0%, black 60%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 85% 70% at 50% 0%, black 60%, transparent 100%);
+  opacity: var(--page-pattern-opacity);
+  background-color: rgb(var(--primary-rgb));
+  -webkit-mask-image: var(--page-pattern-image);
+  mask-image: var(--page-pattern-image);
+  -webkit-mask-size: var(--page-pattern-size);
+  mask-size: var(--page-pattern-size);
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
 }
 
 /* Ensure app content above texture */
@@ -400,30 +402,16 @@ select option:checked, select option:hover {
   .mf-enter { animation: none; }
 }
 
-/* Radial vignette — Archive Cosmos hero wash */
-.bg-radial-vignette {
-  background:
-    radial-gradient(ellipse 92% 68% at 50% -8%, rgb(var(--primary-rgb) / 0.10) 0%, transparent 62%),
-    radial-gradient(ellipse 72% 58% at 82% 100%, rgb(var(--accent-rgb) / 0.055) 0%, transparent 58%),
-    radial-gradient(ellipse 64% 52% at 8% 92%, rgb(var(--primary-rgb) / 0.05) 0%, transparent 55%);
-  /* 底部渐隐：角落光晕中心贴着容器底缘，在页脚分界线上硬切会形成横向断层 */
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 176px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 176px), transparent 100%);
-}
-html.light .bg-radial-vignette {
-  background:
-    radial-gradient(ellipse 92% 68% at 50% -8%, rgb(var(--primary-rgb) / 0.07) 0%, transparent 62%),
-    radial-gradient(ellipse 72% 58% at 82% 100%, rgb(var(--accent-rgb) / 0.04) 0%, transparent 58%),
-    radial-gradient(ellipse 64% 52% at 8% 92%, rgb(var(--primary-rgb) / 0.03) 0%, transparent 55%);
-}
-
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
-  body::before, body::after { display: none; }
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+  body::before { display: none; }
 }
 
 /* ——— Mobile baseline ——— */

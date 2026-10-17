@@ -395,7 +395,7 @@ function MessagesContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background relative flex flex-col">
+    <div className="min-h-screen relative flex flex-col">
       <Navbar />
       <PageShell
         title={t("messages.title")}
@@ -413,7 +413,7 @@ export default function MessagesPage() {
   return (
     <Suspense
       fallback={
-        <LoadingFallback className="min-h-screen bg-background flex items-center justify-center text-sm text-text-faint" />
+        <LoadingFallback className="min-h-screen flex items-center justify-center text-sm text-text-faint" />
       }
     >
       <MessagesContent />

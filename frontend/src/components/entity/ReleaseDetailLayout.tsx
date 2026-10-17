@@ -440,7 +440,7 @@ export default function ReleaseDetailLayout() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background relative flex flex-col overflow-clip">
+      <div className="min-h-screen relative flex flex-col overflow-clip">
         <div className="relative z-10 min-h-screen grid place-items-center font-mono text-xs text-text-faint">{t("release.detail.loading")}</div>
       </div>
     );
@@ -448,7 +448,7 @@ export default function ReleaseDetailLayout() {
 
   if (!release) {
     return (
-      <div className="min-h-screen bg-background relative flex flex-col overflow-clip">
+      <div className="min-h-screen relative flex flex-col overflow-clip">
         {!kindMismatch && (error === "not_found" || error === "invalid" || !error) ? (
           // 裸错误码（not_found / invalid_kind / invalid_id）不是给用户看的文案，
           // 统一走页面自己的"未找到"，并给出与站内 404 页相同的出口。
@@ -704,7 +704,7 @@ export default function ReleaseDetailLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
+    <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
       <PageShell
         width="page"
         className="pb-[max(1.5rem,env(safe-area-inset-bottom))]"

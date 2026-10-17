@@ -259,7 +259,7 @@ export default function NotificationsPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex flex-col bg-background">
+      <div className="min-h-screen flex flex-col">
         <Navbar />
         <PageShell width="narrow" center>
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -272,7 +272,7 @@ export default function NotificationsPage() {
   // 登录入口，不整屏空白、也不把 401 显示成"暂无通知"。
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col bg-background">
+      <div className="min-h-screen flex flex-col">
         <Navbar />
         <PageShell width="narrow" center>
           <div className="flex flex-col items-center gap-3 text-center">
@@ -293,7 +293,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col">
       <Navbar />
       <PageShell
         width="narrow"

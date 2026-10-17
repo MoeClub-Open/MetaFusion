@@ -142,14 +142,8 @@ export default function HomePage() {
 
   const showSkeleton = authLoading || loading;
 
-  // 根容器裁剪装饰光晕：-bottom-40/-right-40 的 600px 光晕溢出到视口外会撑出横向滚动条
-  // （线上实测桌面 +154px / 移动 +161px）。用 overflow-clip 而不是 overflow-hidden——
-  // clip 不建滚动容器，顶栏照旧相对视口吸附。
   return (
-    <div className="min-h-screen flex flex-col bg-background text-text-strong relative overflow-clip selection:bg-primary selection:text-white">
-      <div className="absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
-      <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[150px] pointer-events-none" aria-hidden />
-      <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[150px] pointer-events-none" aria-hidden />
+    <div className="min-h-screen flex flex-col text-text-strong relative overflow-clip selection:bg-primary selection:text-white">
 
       <Navbar />
 

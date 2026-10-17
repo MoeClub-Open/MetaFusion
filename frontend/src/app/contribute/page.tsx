@@ -48,7 +48,7 @@ export default function ContributeHubPage() {
   ] as const;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-text-strong">
+    <div className="min-h-screen flex flex-col text-text-strong">
       <Navbar />
       <PageShell width="narrow" spacing="none" contentClassName="space-y-4">
         <div className="space-y-1">

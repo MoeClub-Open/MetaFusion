@@ -34,6 +34,13 @@ export const TONES = [
   { id: "deep",    labelKey: "theme.tone.deep",    hue: null,    contrast: 1.25 },
 ];
 
+/** 背景图案独立于配色；由全局样式按同名属性选择矢量纹理。 */
+export const PATTERNS = [
+  { id: "catalog", labelKey: "theme.pattern.catalog" },
+  { id: "dots", labelKey: "theme.pattern.dots" },
+  { id: "none", labelKey: "theme.pattern.none" },
+];
+
 /** 深色模式的中性基准（neutral 色调）：其余色调在它的基础上做色相偏移与对比缩放。 */
 export const BASE_DARK = {
   bg: "#0b0f17", surface: "#121826", surfaceHover: "#1a2336", surfaceSubtle: "rgba(255,255,255,0.03)",
@@ -51,3 +58,4 @@ export const BASE_LIGHT = {
 /** 默认配色与表面色调（首次访问、未做选择时的取值）。 */
 export const DEFAULT_ACCENT = "blue";
 export const DEFAULT_TONE = "neutral";
+export const DEFAULT_PATTERN = "catalog";

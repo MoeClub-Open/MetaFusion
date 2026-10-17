@@ -89,7 +89,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
   // 仅在受保护路由且正在重定向未登录用户时显示阻断全屏加载，普通公开页面（如首页）直接平滑渲染
   if (isProtected && (loading || !setupChecked)) {
     return (
-      <div className="min-h-screen bg-background grid place-items-center">
+      <div className="min-h-screen grid place-items-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
           <span className="font-mono text-xs text-text-faint tracking-wider">{t("auth.initializing")}</span>

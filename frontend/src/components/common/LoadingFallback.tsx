@@ -10,7 +10,7 @@ import { useI18n } from "@/i18n/I18nProvider";
  * className 保留各页原来的尺寸（全屏 / 100dvh / 窄栏），文案只留这一处。
  */
 export function LoadingFallback({
-  className = "min-h-screen bg-background grid place-items-center font-mono text-sm text-text-faint",
+  className = "min-h-screen grid place-items-center font-mono text-sm text-text-faint",
 }: {
   className?: string;
 }) {

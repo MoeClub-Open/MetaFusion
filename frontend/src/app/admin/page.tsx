@@ -95,7 +95,7 @@ export default function AdminPage() {
     <Link href="/home" className="text-sm text-primary">{t("admin.console.backToSite")}</Link>
   </div>;
 
-  return <div className="min-h-screen bg-background text-text-strong">
+  return <div className="min-h-screen text-text-strong">
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
       <PageContainer className="flex h-14 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">

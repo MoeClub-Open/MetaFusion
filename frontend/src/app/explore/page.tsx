@@ -412,7 +412,7 @@ function ExploreInner() {
   ].join("|");
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-text-strong">
+    <div className="min-h-screen flex flex-col text-text-strong">
       <Navbar searchQuery={currentQ} onSearch={(q) => updateFilters({ q })} />
 
       <PageShell
@@ -921,7 +921,7 @@ function ExploreInner() {
 function ExploreFallback() {
   const { t } = useI18n();
   return (
-    <div className="min-h-screen bg-background text-text-faint font-mono text-xs grid place-items-center">{t("common.loading")}</div>
+    <div className="min-h-screen text-text-faint font-mono text-xs grid place-items-center">{t("common.loading")}</div>
   );
 }
 

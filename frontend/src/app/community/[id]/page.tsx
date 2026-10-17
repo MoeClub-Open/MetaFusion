@@ -191,7 +191,7 @@ export default function TopicDetailPage() {
 
  if (loading) {
  return (
- <div className="min-h-screen bg-background text-text-muted flex items-center justify-center text-sm font-mono">
+ <div className="min-h-screen text-text-muted flex items-center justify-center text-sm font-mono">
  {t("community.topicStreamLoading")}
  </div>
  );
@@ -199,7 +199,7 @@ export default function TopicDetailPage() {
 
  if (!topic) {
  return (
- <div className="min-h-screen bg-background flex flex-col">
+ <div className="min-h-screen flex flex-col">
  <Navbar />
  {loadError === "not_found" || loadError === "invalid" ? (
  <DetailNotFound title={t("common.notFoundTopic")} />
@@ -217,7 +217,7 @@ export default function TopicDetailPage() {
  const opPost: ForumPost | null = firstPost;
 
  return (
- <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white pb-24 text-sm">
+ <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white pb-24 text-sm">
  <Navbar />
 
  <PageShell width="page">

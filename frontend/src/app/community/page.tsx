@@ -290,7 +290,7 @@ function CommunityContent() {
  const pageOutOfRange = !loading && !loadError && total > 0 && topics.length === 0 && page > totalPages;
 
  return (
- <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white text-sm">
+ <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white text-sm">
  <Navbar />
 
  {/* Forum layout: sidebar + topic stream */}
@@ -916,7 +916,7 @@ function CommunityContent() {
 
 export default function CommunityPage() {
   return (
-    <Suspense fallback={<LoadingFallback className="min-h-screen bg-background flex items-center justify-center text-sm text-text-faint" />}>
+    <Suspense fallback={<LoadingFallback className="min-h-screen flex items-center justify-center text-sm text-text-faint" />}>
       <CommunityContent />
     </Suspense>
   );

@@ -1,11 +1,11 @@
 "use client";
 
-// 调色板控件：配色方案（16 套）× 背景和表面色调（4 种）。
+// 外观控件：配色方案、背景和表面色调、矢量背景图案。
 // 弹出选择器与设置页共用这一份，避免两处实现逐渐漂移。
 
 import React from "react";
-import { Check } from "lucide-react";
-import { useTheme, accentLabel, toneLabel } from "@/lib/themeContext";
+import { Check, Grid2X2, ListTree, Square, type LucideIcon } from "lucide-react";
+import { useTheme, accentLabel, toneLabel, patternLabel, type ThemePattern } from "@/lib/themeContext";
 import { useI18n } from "@/i18n/I18nProvider";
 
 interface Props {
@@ -13,8 +13,10 @@ interface Props {
   layout?: "compact" | "full";
 }
 
+const patternIcons: Record<ThemePattern, LucideIcon> = { catalog: ListTree, dots: Grid2X2, none: Square };
+
 export const ThemeControls: React.FC<Props> = ({ layout = "full" }) => {
-  const { accent, tone, setAccent, setTone, accents, tones } = useTheme();
+  const { accent, tone, pattern, setAccent, setTone, setPattern, accents, tones, patterns } = useTheme();
   const { t } = useI18n();
 
   return (
@@ -70,6 +72,35 @@ export const ThemeControls: React.FC<Props> = ({ layout = "full" }) => {
                 }`}
               >
                 {t(item.labelKey)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between font-mono text-[11px] text-text-muted">
+          <span>{t("theme.patternLabel")}</span>
+          <span className="font-semibold text-text-strong">{patternLabel(pattern, t)}</span>
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {patterns.map((item) => {
+            const active = pattern === item.id;
+            const Icon = patternIcons[item.id];
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setPattern(item.id)}
+                aria-pressed={active}
+                className={`mf-focus flex min-h-11 min-w-0 items-center justify-center gap-1.5 break-words rounded-control border px-1 py-1.5 text-[11px] transition-colors duration-fast ease-soft cursor-pointer ${
+                  active
+                    ? "bg-primary/10 border-primary/50 text-text-strong font-semibold"
+                    : "bg-surfaceSubtle border-line-subtle text-text-muted hover:text-text-strong"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>{t(item.labelKey)}</span>
               </button>
             );
           })}

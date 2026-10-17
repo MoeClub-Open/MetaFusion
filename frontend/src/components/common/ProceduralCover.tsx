@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useId, useMemo, type CSSProperties } from "react";
 import { isDistinctOriginalTitle } from "@/lib/titles";
 import { coverHash, coverIdentity, coverRefCode } from "@/lib/coverIdentity";
 
@@ -19,11 +19,9 @@ function hsl(h: number, s: number, l: number): string {
 
 function paletteFromHash(hash: number) {
   const hue = hash % 360;
-  const hue2 = (hue + 16 + ((hash >>> 8) % 28)) % 360;
   const sat = 34 + (hash % 16);
   return {
-    bg1: hsl(hue, sat, 7),
-    bg2: hsl(hue2, sat + 6, 13),
+    background: hsl(hue, sat, 9),
     accent: hsl(hue, 68 + ((hash >>> 4) % 18), 52 + ((hash >>> 12) % 8)),
   };
 }
@@ -34,32 +32,29 @@ export function ProceduralCover({ title = "Untitled", originalTitle, id = "", cl
   const identity = coverIdentity({ id, originalTitle, title });
   const hash = useMemo(() => coverHash(identity), [identity]);
   const p = useMemo(() => paletteFromHash(hash), [hash]);
+  const gridId = `cover-grid-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   const refCode = useMemo(() => `REF: ${coverRefCode(hash)}`, [hash]);
 
   const patternIndex = hash % 4;
+  // 占位封面固定为深色表面，强调前景在浅色页面中也保持足够对比。
+  const coverStyle = { backgroundColor: p.background, "--emphasis-rgb": "255 255 255" } as CSSProperties;
 
   return (
-    <div className={`w-full h-full relative overflow-hidden select-none ${className}`} style={{ background: `linear-gradient(135deg, ${p.bg1} 0%, ${p.bg2} 100%)` }}>
-      {/* Dynamic Ambient Glow */}
-      <div
-        className="absolute w-[140%] h-[140%] -top-[20%] -left-[20%] rounded-full pointer-events-none opacity-25 blur-2xl"
-        style={{ background: `radial-gradient(circle, ${p.accent} 0%, transparent 70%)` }}
-      />
-
-      {/* Retro-futuristic Grid */}
-      <svg className="absolute inset-0 w-full h-full opacity-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+    <div className={`w-full h-full relative overflow-hidden select-none ${className}`} style={coverStyle}>
+      {/* 细线网格与几何标记保持实体识别，不使用连续色阶或模糊光晕。 */}
+      <svg aria-hidden="true" focusable="false" className="absolute inset-0 w-full h-full opacity-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <pattern id={`grid-${hash}`} width="24" height="24" patternUnits="userSpaceOnUse">
+          <pattern id={gridId} width="24" height="24" patternUnits="userSpaceOnUse">
             <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#ffffff" strokeWidth="0.75" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill={`url(#grid-${hash})`} />
+        <rect width="100%" height="100%" fill={`url(#${gridId})`} />
       </svg>
 
       {/* Border Frame */}
-      <div className="absolute inset-2 sm:inset-2.5 rounded-sm border border-line pointer-events-none" />
-      <div className="absolute inset-3 sm:inset-3.5 rounded-sm border border-line-subtle pointer-events-none" />
+      <div className="absolute inset-2 sm:inset-2.5 rounded-sm border border-emphasis/15 pointer-events-none" aria-hidden="true" />
+      <div className="absolute inset-3 sm:inset-3.5 rounded-sm border border-emphasis/[0.07] pointer-events-none" aria-hidden="true" />
 
       {/* Content Container */}
       <div
@@ -76,13 +71,15 @@ export function ProceduralCover({ title = "Untitled", originalTitle, id = "", cl
               <span className="w-1.5 h-1.5 rounded-xs inline-block shrink-0" style={{ backgroundColor: p.accent }} />
               <span className="truncate">METAFUSION</span>
             </span>
-            <span className="text-text-faint shrink-0">{refCode}</span>
+            <span className="text-emphasis/60 shrink-0">{refCode}</span>
           </div>
         )}
 
         {/* Central Geometric Totem */}
         <div className="my-auto py-2 flex items-center justify-center">
           <svg
+            aria-hidden="true"
+            focusable="false"
             className={compact ? "w-10 h-10 opacity-80" : "w-20 h-20 sm:w-24 sm:h-24 opacity-80"}
             viewBox="0 0 100 100"
             fill="none"
@@ -126,11 +123,11 @@ export function ProceduralCover({ title = "Untitled", originalTitle, id = "", cl
         <div className="space-y-1.5">
           <div className="h-0.5 w-8 rounded-full" style={{ backgroundColor: p.accent }} />
           <div>
-            <h4 className="font-serif font-bold text-emphasis leading-tight line-clamp-2 text-sm sm:text-base tracking-tight drop-shadow-sm">
+            <h4 className="font-serif font-bold text-emphasis leading-tight line-clamp-2 text-sm sm:text-base tracking-tight">
               {title}
             </h4>
             {isDistinctOriginalTitle(originalTitle, title) && (
-              <p className="font-mono text-[10px] text-text-muted truncate mt-0.5">
+              <p className="font-mono text-[10px] text-emphasis/70 truncate mt-0.5">
                 {originalTitle}
               </p>
             )}

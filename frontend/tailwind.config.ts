@@ -214,8 +214,6 @@ const config: Config = {
         ".scrollbar-none": { scrollbarWidth: "none", "-ms-overflow-style": "none" },
         ".scrollbar-none::-webkit-scrollbar": { display: "none" },
         ".scrollbar-thin": { scrollbarWidth: "thin" },
-        // v4 的 bg-linear-to-br：等价于 v3 的 bg-gradient-to-br（仍靠 from-/via-/to- 填色标）
-        ".bg-linear-to-br": { backgroundImage: "linear-gradient(to bottom right, var(--tw-gradient-stops))" },
       });
     }),
   ],

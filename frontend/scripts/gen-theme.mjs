@@ -4,7 +4,7 @@
 // 生成物一并提交：主题是静态资产，构建期不依赖脚本再次运行。
 import fs from "fs";
 import path from "path";
-import { ACCENTS, TONES, BASE_DARK, BASE_LIGHT, DEFAULT_ACCENT, DEFAULT_TONE } from "./theme-palette.mjs";
+import { ACCENTS, TONES, PATTERNS, BASE_DARK, BASE_LIGHT, DEFAULT_ACCENT, DEFAULT_TONE, DEFAULT_PATTERN } from "./theme-palette.mjs";
 
 const ROOT = process.cwd();
 const CSS_OUT = path.join(ROOT, "src/app/theme.generated.css");
@@ -169,6 +169,7 @@ const ts = [
   "",
   "export interface AccentEntry { id: string; labelKey: string; swatch: string; }",
   "export interface ToneEntry { id: string; labelKey: string; }",
+  "export interface PatternEntry { id: string; labelKey: string; }",
   "",
   "export const ACCENTS: AccentEntry[] = [",
   ...ACCENTS.map((a) => `  { id: ${JSON.stringify(a.id)}, labelKey: ${JSON.stringify(a.labelKey)}, swatch: ${JSON.stringify(a.base)} },`),
@@ -178,12 +179,19 @@ const ts = [
   ...TONES.map((t) => `  { id: ${JSON.stringify(t.id)}, labelKey: ${JSON.stringify(t.labelKey)} },`),
   "];",
   "",
+  "export const PATTERNS = [",
+  ...PATTERNS.map((p) => `  { id: ${JSON.stringify(p.id)}, labelKey: ${JSON.stringify(p.labelKey)} },`),
+  "] as const satisfies readonly PatternEntry[];",
+  "",
   "export const ACCENT_IDS = ACCENTS.map((a) => a.id);",
   "export const TONE_IDS = TONES.map((t) => t.id);",
+  "export const PATTERN_IDS = PATTERNS.map((p) => p.id);",
   "export type ThemeAccent = (typeof ACCENT_IDS)[number];",
   "export type ThemeTone = (typeof TONE_IDS)[number];",
-  "export const DEFAULT_ACCENT: ThemeAccent = \"blue\";",
-  "export const DEFAULT_TONE: ThemeTone = \"neutral\";",
+  "export type ThemePattern = (typeof PATTERN_IDS)[number];",
+  `export const DEFAULT_ACCENT: ThemeAccent = ${JSON.stringify(DEFAULT_ACCENT)};`,
+  `export const DEFAULT_TONE: ThemeTone = ${JSON.stringify(DEFAULT_TONE)};`,
+  `export const DEFAULT_PATTERN: ThemePattern = ${JSON.stringify(DEFAULT_PATTERN)};`,
   "",
 ].join("\n");
 fs.writeFileSync(TS_OUT, ts);
@@ -196,29 +204,29 @@ console.log("  " + path.relative(ROOT, TS_OUT));
 const BOOT_OUT = path.join(ROOT, "public/theme-boot.js");
 const bootJs = `// 由 scripts/gen-theme.mjs 生成，勿手改：改配色请看 scripts/theme-palette.mjs。
 // 首帧同步执行：把 localStorage 里的主题选择写到 <html> 上，避免加载瞬间闪默认配色。
-// 不校验取值——CSS 里没有对应变量块时会自动回落到默认配色（ThemeProvider 挂载后再校验一次）。
 (function () {
-  try {
-    var m = localStorage.getItem("metafusion_theme_mode") || "dark";
-    var a = localStorage.getItem("metafusion_theme_accent") || "${DEFAULT_ACCENT}";
-    var t = localStorage.getItem("metafusion_theme_tone") || "${DEFAULT_TONE}";
-    if (ACCENTS.indexOf(a) < 0) a = "${DEFAULT_ACCENT}";
-    if (TONES.indexOf(t) < 0) t = "${DEFAULT_TONE}";
-    var e = m === "system"
-      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-      : (m === "light" ? "light" : "dark");
-    var r = document.documentElement;
-    r.setAttribute("data-theme-mode", e);
-    r.setAttribute("data-theme-accent", a);
-    r.setAttribute("data-theme-tone", t);
-    r.classList.remove("dark", "light");
-    r.classList.add(e);
-    r.style.colorScheme = e;
-  } catch (_) {}
+  function read(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+  var m = read("metafusion_theme_mode") || "dark";
+  var a = read("metafusion_theme_accent");
+  var t = read("metafusion_theme_tone");
+  var p = read("metafusion_theme_pattern");
+  if (${JSON.stringify(ACCENTS.map((x) => x.id))}.indexOf(a) < 0) a = "${DEFAULT_ACCENT}";
+  if (${JSON.stringify(TONES.map((x) => x.id))}.indexOf(t) < 0) t = "${DEFAULT_TONE}";
+  if (${JSON.stringify(PATTERNS.map((x) => x.id))}.indexOf(p) < 0) p = "${DEFAULT_PATTERN}";
+  var e = m === "system"
+    ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : (m === "light" ? "light" : "dark");
+  var r = document.documentElement;
+  r.setAttribute("data-theme-mode", e);
+  r.setAttribute("data-theme-accent", a);
+  r.setAttribute("data-theme-tone", t);
+  r.setAttribute("data-theme-pattern", p);
+  r.classList.remove("dark", "light");
+  r.classList.add(e);
+  r.style.colorScheme = e;
 })();
-`.replace("ACCENTS", JSON.stringify(ACCENTS.map((x) => x.id)))
- .replace("TONES", JSON.stringify(TONES.map((x) => x.id)))
- .replace("__DEFAULT_ACCENT__", DEFAULT_ACCENT)
- .replace("__DEFAULT_TONE__", DEFAULT_TONE);
+`;
 fs.writeFileSync(BOOT_OUT, bootJs);
 console.log("  " + path.relative(ROOT, BOOT_OUT));

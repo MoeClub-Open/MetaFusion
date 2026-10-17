@@ -20,10 +20,7 @@ function RootLandingInner() {
   const actionClass = "inline-flex items-center justify-center gap-2.5 px-6 sm:px-8 min-h-12 rounded-full bg-emphasis/[0.04] border border-line text-text-strong hover:bg-emphasis/[0.08] font-medium text-sm transition-colors duration-fast ease-soft";
 
   return (
-    <div className="min-h-screen min-h-svh bg-background text-text-strong relative flex flex-col overflow-clip selection:bg-primary selection:text-primary-foreground">
-      <div className="absolute inset-0 bg-radial-vignette opacity-60 pointer-events-none" aria-hidden />
-      <div className="absolute -top-32 -left-32 w-[600px] h-[600px] bg-primary/[0.08] rounded-full blur-[140px] pointer-events-none" aria-hidden />
-      <div className="absolute -bottom-32 -right-32 w-[600px] h-[600px] bg-accent/[0.08] rounded-full blur-[140px] pointer-events-none" aria-hidden />
+    <div className="min-h-screen min-h-svh text-text-strong relative flex flex-col overflow-clip selection:bg-primary selection:text-primary-foreground">
 
       {/* 控件保留右上角布局，但参与文档流，避免手机和矮窗口遮住主内容。 */}
       <PageContainer as="header" className="relative z-20 py-4">
@@ -43,7 +40,6 @@ function RootLandingInner() {
 
       <PageShell width="narrow" center spacing="none" contentClassName="flex flex-col items-center py-6 sm:py-10">
         <div className="mb-6 relative group">
-          <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl scale-125 group-hover:scale-150 transition-transform duration-base ease-soft pointer-events-none motion-reduce:transition-none" aria-hidden />
           <BrandMark size={112} withGlow idSuffix="landing-hero" className="relative z-10 drop-shadow-xl" />
         </div>
         <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 border border-primary/20 font-mono text-xs tracking-wide text-primary font-semibold mb-4">

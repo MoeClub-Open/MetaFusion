@@ -657,10 +657,7 @@ export function EntityDetailView({ id }: { id: string }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background relative flex flex-col overflow-clip">
-        <div className="absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
-        <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
+      <div className="min-h-screen relative flex flex-col overflow-clip">
         <div className="relative z-10 min-h-[60vh] grid place-items-center font-mono text-xs text-text-muted">
           <div className="flex flex-col items-center gap-3">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -673,8 +670,7 @@ export function EntityDetailView({ id }: { id: string }) {
 
   if (error || !entity) {
     return (
-      <div className="min-h-screen bg-background relative flex flex-col overflow-clip">
-        <div className="absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
+      <div className="min-h-screen relative flex flex-col overflow-clip">
         <PageShell width="narrow" center>
           {/* 不存在 / ID 非法：不给重试；其余失败视为网络或服务故障，才给重试。 */}
           <EntityLoadError
@@ -690,7 +686,7 @@ export function EntityDetailView({ id }: { id: string }) {
   // Editing mode
   if (editing) {
     return (
-      <div className="min-h-screen bg-background relative flex flex-col overflow-clip">
+      <div className="min-h-screen relative flex flex-col overflow-clip">
         <PageContainer className="sticky top-[var(--mf-header-h)] z-30 bg-surface/90 backdrop-blur-md border-b border-line py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
@@ -759,11 +755,7 @@ export function EntityDetailView({ id }: { id: string }) {
     .sort((a, b) => a.position - b.position);
 
   return (
-    <div className="min-h-screen bg-background relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
-      {/* Atmosphere Glow */}
-      <div className="absolute inset-0 bg-radial-vignette opacity-70 pointer-events-none" aria-hidden />
-      <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
-      <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
+    <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
 
       {/* Top Breadcrumb Navigation：作为页头交给外壳，页头到正文的间距由外壳统一给。 */}
       <PageShell

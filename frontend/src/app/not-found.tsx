@@ -19,13 +19,8 @@ export default function NotFound() {
     }
   };
 
-  // 祖先裁剪装饰光晕：-bottom-32 -right-32 的两团 500px 光晕会撑出横向滚动条
-  // （线上实测桌面 +122px / 移动 +128px）。
   return (
-    <main className="mf-enter min-h-screen bg-background relative flex flex-col items-center justify-center overflow-clip px-6 py-12 selection:bg-primary selection:text-white">
-      <div className="absolute inset-0 bg-radial-vignette opacity-60 pointer-events-none" aria-hidden />
-      <div className="absolute -top-32 -left-32 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
-      <div className="absolute -bottom-32 -right-32 w-[500px] h-[500px] bg-accent/10 rounded-full blur-[140px] pointer-events-none" aria-hidden />
+    <main className="mf-enter min-h-screen relative flex flex-col items-center justify-center overflow-clip px-6 py-12 selection:bg-primary selection:text-white">
 
       <div className="relative z-10 max-w-md w-full text-center flex flex-col items-center">
         <div className="mb-6 animate-pulse">

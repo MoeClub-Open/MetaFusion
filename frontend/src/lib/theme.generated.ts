@@ -2,6 +2,7 @@
 
 export interface AccentEntry { id: string; labelKey: string; swatch: string; }
 export interface ToneEntry { id: string; labelKey: string; }
+export interface PatternEntry { id: string; labelKey: string; }
 
 export const ACCENTS: AccentEntry[] = [
   { id: "blue", labelKey: "theme.accent.blue", swatch: "#3b82f6" },
@@ -29,9 +30,18 @@ export const TONES: ToneEntry[] = [
   { id: "deep", labelKey: "theme.tone.deep" },
 ];
 
+export const PATTERNS = [
+  { id: "catalog", labelKey: "theme.pattern.catalog" },
+  { id: "dots", labelKey: "theme.pattern.dots" },
+  { id: "none", labelKey: "theme.pattern.none" },
+] as const satisfies readonly PatternEntry[];
+
 export const ACCENT_IDS = ACCENTS.map((a) => a.id);
 export const TONE_IDS = TONES.map((t) => t.id);
+export const PATTERN_IDS = PATTERNS.map((p) => p.id);
 export type ThemeAccent = (typeof ACCENT_IDS)[number];
 export type ThemeTone = (typeof TONE_IDS)[number];
+export type ThemePattern = (typeof PATTERN_IDS)[number];
 export const DEFAULT_ACCENT: ThemeAccent = "blue";
 export const DEFAULT_TONE: ThemeTone = "neutral";
+export const DEFAULT_PATTERN: ThemePattern = "catalog";

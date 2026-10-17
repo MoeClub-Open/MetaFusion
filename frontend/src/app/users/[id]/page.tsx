@@ -301,7 +301,7 @@ export default function UserDetailPage() {
   const hasNext = page * 20 < total;
 
   return (
-    <div className="min-h-screen bg-background text-text-strong flex flex-col">
+    <div className="min-h-screen text-text-strong flex flex-col">
       <Navbar />
       <PageShell width="narrow" spacing="none" contentClassName="space-y-4 sm:space-y-5">
         {/* User Card Header */}
