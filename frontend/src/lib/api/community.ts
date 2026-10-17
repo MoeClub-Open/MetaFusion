@@ -57,7 +57,13 @@ export async function fetchFavorites(
   if (opts.page) params.set("page", String(opts.page));
   if (opts.pageSize) params.set("page_size", String(opts.pageSize));
   const qs = params.toString();
-  return fetchApi(`${endpoint}${qs ? `?${qs}` : ""}`);
+  const result = await fetchApi<{ items?: unknown; total?: unknown; visible?: unknown }>(`${endpoint}${qs ? `?${qs}` : ""}`);
+  if (typeof result?.visible !== "boolean") throw new Error("invalid_response: visible");
+  const items = requireArray<FavoriteItem>(result.items, "items");
+  if (typeof result.total !== "number" || !Number.isSafeInteger(result.total) || result.total < 0) {
+    throw new Error("invalid_response: total");
+  }
+  return { items, total: result.total, visible: result.visible };
 }
 
 export interface ForumPost {

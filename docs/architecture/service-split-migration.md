@@ -76,6 +76,8 @@
 
 community/storage 通过目录 HTTP 解析当前实体身份与可见性，使用 `/api/catalog/entities/{id}/identity` 的 canonical、kind 与别名。404 表示不存在或不可见，超时与上游故障必须明确失败，不能默认公开、返回假空集合或无限重试。capabilities 只声明部署状态，不探活外围服务。
 
+账号隐私偏好由 auth 持有，`GET/PATCH /api/auth/privacy` 仅允许本人站内会话管理 `favorites_public` / `email_public`。公开账号资料按邮箱偏好投影；community 每次读取收藏列表或统计时通过 auth 公开资料取得最新偏好，不缓存、不跨库查询。收藏不公开时向非本人返回 `visible=false` 的空列表及 `favorites_count=null`，本人读取不受影响；依赖故障明确失败，不默认公开。
+
 目录合并写入 entity.merged outbox，修订和事件与事实同事务。OpenSearch 与启用的 storage-lifecycle-v1 分别以 consumer/event_id 的 deliveries 确认成功；存储生命周期通过受密钥保护的内部 HTTP 投递，详情见[存储运行约定](./storage-operations.md)。尚无通用跨业务广播消费者。搜索消费与重投细节见[核心实现](./catalog-core-implementation.md#搜索与索引同步)。
 
 目录结构由 `backend/migrations/*.sql` 与显式 `mf-migrate up` 管理，内容种子用 seed。目录与账号 HTTP 启动只读检查，账号使用独立结构 DSN 的 auth-migrate。互动和存储启动应用各仓嵌入迁移并写入自己的 schema_migrations。新增迁移入口须核对锁的作用域和顺序，不能把运行写入锁或共享审计锁当成迁移锁。
@@ -102,7 +104,6 @@ auth 将组展开为 permissions，业务服务按权限码判定自己的操作
 | 公共协议一致性 | 各服务维护自身实现，以现行契约验证身份、验签、错误、分页、health 与请求标记；比较 Cookie/PAT/JWT、JWKS 失败、空权限、过期和各服务分页语义。业务模型、SQL 与可见性仍归各服务 |
 | 独立发布 | 主仓 backend/frontend/migrator 有固定摘要发布物，兄弟服务与 UI 由锁定检出构建。独立镜像须扩展发布清单、同 SHA 检查及整组回退，不能使用 latest 或来源不明旧镜像 |
 | 普通用户 UI | 管理台和账号登录/初始化应用已独立，其余账号/开发者页及目录内社区/资源区块仍有主仓耦合。先明确设计令牌、四语字典、会话和导航协议，以及区块 locale、身份、entity_id、能力与故障隔离，再按发布需求迁页；不复制业务状态掩盖耦合 |
-| 收藏隐私 | 社区接口仍返回 visible=true，前端开关为只读占位。真正的公开/私有设置应由互动服务定义并验证权限 |
 | 跨业务事件 | 已有存储生命周期定向投递，尚无通用广播。新增消费者先定义推送/拉取、event_id 幂等、重试/死信、可观测性、重放与 merged 重定向 |
 | 物理分库与矩阵迁移 | 独立 DSN 已提供权限边界，物理分库尚未实施，不复制目录身份或引入跨库 SQL。若迁移网关矩阵，须一次切换权威来源、固定版本输入并保留双向检查 |
 

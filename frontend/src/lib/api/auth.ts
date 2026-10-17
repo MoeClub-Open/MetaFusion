@@ -11,13 +11,15 @@ import type { User } from "./client";
  */
 export function normalizeSessionUser(raw: unknown): User {
   const u = (raw || {}) as Record<string, any>;
-  const { email, display_name, groups, permissions, ...rest } = u;
+  const { email, display_name, groups, permissions, favorites_public, email_public, ...rest } = u;
   return {
     ...rest,
     id: String(u.id ?? ""),
     username: String(u.username ?? ""),
     ...(typeof email === "string" && email.trim() !== "" ? { email: email.trim() } : {}),
     ...(typeof display_name === "string" && display_name.trim() !== "" ? { display_name } : {}),
+    ...(typeof favorites_public === "boolean" ? { favorites_public } : {}),
+    ...(typeof email_public === "boolean" ? { email_public } : {}),
     // 账号服务按 omitempty 发这两个数组：给了就带住（空数组也是真实值），缺席才留空。
     ...(Array.isArray(groups) ? { groups: groups.filter((g: unknown) => typeof g === "string") } : {}),
     ...(Array.isArray(permissions) ? { permissions: permissions.filter((p: unknown) => typeof p === "string") } : {}),
@@ -185,6 +187,31 @@ export async function updateOwnProfile(payload: OwnProfileUpdate): Promise<OwnPr
     method: "PUT",
     body: JSON.stringify(payload),
   });
+}
+
+/** 第一方会话自己的隐私选择；两字段均由账号服务明确返回，不用默认值代替读取失败。 */
+export interface PrivacySettings {
+  favorites_public: boolean;
+  email_public: boolean;
+}
+
+function privacySettingsResponse(raw: unknown): PrivacySettings {
+  const value = raw as Partial<PrivacySettings> | null;
+  if (typeof value?.favorites_public !== "boolean" || typeof value?.email_public !== "boolean") {
+    throw new Error("invalid_response: privacy_settings");
+  }
+  return { favorites_public: value.favorites_public, email_public: value.email_public };
+}
+
+export async function fetchPrivacySettings(): Promise<PrivacySettings> {
+  return privacySettingsResponse(await fetchApi<unknown>("/auth/privacy"));
+}
+
+export async function updatePrivacySettings(payload: Partial<PrivacySettings>): Promise<PrivacySettings> {
+  return privacySettingsResponse(await fetchApi<unknown>("/auth/privacy", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }));
 }
 
 /** POST /auth/tokens/:id/revoke：撤销但保留列表记录，最长需 60 秒生效。 */

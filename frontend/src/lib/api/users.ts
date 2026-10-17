@@ -7,8 +7,8 @@ import { requireArray, safeCount } from "./fields";
 
 // ── 账号资料：GET /users/:id（匿名可读）──
 //
-// auth.users 有 display_name / bio 列（空串=未设置）；avatar_url、created_at、
-// favorites_public、invite_code 仍不存在。缺席字段调用方按整块不渲染，
+// auth.users 有 display_name / bio 列（空串=未设置）及两项明确的隐私选择。
+// avatar_url、created_at、invite_code 缺席时调用方按整块不渲染，
 // 不要送进 new Date()（会渲染 Invalid Date），也不要当 0 用。
 export interface PublicUser {
   id: string;
@@ -19,7 +19,9 @@ export interface PublicUser {
   bio?: string;
   /** 仅封禁账号带出（后端 omitempty）；封禁是账号状态，不代表资料不存在。 */
   banned?: boolean;
-  /** 只有请求者就是本人时才下发。 */
+  favorites_public: boolean;
+  email_public: boolean;
+  /** 本人或用户主动公开邮箱时下发；不根据本地设置拼造邮箱。 */
   email?: string;
 }
 
@@ -29,8 +31,12 @@ export interface PublicUserProfile {
   stats: { invited_count?: number };
 }
 
-export function fetchUserProfile(id: string): Promise<PublicUserProfile> {
-  return fetchApi<PublicUserProfile>("/users/" + encodeURIComponent(id));
+export async function fetchUserProfile(id: string): Promise<PublicUserProfile> {
+  const result = await fetchApi<PublicUserProfile>("/users/" + encodeURIComponent(id));
+  if (typeof result?.user?.favorites_public !== "boolean" || typeof result?.user?.email_public !== "boolean") {
+    throw new Error("invalid_response: profile_privacy");
+  }
+  return result;
 }
 
 // ── 目录贡献：GET /users/:id/contributions ──
@@ -166,7 +172,8 @@ function normalizeContributionSources(row: Record<string, any>): ContributionSou
 export interface CommunityUserStats {
   topics_created?: number;
   comments_created?: number;
-  favorites_count?: number;
+  /** null 表示收藏未向请求者公开；缺席仍表示来源未知。 */
+  favorites_count?: number | null;
 }
 
 export async function fetchUserCommunityStats(id: string): Promise<CommunityUserStats> {

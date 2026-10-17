@@ -12,6 +12,7 @@ import { authErrorText, httpStatusOf } from "@/lib/authErrors";
 import { TitleDisplayOrderSetting } from "@/components/settings/TitleDisplayOrderSetting";
 import { OAuthGrantsPanel } from "@/components/settings/OAuthGrantsPanel";
 import { DirectMessagePrivacyCard } from "@/components/settings/DirectMessagePrivacyCard";
+import { ProfilePrivacyCards } from "@/components/settings/ProfilePrivacyCards";
 import { MyActivityPanel } from "@/components/settings/MyActivityPanel";
 import { ThemeControls } from "@/components/ThemeControls";
 import { ThemeModeControls } from "@/components/ThemeModeControls";
@@ -25,8 +26,6 @@ import {
   Settings,
   KeyRound,
   Eye,
-  Heart,
-  Mail,
   ShieldCheck,
   History,
   LogOut,
@@ -436,49 +435,14 @@ export default function SettingsPage() {
                 <TitleDisplayOrderSetting />
               </div>
 
-              {/* 隐私设置：账号服务没有这两项能力——auth.users 只有 id/username/email/role/banned，
-                  没有 favorites_public / email_public 列，也没有修改资料的写接口，前端既读不到也写不了，
-                  所以开关一律禁用置灰，并写明"由谁决定开放"。
-                  不挂「暂不可用」徽标：徽标说"不可用"、旁边却是可点的高亮开关，是自相矛盾的表达。 */}
               <div className="space-y-1.5 pt-2 border-t border-line-subtle">
                 <div className="flex items-center gap-1.5 pb-1">
                   <Eye className="w-3.5 h-3.5 text-text-muted" strokeWidth={1.5} />
                   <span className="font-mono text-xs font-semibold text-text-body">{t("settings.privacyTitle")}</span>
                 </div>
 
-                <div className="p-3 rounded-lg bg-surfaceSubtle border border-line-subtle text-[11px] text-text-faint leading-relaxed flex items-start gap-2">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-text-muted" strokeWidth={1.5} />
-                  <span>{t("settings.privacyUnavailableHint")}</span>
-                </div>
-
-                <div className="p-3 rounded-md bg-background border border-line-subtle flex items-center justify-between gap-3 opacity-60">
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="text-xs sm:text-sm font-medium text-text-strong flex items-center gap-1.5">
-                      <Heart className="w-3.5 h-3.5 text-rose-500" strokeWidth={1.8} />
-                      <span>{t("settings.privacyFavorites")}</span>
-                    </div>
-                    <div className="text-[11px] text-text-faint leading-relaxed">{t("settings.privacyFavoritesDesc")}</div>
-                  </div>
-                  {/* 灰态开关：只表示"这里本该有个开关、现在没有"，不表示开或关——
-                      账号服务根本没有这两列，任何 checked 取值都是在编造一个不存在的设置状态。 */}
-                  <span aria-hidden="true" className="shrink-0 w-9 h-5 rounded-full bg-gray-300 dark:bg-white/15" />
-                </div>
-
-                <div className="p-3 rounded-md bg-background border border-line-subtle flex items-center justify-between gap-3 opacity-60">
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="text-xs sm:text-sm font-medium text-text-strong flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-sky-500" strokeWidth={1.8} />
-                      <span>{t("settings.privacyEmail")}</span>
-                    </div>
-                    <div className="text-[11px] text-text-faint leading-relaxed">{t("settings.privacyEmailDesc")}</div>
-                  </div>
-                  {/* 同上：邮箱可见性目前只由账号服务决定（非本人一律不下发），前端没有可写字段。 */}
-                  <span aria-hidden="true" className="shrink-0 w-9 h-5 rounded-full bg-gray-300 dark:bg-white/15" />
-                </div>
-
-                {/* 陌生人私信开关：上面两个是灰态（无后端），这一项真的有可写后端
-                    （互动服务 community.direct_message_settings，迁移 000010），所以是可点的真开关。 */}
-                <DirectMessagePrivacyCard />
+                <ProfilePrivacyCards key={`profile:${user.id}`} />
+                <DirectMessagePrivacyCard key={`messages:${user.id}`} />
               </div>
             </div>
           )}

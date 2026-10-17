@@ -66,6 +66,7 @@ export default function UserDetailPage() {
   const initialTab = searchParams.get("tab") || "all";
 
   const { user: currentUser } = useAuth();
+  const viewerScope = `${id}:${currentUser?.id ?? "anonymous"}`;
   const { t, tr, locale } = useI18n();
   const { kinds } = useDefinitions();
   // 收藏筛选与条目角标的层级名：服务端 definitions.kinds 优先，服务端未给时才退回内置
@@ -85,11 +86,13 @@ export default function UserDetailPage() {
     { id: "favorites", label: t("users.profile.tabs.favorites") },
   ] as const;
 
-  const [profile, setProfile] = useState<PublicUserProfile | null>(null);
+  const [loadedProfile, setProfile] = useState<PublicUserProfile | null>(null);
+  const [profileScope, setProfileScope] = useState("");
   const [profileFailure, setProfileFailure] = useState<LoadFailureKind | "">("");
   const [contribStats, setContribStats] = useState<ContributionStats | null>(null);
   const [contribStatsError, setContribStatsError] = useState("");
-  const [communityStats, setCommunityStats] = useState<CommunityUserStats | null>(null);
+  const [loadedCommunityStats, setCommunityStats] = useState<CommunityUserStats | null>(null);
+  const [communityScope, setCommunityScope] = useState("");
   const [communityStatsError, setCommunityStatsError] = useState("");
   const [tab, setTab] = useState<string>(initialTab);
   const [favFilter, setFavFilter] = useState<FavoriteTargetType | "">("");
@@ -102,10 +105,16 @@ export default function UserDetailPage() {
   const [listError, setListError] = useState<LoadFailureKind | "">("");
   const [reloadKey, setReloadKey] = useState(0);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [favVisible, setFavVisible] = useState(true);
+  const [favVisible, setFavVisible] = useState<boolean | null>(null);
+  const [favoritesScope, setFavoritesScope] = useState("");
   const [copiedId, setCopiedId] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>({});
+  // 身份或主页切换的第一次渲染就屏蔽旧数据，不等 effect 清空（邮箱、收藏可能仅原请求者可见）。
+  const profile = profileScope === viewerScope ? loadedProfile : null;
+  const communityStats = communityScope === viewerScope ? loadedCommunityStats : null;
+  const currentFavVisible = favoritesScope === viewerScope ? favVisible : null;
+  const favoritesLoading = tab === "favorites" && favoritesScope !== viewerScope;
 
   // 账号资料（auth）：失败只影响顶部资料卡与邀请数，不影响目录贡献与互动数据。
   useEffect(() => {
@@ -114,7 +123,10 @@ export default function UserDetailPage() {
     setProfileFailure("");
     fetchUserProfile(id)
       .then((p) => {
-        if (alive) setProfile(p);
+        if (alive) {
+          setProfile(p);
+          setProfileScope(viewerScope);
+        }
       })
       .catch((e: any) => {
         // 404 与"服务没响应"是两回事：前者说找不到这个人，后者才说暂时取不到。
@@ -123,7 +135,7 @@ export default function UserDetailPage() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, viewerScope]);
 
   // 目录贡献计数：stats 与 tab、分页无关，page_size=1 只为拿那一份计数，避免和列表重复取 20 条。
   useEffect(() => {
@@ -149,7 +161,10 @@ export default function UserDetailPage() {
     setCommunityStatsError("");
     fetchUserCommunityStats(id)
       .then((s) => {
-        if (alive) setCommunityStats(s);
+        if (alive) {
+          setCommunityStats(s);
+          setCommunityScope(viewerScope);
+        }
       })
       .catch((e: any) => {
         if (alive) setCommunityStatsError(e?.message || "request_failed");
@@ -157,13 +172,15 @@ export default function UserDetailPage() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, viewerScope]);
 
   useEffect(() => {
     if (tab !== "favorites") return;
     let alive = true;
     setLoading(true);
     setListError("");
+    setFavVisible(null);
+    setFavoritesScope(viewerScope);
     fetchFavorites(id, { targetType: favFilter || undefined, page, pageSize: 20 })
       .then((r) => {
         if (!alive) return;
@@ -183,7 +200,7 @@ export default function UserDetailPage() {
     return () => {
       alive = false;
     };
-  }, [id, tab, favFilter, page, reloadKey]);
+  }, [id, tab, favFilter, page, reloadKey, viewerScope]);
 
   useEffect(() => {
     if (tab === "favorites" || !isContributionTab(tab)) return;
@@ -251,6 +268,7 @@ export default function UserDetailPage() {
   // 自己是拿 URL 里的 id 判的，不依赖资料是否取到：账号服务不可用时，
   // 本人仍应能进设置页、能取消自己的收藏。
   const isMe = !!currentUser && currentUser.id === (u?.id || id);
+  const favoritesPrivate = !isMe && (u?.favorites_public === false || communityStats?.favorites_count === null);
 
   const getRevisionActionLabel = (action?: string) => {
     switch (action) {
@@ -281,7 +299,7 @@ export default function UserDetailPage() {
   const communityState: SourceState = communityStatsError ? "error" : communityStats ? "ok" : "loading";
 
   // 计数按来源展示：来源不可用或该字段缺席时显示"未知"，绝不用 0 冒充满值。
-  const statValue = (value: number | undefined, state: SourceState): string => {
+  const statValue = (value: number | null | undefined, state: SourceState): string => {
     if (state === "loading") return "…";
     if (state === "error" || typeof value !== "number") return t("users.profile.stats.unknown");
     return String(value);
@@ -396,9 +414,10 @@ export default function UserDetailPage() {
           </div>
         </div>
 
-        {/* Stats Grid：按来源拼接（账号 1 项 / 目录 5 项 / 互动 3 项），缺来源显示"未知" */}
+        {/* Stats Grid：缺来源显示未知，未公开的收藏计数不伪装成零。 */}
         <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
           {statTiles.map((it) => {
+            const privateStat = it.id === "favorites" && favoritesPrivate;
             const unknown = it.state !== "ok" || typeof it.value !== "number";
             return (
               <div key={it.id} className="rounded-lg border border-line bg-surface p-2.5 text-center shadow-2xs">
@@ -407,10 +426,10 @@ export default function UserDetailPage() {
                   <span className="truncate">{it.label}</span>
                 </div>
                 <div
-                  title={unknown ? t("users.profile.stats.unknown") : undefined}
+                  title={privateStat ? undefined : unknown ? t("users.profile.stats.unknown") : undefined}
                   className={unknown ? "text-xs font-semibold text-text-muted mt-1.5" : "text-base font-bold text-text-strong mt-0.5"}
                 >
-                  {statValue(it.value, it.state)}
+                  {privateStat ? t("users.profile.stats.private") : statValue(it.value, it.state)}
                 </div>
               </div>
             );
@@ -437,7 +456,7 @@ export default function UserDetailPage() {
           ))}
         </div>
 
-        {tab === "favorites" && (
+        {tab === "favorites" && currentFavVisible === true && !favoritesPrivate && (
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
             {[
               { id: "", label: t("users.profile.favFilterAll") },
@@ -463,7 +482,7 @@ export default function UserDetailPage() {
 
         {/* Content Box：key 随页签变化，切换时重放 .mf-tabpanel（与详情页/管理台同一约定） */}
         <TabPanel activeKey={tab} spacing="none" className="rounded-xl border border-line bg-surface overflow-hidden shadow-soft">
-          {loading ? (
+          {loading || favoritesLoading ? (
             <div className="p-8 text-center text-text-faint text-xs font-mono">{t("common.loading")}</div>
           ) : listError ? (
             <div className="p-8 text-center space-y-2">
@@ -485,7 +504,7 @@ export default function UserDetailPage() {
                 <span>{t("common.retry")}</span>
               </button>
             </div>
-          ) : tab === "favorites" && !favVisible ? (
+          ) : tab === "favorites" && (currentFavVisible === false || favoritesPrivate) ? (
             <div className="p-5 text-center space-y-2">
               <Lock className="w-6 h-6 text-text-muted mx-auto" strokeWidth={1.5} />
               <div className="text-sm text-text-body font-medium">{t("users.profile.favoritesPrivate")}</div>
@@ -646,6 +665,7 @@ export default function UserDetailPage() {
         </TabPanel>
 
         {/* Pagination */}
+        {(tab !== "favorites" || (currentFavVisible === true && !favoritesPrivate && !favoritesLoading)) && (
         <div className="flex items-center justify-between text-xs text-text-faint">
           <span className="font-mono text-[11px]">{t("users.profile.pagination", { total, page })}</span>
           <div className="flex gap-1.5">
@@ -665,6 +685,7 @@ export default function UserDetailPage() {
             </button>
           </div>
         </div>
+        )}
       </PageShell>
 
       {isChatOpen && u && (

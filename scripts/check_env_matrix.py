@@ -120,7 +120,7 @@ KEYS = {
     "AUTH_ACCOUNT_URL": {"readers": [("auth", "internal/handler/oauth.go")], "default": "空 = 站点相对路径", "safe": True},
     # ── 互动服务（../metafusion-community）───────────────────────────────
     "COMMUNITY_JWKS_URL": {"readers": [("community", "internal/config/config.go")], "default": "http://auth:8081/api/oidc/jwks", "safe": True},
-    "AUTH_URL": {"readers": [("catalog", "cmd/server/main.go"), ("community", "internal/config/config.go"), ("storage", "internal/config/config.go")], "default": "空 = 只接受 JWT；PAT（mfp_ 前缀）一律 503", "safe": True},
+    "AUTH_URL": {"readers": [("catalog", "cmd/server/main.go"), ("community", "internal/config/config.go"), ("storage", "internal/config/config.go")], "default": "空 = 只接受 JWT；PAT（mfp_ 前缀）一律 503", "safe": True, "note": "互动服务还经账号公开资料核实收藏隐私；未配置时非本人收藏与统计读取返回 503"},
     "CATALOG_URL": {"readers": [("community", "internal/config/config.go"), ("storage", "internal/config/config.go")], "default": "http://backend:8080", "safe": True},
     # 四个服务共用的一份实现见各仓 internal/nettrust（目录在 backend/internal/nettrust）。
     # 它决定"谁能通过 X-Forwarded-For 声明调用者 IP"：填错（尤其是 0.0.0.0/0）等于限流可被绕过，

@@ -8,10 +8,6 @@ import { AlertCircle, Loader2, Mail, RotateCw } from "lucide-react";
 /**
  * 「接收陌生人私信」开关（收件人侧，写的是互动服务的 /api/messages/settings）。
  *
- * 与同一区块里那两个**灰态**开关的区别：这一项真的有可写后端（community.direct_message_settings，
- * 迁移 000010），所以它是可点的真开关；那两个（收藏公开 / 邮箱可见）在账号服务里连列都不存在，
- * 前端既读不到也写不了，继续留灰态。
- *
  * 三态严格分开，不许互相伪装：
  *   - 读取中：转圈，不渲染开关（也**不**先画成"接收"）；
  *   - 读取失败：显示失败文案 + 重试，**不渲染开关**——把"取不到"画成"默认接收"就是在编造一个
@@ -108,7 +104,7 @@ export function DirectMessagePrivacyCard() {
             <span
               aria-hidden="true"
               className={
-                "absolute top-[3px] w-3.5 h-3.5 rounded-full bg-[color:var(--primary-contrast-color)] transition-transform duration-fast ease-soft " +
+                "absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-[color:var(--primary-contrast-color)] transition-transform duration-fast ease-soft " +
                 (accept ? "translate-x-[18px]" : "translate-x-[3px]")
               }
             />

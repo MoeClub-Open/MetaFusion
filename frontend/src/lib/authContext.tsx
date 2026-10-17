@@ -1,7 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, clearAuthTokens, normalizeSessionUser } from "./api";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { User, clearAuthTokens, normalizeSessionUser, type PrivacySettings } from "./api";
 import { clearSessionHint, hasSessionHint } from "./sessionHint";
 
 interface AuthContextType {
@@ -9,6 +9,7 @@ interface AuthContextType {
   loading: boolean;
   logout: () => void;
   refreshProfile: () => Promise<void>;
+  syncPrivacySettings: (userId: string, settings: PrivacySettings) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,11 +17,16 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: () => {},
   refreshProfile: async () => {},
+  syncPrivacySettings: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const syncPrivacySettings = useCallback((userId: string, settings: PrivacySettings) => {
+    setUser((current) => current?.id === userId ? { ...current, ...settings } : current);
+  }, []);
 
   const logout = async () => {
     try {
@@ -84,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshProfile, syncPrivacySettings }}>
       {children}
     </AuthContext.Provider>
   );
