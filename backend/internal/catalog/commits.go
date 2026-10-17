@@ -77,8 +77,6 @@ type CommitReceipt struct {
 	ReviewedAt     *time.Time        `json:"reviewed_at,omitempty"`
 	ReviewNote     string            `json:"review_note,omitempty"`
 	Preview        []CommitPreview   `json:"preview,omitempty"`
-	// QualityWarnings 只在 preview 返回：对受影响实体的自动质量诊断，纯建议，不阻止提交。
-	QualityWarnings []QualityIssue `json:"quality_warnings,omitempty"`
 }
 
 // FieldConflict is one divergent JSON Pointer from a three-way merge.
@@ -674,7 +672,6 @@ func (s *Store) PushCommit(ctx context.Context, in CatalogCommit, u User, previe
 			}
 		}
 		if preview {
-			out.QualityWarnings = commitQualityWarnings(ctx, tx, v, out.Items, &u)
 			return errPreviewRollback
 		}
 		if queued {

@@ -49,22 +49,16 @@ func TestQualityAuditReleaseWithoutTracks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
-	for _, w := range preview.QualityWarnings {
-		if w.Code == "medium_missing_tracks" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("preview quality_warnings missing medium_missing_tracks: %+v", preview.QualityWarnings)
+	if preview.Applied || len(preview.Preview) != 3 {
+		t.Fatalf("incomplete catalog data must remain previewable: %+v", preview)
 	}
 
 	out, err := f.s.PushCommit(ctx, in, f.u, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.QualityWarnings != nil {
-		t.Fatal("applied commit must not carry quality_warnings")
+	if !out.Applied {
+		t.Fatal("incomplete catalog data must remain editable")
 	}
 	rep, err := f.s.EntityQuality(ctx, out.Refs["r"], &f.u)
 	if err != nil {

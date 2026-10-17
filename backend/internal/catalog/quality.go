@@ -117,25 +117,6 @@ func (s *Store) QualityBatch(ctx context.Context, in QualityBatchRequest, u *Use
 	return out, nil
 }
 
-// commitQualityWarnings 在 preview 事务内（能看到本次未提交的写入）审计受影响实体，
-// 只返回问题列表；任何审计错误都被吞掉——质量提示是建议性的，绝不影响 preview 结果。
-func commitQualityWarnings(ctx context.Context, q queryer, v DefinitionConfig, items []CommitItem, u *User) []QualityIssue {
-	out := []QualityIssue{}
-	seen := map[string]bool{}
-	for _, it := range items {
-		if it.Target != "entity" || it.ID == "" || seen[it.ID] {
-			continue
-		}
-		seen[it.ID] = true
-		r, err := auditEntity(ctx, q, v, it.ID, u)
-		if err != nil {
-			continue
-		}
-		out = append(out, r.Issues...)
-	}
-	return out
-}
-
 func auditEntity(ctx context.Context, q queryer, v DefinitionConfig, id string, u *User) (QualityReport, error) {
 	e, err := get(ctx, q, id)
 	if err != nil {
