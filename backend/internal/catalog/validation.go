@@ -715,17 +715,17 @@ const (
 )
 
 func (d Definitions) value(f Field, v any, reference func(string, []string) error, historical bool) error {
-	// nil 视为未提供：仅在必填或 group 包含必填子字段时拒绝，其余类型非必填放行。
+	// 固定 DTO 的 attributes/locator 会把未提供的组传为 typed nil map。
+	if f.Type == "group" {
+		if group, ok := v.(map[string]any); ok && group == nil {
+			v = nil
+		}
+	}
+	// nil 表示未提供：仅当前字段必填时拒绝。可选 group 的子字段要求
+	// 只在实际提供对象后生效，不能把未填写的可选记录提升为整组必填。
 	if v == nil {
 		if f.Required {
 			return fmt.Errorf("required_field")
-		}
-		if f.Type == "group" {
-			for _, c := range f.Fields {
-				if c.Required {
-					return fmt.Errorf("required_field")
-				}
-			}
 		}
 		return nil
 	}

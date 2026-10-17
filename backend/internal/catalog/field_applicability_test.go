@@ -64,6 +64,49 @@ func TestNewFieldApplicabilityChangesWithoutCodeChange(t *testing.T) {
 	}
 }
 
+func TestOptionalGroupDoesNotRequireUnfilledMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		required bool
+		value    any
+		want     string
+	}{
+		{name: "optional group omitted"},
+		{name: "optional group null map", value: map[string]any(nil)},
+		{name: "optional group supplied", value: map[string]any{"label": "First edition"}},
+		{name: "supplied group requires its child", value: map[string]any{}, want: "required_field"},
+		{name: "supplied nested group requires its child", value: map[string]any{"label": "First edition", "details": map[string]any{}}, want: "required_field"},
+		{name: "required group omitted", required: true, want: "required_field"},
+		{name: "group still requires an object", value: "First edition", want: "expected_object"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := Defaults()
+			d.Fields["publication_statement"] = Field{
+				Names: names("出版说明", "Publication statement"), Type: "group",
+				ApplicableKinds: []string{"work"}, Enabled: true, Required: tc.required,
+				Fields: map[string]Field{
+					"label": {Names: names("名称", "Label"), Type: "text", Enabled: true, Required: true},
+					"details": {Names: names("详情", "Details"), Type: "group", Enabled: true, Fields: map[string]Field{
+						"note": {Names: names("说明", "Note"), Type: "text", Enabled: true, Required: true},
+					}},
+				},
+			}
+			e := Entity{Kind: "work", Title: "Work", State: "active"}
+			if tc.value != nil {
+				e.Attributes = map[string]any{"publication_statement": tc.value}
+			}
+			err := d.validateEntityContent(e, allowAllRef, false)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("editing unrelated metadata failed: %v", err)
+				}
+			} else if err == nil || err.Error() != "publication_statement: "+tc.want {
+				t.Fatalf("got %v, want publication_statement: %s", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestSchemeMatchingUsesKindAndMediumFormat(t *testing.T) {
 	d := Defaults()
 	d.Schemes["test_track_path"] = Scheme{Names: names("测试定位", "Test locator"), Slot: "locator", Kinds: []string{"track"}, Fields: []string{"relative_to", "path"}, Enabled: true}
