@@ -17,8 +17,7 @@ import {
   setTitleDisplayOrder,
 } from "@/lib/titles";
 
-// 默认优先级与快捷 chip 的候选都来自语言单一来源（@/lib/languages）；
-// 这里只保留"默认排在第几"这一件事：前 5 项是默认回退链顺序。
+// 初始列表沿用语言表的常用语种顺序；添加语言统一使用搜索选择器。
 const BASE_CODES = quickLanguages().map((l) => l.code);
 
 /**
@@ -76,8 +75,6 @@ export function TitleDisplayOrderSetting() {
     resetTitleDisplayOrder();
     reload();
   };
-
-  const missingBase = BASE_CODES.filter((c) => !order.some((o) => sameLanguage(o, c)));
 
   return (
     <div className="p-2.5 rounded-md bg-background border border-line-subtle text-xs font-mono space-y-2">
@@ -138,20 +135,6 @@ export function TitleDisplayOrderSetting() {
           </li>
         ))}
       </ol>
-      {missingBase.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {missingBase.map((code) => (
-            <button
-              key={code}
-              type="button"
-              onClick={() => add(code)}
-              className="px-2 py-0.5 rounded-full border border-line text-text-faint hover:text-gray-900 dark:hover:text-white"
-            >
-              + {languageNativeName(code)}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="pt-1 border-t border-line-subtle">
         <LanguagePicker
           selected={order}

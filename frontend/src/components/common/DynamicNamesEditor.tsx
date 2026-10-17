@@ -1,14 +1,13 @@
 "use client";
 
 
-import { Plus, X, Globe } from "lucide-react";
+import { X, Globe } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { LanguagePicker } from "@/components/common/LanguagePicker";
 import {
   canonicalLanguageCode,
   findLanguage,
   languageNativeName,
-  quickLanguages,
   REQUIRED_NAME_LOCALES,
   sameLanguage,
 } from "@/lib/languages";
@@ -16,9 +15,6 @@ import {
 export interface MultilingualNames {
   [langCode: string]: string;
 }
-
-// 快捷按钮的候选来自语言单一来源的常用语种（四语在最前，一点即得）。
-const COMMON_LANGUAGES = quickLanguages();
 
 /**
  * 四语齐备判据（与后端 four_locale_names_required 同口径）：
@@ -79,12 +75,6 @@ export function DynamicNamesEditor({
     if (existingCodes.some((c) => sameLanguage(c, code))) return;
     onChange({ ...currentNames, [code]: "" });
   };
-
-  // 快捷候选取常用语种里还没添加的那些；语言表的 popular 顺序已把界面四语排在最前，
-  // 所以下面 .slice(0, 4) 拿到的就是四语（必须一点即得）。
-  const availablePresets = COMMON_LANGUAGES.filter(
-    (lang) => currentNames[lang.code] === undefined
-  );
 
   return (
     <div className="min-w-0 space-y-2">
@@ -148,27 +138,14 @@ export function DynamicNamesEditor({
       </div>
 
       {/* 添加新语言 */}
-      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        {availablePresets.slice(0, 4).map((lang) => (
-          <button
-            key={lang.code}
-            type="button"
-            onClick={() => handleAdd(lang.code)}
-            className="px-2 py-0.5 rounded bg-emphasis/[0.04] hover:bg-emphasis/[0.08] text-text-muted hover:text-emphasis border border-line text-[10px] font-mono flex items-center gap-1 transition-colors duration-fast ease-soft"
-          >
-            <Plus className="w-2.5 h-2.5" />
-            <span>+{lang.code}</span>
-            <span className="text-text-faint text-[9px]">({lang.native})</span>
-          </button>
-        ))}
-
+      <div className="pt-1">
         {/* 语种由可搜索的语言选择器挑选：不必先知道代码，ja / 日本 / Japanese 都能搜到。 */}
         <LanguagePicker
           selected={existingCodes}
           onSelect={handleAdd}
-          label={t("multilingual.addOtherLang")}
-          ariaLabel={t("multilingual.addOtherLang")}
-          variant="chip"
+          label={t("multilingual.addLanguage")}
+          ariaLabel={t("multilingual.addLanguage")}
+          variant="field"
           inline
         />
       </div>
