@@ -49,7 +49,7 @@ function harness(initialViewer, response) {
       }
     },
     fetchAllPages: request,
-    fetchApi: request,
+    fetchEntityRelationships: (id) => request(`/catalog/entities/${id}/links`),
   };
   vm.runInNewContext(code, context);
   return {
@@ -70,7 +70,7 @@ function harness(initialViewer, response) {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const items = (data) => Array.from(data.items, (item) => item.id);
 function visibleData(url, viewer) {
-  if (url.includes('/relations')) return Promise.resolve({ items: [], entities: {} });
+  if (url.includes('/links')) return Promise.resolve({ items: [], entities: {} });
   return Promise.resolve(url.includes('kind=content_unit')
     ? [{ id: viewer === 'admin' ? 'private-chapter' : 'public-chapter' }]
     : []);

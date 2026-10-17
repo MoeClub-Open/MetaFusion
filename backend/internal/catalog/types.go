@@ -163,10 +163,6 @@ type Relation struct {
 	TargetID   string         `json:"target_id"`
 	Position   int            `json:"position"`
 	Attributes map[string]any `json:"attributes"`
-	// Via 非空表示：本实体不是这条关系的端点，而是通过某个**实体型属性**被引用
-	// （例如"所饰角色"角色端看"谁为它配音"）。取值是属性字段码（character / context …）。
-	// 只读路径填充，写入 DTO 忽略它。
-	Via string `json:"via,omitempty"`
 }
 type RelationEdit struct {
 	Relation        Relation `json:"relation"`

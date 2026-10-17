@@ -35,6 +35,8 @@ Release.subjects 是发行声明覆盖的作品，Work 的组成关系表达创�
 
 优先顺序是来源快照与定义版本，其次按真实场景补名称/事实限定和完整导出。现有字段与关系能表达的事实先通过 definitions 扩展；既有 Go/PostgreSQL 目录核心和独立存储足以承载这些扩展。来源与定义留存可在保存时自动处理，保持普通编辑流程简短。
 
+详情、目录、关系编辑器和 MCP 图谱共用 links/relationships-query 的读取投影，不另维护仅含普通关系的实体集合读接口。语义 link 返回原关系 ID 与真实 version，属性引用仍由所属字段维护；正反向读取不生成重复关系。Agent 同时承载个人和组织，参与关系文案不能预设为人员。当前 publisher 是单值字段：联合发行、多方职责、地区或期间应通过有上下文的动态关系表达；若将其统一为职责关系，须一次迁移权威事实，不能长期同时维护属性与同义边。
+
 ## 表达组合、版本组与收录编辑
 
 整体译本或整季剪辑用 `usage=expression_composition` 的普通关系引用同 Work 的部分 Expression，种子码为 `expression_part`。声明必须包含 `scope=work`、`acyclic=true`、`cycle_group=expression_composition`、`unique_position=true`、`aggregate=true`。全部同用途关系共用部分去重、顺序唯一与无环约束，部分表达可复用于多个整体；组合不代替实际 Track.contents。

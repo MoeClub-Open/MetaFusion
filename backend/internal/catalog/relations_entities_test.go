@@ -15,7 +15,7 @@ import (
 // relListResponse 关系列表响应的契约形状：items 是边、entities 是端点/主体摘要表、
 // subject_id 显式标出被查询实体自己。
 type relListResponse struct {
-	Items     []Relation                 `json:"items"`
+	Items     []EntityLink               `json:"items"`
 	Entities  map[string]json.RawMessage `json:"entities"`
 	SubjectID string                     `json:"subject_id"`
 }
@@ -61,7 +61,7 @@ func assertRelationEntitiesCoverage(t *testing.T, res relListResponse, wantSubje
 		for _, end := range []struct{ role, id string }{{"source_id", it.SourceID}, {"target_id", it.TargetID}} {
 			if _, ok := res.Entities[end.id]; !ok {
 				t.Errorf("关系 %s(%s) 的 %s=%s 不在 entities 映射里（现有键：%v）",
-					it.Type, it.ID, end.role, end.id, sortedEntityIDs(res))
+					it.RuleCode, it.Key, end.role, end.id, sortedEntityIDs(res))
 			}
 		}
 	}
@@ -76,7 +76,7 @@ func sortedEntityIDs(res relListResponse) []string {
 	return ids
 }
 
-// TestPostgresRelationListEntitiesCoverBothEnds 锁住 GET /entities/:id/relations 的实体映射契约：
+// TestPostgresRelationListEntitiesCoverBothEnds 锁住 GET /entities/:id/links 的实体映射契约：
 // entities 覆盖每条关系的两端并含被查询实体自身，subject_id 标出主体，主体摘要与其它条目同形状。
 // 旧实现只解析"另一端"——主体自己整段缺席（调用方按 entities[it.source_id] 渲染时主体恒为 ?），
 // 属性引用边（via）两端都不是本实体、旧实现只补了其中一端。
@@ -111,7 +111,7 @@ func TestPostgresRelationListEntitiesCoverBothEnds(t *testing.T) {
 		return w
 	}
 
-	res := decodeRelList(t, get("/api/catalog/entities/"+subject.ID+"/relations"))
+	res := decodeRelList(t, get("/api/catalog/entities/"+subject.ID+"/links"))
 	if len(res.Items) != 3 {
 		t.Fatalf("应返回 3 条关系（source/target/via 各一），实际 %d 条：%+v", len(res.Items), res.Items)
 	}
@@ -132,7 +132,7 @@ func TestPostgresRelationListEntitiesCoverBothEnds(t *testing.T) {
 	// 同 kind 的两条摘要（主体与另一 agent 对端）键集必须一致：形状随 kind 走，不因"是自己"缩水。
 	peerID := ""
 	for _, it := range res.Items {
-		if it.Type == "member_of" && it.SourceID != subject.ID {
+		if it.RuleCode == "relation:member_of" && it.SourceID != subject.ID {
 			peerID = it.SourceID
 		}
 	}
@@ -150,18 +150,18 @@ func TestPostgresRelationListEntitiesCoverBothEnds(t *testing.T) {
 		}
 	}
 	// via 边两端都不是本实体，两端都得补上（旧实现只补 source，target 缺席）。
-	var via Relation
+	var via EntityLink
 	for _, it := range res.Items {
-		if it.Via != "" {
+		if len(it.Via) > 0 {
 			via = it
 		}
 	}
-	if via.ID == "" {
+	if via.Key == "" {
 		t.Fatal("用例前置条件失效：没有读到属性引用边（via）")
 	}
 	for _, end := range []string{work.ID, actor.ID} {
 		if _, ok := res.Entities[end]; !ok {
-			t.Errorf("via 关系 %s 的端点 %s 缺失", via.ID, end)
+			t.Errorf("via 关系 %s 的端点 %s 缺失", via.Key, end)
 		}
 	}
 
@@ -169,8 +169,8 @@ func TestPostgresRelationListEntitiesCoverBothEnds(t *testing.T) {
 	// 它出现在映射里的唯一通道就是"补主体"——只解析端点（含旧实现"只补另一端"）必定缺席。
 	charOnly := f.save(Entity{Kind: "agent", Title: "只被属性引用的角色"})
 	relate(Relation{Type: "voiced_by", SourceID: work.ID, TargetID: peer.ID, Attributes: map[string]any{"character": charOnly.ID}})
-	charRes := decodeRelList(t, get("/api/catalog/entities/"+charOnly.ID+"/relations"))
-	if len(charRes.Items) != 1 || charRes.Items[0].Via != "character" {
+	charRes := decodeRelList(t, get("/api/catalog/entities/"+charOnly.ID+"/links"))
+	if len(charRes.Items) != 1 || strings.Join(charRes.Items[0].Via, ",") != "character" {
 		t.Fatalf("用例前置条件失效：属性引用主体应读到 1 条 via=character 的边，实际 %+v", charRes.Items)
 	}
 	assertRelationEntitiesCoverage(t, charRes, charOnly.ID)
@@ -181,11 +181,13 @@ func TestPostgresRelationListEntitiesCoverBothEnds(t *testing.T) {
 	}
 
 	// 分页/截断生效时（limit）：映射仍覆盖本页返回的每一条关系的两端 + 主体。
-	limited := decodeRelList(t, get("/api/catalog/entities/"+subject.ID+"/relations?limit=1"))
+	limited := decodeRelList(t, get("/api/catalog/entities/"+subject.ID+"/links?limit=1"))
 	if len(limited.Items) == 0 {
 		t.Fatal("limit=1 返回了空列表")
 	}
-	t.Logf("limit=1 实际返回 %d 条（该端点当前不分页，截断语义由 items 自身决定）", len(limited.Items))
+	if len(limited.Items) != 1 {
+		t.Fatalf("limit=1 must return one link, got %d", len(limited.Items))
+	}
 	assertRelationEntitiesCoverage(t, limited, subject.ID)
 }
 
@@ -215,9 +217,9 @@ func TestPostgresRelationAttributeQueryHidesDraftEndpoint(t *testing.T) {
 	r := gin.New()
 	HTTP{Store: f.s}.Register(r)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/catalog/entities/"+character.ID+"/relations", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/catalog/entities/"+character.ID+"/links", nil))
 	res := decodeRelList(t, w)
-	if len(res.Items) != 1 || res.Items[0].TargetID != publicActor.ID || res.Items[0].Via != "character" {
+	if len(res.Items) != 1 || res.Items[0].TargetID != publicActor.ID || strings.Join(res.Items[0].Via, ",") != "character" {
 		t.Fatalf("匿名关系列表只应包含公开端点：%+v", res.Items)
 	}
 	assertRelationEntitiesCoverage(t, res, character.ID)

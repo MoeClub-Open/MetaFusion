@@ -137,7 +137,7 @@ export type KindMap = Record<string, KindDef>;
 
 export interface RelationshipRule {
   code: string;
-  class: "ownership" | "placement" | "inclusion" | "semantic";
+  class: "ownership" | "placement" | "inclusion" | "semantic" | "reference";
   names: Record<string, string>;
   reverse_names: Record<string, string>;
   source_kinds: string[];
@@ -418,9 +418,10 @@ export function getRelationName(
   defs: DynamicDefinitions | null | undefined,
   relType: string,
   isForward: boolean,
-  locale: string
+  locale: string,
+  rules: readonly RelationshipRule[] = [],
 ): string {
-  const rel = defs?.relations?.[relType];
+  const rel = defs?.relations?.[relType] || rules.find((rule) => rule.code === relType);
   if (!rel) return relType.replace(/_/g, " ");
   const names = isForward ? rel.names : rel.reverse_names;
   return resolveLocalizedName(names, locale, relType.replace(/_/g, " "));

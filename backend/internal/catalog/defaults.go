@@ -634,7 +634,7 @@ func Defaults() Definitions {
 	// 通用署名兜底：外部来源的职位文本没有贴切既有关系码时（分镜、企画、制作、
 	// 制片人等），用它承载"谁参与了这部作品"，职位原文落在 credit_role。
 	// 有精确关系码时不使用，避免同一署名重复两条边。
-	addRel("credit_for", names4("参与制作", "參與製作", "クレジット", "Credited in"), names4("署名人员", "署名人員", "クレジット担当", "Credits"), []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
+	addRel("credit_for", names4("参与主体", "參與主體", "参加主体", "Contributors"), names4("参与记录", "參與記錄", "参加記録", "Contributions"), []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
 	// 译者关系：若默认信用关系里缺译者（translated_by 或等价）则补一个，
 	// group=credits，翻译作品的译者署名不再挤进通用兜底。
 	if _, ok := d.Relations["translated_by"]; !ok {

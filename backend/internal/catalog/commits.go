@@ -857,7 +857,7 @@ func (s *Store) applyCommitOperation(ctx context.Context, tx *sql.Tx, op CommitO
 		}
 		input := RelationEdit{Relation: r, ExpectedVersion: version, EditNote: in.EditNote, Sources: operationSources(in, op), definitions: defs}
 		if op.Action == "create" {
-			if r.ID != "" || r.Version != 0 || r.Via != "" {
+			if r.ID != "" || r.Version != 0 {
 				return item, fmt.Errorf("server_fields_forbidden")
 			}
 			input.createID = refs[op.Ref]

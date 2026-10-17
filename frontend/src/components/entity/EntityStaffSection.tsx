@@ -1,11 +1,11 @@
 "use client";
 
-// 通用署名区（一行即用）：自己拉 /catalog/entities/:id/relations，用通用构造喂
+// 通用署名区：从统一关系投影构造参与主体与角色。
 // StaffCharacterSection。各实体详情页（作品/发行版/载体/通用详情）统一用它，
 // 不再各写一套演职员展示。无署名关系时渲染空。
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchApi } from "@/lib/api";
+import { fetchEntityRelationships } from "@/lib/catalogRelationships";
 import { useDefinitions } from "@/lib/definitions";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Entity } from "@/components/catalog/api";
@@ -27,9 +27,7 @@ export function EntityStaffSection({
 
   useEffect(() => {
     let alive = true;
-    fetchApi<{ items: RelationLike[]; entities: Record<string, Entity> }>(
-      `/catalog/entities/${encodeURIComponent(entityId)}/relations`,
-    )
+    fetchEntityRelationships(entityId)
       .then((r) => {
         if (!alive) return;
         setRelations(Array.isArray(r.items) ? r.items : []);

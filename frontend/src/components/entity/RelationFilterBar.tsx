@@ -29,7 +29,7 @@ import {
  */
 export function useRelationFilter<R extends RelationFacetRow>(rows: R[], groupOrder?: string[]) {
   const { t, tr, locale } = useI18n();
-  const { definitions: defs, kinds } = useDefinitions();
+  const { definitions: defs, kinds, relationshipRules } = useDefinitions();
   const [selection, setSelection] = useState<RelationFacetSelection>({});
 
   // 分类解析：只有声明了 group 且该分组有本地化名才按分类展示——否则两个无名分组
@@ -56,11 +56,11 @@ export function useRelationFilter<R extends RelationFacetRow>(rows: R[], groupOr
       groupOf,
       kindLabelOf: (kind: string) => getKindName(kinds, kind, locale, tr(`catalog.kind.${kind}`, kind)),
       typeLabelOf: (row: RelationFacetRow) =>
-        (row.label || "").trim() || getRelationName(defs, row.type, true, locale),
-      typeNeutralLabelOf: (type: string) => getRelationName(defs, type, true, locale),
+        (row.label || "").trim() || getRelationName(defs, row.type, true, locale, relationshipRules),
+      typeNeutralLabelOf: (type: string) => getRelationName(defs, type, true, locale, relationshipRules),
       groupOrder,
     }),
-    [t, tr, locale, defs, kinds, groupOf, groupOrder]
+    [t, tr, locale, defs, kinds, relationshipRules, groupOf, groupOrder]
   );
 
   const facets = useMemo(

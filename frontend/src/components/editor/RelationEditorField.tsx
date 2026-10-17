@@ -8,6 +8,7 @@ import { can, CATALOG_RELATION_EDIT } from "@/lib/permissions";
 import { useDefinitions, getFieldName, getRelationName } from "@/lib/definitions";
 import { api, Entity, Source } from "@/components/catalog/api";
 import { commitSubmitter, type CommitOperation } from "@/lib/catalogCommits";
+import { fetchEntityRelationships, editableRelations } from "@/lib/catalogRelationships";
 import { EntityPicker, FieldInput } from "@/components/catalog/Fields";
 import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
@@ -119,10 +120,8 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
     setLoading(true);
     setError("");
     try {
-      const res = await api<{ items: Relation[]; entities: Record<string, Entity> }>(
-        `/catalog/entities/${entityId}/relations`,
-      );
-      setItems(Array.isArray(res.items) ? res.items : []);
+      const res = await fetchEntityRelationships(entityId);
+      setItems(editableRelations(res.items));
       setPeers(res.entities && typeof res.entities === "object" ? res.entities : {});
     } catch (e) {
       setError(t("editor.relation.loadFailed"));

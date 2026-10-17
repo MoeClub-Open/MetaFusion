@@ -299,125 +299,32 @@ func relationsWithEndpoint(ctx context.Context, q queryer, id string) ([]Relatio
 	return out, rows.Err()
 }
 
-// Relations 返回该实体的关系列表（端点边 + 以它为实体型属性取值的引用边）。
-// 只关心边本身的调用方用它；关系 HTTP 响应还要主体摘要，用 relationsWithSubject。
+// Relations selects editable semantic facts from the unified relationship projection.
 func (s *Store) Relations(ctx context.Context, id string, u *User) ([]Relation, error) {
-	rels, _, err := s.relationsWithSubject(ctx, id, u)
-	return rels, err
-}
-
-// relationsWithSubject 与 Relations 同口径，额外返回被查询实体自身：
-// 关系响应要同时给出主体摘要（subject_id 与 entities 里的自身条目），
-// 单独再查一次会把"主体存在且可见"的判断做两遍，也可能与边取到不同时刻的版本。
-func (s *Store) relationsWithSubject(ctx context.Context, id string, u *User) ([]Relation, Entity, error) {
-	self, err := s.Get(ctx, id, u)
-	if err != nil {
-		return nil, Entity{}, err
-	}
-	rels, err := s.relations(ctx, id, u)
-	if err != nil {
-		return nil, Entity{}, err
-	}
-	return rels, self, nil
-}
-
-// relations 只做边查询：调用方已确认主体存在且可见。
-func (s *Store) relations(ctx context.Context, id string, u *User) ([]Relation, error) {
-	d, err := s.Definitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// 取两类边：
-	//  1) 该实体是端点的边；
-	//  2) 该实体作为**实体型属性值**被引用的边 —— 例如角色 C 不是"配音"关系的端点，
-	//     而是关系属性 character 的取值。不查第二类，角色详情页就永远看不到
-	//     "谁为它配音、在哪些作品里"，这正是"数据存得下但读不出来"的缺口。
-	entityFields := []string{}
-	for code, f := range d.Document.Fields {
-		if f.Type == "entity" && f.Enabled {
-			entityFields = append(entityFields, code)
-		}
-	}
-	sort.Strings(entityFields)
-	args := []any{id}
-	conds := []string{"source_id = $1", "target_id = $1"}
-	for _, code := range entityFields {
-		payload, _ := json.Marshal(map[string]string{code: id})
-		args = append(args, string(payload))
-		conds = append(conds, fmt.Sprintf("document->'attributes' @> $%d::jsonb", len(args)))
-	}
-	rows, err := s.DB.QueryContext(ctx, "SELECT document FROM catalog.relations WHERE "+strings.Join(conds, " OR ")+" ORDER BY id", args...)
-	if err != nil {
-		return nil, err
-	}
-	var all []Relation
-	for rows.Next() {
-		var b []byte
-		var r Relation
-		if err = rows.Scan(&b); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if err = json.Unmarshal(b, &r); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		all = append(all, r)
-	}
-	if err = rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	rows.Close()
-	peerIDs := make([]string, 0, len(all)*2)
-	for _, r := range all {
-		peerIDs = append(peerIDs, r.SourceID, r.TargetID)
-	}
-	peers, err := s.GetManyVisible(ctx, peerIDs, u)
-	if err != nil {
-		return nil, err
-	}
 	out := []Relation{}
-	for _, r := range all {
-		if _, ok := peers[r.SourceID]; !ok {
-			continue
+	for offset := 0; ; {
+		page, err := s.EntityLinks(ctx, id, 100, offset, u)
+		if err != nil {
+			return nil, err
 		}
-		if _, ok := peers[r.TargetID]; !ok {
-			continue
+		for _, link := range page.Items {
+			if link.Class != "semantic" {
+				continue
+			}
+			if link.Version == nil {
+				return nil, fmt.Errorf("missing relation version")
+			}
+			out = append(out, Relation{ID: link.Key, Version: *link.Version,
+				Type: strings.TrimPrefix(link.RuleCode, "relation:"), SourceID: link.SourceID,
+				TargetID: link.TargetID, Position: link.Position, Attributes: link.Attributes})
 		}
-		// 端点优先：本实体是端点时 Via 留空，只有纯属性引用才标出字段码——
-		// 客户端据此区分"它是这条边的端点"与"它是被某个实体型属性引用的第三方"。
-		if r.SourceID != id && r.TargetID != id {
-			r.Via = attributeReferencingField(r.Attributes, entityFields, id)
+		if !page.HasMore {
+			break
 		}
-		// 删除码后旧边读路径宽容：Relations 读路径只做"字段仍声明+引用可达"
-		// 校验（historical=true），停用/删除的码不断读（与 impact 的 historical
-		// 宽容同口径）。关系码本身已删除（!ok）时同样保留——删除码不断读，
-		// 停用才由 retiredAttributes 在写入时拦截新增使用。
-		rt, ok := d.Document.Relations[r.Type]
-		if !ok {
-			out = append(out, r)
-			continue
-		}
-		if err := d.Document.attributes(rt.Fields, r.Attributes, reference(ctx, s.DB, u), true); err != nil {
-			continue
-		}
-		out = append(out, r)
+		offset += page.Limit
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Position < out[j].Position })
 	return out, nil
-}
-
-// attributeReferencingField 返回把 id 当取值引用的实体型属性字段码（没有则空串）。
-// 与 Relations 的查询条件同口径：只认顶层、值恰好等于 id 的实体型字段；
-// 字段码已排序，多个命中时结果稳定。
-func attributeReferencingField(attrs map[string]any, fields []string, id string) string {
-	for _, code := range fields {
-		if v, ok := attrs[code].(string); ok && v == id {
-			return code
-		}
-	}
-	return ""
 }
 
 // 关系源端遵循实体编辑权限（catalog.entity.edit）；公开目标可由受信任编辑员建立关系。

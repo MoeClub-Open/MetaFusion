@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Entity } from "./api";
-import { fetchApi } from "@/lib/api";
+import { fetchEntityRelationships } from "@/lib/catalogRelationships";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getKindName, getRelationName, useDefinitions } from "@/lib/definitions";
 import { componentEntries, type RelationRow } from "@/components/work/WorkContentDirectory";
@@ -25,7 +25,7 @@ export function useAggregateRelations(entityId: string) {
     if (!entityId) return;
     let active = true;
     setState("loading");
-    fetchApi<RelationData>(`/catalog/entities/${encodeURIComponent(entityId)}/relations`)
+    fetchEntityRelationships(entityId)
       .then((response) => {
         if (!active) return;
         setData(response);

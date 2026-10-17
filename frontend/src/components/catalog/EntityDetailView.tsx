@@ -19,10 +19,10 @@ import {
   Entity,
   fetchAllPages,
   mapLimit,
-  Relation,
   title,
 } from "@/components/catalog/api";
 import { loadCatalogSection } from "@/lib/catalogSection";
+import { fetchEntityRelationships, type RelationshipRecord } from "@/lib/catalogRelationships";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isDistinctOriginalTitle } from "@/lib/titles";
@@ -124,7 +124,7 @@ export function EntityDetailView({ id }: { id: string }) {
   // 两处会不同步——定义发布、会话刷新后，只有恰好挂在 Provider 下的路由才看得到变化。
   const { modules } = useCatalog();
   const { user } = useAuth();
-  const { definitions: dynamicDefs, kinds } = useDefinitions();
+  const { definitions: dynamicDefs, kinds, relationshipRules } = useDefinitions();
   const defs = dynamicDefs;
   // kind 展示名统一走服务端 definitions.kinds，字典只作兜底（缺键退原始码，不显示裸 key）。
   const kindLabel = useCallback(
@@ -147,9 +147,9 @@ export function EntityDetailView({ id }: { id: string }) {
   const [motherRelease, setMotherRelease] = useState<Entity | null>(null);
   const [motherMedium, setMotherMedium] = useState<Entity | null>(null);
   const [occurrences, setOccurrences] = useState<any[]>([]);
-  const [relations, setRelations] = useState<Relation[]>([]);
+  const [relations, setRelations] = useState<RelationshipRecord[]>([]);
   const [relatedEntities, setRelatedEntities] = useState<Record<string, Entity>>({});
-  // 响应标出的主体 id（/relations 的 subject_id）。
+  // 统一关系投影返回的主体 ID。
   const [relationSubjectId, setRelationSubjectId] = useState<string>("");
   const [loadedChildren, setChildren] = useState<Entity[]>([]);
   const children = isCurrentRead ? loadedChildren : [];
@@ -233,7 +233,7 @@ export function EntityDetailView({ id }: { id: string }) {
       let metadataFailed = false;
       const [occResult, relResult, revResult, posts, collections] = await Promise.all([
         loadCatalogSection(api<{ items: any[] }>(`/catalog/entities/${e.id}/occurrences`), { items: [] }),
-        loadCatalogSection(api<{ items: Relation[]; entities: Record<string, Entity>; subject_id: string }>(`/catalog/entities/${e.id}/relations`), { items: [] as Relation[], entities: {} as Record<string, Entity>, subject_id: e.id || "" }, (value) => !!value.entities && typeof value.entities === "object" && typeof value.subject_id === "string"),
+        loadCatalogSection(fetchEntityRelationships(e.id!), { items: [] as RelationshipRecord[], entities: {} as Record<string, Entity>, subject_id: e.id || "" }),
         loadCatalogSection(api<{ items: any[] }>(`/catalog/entities/${e.id}/revisions`), { items: [] }),
         // 互动服务没接入（或这两条端点不可用）时整块留空，不阻断条目详情渲染；
         // 端点与请求体由 lib/api/community.ts 的包装负责，本组件不再自己拼 URL。
@@ -249,7 +249,7 @@ export function EntityDetailView({ id }: { id: string }) {
       const occItems = Array.isArray(occRes.items) ? occRes.items : [];
       const relItems = Array.isArray(relRes.items) ? relRes.items : [];
       if (!Array.isArray(occRes.items) || !Array.isArray(relRes.items) || !Array.isArray(revRes.items)) metadataFailed = true;
-      // 关系对端实体由 relations 接口一并返回（单次批量查询），不再逐条 Get。
+      // 普通关系与字段引用共用已有 links 投影，按 has_more 读取完整页及端点摘要。
       // 映射覆盖每条关系的两端（含主体自身），subject_id 指出哪一端是主体；
       setRelatedEntities(relRes.entities || {});
       setRelationSubjectId(relRes.subject_id);
@@ -461,12 +461,12 @@ export function EntityDetailView({ id }: { id: string }) {
         source: r.source_id,
         target: r.target_id,
         type: r.type,
-        label: getRelationName(defs, r.type, true, locale),
+        label: getRelationName(defs, r.type, true, locale, relationshipRules),
       });
     }
 
     return { graphNodes: nodes, graphLinks: links };
-  }, [entity, relations, relatedEntities, resolvedCover, locale, id, defs, titleOrder]);
+  }, [entity, relations, relatedEntities, resolvedCover, locale, id, defs, titleOrder, relationshipRules]);
 
   const copyUuid = async () => {
     if (!entity?.id) return;

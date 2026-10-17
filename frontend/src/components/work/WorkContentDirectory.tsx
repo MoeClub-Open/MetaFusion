@@ -7,7 +7,7 @@ import { Entity, title as entityTitle } from "@/components/catalog/api";
 import { fetchAllPages } from "@/components/catalog/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getKindName, getRelationName, getTermName, useDefinitions } from "@/lib/definitions";
-import { fetchApi } from "@/lib/api";
+import { fetchEntityRelationships } from "@/lib/catalogRelationships";
 import { useAuth } from "@/lib/authContext";
 // 日期值的呈现与信息面板共用同一实现（本地化/图例口径一致，不另写格式化）。
 import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
@@ -102,7 +102,7 @@ export function useWorkDirectoryData(workId: string): WorkDirectoryData {
         const [units, exprs, rel] = await Promise.all([
           fetchAllPages<Entity>(`/catalog/entities?kind=content_unit&work_id=${encodeURIComponent(workId)}`),
           fetchAllPages<Entity>(`/catalog/entities?kind=expression&work_id=${encodeURIComponent(workId)}`),
-          fetchApi<{ items: RelationRow[]; entities: Record<string, Entity> }>(`/catalog/entities/${encodeURIComponent(workId)}/relations`),
+          fetchEntityRelationships(workId),
         ]);
         if (current()) setState({
           readKey, status: "ready", items: [...units, ...exprs],
@@ -150,7 +150,7 @@ export function componentEntries(
   const seen = new Set<string>();
   for (const r of relations) {
     if (!isAggregate(r.type)) continue;
-    // /relations also returns edges that merely reference this entity in an
+    // Unified links also return edges that merely reference this entity in an
     // attribute; those are not its membership edges.
     if (r.source_id !== selfId && r.target_id !== selfId) continue;
     const outgoing = r.source_id === selfId;

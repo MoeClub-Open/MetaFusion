@@ -1,4 +1,4 @@
-// 通用署名条目构造：任一实体详情页把 /catalog/entities/:id/relations 的
+// 通用署名条目构造：任一实体详情页把统一关系读取的
 // {items, entities} 喂进来，得到 StaffCharacterSection 消费的结构化条目。
 //
 // 仅依据 definitions 的 counts_as_credit + participant_slot 判定语义，方向由当前主体

@@ -1,5 +1,7 @@
 import type { Entity, Relation } from "@/components/catalog/api";
 
+type ReadableRelation = Omit<Relation, "version">;
+
 export type RelationDirectoryRow = {
   key: string;
   type: string;
@@ -9,12 +11,12 @@ export type RelationDirectoryRow = {
   entity?: Entity;
   source?: Entity;
   target?: Entity;
-  records: Relation[];
+  records: ReadableRelation[];
 };
 
 // Coalesce statements about the same endpoints, retaining every statement and
 // its qualifiers. Titles never establish identity (Work and Expression can match).
-export function relationDirectoryRows(subjectId: string, relations: Relation[], entities: Record<string, Entity>) {
+export function relationDirectoryRows(subjectId: string, relations: ReadableRelation[], entities: Record<string, Entity>) {
   const rows = new Map<string, RelationDirectoryRow>();
   for (const record of relations) {
     const direction = record.source_id === subjectId ? "outgoing" : record.target_id === subjectId ? "incoming" : "reference";

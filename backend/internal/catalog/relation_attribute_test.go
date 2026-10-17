@@ -24,13 +24,13 @@ func TestPostgresRelationAttributeReferences(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建立配音关系失败：%v", err)
 	}
-	rels, err := f.s.Relations(ctx, character.ID, &f.u)
+	rels, err := f.s.EntityLinks(ctx, character.ID, 100, 0, &f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
-	for _, r := range rels {
-		if r.Type == "voiced_by" && r.Via == "character" {
+	for _, r := range rels.Items {
+		if r.RuleCode == "relation:voiced_by" && len(r.Via) == 1 && r.Via[0] == "character" {
 			found = true
 		}
 	}
@@ -38,12 +38,12 @@ func TestPostgresRelationAttributeReferences(t *testing.T) {
 		t.Fatalf("角色侧应能读到以它为 character 属性的配音关系，实际 %+v", rels)
 	}
 	// 反向：声优自己是端点，via 应为空（不假装它是属性引用）。
-	actorRels, err := f.s.Relations(ctx, actor.ID, &f.u)
+	actorRels, err := f.s.EntityLinks(ctx, actor.ID, 100, 0, &f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range actorRels {
-		if r.Type == "voiced_by" && r.Via != "" {
+	for _, r := range actorRels.Items {
+		if r.RuleCode == "relation:voiced_by" && len(r.Via) > 0 {
 			t.Fatalf("端点边不应带 via，实际 %q", r.Via)
 		}
 	}

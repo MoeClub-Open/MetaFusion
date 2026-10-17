@@ -658,22 +658,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.Revisions(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, gin.H{"items": v}, err)
 	})
-	cat.GET("/entities/:id/relations", func(c *gin.Context) {
-		v, self, err := s.relationsWithSubject(c.Request.Context(), c.Param("id"), user(c))
-		if err != nil {
-			respond(c, nil, err)
-			return
-		}
-		// 同一响应内返回关系两端实体 + 被查询实体自身（单次批量查询）：真实条目署名可达数百条，
-		// 前端逐条 Get 会因截断与限流丢失端点，详情页只能显示原始 UUID。
-		// subject_id 显式标出"哪个是自己"：调用方按 entities[it.source_id] 渲染"谁→谁"时
-		// 不必再猜主体是哪一端。
-		respond(c, gin.H{
-			"items":      v,
-			"entities":   h.resolveRelated(c.Request.Context(), self, v, user(c)),
-			"subject_id": self.ID,
-		}, nil)
-	})
 	cat.GET("/entities/:id/links", func(c *gin.Context) {
 		limit, offset, err := listPagination(c)
 		if err != nil {
@@ -1120,33 +1104,3 @@ const swaggerHTML = `<!DOCTYPE html>
   </script>
 </body>
 </html>`
-
-// resolveRelated 批量解析关系实体（单次查询），失败/不可见的跳过。
-// 映射必须覆盖**每条返回关系的两端**，外加被查询实体自身：
-// 只解析"另一端"会让调用方按 entities[it.source_id] 渲染时把主体一侧渲染成 ?；
-// 属性引用边（Via 非空）两端都不是本实体，只补一端同样会缺。
-// 输入是本次响应真正要返回的 rels，因此分页/截断（limit）后映射不会因"某端不在本页"而缺失。
-// u 用请求方身份，保证草稿实体的创建者/管理员能看到自己的关系端点。
-// 不设固定条数上限：真实条目（如动画）署名可达数百条，截断会让详情页缺数据。
-func (h HTTP) resolveRelated(ctx context.Context, self Entity, rels []Relation, u *User) map[string]Entity {
-	ids := make([]string, 0, len(rels)*2+1)
-	seen := map[string]bool{}
-	add := func(id string) {
-		if id == "" || seen[id] {
-			return
-		}
-		seen[id] = true
-		ids = append(ids, id)
-	}
-	// 主体排在最前：它在响应里是 subject_id 指向的条目，缺失会让调用方拿不到主体摘要。
-	add(self.ID)
-	for _, r := range rels {
-		add(r.SourceID)
-		add(r.TargetID)
-	}
-	got, err := h.Store.GetManyVisible(ctx, ids, u)
-	if err != nil {
-		return map[string]Entity{}
-	}
-	return got
-}

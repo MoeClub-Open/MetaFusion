@@ -17,6 +17,7 @@ import (
 // relation UUIDs; callers edit fixed links through their owning entity.
 type EntityLink struct {
 	Key        string         `json:"key"`
+	Version    *int64         `json:"version,omitempty"`
 	RuleCode   string         `json:"rule_code"`
 	Class      string         `json:"class"`
 	Direction  string         `json:"direction"`
@@ -269,6 +270,8 @@ func entityLinksFrom(ctx context.Context, q queryer, id string, limit, offset in
 					continue
 				}
 				link.Class, link.Key = "semantic", relationID
+				version := relation.Version
+				link.Version = &version
 			} else if strings.HasPrefix(link.RuleCode, "attribute:") {
 				link.Class = "reference"
 				link.Key = link.RuleCode + ":" + link.SourceID + ":" + link.Field + ":" + link.TargetID

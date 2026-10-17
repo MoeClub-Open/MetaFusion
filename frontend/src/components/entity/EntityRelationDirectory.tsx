@@ -16,18 +16,20 @@ import { relationDirectoryRows, relationDirectorySearch, type RelationDirectoryR
 import { RelationFilterBar, useRelationFilter } from "./RelationFilterBar";
 
 export function EntityRelationDirectory({ subjectId, relations, entities, groupOrder, summary = false }: {
-  subjectId: string; relations: Relation[]; entities: Record<string, Entity>; groupOrder?: string[]; summary?: boolean;
+  subjectId: string; relations: Omit<Relation, "version">[]; entities: Record<string, Entity>; groupOrder?: string[]; summary?: boolean;
 }) {
   const { t, tr, locale } = useI18n();
-  const { definitions: defs, kinds } = useDefinitions();
+  const { definitions: defs, kinds, relationshipRules } = useDefinitions();
   const titleOrder = useTitleDisplayOrder();
   const searchId = useId();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const rows = useMemo(() => relationDirectoryRows(subjectId, relations, entities), [subjectId, relations, entities]);
   const filterRows = useMemo(() => rows.filter((row) => relationDirectorySearch(row, search)).map((row) => ({
-    ...row, label: getRelationName(defs, row.type, row.direction !== "incoming", locale),
-  })), [rows, search, defs, locale]);
+    ...row, label: row.direction === "incoming" && row.type.startsWith("attribute:")
+      ? t("relations.directory.referencedAs", { field: getRelationName(defs, row.type, true, locale, relationshipRules) })
+      : getRelationName(defs, row.type, row.direction !== "incoming", locale, relationshipRules),
+  })), [rows, search, defs, locale, relationshipRules, t]);
   const filter = useRelationFilter(filterRows, groupOrder);
   const name = (entity: Entity | undefined, id: string) => entity ? title(entity, locale, titleOrder) || entity.title || id : id;
   const count = filter.visible.reduce((sum, row) => sum + row.records.length, 0);
