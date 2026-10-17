@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { EntityCard } from "@/components/common/EntityCard";
+import { EntityCardGrid } from "@/components/common/EntityCardGrid";
 import { fetchQualityBatch } from "@/lib/quality";
 import { Pagination } from "@/components/common/Pagination";
 import { kindIcon } from "@/lib/kindIcons";
@@ -34,6 +35,9 @@ import {
 import { TabPanel } from "@/components/ui/TabPanel";
 import { Select } from "@/components/ui/Select";
 import { languageLabel, searchLanguages } from "@/lib/languages";
+
+// 固定骨架的浏览顺序；可选项和多语言名称仍由 definitions 提供。
+const EXPLORE_KIND_ORDER = ["work", "content_unit", "expression", "release", "medium", "track", "agent", "collection"];
 
 /** 列表项：图片结构复用 lib/cover 的 CoverBearing（首张即封面只在那一处定义）。 */
 interface EntityItem extends CoverBearing {
@@ -342,12 +346,18 @@ function ExploreInner() {
   };
 
   // 「实体种类」面板的可选项 = 服务端 definitions.kinds 里未停用的种类。
-  // 前端不维护任何种类清单：后台增删 kind、改多语言名，这里自动跟着变；排序按当前语种的名称。
+  // 作品及其内容/载体层级优先，其次主体与集合；其它启用种类按本地化名称追加。
   const kindOptions = useMemo(
     () =>
       Object.keys(kinds || {})
         .filter((code) => kinds[code]?.enabled !== false)
-        .sort((a, b) => getKindName(kinds, a, locale).localeCompare(getKindName(kinds, b, locale))),
+        .sort((a, b) => {
+          const rank = (code: string) => {
+            const index = EXPLORE_KIND_ORDER.indexOf(code);
+            return index < 0 ? EXPLORE_KIND_ORDER.length : index;
+          };
+          return rank(a) - rank(b) || getKindName(kinds, a, locale).localeCompare(getKindName(kinds, b, locale));
+        }),
     [kinds, locale],
   );
 
@@ -779,28 +789,30 @@ function ExploreInner() {
                 </button>
               </div>
             ) : viewMode === "grid" ? (
-              <TabPanel activeKey={listKey} spacing="none" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                {items.map((item) => {
-                  const displayTitle = getLocalizedTitle(item, locale, titleOrder);
-                  // 角标 = 实体类型（kind）；业务类型留在正文的类型标签里，不做成"分类"角标。
-                  const badgeLabel = kindLabel(item.kind);
-                  // 列表/网格只展示封面（首张图）：多图画廊在详情页。
-                  const cover = coverUrl(item);
+              <TabPanel activeKey={listKey} spacing="none">
+                <EntityCardGrid className="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {items.map((item) => {
+                    const displayTitle = getLocalizedTitle(item, locale, titleOrder);
+                    // 角标 = 实体类型（kind）；业务类型留在正文的类型标签里，不做成"分类"角标。
+                    const badgeLabel = kindLabel(item.kind);
+                    // 列表/网格只展示封面（首张图）：多图画廊在详情页。
+                    const cover = coverUrl(item);
 
-                  return (
-                    <EntityCard
-                      key={item.id}
-                      id={item.id}
-                      kind={item.kind}
-                      badgeLabel={badgeLabel}
-                      title={displayTitle}
-                      baseTitle={item.title}
-                      tags={getTagNames(definitions, item.attributes?.tags, locale)}
-                      pictureUrl={cover}
-                      qualityStatus={qualityById[item.id]}
-                    />
-                  );
-                })}
+                    return (
+                      <EntityCard
+                        key={item.id}
+                        id={item.id}
+                        kind={item.kind}
+                        badgeLabel={badgeLabel}
+                        title={displayTitle}
+                        baseTitle={item.title}
+                        tags={getTagNames(definitions, item.attributes?.tags, locale)}
+                        pictureUrl={cover}
+                        qualityStatus={qualityById[item.id]}
+                      />
+                    );
+                  })}
+                </EntityCardGrid>
               </TabPanel>
             ) : (
               <TabPanel activeKey={listKey} spacing="none" className="rounded-xl border border-line bg-surface overflow-hidden divide-y dark:divide-white/[0.04] shadow-soft">

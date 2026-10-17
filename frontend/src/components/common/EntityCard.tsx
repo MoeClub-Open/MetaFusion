@@ -49,13 +49,13 @@ export function EntityCard({
       href={"/catalog/" + id}
       aria-label={title}
       title={showBaseTitle ? `${title}\n${baseTitle}` : title}
-      className="mf-focus group flex flex-col rounded-xl bg-surface hover:shadow-elevated border border-line hover:border-primary/50 overflow-hidden transition-colors duration-base ease-soft"
+      className="mf-focus group flex min-w-0 flex-col self-start rounded-xl motion-safe:hover:-translate-y-1 transition-transform duration-base ease-soft"
     >
       <AdaptiveCardCover
         src={pictureUrl}
         alt={title}
-        /* 网格卡片统一走 lib/cover 的 GRID_COVER_ASPECT（3:4）：目录里的封面
-           以竖版书封/海报为主，方形容器会把它们压成"中间一条、两侧空块"。 */
+        naturalAspect
+        /* 3:4 仅用于加载中与无图占位，实际封面按原图比例撑开。 */
         aspectRatio={GRID_COVER_ASPECT}
         badge={
           <span className="px-2 py-0.5 rounded-md bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
@@ -69,11 +69,11 @@ export function EntityCard({
             {fallbackSubtitle && <span className="absolute bottom-3 inset-x-3 text-center text-xs text-text-muted line-clamp-1">{fallbackSubtitle}</span>}
           </div>
         }
-        className="border-b border-line-subtle"
+        className="rounded-xl shadow-sm ring-1 ring-inset ring-black/10 dark:ring-white/10 group-hover:shadow-elevated transition-shadow duration-base ease-soft"
       />
 
-      <div className="p-3 flex-1">
-        <h3 className="min-h-10 font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 leading-snug mb-1">
+      <div className="px-0.5 pt-2.5 pb-1">
+        <h3 className="font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 leading-snug mb-1">
           <span className="inline">{title}</span>
           {qualityStatus === "partial" && (
             <span

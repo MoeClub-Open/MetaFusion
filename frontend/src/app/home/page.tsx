@@ -11,6 +11,7 @@ import { PageContainer, PageShell } from "@/components/ui/PageShell";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { useAuth } from "@/lib/authContext";
 import { EntityCard } from "@/components/common/EntityCard";
+import { EntityCardGrid } from "@/components/common/EntityCardGrid";
 import { fetchApi } from "@/lib/api";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { HomeCustomizeModal } from "@/components/home/HomeCustomizeModal";
@@ -231,7 +232,7 @@ export default function HomePage() {
                   </Link>
                 </div>
 
-                <div className="grid gap-3 grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+                <EntityCardGrid className="grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
                   {items.map((item) => {
                     const displayTitle = pickRecordTitle(locale, item.translations, item.title, {
                       order: titleOrder,
@@ -255,7 +256,7 @@ export default function HomePage() {
                       />
                     );
                   })}
-                </div>
+                </EntityCardGrid>
               </section>
             );
           })

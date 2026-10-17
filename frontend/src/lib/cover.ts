@@ -72,9 +72,7 @@ export const MIN_COVER_ASPECT = 2 / 3;
 export const MAX_COVER_ASPECT = 2;
 
 /**
- * 网格/卡片场景的统一容器比例：同排对齐优先，取 3:4 维持目录的竖版视觉。
- * 图片按 contain 完整放入容器（见 AdaptiveCardCover），比例不合的部分留衬底
- * （像相框卡纸），不再为了填满而裁切主体。
+ * 网格封面加载中与无图时的占位比例；真实封面加载后按图片自身比例展示。
  */
 export const GRID_COVER_ASPECT = 3 / 4;
 
