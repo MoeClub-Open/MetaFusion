@@ -134,7 +134,7 @@ export function EntityEditor({
   const [note, setNote] = useState(initialEditNote);
   // 新建条目时关系先入队：条目拿到 id 之后再逐条写入（见 save）。
   const [pendingRelations, setPendingRelations] = useState<RelationDraft[]>([]);
-  // 幂等键的会话部分：同一次编辑会话内稳定，载荷指纹在提交时算（见 lib/idempotency）。
+  // 同一提交载荷重试时复用原请求 ID，见 commitSubmitter。
   const submit = useRef(commitSubmitter());
   const baseEntity = useRef(base || initial);
   const [sources, setSources] = useState<Source[]>(initialSources || [

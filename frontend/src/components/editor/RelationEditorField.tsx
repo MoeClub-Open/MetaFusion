@@ -65,7 +65,7 @@ export function RelationEditorField({ entityId, entityKind, note, sources, draft
   const { t, locale } = useI18n();
   const { definitions: defs } = useDefinitions();
   const { user } = useAuth();
-  // 幂等键的会话部分：同一次表单会话内稳定，载荷指纹在提交时算（见 lib/idempotency）。
+  // 同一提交载荷重试时复用原请求 ID，见 commitSubmitter。
   const submitCommit = React.useRef(commitSubmitter());
   const [submission,setSubmission] = useState("");
   const push = async (ops:CommitOperation[]) => {

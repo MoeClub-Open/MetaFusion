@@ -11,7 +11,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { ArticleFootnoteView } from "@/components/catalog/ArticleFootnoteView";
 
-export const FootnoteReference = Node.create({
+const FootnoteReference = Node.create({
   name: "articleFootnoteReference", inline: true, group: "inline", atom: true,
   addAttributes: () => ({ label: { default: "" } }),
   parseHTML: () => [{ tag: "sup[data-footnote-reference]", getAttrs: (element) => ({ label: element.getAttribute("data-footnote-reference") }) }],
@@ -27,7 +27,7 @@ export const FootnoteReference = Node.create({
   },
 });
 
-export const FootnoteDefinition = Node.create({
+const FootnoteDefinition = Node.create({
   name: "articleFootnoteDefinition", group: "block", atom: true,
   addOptions: () => ({ onEdit: undefined as ((raw: string, position: number) => void) | undefined }),
   addNodeView: () => ReactNodeViewRenderer(ArticleFootnoteView),

@@ -19,7 +19,7 @@ export { fetchExternalDatabases, fetchAdminExternalDatabases, createExternalData
 export type { ExternalDatabaseDefinition, ExternalLinkDisplay } from "./api/admin";
 export { fetchAdminRateLimits, saveAdminRateLimits, fetchCommunityAdminRateLimits, saveCommunityAdminRateLimits } from "./api/admin";
 export type { RateLimitRule, RateLimitPolicy, RateLimitConfig, CommunityRateLimitConfig, MessageRateLimitPolicy } from "./api/admin";
-export { fetchExternalSources, queryExternalSource } from "./api/externalSources";
-export type { FetchMeta, ExternalSourceQueryRequest, ExternalSourceQueryResponse, ExternalSourceSearchItem, ExternalSourcePreview, ExternalSource } from "./api/externalSources";
+export { fetchExternalSources } from "./api/externalSources";
+export type { ExternalSource } from "./api/externalSources";
 export { fetchNotifications, fetchUnreadCount, markNotificationRead, markAllNotificationsRead, emitNotificationsChanged, NOTIFICATIONS_CHANGED_EVENT, NOTIFICATION_PAGE_SIZE_DEFAULT } from "./api/notifications";
 export type { Notification, NotificationType, NotificationSubjectType, NotificationListResponse, MarkNotificationReadResult, MarkAllNotificationsReadResult } from "./api/notifications";

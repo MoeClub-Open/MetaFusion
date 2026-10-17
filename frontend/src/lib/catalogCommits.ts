@@ -37,7 +37,7 @@ export function commitSubmitter() {
   };
 }
 
-export const entityFactFields = ["title","original_language","translations","attributes","external_links","pictures",
+const entityFactFields = ["title","original_language","translations","attributes","external_links","pictures",
   "content_unit_id","parent_id","position","number","contents","subjects"] as const;
 
 export function entityOperation(next: Entity, base?: Entity, reviewed: string[] = []): CommitOperation {

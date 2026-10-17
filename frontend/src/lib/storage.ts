@@ -9,7 +9,7 @@
 import { ApiError, fetchApi } from "./api";
 
 /** 网关统一前缀。浏览器端 getApiBase() 恒为 "/api"，与 lib/api 的既有约定一致。 */
-export const STORAGE_API_BASE = "/api/storage";
+const STORAGE_API_BASE = "/api/storage";
 
 /** 默认绑定用途，与存储服务 handler 的 defaultRole 一致。 */
 export const DEFAULT_BINDING_ROLE = "master_archive";
@@ -18,7 +18,7 @@ export const DEFAULT_BINDING_ROLE = "master_archive";
 export const BINDING_ROLE_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
 
 /** assets 主键是 UUID：编辑器据此给行内提示，服务端 invalid_picture_asset 仍是最终判据。 */
-export const ASSET_UUID_PATTERN =
+const ASSET_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** 空值放过（asset_id 可选），非空时必须是标准写法 UUID；不合规不会被存储服务认。 */
