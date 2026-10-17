@@ -36,6 +36,39 @@ func TestDefaultsValidate(t *testing.T) {
 	}
 }
 
+// 普通曲目与专辑主作品分别声明，不能因为种子缺少词项而借用附加作品。
+func TestDefaultsValidateReleaseTrackWorks(t *testing.T) {
+	d := Defaults()
+	albumID := "00000000-0000-0000-0000-000000000001"
+	songID := "00000000-0000-0000-0000-000000000002"
+	release := Entity{
+		Kind: "release", Title: "Album", State: "active",
+		Translations: map[string]Translation{"en-US": {Title: "Album"}},
+		Subjects: []Subject{
+			{WorkID: albumID, Role: "primary", Position: 0},
+			{WorkID: songID, Role: "track_work", Position: 1},
+		},
+	}
+	seen := map[string]bool{}
+	reference := func(id string, kinds []string) error {
+		if id != albumID && id != songID || len(kinds) != 1 || kinds[0] != "work" {
+			t.Fatalf("unexpected subject reference: id=%s kinds=%v", id, kinds)
+		}
+		seen[id] = true
+		return nil
+	}
+	if err := d.validateEntity(release, reference, false); err != nil {
+		t.Fatalf("ordinary album tracks rejected: %v", err)
+	}
+	if !seen[albumID] || !seen[songID] {
+		t.Fatalf("subject references were not validated: %v", seen)
+	}
+	release.Subjects[1].Role = "unknown_role"
+	if err := d.validateEntity(release, reference, false); errCode(err) != "invalid_term" {
+		t.Fatalf("unknown release role: got %v, want invalid_term", err)
+	}
+}
+
 // 版本维度必须各自独立：类别/批次/地区/渠道是能同时成立的维度，
 // 把限定/初回/地区/再版塞进同一个互斥枚举就无法表达"日本初回限定再版"。
 func TestDefaultsEditionDimensionsAreSeparate(t *testing.T) {

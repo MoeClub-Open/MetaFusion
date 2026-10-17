@@ -221,6 +221,7 @@ func Defaults() Definitions {
 		}},
 		{"release_role", names4("发行对象用途", "發行對象用途", "対象作品の用途", "Release subject roles"), []termSeed{
 			{"primary", names4("主作品", "主作品", "メイン作品", "Primary")},
+			{"track_work", names4("曲目作品", "曲目作品", "収録曲の作品", "Track work")},
 			{"compilation", names4("汇编作品", "合輯作品", "コンピレーション", "Compilation")},
 			{"supplement", names4("附加作品", "附加作品", "特典作品", "Supplement")},
 		}},
