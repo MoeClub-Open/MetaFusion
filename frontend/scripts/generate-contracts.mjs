@@ -36,6 +36,8 @@ const PERMISSIONS_TS = path.join(HERE, "../src/lib/permissions.ts");
 const CATALOG_API_TS = path.join(HERE, "../src/components/catalog/api.ts");
 
 const SERVICES = [
+  { id: "assistant", prefix: "assistant.", file: path.join(ROOT, "backend/internal/assistant/permissions.go"), required: true, note: "backend/internal/assistant/permissions.go",
+    why: "LLM 配置、积分、BYO 凭据和生成缓存的后台管理权限。" },
   { id: "catalog", prefix: "catalog.", file: path.join(ROOT, "backend/internal/catalog/permission.go"), required: true, note: "backend/internal/catalog/permission.go",
     why: "目录权限：条目/关系/定义/生命周期/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。" },
   { id: "auth", prefix: "auth.", file: path.join(ROOT, "../metafusion-auth/internal/store/access.go"), required: false, note: "../metafusion-auth/internal/store/access.go",

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/metafusion/metafusion-app/internal/assistant"
 	"github.com/metafusion/metafusion-app/internal/audit"
 	"github.com/metafusion/metafusion-app/internal/capabilities"
 	"github.com/metafusion/metafusion-app/internal/catalog"
@@ -160,7 +161,34 @@ func main() {
 		log.Print("INTERNAL_API_TOKEN is not configured: cross-service notification delivery is disabled (POST /api/notifications/internal returns 503 internal_api_disabled)")
 	}
 	catalogHTTP := catalog.HTTP{Store: s, InternalToken: internalToken}
+	aiKey, err := assistant.ParseEncryptionKey(os.Getenv("AI_ENCRYPTION_KEY"))
+	if err != nil {
+		log.Fatal("AI_ENCRYPTION_KEY must be a base64-encoded 32-byte key")
+	}
+	if len(aiKey) == 0 {
+		log.Print("AI_ENCRYPTION_KEY is not configured: LLM credential writes and calls are disabled")
+	}
+	aiStore := assistant.NewStore(s.DB, aiKey)
+	go func() {
+		timer := time.NewTicker(time.Minute)
+		defer timer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				recoveryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				_, recoveryErr := aiStore.RecoverReservations(recoveryCtx, time.Now().Add(-10*time.Minute))
+				cancel()
+				if recoveryErr != nil && ctx.Err() == nil {
+					log.Print("assistant: abandoned usage reservation recovery failed")
+				}
+			}
+		}
+	}()
+	catalog.RegisterOpenAPIModule("assistant", assistant.AddOpenAPI)
 	catalogHTTP.Register(r)
+	catalogHTTP.RegisterModule(r, assistant.HTTP{Store: aiStore, Catalog: s}.Register)
 
 	// 能力清单是**部署态声明**：子系统拆出去之后，能力由部署配置声明（见 capabilities 包），
 	// 目录不探测上游、不发任何出站请求，清单只有 {id, enabled}。它是唯一的公开只读端点，
@@ -208,7 +236,7 @@ func main() {
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      180 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 

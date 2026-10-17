@@ -276,13 +276,18 @@ func InvalidateDefinitionsCache() {
 func get(ctx context.Context, q queryer, id string) (Entity, error) {
 	var e Entity
 	var b []byte
-	err := q.QueryRowContext(ctx, "SELECT document FROM catalog.entities WHERE id=$1", id).Scan(&b)
+	var state, createdBy string
+	err := q.QueryRowContext(ctx, "SELECT document,state,created_by::text FROM catalog.entities WHERE id=$1", id).Scan(&b, &state, &createdBy)
 	if err != nil {
 		return e, err
 	}
 	if err = json.Unmarshal(b, &e); err != nil {
 		return e, err
 	}
+	// Visibility and ownership use the same authoritative columns as batch
+	// reads. A stale embedded snapshot must not expose a deleted entity or
+	// grant its previous owner access after ownership has changed.
+	e.State, e.CreatedBy = state, createdBy
 	switch e.Kind {
 	case "content_unit":
 		err = q.QueryRowContext(ctx, "SELECT work_id,coalesce(parent_id::text,'') FROM catalog.content_units WHERE id=$1", id).Scan(&e.WorkID, &e.ParentID)

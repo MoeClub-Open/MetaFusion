@@ -20,11 +20,18 @@ test("foreign management permissions and empty grants cannot enter catalog gover
 });
 
 test("lifecycle and wildcard grants expose their corresponding management work", () => {
-  for (const section of ["entities", "merge"] as const) assert.ok(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), section));
+  for (const section of ["entities", "merge", "requestLogs"] as const) assert.ok(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), section));
   assert.equal(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), "definitions"), false);
   assert.equal(canUseCatalogAdminTab(user(["catalog.lifecycle.manage"]), "reviews"), false);
   assert.equal(canUseCatalogAdminTab(user(["catalog.review.manage"]), "reviews"), true);
   for (const section of ["overview", "reviews", "definitions", "shelves", "merge"] as const) assert.ok(canUseCatalogAdminTab(user(["*"]), section));
+});
+
+test("all-state records and cross-user API logs require lifecycle management", () => {
+  for (const permissions of [["catalog.definitions.manage"], ["catalog.review.manage"], ["catalog.shelves.manage"], ["assistant.manage"], []]) {
+    for (const section of ["entities", "requestLogs"] as const) assert.equal(canUseCatalogAdminTab(user(permissions), section), false);
+  }
+  assert.ok(canUseCatalogAdminTab(user(["*"]), "requestLogs"));
 });
 
 test("community rate-limit grant opens only the shared rate-limit workspace", () => {
@@ -33,4 +40,15 @@ test("community rate-limit grant opens only the shared rate-limit workspace", ()
   for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "shelves", "modules", "exchange"] as const) {
     assert.equal(canUseCatalogAdminTab(operator, section), false);
   }
+});
+
+test("assistant operators only enter assistant governance and definition operators manage public sources", () => {
+  const operator = user(["assistant.manage"]);
+  assert.ok(canUseCatalogAdminTab(operator, "assistant"));
+  for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "publicSources", "shelves", "modules", "exchange", "ratelimits"] as const) {
+    assert.equal(canUseCatalogAdminTab(operator, section), false);
+  }
+  assert.equal(canUseCatalogAdminTab(user(["catalog.definitions.manage"]), "assistant"), false);
+  assert.ok(canUseCatalogAdminTab(user(["catalog.definitions.manage"]), "publicSources"));
+  assert.ok(canUseCatalogAdminTab(user(["*"]), "assistant"));
 });

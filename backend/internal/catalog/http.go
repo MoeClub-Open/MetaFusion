@@ -349,6 +349,8 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	// 站内通知：读取端（收件箱/未读数/标记已读）与跨服务投递端（见 notifications_http.go）。
 	// 同样必须在 attachUser 与审计中间件之后——收件人取自 user(c)，标记已读是写操作要留痕。
 	h.registerNotifications(api)
+	h.registerPublicSources(api)
+	h.registerAdminInventory(api)
 	cat := api.Group("/catalog")
 	// 发布的定义文档 + 固定骨架的多语言名称。kinds 放在文档**外面**：它是骨架的显示名，
 	// 不是可编辑的动态定义（放进 document 会被后台保存时当成未知键处理），但同样必须由服务端

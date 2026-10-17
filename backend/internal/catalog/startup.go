@@ -36,6 +36,18 @@ var requiredCatalogTables = []string{
 	"catalog.schema_contract",
 	"catalog.external_links",
 	"catalog.api_rate_windows",
+	"assistant.settings",
+	"assistant.providers",
+	"assistant.models",
+	"assistant.byo_credentials",
+	"assistant.accounts",
+	"assistant.credit_entries",
+	"assistant.budget_months",
+	"assistant.usage",
+	"assistant.conversations",
+	"assistant.chat_requests",
+	"assistant.generated_content",
+	"assistant.public_sources",
 }
 
 // CheckSchemaContract 是 HTTP 进程启动的唯一前置检查：只读校验必需表、已发布契约与
@@ -62,8 +74,8 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 33 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 33 required (run mf-migrate up)")
+	if contractVersion != 34 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 34 required (run mf-migrate up)")
 	}
 	var hasCommitProvenance bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='revisions' AND column_name='commit_id')`).Scan(&hasCommitProvenance); err != nil {

@@ -83,6 +83,7 @@ OTHER_SERVICE_ROUTES = [
     ("auth", "prefix", "/api/setup"),
     ("auth", "prefix", "/api/auth/"),
     ("auth", "prefix", "/api/admin/users"),
+    ("auth", "prefix", "/api/admin/credentials"),
     ("auth", "prefix", "/api/admin/groups"),
     ("auth", "prefix", "/api/admin/permissions"),
     ("auth", "prefix", "/api/admin/settings"),

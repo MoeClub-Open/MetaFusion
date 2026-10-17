@@ -11,6 +11,7 @@ import { articleTranslations, pickArticleTranslation } from "@/lib/catalogArticl
 import { Select } from "@/components/ui/Select";
 import type { Entity } from "./api";
 import { CatalogArticle } from "./CatalogArticle";
+import { GeneratedOverview } from "@/components/assistant/GeneratedOverview";
 
 export function EntityArticle({ entity, titleOrder }: { entity: Entity; titleOrder?: string[] }) {
   const { t, locale } = useI18n();
@@ -43,6 +44,7 @@ export function EntityArticle({ entity, titleOrder }: { entity: Entity; titleOrd
       {summary && <p className="text-sm text-text-strong leading-relaxed whitespace-pre-line">{summary}</p>}
       {article ? <CatalogArticle content={article.body} lang={article.locale} />
         : <p className="text-xs text-text-muted">{t("catalog.article.empty")}</p>}
+      {entity.id && <GeneratedOverview entityID={entity.id} version={entity.version} />}
     </div>
   );
 }

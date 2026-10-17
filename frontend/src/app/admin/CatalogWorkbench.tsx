@@ -6,9 +6,12 @@ import Link from "next/link";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { CommitReviewQueue } from "@/components/catalog/CommitReview";
+import { AssistantAdmin } from "@/components/assistant/AssistantAdmin";
+import { PublicSourcesAdmin } from "@/components/admin/PublicSourcesAdmin";
+import { CatalogRequestLogsAdmin } from "@/components/admin/CatalogRequestLogsAdmin";
 import { DefinitionsEditor } from "@/components/catalog/DefinitionsEditor";
 import { Evidence } from "@/components/catalog/Fields";
-import type { Source } from "@/components/catalog/api";
+import type { Entity, Source } from "@/components/catalog/api";
 import { catalogEvidenceError } from "@/lib/catalogEvidence";
 import { useDefinitions, getKindName, resolveKindOptions } from "@/lib/definitions";
 import { PageContainer } from "@/components/ui/PageShell";
@@ -36,6 +39,7 @@ import {
   ArrowUpRight,
   Globe,
   Gauge,
+  Activity,
 } from "lucide-react";
 
 import { isCompatibleMergeTarget } from "@/lib/mergeTarget";
@@ -52,14 +56,18 @@ const NAV_GROUPS: { labelKey: string; tabs: { id: AdminTab; labelKey: string; ic
     { id: "definitions", labelKey: "admin.tab.definitions", icon: Sliders },
     { id: "shelves", labelKey: "admin.tab.shelves", icon: LayoutDashboard },
     { id: "extdb", labelKey: "admin.tab.extdb", icon: Globe },
+    { id: "publicSources", labelKey: "admin.publicSources.title", icon: Globe },
   ] },
   { labelKey: "admin.nav.operations", tabs: [
+    { id: "assistant", labelKey: "assistant.admin.title", icon: Cpu },
+    { id: "requestLogs", labelKey: "admin.requestLogs.title", icon: Activity },
     { id: "ratelimits", labelKey: "admin.tab.ratelimits", icon: Gauge },
     { id: "modules", labelKey: "admin.tab.modules", icon: Cpu },
     { id: "exchange", labelKey: "admin.tab.exchange", icon: ArrowUpRight },
   ] },
 ];
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
+type AdminEntity = Entity & { id: string };
 
 // 聚合计数的取值口径：只接受有限数字。字段缺失（端点没有这个键）、类型不对、
 // 整个响应拿不到，都返回 null，调用方据此保留占位符——"取不到"与"真的是 0"必须分开。
@@ -113,13 +121,17 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
   }>({ pending: null, active: null, tombstones: null, extDatabases: null });
   const [modules, setModules] = useState<any[]>([]);
   // Entities management state
-  const [entitiesList, setEntitiesList] = useState<any[]>([]);
+  const [entitiesList, setEntitiesList] = useState<AdminEntity[]>([]);
   const [entitiesListFailed, setEntitiesListFailed] = useState(false);
   const [entitiesLoading, setEntitiesLoading] = useState(false);
   const [entitiesQ, setEntitiesQ] = useState("");
+  const [entitiesSearch, setEntitiesSearch] = useState("");
   const [entitiesKind, setEntitiesKind] = useState("all");
+  const [entitiesState, setEntitiesState] = useState("all");
   const [entitiesPage, setEntitiesPage] = useState(1);
   const [entitiesTotal, setEntitiesTotal] = useState<number | null>(null);
+  const [entitiesHasMore, setEntitiesHasMore] = useState(false);
+  const [expandedEntity, setExpandedEntity] = useState<string | null>(null);
   const entitiesRequest = useRef(0);
 
   // Merge form states
@@ -179,26 +191,26 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     setEntitiesLoading(true);
     const params = new URLSearchParams();
     if (entitiesKind !== "all") params.set("kind", entitiesKind);
-    if (entitiesQ.trim()) params.set("q", entitiesQ.trim());
+    if (entitiesSearch) params.set("q", entitiesSearch);
+    if (entitiesState !== "all") params.set("state", entitiesState);
     params.set("limit", String(PAGE_SIZE));
-    params.set("page", String(page));
+    params.set("offset", String((page - 1) * PAGE_SIZE));
 
     setEntitiesListFailed(false);
-    fetch(`/api/catalog/entities?${params.toString()}`, { credentials: "same-origin" })
-      .then((r) => {
-        if (!r.ok) throw new Error(String(r.status));
-        return r.json();
-      })
+    fetchApi<{ items: AdminEntity[]; total: number; has_more: boolean }>(`/admin/catalog-entities?${params.toString()}`)
       .then((d) => {
         if (request !== entitiesRequest.current) return;
-        if (!Array.isArray(d.items) || countOrNull(d.total) === null) throw new Error("invalid_response");
+        if (!Array.isArray(d.items) || countOrNull(d.total) === null || typeof d.has_more !== "boolean") throw new Error("invalid_response");
         setEntitiesList(d.items);
         setEntitiesTotal(countOrNull(d.total));
+        setEntitiesHasMore(d.has_more);
+        setExpandedEntity(null);
       })
       .catch(() => {
         if (request !== entitiesRequest.current) return;
         setEntitiesList([]);
         setEntitiesTotal(null);
+        setEntitiesHasMore(false);
         setEntitiesListFailed(true);
       })
       .finally(() => { if (request === entitiesRequest.current) setEntitiesLoading(false); });
@@ -214,10 +226,11 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
   }, [mayEnterCatalog, user?.id, mayManageLifecycle]);
 
   useEffect(() => {
-    if (currentTab === "entities" && mayEnterCatalog) {
+    if (currentTab === "entities" && mayManageLifecycle) {
       loadEntities();
     }
-  }, [currentTab, entitiesKind, entitiesPage, mayEnterCatalog]);
+    return () => { entitiesRequest.current += 1; };
+  }, [currentTab, entitiesKind, entitiesState, entitiesSearch, entitiesPage, mayManageLifecycle, user?.id]);
 
   // 这里刻意没有"启停"动作：运行时模块开关已随子系统拆分退役，
   // 能力是否可用由部署决定（服务在不在、配置没配置），面板只呈现事实（enabled），
@@ -448,10 +461,10 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (entitiesPage === 1) loadEntities(1);
-                    else setEntitiesPage(1);
+                    if (entitiesPage === 1 && entitiesSearch === entitiesQ.trim()) loadEntities(1);
+                    else { setEntitiesSearch(entitiesQ.trim()); setEntitiesPage(1); }
                   }}
-                  className="sm:col-span-5 relative flex items-center"
+                  className="sm:col-span-6 relative flex items-center"
                 >
                   <Search className="absolute left-3 w-4 h-4 text-text-faint" />
                   <input
@@ -480,10 +493,18 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                     aria-label={t("catalog.kindLabel")}
                   />
                 </div>
-
-
+                <div className="sm:col-span-3">
+                  <Select value={entitiesState} onChange={(value) => { setEntitiesState(value); setEntitiesPage(1); }}
+                    aria-label={t("admin.entities.colStatus")}
+                    options={[
+                      { value: "all", label: t("admin.entities.allStates") },
+                      { value: "active", label: t("admin.entities.stateActive") },
+                      { value: "deleted", label: t("catalog.state.deleted") },
+                      { value: "merged", label: t("catalog.state.merged") },
+                    ]} />
+                </div>
               </div>
-              <p className="text-xs text-text-faint">{t("admin.entities.activeOnlyHint")}</p>
+              <p className="text-xs text-text-faint">{t("admin.entities.allStatesHint")}</p>
 
               {/* Table */}
               {entitiesLoading ? (
@@ -517,11 +538,11 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                     </thead>
                     <tbody className="divide-y divide-line-subtle">
                       {entitiesList.map((e) => (
+                        <React.Fragment key={e.id}>
                         <tr key={e.id} className="hover:bg-surfaceSubtle transition-colors duration-fast ease-soft">
                           <td className="py-2.5 px-3">
-                            <Link href={`/catalog/${e.id}`} className="font-semibold text-text-strong hover:text-primary transition-colors duration-fast ease-soft line-clamp-1">
-                              {e.title}
-                            </Link>
+                            <button type="button" onClick={() => setExpandedEntity(expandedEntity === e.id ? null : e.id)} aria-expanded={expandedEntity === e.id}
+                              className="font-semibold text-left text-text-strong hover:text-primary transition-colors duration-fast ease-soft line-clamp-1">{e.title}</button>
                             <div className="text-[10px] text-text-faint font-mono">ID: {e.id}</div>
                           </td>
                           <td className="py-2.5 px-3">
@@ -537,7 +558,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                               e.state === "merged" ? "bg-purple-500/20 text-alt" :
                               "bg-surfaceSubtle text-text-muted"
                             }`}>
-                              {e.state === "active" ? t("catalog.review.reviewed") : tr(`catalog.state.${e.state}`, e.state)}
+                              {e.state === "active" ? t("admin.entities.stateActive") : tr(`catalog.state.${e.state}`, e.state)}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 font-mono text-[11px] text-text-muted">
@@ -545,12 +566,14 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                           </td>
                           <td className="py-2.5 px-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <Link
+                              {e.state === "active" && <Link
                                 href={`/catalog/${e.id}`}
                                 className="px-2 py-1 rounded bg-surfaceSubtle hover:bg-surfaceHover text-text-body hover:text-text-strong text-[11px] transition-colors duration-fast ease-soft"
                               >
-                                {t("admin.entities.edit")}
-                              </Link>
+                                {t("admin.entities.open")}
+                              </Link>}
+                              <button type="button" onClick={() => setExpandedEntity(expandedEntity === e.id ? null : e.id)} aria-expanded={expandedEntity === e.id}
+                                className="px-2 py-1 rounded bg-surfaceSubtle hover:bg-surfaceHover text-text-body hover:text-text-strong text-[11px]">{t("admin.entities.record")}</button>
                               {mayManageLifecycle && e.state !== "deleted" && e.state !== "merged" && (
                                 <button
                                   type="button"
@@ -566,6 +589,11 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                             </div>
                           </td>
                         </tr>
+                        {expandedEntity === e.id && <tr><td colSpan={5} className="p-3 bg-surfaceSubtle">
+                          <p className="mb-2 text-xs text-text-muted">{t("admin.entities.recordHint")}</p>
+                          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-surface p-3 text-[11px] font-mono text-text-body">{JSON.stringify(e, null, 2)}</pre>
+                        </td></tr>}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -576,7 +604,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                   <span>{t("admin.pagination", { page: entitiesPage, pages: Math.ceil(entitiesTotal / PAGE_SIZE), total: entitiesTotal })}</span>
                   <div className="flex gap-2">
                     <button type="button" disabled={entitiesPage === 1} onClick={() => setEntitiesPage((p) => p - 1)} className="rounded-lg border border-line px-3 py-2 hover:bg-surfaceHover disabled:opacity-40">{t("catalog.prevPage")}</button>
-                    <button type="button" disabled={entitiesPage * PAGE_SIZE >= entitiesTotal} onClick={() => setEntitiesPage((p) => p + 1)} className="rounded-lg border border-line px-3 py-2 hover:bg-surfaceHover disabled:opacity-40">{t("catalog.nextPage")}</button>
+                    <button type="button" disabled={!entitiesHasMore} onClick={() => setEntitiesPage((p) => p + 1)} className="rounded-lg border border-line px-3 py-2 hover:bg-surfaceHover disabled:opacity-40">{t("catalog.nextPage")}</button>
                   </div>
                 </div>
               )}
@@ -709,6 +737,9 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
           )}
 
           {currentTab === "exchange" && <ExchangeTab />}
+          {currentTab === "assistant" && <AssistantAdmin />}
+          {currentTab === "publicSources" && <PublicSourcesAdmin />}
+          {currentTab === "requestLogs" && <CatalogRequestLogsAdmin />}
           </div>
         </TabPanel>
       </PageContainer>

@@ -149,5 +149,6 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     throw new ApiError(errorData.error || `HTTP ${res.status}`, res.status, errorData);
   }
 
+  if (res.status === 204) return undefined as T;
   return res.json();
 }

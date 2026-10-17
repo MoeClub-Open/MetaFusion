@@ -36,6 +36,7 @@ func AuditActions() map[string]string {
 		"DELETE /api/catalog/relations/:id":                 "relation.deleted",
 		"PUT /api/admin/catalog-definitions":                "definition.updated",
 		"PUT /api/admin/rate-limits":                        "rate_limit.updated",
+		"PUT /api/admin/public-sources":                     "public_source.updated",
 		"POST /api/admin/external-databases":                "external_database.created",
 		"PUT /api/admin/external-databases/:code":           "external_database.updated",
 		"DELETE /api/admin/external-databases/:code":        "external_database.deleted",
@@ -65,6 +66,8 @@ func AuditExempt() map[string]string {
 		"POST /api/catalog/entities/identity":         "批量身份解析（X01 别名集合的只读投影）：POST 只为把最多 500 个 id 放进 body，零写入",
 		"POST /api/admin/catalog-definitions/impact":  "定义影响检查：只读回放提交的文档，零写入",
 		"POST /api/external-sources/query":            "外部来源只读查询：出站抓取原文与预览映射，不写目录",
+		"POST /api/external-sources/fetch":            "公网来源只读请求：仅限公开 HTTP(S) GET，不写目录",
+		"POST /api/external-sources/wiki":             "MediaWiki 公开 API 只读查询，不写目录",
 	}
 }
 

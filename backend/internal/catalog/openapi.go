@@ -526,6 +526,13 @@ func OpenAPI() map[string]any {
 	receiptProps["review_decision"] = map[string]any{"type": "string", "enum": []string{"pending", "approved", "rejected", "exempt", "legacy"}}
 	paths["/catalog/commits/{id}"].(map[string]any)["get"].(map[string]any)["summary"] = "Read the durable commit receipt; only its author or catalog.review.manage. A missing receipt during an in-flight push does not prove failure; recover the same id and payload."
 
+	for path, item := range publicSourcePaths() {
+		paths[path] = item
+	}
+	for path, item := range adminInventoryPaths() {
+		paths[path] = item
+	}
+	addOpenAPIModules(paths, schemas)
 	return map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{

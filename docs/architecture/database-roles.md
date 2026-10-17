@@ -6,7 +6,7 @@
 
 | 服务 | 运行角色（LOGIN） | 对象归属角色（NOLOGIN） | schema |
 | --- | --- | --- | --- |
-| catalog | mf_catalog | mf_catalog_owner | catalog |
+| catalog（含 AI 助手模块） | mf_catalog | mf_catalog_owner | catalog、assistant |
 | auth | mf_auth | mf_auth_owner | auth |
 | community | mf_community | mf_community_owner | community |
 | storage | mf_storage | mf_storage_owner | storage |
@@ -22,6 +22,8 @@
 | public.schema_migrations | 目录迁移账本，由运维身份管理，不授予运行角色 |
 
 目标实例是否落实权限，以库侧断言和受限角色真实启动为准；实例快照不作为跨部署契约。
+
+AI 助手与目录运行在同一 backend 进程和数据库。`assistant` 保存 Provider/Model 配置、加密凭据、积分账本、调用用量、预算、会话、生成介绍缓存及公开来源配置；不另建账号、令牌或目录事实副本。它与 `catalog` 共享 `mf_catalog_owner` 和运行身份 `mf_catalog`，auth/community/storage 均不得访问。授权与隔离脚本将两个 schema 视为同一服务的本域，避免逐 schema 撤权时撤掉另一域的授权；覆盖检查仍逐域执行。
 
 ## 2. 对象所有权
 

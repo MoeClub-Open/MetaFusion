@@ -20,6 +20,7 @@ DO $verify$
 DECLARE
   services constant text[][] := ARRAY[
     ARRAY['mf_catalog',   'mf_catalog_owner',   'catalog'],
+    ARRAY['mf_catalog',   'mf_catalog_owner',   'assistant'],
     ARRAY['mf_auth',      'mf_auth_owner',      'auth'],
     ARRAY['mf_community', 'mf_community_owner', 'community'],
     ARRAY['mf_storage',   'mf_storage_owner',   'storage']
@@ -29,6 +30,7 @@ DECLARE
   app_role text;
   owner_role text;
   own_schema text;
+  own_schemas text[];
   other_schema text;
   missing text;
   leaked text;
@@ -41,6 +43,8 @@ BEGIN
     app_role   := services[i][1];
     owner_role := services[i][2];
     own_schema := services[i][3];
+    own_schemas := CASE WHEN app_role = 'mf_catalog'
+      THEN ARRAY['catalog', 'assistant'] ELSE ARRAY[own_schema] END;
 
     -- A. 本域覆盖：表与序列逐个对象比对。
     --    注意 CTE 必须写 MATERIALIZED：has_table_privilege / has_sequence_privilege 对
@@ -69,8 +73,8 @@ BEGIN
     -- B. 越权：别人的 schema 一点权限都不能有
     SELECT string_agg(n.nspname, ', ' ORDER BY n.nspname) INTO leaked
     FROM pg_namespace n
-    WHERE n.nspname IN ('catalog', 'auth', 'community', 'storage')
-      AND n.nspname <> own_schema
+    WHERE n.nspname IN ('catalog', 'assistant', 'auth', 'community', 'storage')
+      AND n.nspname <> ALL(own_schemas)
       AND (has_schema_privilege(app_role, n.nspname, 'USAGE')
            OR has_schema_privilege(app_role, n.nspname, 'CREATE'));
     IF leaked IS NOT NULL THEN
@@ -80,8 +84,8 @@ BEGIN
     WITH foreign_rels AS MATERIALIZED (
       SELECT n.nspname AS schema_name, c.relname, c.relkind, c.oid
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname IN ('catalog', 'auth', 'community', 'storage')
-        AND n.nspname <> own_schema AND c.relkind IN ('r', 'p')
+      WHERE n.nspname IN ('catalog', 'assistant', 'auth', 'community', 'storage')
+        AND n.nspname <> ALL(own_schemas) AND c.relkind IN ('r', 'p')
     )
     SELECT string_agg(format('%s.%s', schema_name, relname), ', ' ORDER BY schema_name, relname) INTO leaked
     FROM foreign_rels
@@ -96,8 +100,8 @@ BEGIN
     WITH foreign_seqs AS MATERIALIZED (
       SELECT n.nspname AS schema_name, c.relname, c.oid
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname IN ('catalog', 'auth', 'community', 'storage')
-        AND n.nspname <> own_schema AND c.relkind = 'S'
+      WHERE n.nspname IN ('catalog', 'assistant', 'auth', 'community', 'storage')
+        AND n.nspname <> ALL(own_schemas) AND c.relkind = 'S'
     )
     SELECT string_agg(format('%s.%s', schema_name, relname), ', ' ORDER BY schema_name, relname) INTO leaked
     FROM foreign_seqs
@@ -109,7 +113,7 @@ BEGIN
     -- C. 以角色身份实跑：读、写别人的表都必须报 permission denied
     FOR j IN 1 .. array_length(services, 1) LOOP
       other_schema := services[j][3];
-      CONTINUE WHEN other_schema = own_schema;
+      CONTINUE WHEN other_schema = ANY(own_schemas);
 
       SELECT count(*) INTO exists_count FROM pg_namespace WHERE nspname = other_schema;
       CONTINUE WHEN exists_count = 0;
@@ -203,7 +207,7 @@ BEGIN
     RAISE NOTICE '[F] 共享审计表：owner=mf_audit_owner，四个运行角色只追加（SELECT/INSERT），UPDATE/DELETE/TRUNCATE 被拒';
   END IF;
 
-  RAISE NOTICE 'verify-role-isolation: A/B/C/D 全部通过（% 个服务角色）', array_length(services, 1);
+  RAISE NOTICE 'verify-role-isolation: A/B/C/D 全部通过（% 组角色与 schema 授权）', array_length(services, 1);
 END
 $verify$;
 
@@ -211,12 +215,12 @@ $verify$;
 SELECT
   a.rolname AS app_role,
   ARRAY(SELECT n.nspname FROM pg_namespace n
-        WHERE n.nspname IN ('catalog', 'auth', 'community', 'storage')
+        WHERE n.nspname IN ('catalog', 'assistant', 'auth', 'community', 'storage')
           AND has_schema_privilege(a.rolname, n.nspname, 'USAGE') ORDER BY 1) AS usable_schemas,
   ARRAY(SELECT m.rolname FROM pg_auth_members am JOIN pg_roles m ON m.oid = am.roleid
         WHERE am.member = a.oid ORDER BY 1) AS member_of,
   (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-   WHERE n.nspname = ANY(ARRAY['catalog', 'auth', 'community', 'storage'])
+   WHERE n.nspname = ANY(ARRAY['catalog', 'assistant', 'auth', 'community', 'storage'])
      AND c.relkind IN ('r', 'p') AND has_table_privilege(a.rolname, c.oid, 'SELECT')) AS selectable_tables
 FROM pg_roles a
 WHERE a.rolname IN ('mf_catalog', 'mf_auth', 'mf_community', 'mf_storage')

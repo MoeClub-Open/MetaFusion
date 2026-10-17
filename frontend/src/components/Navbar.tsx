@@ -33,6 +33,7 @@ import {
   Mail,
   Menu,
   Search,
+  Sparkles,
 } from "lucide-react";
 
 /**
@@ -197,6 +198,7 @@ export const Navbar: React.FC<{
     { href: "/home", label: t("navigation.home"), icon: Library, exact: true },
     { href: "/explore", label: t("navigation.explore"), icon: Compass },
     { href: "/community", label: t("navigation.community"), icon: MessageSquare },
+    { href: "/assistant", label: t("assistant.user.title"), icon: Sparkles },
     // 资源站未接入时不展示入口，避免死链。
     ...(hasResourceStation()
       ? [{ href: STORAGE_SERVICE_URL, label: t("navigation.resources"), icon: DownloadCloud, external: true }]

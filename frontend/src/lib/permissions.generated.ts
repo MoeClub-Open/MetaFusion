@@ -1,7 +1,15 @@
 // 本文件由 frontend/scripts/generate-contracts.mjs 生成，勿手改。
 // 权限码单一来源（各服务自己声明，账号服务持有全量码表）。
-// 来源：backend/internal/catalog/permission.go、../metafusion-auth/internal/store/access.go、../metafusion-auth/internal/store/access.go、../metafusion-community/internal/auth/permission.go、../metafusion-storage/internal/auth/permission.go
+// 来源：backend/internal/assistant/permissions.go、backend/internal/catalog/permission.go、../metafusion-auth/internal/store/access.go、../metafusion-auth/internal/store/access.go、../metafusion-community/internal/auth/permission.go、../metafusion-storage/internal/auth/permission.go
 // 校验：cd frontend && node scripts/generate-contracts.mjs --check
+
+// ── assistant ──
+// LLM 配置、积分、BYO 凭据和生成缓存的后台管理权限。
+export const ASSISTANT_MANAGE = "assistant.manage" as const;
+
+export const ASSISTANT_PERMISSION_CODES = [
+  ASSISTANT_MANAGE,
+] as const;
 
 // ── catalog ──
 // 目录权限：条目/关系/定义/生命周期/货架（判定在 backend/internal/catalog/permission.go 的 User.Can）。
@@ -79,6 +87,7 @@ export const STORAGE_PERMISSION_CODES = [
 
 /** 各服务的码表（判定逻辑仍由各服务自己实现，这里只做前端入口显隐）。 */
 export const PERMISSION_CODES_BY_SERVICE = {
+  assistant: ASSISTANT_PERMISSION_CODES,
   catalog: CATALOG_PERMISSION_CODES,
   auth: AUTH_PERMISSION_CODES,
   mcp: MCP_PERMISSION_CODES,
@@ -88,6 +97,7 @@ export const PERMISSION_CODES_BY_SERVICE = {
 
 /** 全部权限码（去重、按字母序）。 */
 export const ALL_PERMISSION_CODES = [
+  "assistant.manage",
   "auth.audit.read",
   "auth.groups.manage",
   "auth.invites.manage",

@@ -6,7 +6,7 @@
 
 | 运行单元 | 职责与数据 | 对外入口 | 仓库 |
 | --- | --- | --- | --- |
-| catalog | 八实体、动态定义、结构、关系、修订、搜索、货架、外部库与通知；catalog.* | 目录 API 与目录管理台 | MetaFusion（本仓） |
+| catalog | 八实体、动态定义、结构、关系、修订、搜索、货架、外部库与通知；catalog.*；AI 配置、凭据、用量、积分与生成缓存为同进程 assistant.* 模块 | 目录/助手 API 与目录管理台 | MetaFusion（本仓） |
 | auth | 账号、会话、令牌、OAuth2/OIDC、权限组和开发者中心；auth.* | 账号 API、自助应用与管理台 | metafusion-auth |
 | community | 论坛、短评、合集、收藏和私信；community.* | 互动 API 与管理台 | metafusion-community |
 | storage | 文件、哈希、去重、上传、绑定和访问控制；storage.* | 存储 API 与管理台 | metafusion-storage |
@@ -25,9 +25,12 @@
 | auth | `/api/setup`、`/api/auth/*` | 初始化、注册登录、会话、邀请、PAT 与自助授权 |
 | auth | `/api/admin/users*`、`/api/admin/groups*`、`/api/admin/permissions`、`/api/admin/settings`、`/api/admin/invites*` | 账号与权限管理；同 admin 前缀逐条分流 |
 | auth | `/api/admin/audit-logs` | 跨服务审计的唯一读取面，见[审计契约](./audit-log.md) |
+| auth | `/api/admin/credentials*` | 管理用户创建的 PAT/MCP 凭据；OAuth 授权与令牌记录由 `/api/admin/oauth/*` 管理 |
 | auth | `/api/oauth/*`、`/api/oidc/jwks`、`/api/.well-known/openid-configuration`、`/.well-known/*` | 授权、discovery 与公钥；只有 auth 签发令牌 |
 | auth | `/api/developer/*`、`/api/admin/oauth/*` | 开发者自助登记与管理员客户端治理 |
 | catalog | `/api/catalog/*`、`/api/external-sources/*`、`/api/exchange/*`、`/api/openapi.json` | 目录、外部来源只读查询、交换与运行时 API 契约 |
+| catalog | `/api/assistant/*` | 问答、个人 BYO 与用量；其中 `/admin/*` 为助手配置和记录治理 |
+| catalog | `/api/admin/public-sources` | 公开 MediaWiki 来源配置；来源读取仍走 `/api/external-sources/*` |
 | catalog | `/api/admin/catalog-definitions*`、`/api/admin/external-databases*`、`/api/admin/shelves*`、`/api/admin/rate-limits` | 目录定义、外部库、货架与额度策略 |
 | catalog | `/api/notifications*` | 通知收件箱；internal 投递由调用服务凭 INTERNAL_API_TOKEN 授权 |
 | catalog | `/api/version`、`/api/capabilities` | 运行版本身份和[声明式能力](./capabilities.md) |
@@ -68,6 +71,8 @@
 ## 3. 数据所有权与调用
 
 各服务只读写本域 schema，不建跨业务外键、不跨服务 JOIN。运行角色与共享审计的唯一授权源为 `deploy/sql/roles-least-privilege.sql`，验证为 `verify-role-isolation.sql`；详细身份、对象归属和撤权条件见[数据库角色](./database-roles.md)。
+
+目录同进程的助手模块拥有独立 `assistant` schema，与 `catalog` 同属目录运行身份；不构成外围服务，也不允许其他服务直读配置、BYO 密钥或会话。助手复用账号认证与目录提交，Provider/Model、平台预算、用户积分、token 用量及介绍缓存的边界见[核心实现](./catalog-core-implementation.md#ai-助手与计费边界)。
 
 community/storage 通过目录 HTTP 解析当前实体身份与可见性，使用 `/api/catalog/entities/{id}/identity` 的 canonical、kind 与别名。404 表示不存在或不可见，超时与上游故障必须明确失败，不能默认公开、返回假空集合或无限重试。capabilities 只声明部署状态，不探活外围服务。
 

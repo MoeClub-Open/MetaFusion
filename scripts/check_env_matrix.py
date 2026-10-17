@@ -88,6 +88,7 @@ KEYS = {
     "CATALOG_DB_MAX_IDLE_CONNS": {"readers": [("catalog", "internal/catalog/store.go")], "default": "min(10,maxOpen)，限定0–maxOpen", "safe": True},
     "CATALOG_PUBLIC_URL": {"readers": [("catalog", "cmd/server/main.go")], "default": "https://findverse.cc", "safe": True},
     "CATALOG_SOURCE_BLOCKED_HOSTS": {"readers": [("catalog", "cmd/server/main.go")], "default": "空 = 仅拒绝内置与站点自身来源", "safe": True},
+    "AI_ENCRYPTION_KEY": {"readers": [("catalog", "cmd/server/main.go")], "default": "空 = AI 凭据写入与模型调用关闭，后台只读可用", "safe": True, "note": "base64 编码的32字节AES-GCM密钥；仅backend接收，与数据库备份配套保管"},
     "CATALOG_OUTBOX_RETENTION_DAYS": {"readers": [("catalog", "internal/catalog/retention.go")], "default": "7天，0永久保留", "safe": True},
     "CATALOG_COMMIT_REQUEST_RETENTION_DAYS": {"readers": [("catalog", "internal/catalog/retention.go")], "default": "90天，0永久保留", "safe": True},
     "CATALOG_RETENTION_INTERVAL_SECONDS": {"readers": [("catalog", "internal/catalog/retention.go")], "default": "3600秒，限定60–86400", "safe": True},

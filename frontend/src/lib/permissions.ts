@@ -8,6 +8,7 @@
 import type { User } from "./api";
 import {
   ALL_PERMISSION_CODES,
+  ASSISTANT_MANAGE,
   AUTH_AUDIT_READ,
   AUTH_GROUPS_MANAGE,
   AUTH_INVITES_MANAGE,
@@ -32,6 +33,7 @@ import {
 // 既有调用点从 "@/lib/permissions" 取这些常量，导出名保持不变；
 // 用 export { ... } from 而不是 export const，以保留生成物里的字面量类型。
 export {
+  ASSISTANT_MANAGE,
   AUTH_AUDIT_READ,
   AUTH_GROUPS_MANAGE,
   AUTH_INVITES_MANAGE,
@@ -90,13 +92,14 @@ export function grantablePermissionCodes(user: AnyUser | null | undefined): stri
 }
 
 /**
- * 目录工作面的准入码：条目/定义/来源/货架/审核/合并/交换只接受目录域自己的权限。
+ * 主前端工作面的准入码：目录治理与 AI 管理仍由各页自己的权限隔离。
  *
  * 账号、社区、存储三个域的管理台已经是独立应用（各自的 admin/ 应用 + 网关
  * /admin/{account,community,storage}/ 前缀），它们的码不构成进入目录工作面的凭据：
- * 共享限流页单独按服务权限开放，不通过这份码表授予其他目录工作面的访问权。
+ * 共享限流页单独按服务权限开放，AI 管理码也不授予其他目录页面的访问权。
  */
 export const CATALOG_CONSOLE_CODES = [
+  ASSISTANT_MANAGE,
   CATALOG_DEFINITIONS_MANAGE,
   CATALOG_SHELVES_MANAGE,
   CATALOG_LIFECYCLE_MANAGE,
