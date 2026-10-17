@@ -9,6 +9,28 @@ function canonical(value: any): any {
   return value;
 }
 
+// 可视化与源码差异使用同一份编目内容，不把修订元数据、缓存文案或空容器
+// 当成内容修改；数组的保存顺序仍然有意义。
+export function revisionContent(snapshot: any = {}): Record<string, any> {
+  const content: Record<string, any> = Object.create(null);
+  const ignored = new Set(["id", "version", "created_by", "created_at", "updated_at"]);
+  for (const [key, value] of Object.entries(snapshot || {})) {
+    if (ignored.has(key) || key.startsWith("localized_") || value === undefined) continue;
+    if (key === "attributes" || key === "translations") {
+      const fields: Record<string, any> = Object.create(null);
+      for (const [child, item] of Object.entries(value || {})) {
+        if (item === undefined) continue;
+        if (key === "translations") {
+          const row = Object.fromEntries(Object.entries(item || {}).filter(([, field]) => field !== undefined));
+          if (Object.keys(row).length > 0) fields[child] = row;
+        } else fields[child] = item;
+      }
+      if (Object.keys(fields).length > 0) content[key] = fields;
+    } else content[key] = value;
+  }
+  return canonical(content);
+}
+
 // 完整比较实体字段，属性和翻译按键展开；对象键顺序不构成修订。
 export function revisionChanges(before: any = {}, after: any = {}) {
   const changes: Record<string, { old: any; new: any }> = {};
@@ -17,11 +39,9 @@ export function revisionChanges(before: any = {}, after: any = {}) {
       changes[key] = { old, new: next };
     }
   };
-  const ignored = new Set(["id", "version", "created_by", "created_at", "updated_at"]);
-  const left = before || {};
-  const right = after || {};
+  const left = revisionContent(before);
+  const right = revisionContent(after);
   for (const key of Array.from(new Set([...Object.keys(left), ...Object.keys(right)]))) {
-    if (ignored.has(key) || key.startsWith("localized_")) continue;
     if (key === "translations") {
       for (const locale of Array.from(new Set([...Object.keys(left[key] || {}), ...Object.keys(right[key] || {})]))) {
         const oldRow = left[key]?.[locale] || {};

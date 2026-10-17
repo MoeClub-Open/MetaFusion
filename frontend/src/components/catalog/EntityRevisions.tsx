@@ -63,19 +63,8 @@ export function EntityRevisions({
   // Selected revision for snapshot viewing
   const [inspectingRev, setInspectingRev] = useState<RevisionItem | null>(null);
 
-  // Selected revisions for diff comparison
+  // 每笔修订直接与上一版比较。
   const [diffTarget, setDiffTarget] = useState<{ base: RevisionItem | null; current: RevisionItem | null } | null>(null);
-
-  // 任选两版在历史中查看差异：按 version 去重，最多两版，排序后 base=旧版。
-  const [picked, setPicked] = useState<RevisionItem[]>([]);
-  const togglePick = (rev: RevisionItem) => {
-    setPicked((prev) => {
-      if (prev.some((p) => p.version === rev.version)) return prev.filter((p) => p.version !== rev.version);
-      if (prev.length >= 2) return prev;
-      return [...prev, rev];
-    });
-  };
-  const pickedSorted = useMemo(() => [...picked].sort((a, b) => (a.version || 0) - (b.version || 0)), [picked]);
 
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
 
@@ -172,23 +161,6 @@ export function EntityRevisions({
           current={diffTarget.current}
           onClose={() => setDiffTarget(null)}
         />
-      )}
-
-      {picked.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] text-xs font-mono">
-          <GitCompare className="w-4 h-4 text-amber-500 shrink-0" />
-          <span className="text-text-body">{t("revisions.pickedCount", { count: picked.length })}</span>
-          {pickedSorted.length === 2 ? (
-            <button type="button" onClick={() => setDiffTarget({ base: pickedSorted[0], current: pickedSorted[1] })} className="px-2.5 py-1 rounded-md bg-primary text-white hover:bg-primary/90 transition-colors">
-              {t("revisions.compareSelected")}
-            </button>
-          ) : (
-            <span className="text-text-faint">{t("revisions.pickTwo")}</span>
-          )}
-          <button type="button" onClick={() => setPicked([])} className="ml-auto text-text-faint hover:text-text-body transition-colors">
-            {t("revisions.clearPicked")}
-          </button>
-        </div>
       )}
 
       {/* Snapshot Inspector Modal / Banner (If Active) */}
@@ -342,16 +314,6 @@ export function EntityRevisions({
                         <span>{t("revisions.diffVsPrev")}</span>
                       </button>
                     )}
-
-                    <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/[0.04] dark:bg-white/[0.06] hover:bg-amber-500/15 text-text-body transition-colors duration-fast ease-soft cursor-pointer shadow-2xs">
-                      <input
-                        type="checkbox"
-                        checked={picked.some((p) => p.version === rev.version)}
-                        onChange={() => togglePick(rev)}
-                        className="w-3 h-3 accent-amber-500"
-                      />
-                      <span>{t("revisions.pick")}</span>
-                    </label>
 
                     {currentEntity && canEditRevision(currentEntity, user ?? undefined) && rev.id && rev.snapshot &&
                       rev.version < currentEntity.version && !["deleted", "merged"].includes(rev.snapshot.state) && (
