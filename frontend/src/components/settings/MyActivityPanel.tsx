@@ -1,8 +1,8 @@
 "use client";
 
 // 我的操作记录：把本人跨服务的写操作列出来（目录编目、账号变更、互动发言、资源上传都在同一张
-// audit.audit_log 里）。数据源是账号服务的 GET /api/admin/audit-logs，**不带任何 actor 参数**——
-// 服务端按会话把作用域收敛到本人（契约 §5），前端不自己判定"我是不是管理员"。
+// audit.audit_log 里）。数据源是账号服务的 GET /api/admin/audit-logs，始终按当前用户 ID
+// 过滤，管理员的个人设置也只显示本人记录；服务端继续校验调用者的读取范围。
 //
 // 展示口径与写入侧对齐：changes 是脱敏并截断过的摘要，界面原样展示 "[redacted]" / "a***@domain"，
 // 不做二次加工，也不试图"还原"——审计要的是库里真实的那一行（同管理台的取舍）。
@@ -22,6 +22,7 @@ import {
 import { AUDIT_PAGE_SIZE, fetchOwnAuditLogs, type AuditLogEntry } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isoTimestamp, localDateTime } from "@/lib/datetime";
+import { useAuth } from "@/lib/authContext";
 
 const DASH = "—";
 
@@ -41,6 +42,12 @@ function ChangesCell({ value }: { value?: Record<string, unknown> | null }) {
 }
 
 export function MyActivityPanel() {
+  const { user } = useAuth();
+  // 身份变化立即换掉整份私密列表及分页状态；旧组件的请求回包由 effect cleanup 丢弃。
+  return user?.id ? <ViewerActivityPanel key={user.id} userId={user.id} /> : null;
+}
+
+function ViewerActivityPanel({ userId }: { userId: string }) {
   const { t, tr, locale } = useI18n();
   const [items, setItems] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -69,7 +76,7 @@ export function MyActivityPanel() {
     let alive = true;
     setLoading(true);
     setError("");
-    fetchOwnAuditLogs(page, AUDIT_PAGE_SIZE)
+    fetchOwnAuditLogs(userId, page, AUDIT_PAGE_SIZE)
       .then((r) => {
         if (!alive) return;
         setItems(r.items);
@@ -89,7 +96,7 @@ export function MyActivityPanel() {
     return () => {
       alive = false;
     };
-  }, [page, reloadKey, errorText]);
+  }, [userId, page, reloadKey, errorText]);
 
   const totalPages = Math.max(1, Math.ceil(total / (perPage || AUDIT_PAGE_SIZE)));
 

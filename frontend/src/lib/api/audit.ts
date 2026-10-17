@@ -1,9 +1,9 @@
 // 本人操作记录：读取面是账号服务的 GET /api/admin/audit-logs（跨服务审计表 audit.audit_log）。
 //
 // 同一个端点在服务端分两档（契约 docs/architecture/audit-log.md §5）：持 auth.audit.read 者按
-// 全量过滤条件查（管理台排障），其余登录用户被强制收敛到 actor_user_id = 自己。本模块**不带**
-// actor_user_id 参数——作用域由服务端按会话决定，前端不复制一份"我是不是管理员"的判定：那种判定
-// 一旦与服务端不一致，要么变成越权读取，要么让本人读不到自己的记录。
+// 全量过滤条件查（管理台排障），其余登录用户被强制收敛到 actor_user_id = 自己。不带
+// actor_user_id 参数时管理员会读到全站记录。因此自助视图始终明确传当前用户 ID，服务端继续
+// 校验调用者允许读取的范围；管理台的全量查询能力不受影响。
 //
 // 跨用户过滤（actor_user_id 指向他人、或 actor 前缀）服务端回 403 而不是静默改写成自己，
 // 调用方必须当失败处理，不能当成"查到了别人的记录"。
@@ -50,8 +50,10 @@ export interface AuditLogPage {
 /** 与账号服务的响应形状一致：单页 20 条足够读完一屏，翻页由调用方控制。 */
 export const AUDIT_PAGE_SIZE = 20;
 
-export async function fetchOwnAuditLogs(page = 1, perPage = AUDIT_PAGE_SIZE): Promise<AuditLogPage> {
-  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+export async function fetchOwnAuditLogs(userId: string, page = 1, perPage = AUDIT_PAGE_SIZE): Promise<AuditLogPage> {
+  const actorUserId = userId.trim();
+  if (!actorUserId) throw new Error("actor_user_id_required");
+  const params = new URLSearchParams({ actor_user_id: actorUserId, page: String(page), per_page: String(perPage) });
   const res = await fetchApi<{ items?: unknown[]; total?: number; page?: number; per_page?: number }>(
     "/admin/audit-logs?" + params.toString()
   );
