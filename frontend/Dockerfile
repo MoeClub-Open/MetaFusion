@@ -2,16 +2,12 @@
 # ==============================================================================
 # MetaFusion Frontend - Next.js standalone on Bun 1.4 (Fast BuildKit Cache)
 # ==============================================================================
-FROM oven/bun:1.4-alpine AS base
+FROM oven/bun:1.4.3-alpine AS base
 
 FROM base AS deps
 WORKDIR /app
-# Bun 兼容 npm 锁文件，优先使用 bun.lockb
-# 锁文件必须一起 COPY：库里入的是 bun.lock（bun 1.2+ 的文本格式），原来的 glob 写的是
-# bun.lockb*（匹配不到 bun.lock），于是镜像每次都在没有锁的情况下重新解析依赖树——
-# 同一个提交可能装出不同的传递依赖。安装严格锁定：frozen 失败即非零中断，不回退普通
-# 安装（回退等于用一份没锁的新依赖树继续构建，“可复现构建”就成了空话；锁漂移就地修锁）。
-COPY package.json bun.lock* ./
+# 按提交的 bun.lock 安装；锁文件缺失或漂移时构建失败。
+COPY package.json bun.lock ./
 RUN --mount=type=cache,target=/root/.bun \
     bun install --frozen-lockfile
 

@@ -2,7 +2,7 @@
 # ==============================================================================
 # Stage 1: Build binary with BuildKit module & compiler cache
 # ==============================================================================
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27.2-alpine AS builder
 
 WORKDIR /app
 

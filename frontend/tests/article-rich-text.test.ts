@@ -1,7 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MarkdownManager } from "@tiptap/markdown";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { articleRichExtensions, articleRoundTripSafe, articleInsertionURL, articleFootnoteExists } from "../src/lib/articleRichText";
+
+test("shared KaTeX renders inline and block Markdown without enabling trusted commands", () => {
+  const render = (source: string) => renderToStaticMarkup(createElement(ReactMarkdown, {
+    remarkPlugins: [remarkMath], rehypePlugins: [rehypeKatex], children: source,
+  }));
+  const html = render("Inline $x^2$\n\n$$\n\\frac{1}{2}\n$$");
+  assert.match(html, /class="katex"/);
+  assert.match(html, /class="katex-display"/);
+  assert.match(html, /<math/);
+  const untrusted = render("$\\href{javascript:alert(1)}{click}$\n\n$\\htmlClass{injected}{x}$");
+  assert.doesNotMatch(untrusted, /<a\b|class="injected"/);
+});
 
 test("visual Markdown preserves GFM tables, images, canonical links, formulas and multiline footnotes", () => {
   const markdown = new MarkdownManager({ extensions: articleRichExtensions() });

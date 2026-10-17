@@ -103,11 +103,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Next 16 要求 Node >= 20.9（next/dist/bin/next 里是硬断言）。这个 job 全程跑在 Bun 上，
-      # 用的是 Bun 自带的 Node 兼容版本号（实测 Bun 1.4.2 报 process.versions.node=26.3.0），
+      # 用的是 Bun 自带的 Node 兼容版本号（实测 Bun 1.4.3 报 process.versions.node=26.3.0），
       # 因此不需要另外 setup-node；换 Bun 版本时先确认这一条，否则会在构建第一步就红。
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: "1.4.3"
       - name: bun install
         run: bun install --frozen-lockfile
       - name: typecheck
@@ -316,7 +316,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: "1.4.3"
       - name: 锁定技能的 TypeScript 工具检查
         working-directory: ../metafusion-skills
         run: |

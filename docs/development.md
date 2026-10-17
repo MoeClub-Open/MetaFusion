@@ -6,6 +6,10 @@
 
 Go 版本取 `backend/go.mod`，Bun 版本取 `frontend/package.json` 的 `packageManager`，依赖按锁文件安装。Python 3 用于根目录契约检查；`check_deploy.py`、`check_env_matrix.py` 另需 PyYAML。Compose 和部署脚本需要 Docker Compose v2 与 Bash；Windows 可在 WSL 中运行 Bash 脚本。
 
+Next 应用使用 TypeScript 6.0 维护线：源码检查和部分测试直接调用其编译器 API，升级到 TypeScript 7 前须迁移这些调用及 Next 的类型检查入口。技能仓不依赖该 API，独立使用 TypeScript 7。Tailwind 保持 3.4 维护线；升级 4.x 时须同时迁移 PostCSS 配置、主题和 `check-design-tokens.mjs` 的配置加载及 CSS 校验，不能只修改版本号。
+
+Next 应用将 Tailwind 间接依赖的 `postcss-selector-parser` 统一到修复 CPU 耗尽问题的 7.1.6；主前端也将 Markdown 与编辑器共用的 KaTeX 统一到 0.19，避免旧渲染器残留及样式版本不一致。修改这些 overrides 后必须重跑设计令牌、公式渲染测试和各应用构建。Tailwind 3 仍通过 glob/watch 工具依赖 `braces@3.0.3`，其嵌套模式拒绝服务问题（GHSA-vfj7-8cjw-p6xm）尚无上游修复版本；该路径只在处理仓内构建输入时使用，不得接受用户提交的 glob 模式，迁移 Tailwind 4 时移除这条旧依赖链。
+
 仅做编译、前端单元测试或离线契约检查时不必启动完整服务。需要整站联调时，将 auth、community、storage、gateway、docs 与主仓并列检出，发布组合取 `deploy/versions.lock`。开发分支可独立演进，发布前必须核对组合；检查缺仓而 SKIP 不等于兼容性通过。
 
 从根目录 `.env.example` 建立本地 `.env`，自行设置隔离环境的配置。`deploy.sh` 会加载根目录或 `deploy/` 的 `.env`；直接运行 Go 不自动加载该文件，需向进程注入环境变量。Next.js 按自身规则加载 `frontend/.env.local`。

@@ -4,7 +4,7 @@
 #   （backend 在 dev 下用独立镜像名，首次 up 会自动构建 builder 阶段；改过本文件的 build 配置后
 #    先跑一次 docker compose -f docker-compose.yml -f docker-compose.dev.yml build backend）
 # 特点: 源码直接挂载，前端 / 文档站秒级 Fast Refresh 热重载，完全无需每次重新构建 Docker 镜像！
-# 前端已切换至 Bun 1.4 运行时（oven/bun:1.4-alpine），比 Node 快 3-5 倍
+# 前端使用固定的 Bun 1.4.3 运行时（oven/bun:1.4.3-alpine）
 # 目录服务（Go）是编译型语言又没有 watcher 依赖：这里换到 backend/Dockerfile 的 builder 阶段
 # （容器内有 Go 工具链）跑 `go run ./cmd/server`，改完代码 restart backend 重新编译即可。
 # ==============================================================================
@@ -44,7 +44,7 @@ services:
   backend:
     logging: *default-logging
     # 目录服务是编译型：dev 栈承诺的"改代码即时生效"只能靠容器内跑源码，所以换到 builder 阶段
-    # （golang:1.26-alpine，容器内有 Go 工具链），入口改成 go run。原来的写法是把源码挂到 server
+    # （golang:1.27.2-alpine，容器内有 Go 工具链），入口改成 go run。原来的写法是把源码挂到 server
     # 阶段的 /app 上，正好盖掉镜像里的 /app/server，容器以 exec: /app/server: no such file or
     # directory 起不来——本编排此前因此整体不可用（网关等 backend healthy，永远不开门）。
     # 不能沿用主编排的 metafusion-backend:local：那是 server 阶段的镜像（alpine，没有 go），
