@@ -8,9 +8,8 @@ import { fetchApi } from "@/lib/api";
 import { Entity, fetchAllPages, mapLimit, title as entityTitle } from "@/components/catalog/api";
 import { useDefinitions, getTermName } from "@/lib/definitions";
 import { useI18n } from "@/i18n/I18nProvider";
-import { ArrowLeft, Search, ChevronLeft, ChevronRight, ArrowRightLeft, ArrowUpRight, X } from "lucide-react";
+import { ArrowLeft, Search, ChevronLeft, ChevronRight, ArrowUpRight, X } from "lucide-react";
 import { PageShell } from "@/components/ui/PageShell";
-import { useCompareBasket } from "@/lib/compareBasket";
 
 // vocabLabel：枚举字段值按 definitions 声明的词表本地化（不写死字段码清单），
 // 缺词表命中时原样返回。用于版本类别/批次/包装等所有枚举属性列。
@@ -41,8 +40,6 @@ export default function WorkReleasesPage() {
   const [batchFilter, setBatchFilter] = useState("");
   const [formatFilter, setFormatFilter] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
-  // 篮子状态与跨标签页同步统一走 lib/compareBasket.ts：另一页加入/移除后本页不刷新即一致。
-  const { basket: compareSelected, toggle: toggleCompare } = useCompareBasket();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -169,11 +166,6 @@ export default function WorkReleasesPage() {
                 <X className="w-3.5 h-3.5" strokeWidth={1.6} /><span>{t("work.detail.clearFilters")}</span>
               </button>
             )}
-            {compareSelected.length > 0 && (
-              <Link href={`/compare?ids=${encodeURIComponent(compareSelected.join(","))}`} className="ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-primary text-white text-xs font-semibold hover:opacity-90">
-                <ArrowRightLeft className="w-3.5 h-3.5" strokeWidth={1.6} /><span>{t("work.detail.compareOpenCount", { count: compareSelected.length })}</span>
-              </Link>
-            )}
           </div>
 
           {loading ? (
@@ -186,7 +178,6 @@ export default function WorkReleasesPage() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-emphasis/[0.03] border-b border-line-subtle font-mono text-[11px] tracking-wide text-text-faint">
                     <tr>
-                      <th className="py-3 px-2 font-medium w-10" aria-label={t("work.detail.compareSelect")} />
                       <th className="py-3 px-4 font-medium">{t("work.detail.tableRelease")}</th>
                       <th className="py-3 px-4 font-medium">{t("work.detail.tableEdition")}</th>
                       <th className="py-3 px-4 font-medium">{t("work.detail.tableRegion")}</th>
@@ -205,7 +196,6 @@ export default function WorkReleasesPage() {
                       const fmt = formatSummaryOf(rel);
                       return (
                       <tr key={rel.id} className="hover:bg-emphasis/[0.03] transition-colors duration-fast ease-soft">
-                        <td className="py-3 px-2"><input type="checkbox" aria-label={t("work.detail.compareSelectName", { name: entityTitle(rel, locale) })} checked={compareSelected.includes(rel.id!)} onChange={() => toggleCompare(rel.id!)} className="w-4 h-4 rounded accent-primary cursor-pointer" /></td>
                         <td className="py-3 px-4"><Link href={`/catalog/${rel.id}`} className="font-semibold text-emphasis hover:text-info-soft inline-flex items-center gap-1">{entityTitle(rel, locale)} <ArrowUpRight className="w-3 h-3 text-text-faint" strokeWidth={1.5} /></Link></td>
                         <td className="py-3 px-4 text-text-muted">{vocabLabel(definitions, "edition_type", edition, locale) || "—"}</td>
                         <td className="py-3 px-4 text-text-muted">{country || "—"}</td>
@@ -227,7 +217,6 @@ export default function WorkReleasesPage() {
                   const fmt = formatSummaryOf(rel);
                   return (
                   <div key={rel.id} className="px-4 py-3.5 flex items-start gap-2.5">
-                    <input type="checkbox" aria-label={t("work.detail.compareSelectName", { name: entityTitle(rel, locale) })} checked={compareSelected.includes(rel.id!)} onChange={() => toggleCompare(rel.id!)} className="mt-1 w-5 h-5 rounded accent-primary cursor-pointer shrink-0" />
                     <Link href={`/catalog/${rel.id}`} className="min-w-0 flex-1 space-y-1">
                       <div className="font-semibold text-emphasis text-sm line-clamp-2">{entityTitle(rel, locale)}</div>
                       <div className="font-mono text-[11px] text-text-muted truncate">{[vocabLabel(definitions, "edition_type", edition, locale), country, vocabLabel(definitions, "packaging", packaging, locale)].filter(Boolean).join(" · ") || t("work.detail.noEditionMeta")}</div>

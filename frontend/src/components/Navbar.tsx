@@ -27,7 +27,6 @@ import {
   Library,
   Compass,
   BookOpen,
-  GitCompare,
   DownloadCloud,
   MessageSquare,
   Terminal,
@@ -202,7 +201,6 @@ export const Navbar: React.FC<{
     ...(hasResourceStation()
       ? [{ href: STORAGE_SERVICE_URL, label: t("navigation.resources"), icon: DownloadCloud, external: true }]
       : []),
-    { href: "/compare", label: t("catalog.compare"), icon: GitCompare },
     { href: "/docs/catalog", label: t("navigation.docs"), icon: BookOpen, external: true },
   ];
 

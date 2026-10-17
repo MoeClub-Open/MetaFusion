@@ -10,7 +10,6 @@ import { searchInputLimitProps } from "@/lib/searchQuery";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRightLeft,
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
@@ -24,7 +23,6 @@ import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
 import { useDefinitions, getFieldName, getTermName, templatesForEntity, resolveLocalizedName } from "@/lib/definitions";
 import { useI18n } from "@/i18n/I18nProvider";
 import { matchesEntityQuery } from "@/lib/entitySearch";
-import { useCompareBasket } from "@/lib/compareBasket";
 
 type Props = {
   /** 作品 id：发行版按 work_id 反查，介质格式按 release_id 聚合。 */
@@ -34,7 +32,6 @@ type Props = {
 export function WorkReleasesSection({ workId }: Props) {
   const { t, locale } = useI18n();
   const { definitions: defs } = useDefinitions();
-  const { basket: compareSelected, toggle: toggleCompare } = useCompareBasket();
 
   const [releaseEntities, setReleaseEntities] = useState<Entity[]>([]);
   // 每个发行版的介质格式计数（按实际 Medium 聚合）：CD+BD 组合不再被"首个格式"吞掉。
@@ -218,11 +215,6 @@ export function WorkReleasesSection({ workId }: Props) {
  </button>
  )}
  </div>
- {compareSelected.length > 0 && (
- <Link href={`/compare?ids=${encodeURIComponent(compareSelected.join(","))}`} className="lg:ml-auto inline-flex items-center gap-1.5 h-9 max-sm:min-h-[44px] px-3 rounded-md bg-primary text-white text-xs font-semibold hover:opacity-90 w-fit">
- <ArrowRightLeft className="w-3.5 h-3.5" strokeWidth={1.6} /><span>{t("work.detail.compareOpenCount", { count: compareSelected.length })}</span>
- </Link>
- )}
  </div>
  {filteredReleases.length === 0 ? (
  <div className="p-8 text-center text-sm text-text-faint">{t("work.detail.noFilterResult")}</div>
@@ -234,7 +226,6 @@ export function WorkReleasesSection({ workId }: Props) {
  <table className="w-full text-left text-sm">
  <thead className="bg-surfaceSubtle border-b border-line-subtle text-xs uppercase tracking-wider text-text-faint">
  <tr>
- <th className="py-2.5 px-2 font-medium w-10" aria-label={t("work.detail.compareSelect")} />
  <th className="py-2.5 px-3.5 font-medium">{t("work.detail.tableRelease")}</th>
  {releaseColumns.map((code) => (
  <th key={code} className="py-2.5 px-3.5 font-medium">
@@ -246,9 +237,6 @@ export function WorkReleasesSection({ workId }: Props) {
  <tbody className="divide-y divide-black/5 dark:divide-white/[0.06]">
  {pagedReleases.map((rel) => (
  <tr key={rel.id} className="hover:bg-surfaceSubtle transition-colors duration-fast ease-soft">
- <td className="py-2.5 px-2">
- <input type="checkbox" aria-label={t("work.detail.compareSelectName", { name: entityTitle(rel, locale) })} checked={compareSelected.includes(rel.id!)} onChange={() => toggleCompare(rel.id!)} className="w-4 h-4 rounded accent-primary cursor-pointer" />
- </td>
  <td className="py-2.5 px-3.5">
  <Link href={`/catalog/${rel.id}`} className="font-semibold text-text-strong hover:text-primary inline-flex items-center gap-1.5">
  {entityTitle(rel, locale)} <ArrowUpRight className="w-3.5 h-3.5 text-text-muted" strokeWidth={1.6} />
@@ -272,7 +260,6 @@ export function WorkReleasesSection({ workId }: Props) {
  <div className="sm:hidden divide-y divide-black/5 dark:divide-white/[0.06]">
  {pagedReleases.map((rel) => (
  <div key={rel.id} className="px-3.5 py-3 flex items-start gap-2.5">
- <input type="checkbox" aria-label={t("work.detail.compareSelectName", { name: entityTitle(rel, locale) })} checked={compareSelected.includes(rel.id!)} onChange={() => toggleCompare(rel.id!)} className="mt-1 w-5 h-5 rounded accent-primary cursor-pointer shrink-0" />
  <Link href={`/catalog/${rel.id}`} className="min-w-0 flex-1 space-y-1">
  <div className="font-semibold text-text-strong text-sm leading-tight line-clamp-2">{entityTitle(rel, locale)}</div>
                       <div className="text-xs text-text-faint truncate">

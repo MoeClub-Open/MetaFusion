@@ -84,7 +84,6 @@ import {
   Copy,
   Disc,
   FolderPlus,
-  GitCompare,
   HardDrive,
   History,
   Layers,
@@ -892,14 +891,6 @@ export function EntityDetailView({ id }: { id: string }) {
               >
                 <FavoriteButton targetType={entity.kind as FavoriteTargetType} targetId={entity.id || id} />
               </EntityActionToolbar>
-
-              <Link
-                href={`/compare?ids=${entity.id}`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-line bg-surface text-xs font-medium text-text-body hover:border-primary/50 hover:text-primary transition-all shadow-2xs"
-              >
-                <GitCompare className="w-3.5 h-3.5" />
-                <span>{t("entity.detail.compareAdd")}</span>
-              </Link>
 
               {hasResourceStation() && (
                 <a

@@ -14,7 +14,6 @@ import {
   blocksForEntity,
 } from "@/lib/definitions";
 import { orderedTracksWithDepth } from "@/lib/trackTree";
-import { COMPARE_MAX_SLOTS, compareHref, useCompareBasket } from "@/lib/compareBasket";
 import { PageShell } from "@/components/ui/PageShell";
 import { EntityIdentityHeader } from "@/components/entity/EntityIdentityHeader";
 import { QualityBadge } from "@/components/catalog/QualityBadge";
@@ -46,8 +45,6 @@ function EmptyPanel() {
 }
 import {
   ArrowLeft,
-  ArrowRightLeft,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -177,9 +174,6 @@ export default function ReleaseDetailLayout() {
   const [kindMismatch, setKindMismatch] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [showBonus, setShowBonus] = useState(false);
-  // 篮子状态与跨标签页同步统一走 lib/compareBasket.ts：另一页加入/移除后本页不刷新即一致。
-  const { basket, toggle: toggleBasket } = useCompareBasket();
-  const [basketNotice, setBasketNotice] = useState("");
   const [releaseStaffCount, setReleaseStaffCount] = useState(0);
   // 署名计数未回告前视为"加载中"：计数初始 0 不能直接决定挂载，否则
   // EntityStaffSection 永远没有机会加载，含署名的发行首次进入也看不到人员。
@@ -532,18 +526,6 @@ export default function ReleaseDetailLayout() {
     primaryGroups.length === 0 &&
     supplementGroups.some(([, rows]) => rows.length > 0);
 
-  const inBasket = basket.includes(release.id!);
-  const basketFull = !inBasket && basket.length >= COMPARE_MAX_SLOTS;
-
-  const onToggleBasket = () => {
-    if (basketFull) {
-      setBasketNotice(t("release.detail.compareBasketFull"));
-      return;
-    }
-    setBasketNotice("");
-    toggleBasket(release.id!);
-  };
-
   const releaseTitle = entityTitle(release, locale);
 
   // 单个载体（盘或面）的展示块：depth=0 为顶层盘，depth≥1 为嵌套的子载体（A/B 面）。
@@ -834,31 +816,6 @@ export default function ReleaseDetailLayout() {
                   />
                 </div>
               )}
-              <span className="inline-flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={onToggleBasket}
-                  disabled={basketFull}
-                  aria-pressed={inBasket}
-                  className={`inline-flex items-center gap-1.5 h-8 max-sm:min-h-[44px] px-3 rounded-md border text-xs font-mono transition-colors duration-fast ease-soft ${
-                    inBasket
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-success-soft"
-                      : "bg-black/[0.03] dark:bg-white/[0.06] border-line text-gray-700 dark:text-gray-200 hover:text-primary hover:border-primary/40 disabled:opacity-40"
-                  }`}
-                >
-                  {inBasket ? <Check className="w-3.5 h-3.5" strokeWidth={1.6} /> : <ArrowRightLeft className="w-3.5 h-3.5" strokeWidth={1.6} />}
-                  <span>{inBasket ? t("release.detail.compareAdded") : t("release.detail.compareAdd")}</span>
-                </button>
-                {basket.length > 0 && (
-                  <Link
-                    href={compareHref(basket)}
-                    className="inline-flex items-center h-8 max-sm:min-h-[44px] px-3 rounded-md bg-primary/10 border border-primary/20 text-primary hover:bg-primary hover:text-emphasis transition-all text-xs font-mono"
-                  >
-                    {t("release.detail.compareOpen", { count: basket.length })}
-                  </Link>
-                )}
-              </span>
-              {basketNotice && <span className="font-mono text-[10px] text-amber-600 dark:text-warn">{basketNotice}</span>}
             </div>
           </div>
         </div>

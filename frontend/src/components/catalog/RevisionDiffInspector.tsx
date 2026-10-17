@@ -1,7 +1,7 @@
 "use client";
 
-// 版本对比检查器（实体历史与 /compare 版本模式共用）：字段级可视化 diff +
-// unified 文本 diff。数据源只认快照对象，不关心调用方是内嵌还是独立页面。
+// 实体历史与提交审核共用的版本差异检查器：字段级可视化 diff + unified 文本 diff。
+// 数据源只认快照对象。
 
 import { useMemo, useState } from "react";
 import { useI18n } from "@/i18n/I18nProvider";

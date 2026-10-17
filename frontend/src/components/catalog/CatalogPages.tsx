@@ -92,5 +92,3 @@ export function Account() {
     </div>
   );
 }
-
-export { Compare } from "./CompareView";

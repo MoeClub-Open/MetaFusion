@@ -67,7 +67,7 @@ export function EntityRevisions({
   // Selected revisions for diff comparison
   const [diffTarget, setDiffTarget] = useState<{ base: RevisionItem | null; current: RevisionItem | null } | null>(null);
 
-  // 任选两版进 /compare 版本模式：按 version 去重，最多两版，排序后 base=旧版。
+  // 任选两版在历史中查看差异：按 version 去重，最多两版，排序后 base=旧版。
   const [picked, setPicked] = useState<RevisionItem[]>([]);
   const togglePick = (rev: RevisionItem) => {
     setPicked((prev) => {
@@ -77,10 +77,6 @@ export function EntityRevisions({
     });
   };
   const pickedSorted = useMemo(() => [...picked].sort((a, b) => (a.version || 0) - (b.version || 0)), [picked]);
-  const compareHref =
-    currentEntity?.id && pickedSorted.length === 2
-      ? `/compare?revisions=${encodeURIComponent(currentEntity.id)}:${pickedSorted[0].version},${encodeURIComponent(currentEntity.id)}:${pickedSorted[1].version}`
-      : "";
 
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -192,10 +188,10 @@ export function EntityRevisions({
         <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] text-xs font-mono">
           <GitCompare className="w-4 h-4 text-amber-500 shrink-0" />
           <span className="text-text-body">{t("revisions.pickedCount", { count: picked.length })}</span>
-          {compareHref ? (
-            <a href={compareHref} className="px-2.5 py-1 rounded-md bg-primary text-white hover:bg-primary/90 transition-colors">
-              {t("revisions.openInCompare")}
-            </a>
+          {pickedSorted.length === 2 ? (
+            <button type="button" onClick={() => setDiffTarget({ base: pickedSorted[0], current: pickedSorted[1] })} className="px-2.5 py-1 rounded-md bg-primary text-white hover:bg-primary/90 transition-colors">
+              {t("revisions.compareSelected")}
+            </button>
           ) : (
             <span className="text-text-faint">{t("revisions.pickTwo")}</span>
           )}

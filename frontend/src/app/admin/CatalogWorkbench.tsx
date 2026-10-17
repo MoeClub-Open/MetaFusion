@@ -615,7 +615,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                     id="merge-source"
                     value={mergeSource}
                     onChange={(e) => setMergeSource(e.target.value)}
-                    placeholder={t("catalog.compareUuidPlaceholder")}
+                    placeholder={t("admin.entityUuidPlaceholder")}
                     className="w-full p-2.5 rounded-lg bg-surfaceSubtle border border-line text-xs font-mono text-text-strong placeholder:text-text-faint focus:border-primary outline-none"
                   />
                 </div>
@@ -630,7 +630,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                     id="merge-target"
                     value={mergeTarget}
                     onChange={(e) => setMergeTarget(e.target.value)}
-                    placeholder={t("catalog.compareUuidPlaceholder")}
+                    placeholder={t("admin.entityUuidPlaceholder")}
                     className="w-full p-2.5 rounded-lg bg-surfaceSubtle border border-line text-xs font-mono text-text-strong placeholder:text-text-faint focus:border-primary outline-none"
                   />
                 </div>

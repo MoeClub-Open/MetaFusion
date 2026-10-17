@@ -4,7 +4,7 @@ import { SITE_ORIGIN } from "@/lib/site";
 // 只列公开且稳定 200 的静态路径，三类不列：
 //   * 受登录保护的 /admin、/account、/settings、/developer、/new、/contribute、/invites
 //     （AuthGate.PROTECTED_PREFIXES）；
-//   * 无参数不成页的 /compare 与 /catalog/[id] 详情页（内容全靠客户端取数）；
+//   * /catalog/[id] 详情页（内容全靠客户端取数）；
 //   * /login、/setup 与只做客户端外跳的 /developers，没有可收录内容。
 const PUBLIC_PATHS = ["/", "/home", "/explore", "/community", "/downloads"];
 

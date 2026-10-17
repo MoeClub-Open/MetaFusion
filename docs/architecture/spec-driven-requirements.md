@@ -7,7 +7,7 @@
 ## 1. 核心架构与系统边界
 
 1. **元数据主系统（一体化核心）**：
-   - **涵盖范围**：站点介绍（`/`）、首页分类货架（`/home`）、全域探索中心（`/explore`）、八种实体共用的规范详情地址 `/catalog/[id]`（kind 只决定内容布局，见 `frontend/src/lib/entityRoutes.ts`）、实体编辑器/创建器（`/new`）、多版本对比工具（`/compare`）、站内通知（`/notifications`）、以及共用同一数据库的后台管理系统（`/admin`）。
+   - **涵盖范围**：站点介绍（`/`）、首页分类货架（`/home`）、全域探索中心（`/explore`）、八种实体共用的规范详情地址 `/catalog/[id]`（kind 只决定内容布局，见 `frontend/src/lib/entityRoutes.ts`）、实体编辑器/创建器（`/new`）、条目历史与提交审核中的修订差异查看、站内通知（`/notifications`）、以及共用同一数据库的后台管理系统（`/admin`）。
    - **后台管理系统**：
      - 与元数据主系统共用同一 PostgreSQL 数据库（`catalog` schema）。
      - 支持在后台 GUI 中管理动态字段（Fields）、图谱关系（Relations）、受控词表（Vocabularies）、场景方案（Schemes）、展示模板（Templates）与固定结构显示名；字段 `applicable_kinds` 声明可写层级，实体不再保存业务 Types。
