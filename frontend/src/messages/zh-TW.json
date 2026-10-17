@@ -673,7 +673,6 @@
   "settings.titleDisplayOrderRemove": "移出優先順序",
   "editor.diff.fieldTranslations": "多語言標題／簡介",
   "settings.titleDisplayOrderAdd": "新增",
-  "settings.titleDisplayOrderCustomHint": "列表只是候選，不是允許寫入的語種白名單：任意合法的 BCP-47 語言代碼都能儲存；這條優先順序要生效，實體需已有該語種的翻譯條目（匯入或 API 寫入）。",
   "catalog.tagline": "開放元資料目錄",
   "catalog.catalog": "目錄",
   "catalog.intro": "記錄作品、表達與發行，讓創作之間的連結清晰可見。",

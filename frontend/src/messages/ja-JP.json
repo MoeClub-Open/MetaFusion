@@ -673,7 +673,6 @@
   "settings.titleDisplayOrderRemove": "優先度から外す",
   "editor.diff.fieldTranslations": "多言語のタイトル / 概要",
   "settings.titleDisplayOrderAdd": "追加",
-  "settings.titleDisplayOrderCustomHint": "一覧は候補であり、書き込み可能な言語の許可リストではありません。有効な BCP-47 言語コードはすべて保存できます。この優先順位が効くのは、その言語の翻訳行（インポートまたは API 書き込み）がある実体だけです。",
   "catalog.tagline": "オープンメタデータカタログ",
   "catalog.catalog": "カタログ",
   "catalog.intro": "作品・表現・リリースとそのつながりを探索。",

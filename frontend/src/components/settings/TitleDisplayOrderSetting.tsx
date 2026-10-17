@@ -143,9 +143,6 @@ export function TitleDisplayOrderSetting() {
           variant="field"
         />
       </div>
-      <p className="text-[11px] leading-relaxed text-text-faint font-sans">
-        {t("settings.titleDisplayOrderCustomHint")}
-      </p>
     </div>
   );
 }

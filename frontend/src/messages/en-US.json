@@ -673,7 +673,6 @@
   "settings.titleDisplayOrderRemove": "Remove from priority",
   "editor.diff.fieldTranslations": "Localized titles / summaries",
   "settings.titleDisplayOrderAdd": "Add",
-  "settings.titleDisplayOrderCustomHint": "The list is only a set of suggestions, not a whitelist: any valid BCP-47 language code can be saved. A priority entry takes effect once the entity has a translation row for that language (imported or written through the API).",
   "catalog.tagline": "Open metadata catalog",
   "catalog.catalog": "Catalog",
   "catalog.intro": "Explore works, expressions, releases and the connections between them.",
