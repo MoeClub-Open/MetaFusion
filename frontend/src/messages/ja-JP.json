@@ -1143,8 +1143,6 @@
   "release.detail.storeBonuses": "店舗特典",
   "release.detail.releaseEvents": "リリースイベント",
   "release.detail.attachmentItem": "付属品{index}",
-  "release.detail.comparableFields": "比較可能な項目",
-  "release.detail.listCount": "全{count}件",
   "release.detail.viewBonusDisc": "特典媒体を見る",
   "work.detail.tableEdition": "版",
   "work.detail.tableRegion": "地域",

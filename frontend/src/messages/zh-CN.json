@@ -1143,8 +1143,6 @@
   "release.detail.storeBonuses": "渠道特典",
   "release.detail.releaseEvents": "发行事件",
   "release.detail.attachmentItem": "附件 {index}",
-  "release.detail.comparableFields": "可对比字段一览",
-  "release.detail.listCount": "共 {count} 项",
   "release.detail.viewBonusDisc": "查看特典载体",
   "work.detail.tableEdition": "版本",
   "work.detail.tableRegion": "地区",

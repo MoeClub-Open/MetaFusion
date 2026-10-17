@@ -1143,8 +1143,6 @@
   "release.detail.storeBonuses": "Retailer bonuses",
   "release.detail.releaseEvents": "Release events",
   "release.detail.attachmentItem": "Attachment {index}",
-  "release.detail.comparableFields": "Comparable fields",
-  "release.detail.listCount": "{count} items",
   "release.detail.viewBonusDisc": "View bonus carrier",
   "work.detail.tableEdition": "Edition",
   "work.detail.tableRegion": "Territory",

@@ -55,7 +55,7 @@ MetaFusion 是类似 MusicBrainz / Bangumi 的开放元数据目录与受控资�
 
 CatalogCommit：`sources[]` 每条必须有唯一 `key`；每个操作必须有非空 `source_refs`。旧格式（无 key / 无 source_refs）以结构化 400 拒绝（`source_refs_required` 带 `operation` 索引、`source_key_required`、`source_unused` 等）。技能与公开文档在 `metafusion-skills` / `metafusion-docs`；改提交契约时同步两边示例。
 
-质量审计：同一 medium 内顶层曲目 `position` 必须从 1 连续（`track_position_gap`）；从 2 起或缺轨不得标 `complete`。
+质量诊断仅作可选提示，不是编辑、提交或应用的前置条件；不得因缺封面、缺署名、目录不全、评分或未运行审计阻断合法修改。报告中的曲序检查仍按同一 medium 内顶层曲目 `position` 从 1 连续计算（`track_position_gap`）；从 2 起或缺轨返回 `partial`，只影响诊断结果。
 
 外部来源适配器只读，统一入口 `/api/external-sources`，实现为 `external_source_*.go`。旧导入写接口、前端导入弹窗与 `Edit.internal` 特权标记已移除；历史实体的 `metafusion_import` 标识只允许原值保留或删除，任何写路径都不能新声明或改写。
 

@@ -1143,8 +1143,6 @@
   "release.detail.storeBonuses": "通路特典",
   "release.detail.releaseEvents": "發行事件",
   "release.detail.attachmentItem": "附件 {index}",
-  "release.detail.comparableFields": "可對比欄位一覽",
-  "release.detail.listCount": "共 {count} 項",
   "release.detail.viewBonusDisc": "檢視特典載體",
   "work.detail.tableEdition": "版本",
   "work.detail.tableRegion": "地區",

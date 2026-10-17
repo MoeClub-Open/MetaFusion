@@ -7,7 +7,6 @@ import { api, Entity, mapLimit, title as entityTitle } from "@/components/catalo
 import { useI18n } from "@/i18n/I18nProvider";
 import {
   useDefinitions,
-  getFieldName,
   getKindName,
   getTermName,
   resolveLocalizedName,
@@ -912,33 +911,6 @@ export default function ReleaseDetailLayout() {
             </Collapsible>
           )}
         </div>
-
-        {dynamicDefs && (
-          <Card padding="none">
-          <details className="px-3.5 sm:px-4 py-2.5">
-            <summary className="cursor-pointer font-mono text-[11px] text-text-faint hover:text-primary min-h-[32px] flex items-center">
-              {t("release.detail.comparableFields")}
-            </summary>
-            <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-              {Object.keys(attrs).map((k) => {
-                const field = dynamicDefs?.fields?.[k];
-                if (field && "comparable" in field && field.comparable === false) return null;
-                // 字段名只从一份定义里解析（getFieldName 在定义缺该字段时回落字段码本身）。
-                const name = getFieldName(dynamicDefs, k, locale);
-                const v = attrs[k];
-                const text = typeof v === "string" || typeof v === "number" ? String(v) : Array.isArray(v) ? t("release.detail.listCount", { count: v.length }) : "—";
-                if (["attachments", "store_bonuses", "events"].includes(k)) return null;
-                return (
-                  <div key={k} className="flex gap-2 min-w-0">
-                    <dt className="font-mono text-text-faint shrink-0">{name}</dt>
-                    <dd className="text-text-strong truncate">{text}</dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </details>
-          </Card>
-        )}
 
         </div>
 
