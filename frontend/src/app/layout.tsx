@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ApplicationBoundary } from "@/components/ApplicationBoundary";
 import { CatalogProvider } from "@/components/catalog/CatalogProvider";
@@ -8,26 +8,25 @@ import { ThemeProvider } from "@/lib/themeContext";
 import { DEFAULT_ACCENT, DEFAULT_TONE, DEFAULT_PATTERN } from "@/lib/theme.generated";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site";
 
-// 字体走 next/font 自托管：构建期把 woff2 落到 /_next/static/media，
-// 运行时不再请求 fonts.googleapis.com（原来 globals.css 的 @import 写在 @tailwind 之后，
-// PostCSS 展开后落在规则后面，按 CSS 规范整条被忽略 —— 五个 Web 字体一个都没生效）。
-// 中日韩字形仍交给系统字体（Noto Sans/Serif SC 等）兜底：CJK 子集体积过大，不做自托管。
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// 拉丁字体随源码提供，构建和浏览器访问均不依赖 Google Fonts；来源与许可证见 fonts/。
+// 中日韩字形仍交给系统字体兜底。
+const inter = localFont({
+  src: "./fonts/inter-latin-wght-normal.woff2",
+  weight: "100 900",
   display: "swap",
   variable: "--font-inter",
 });
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const jetbrainsMono = localFont({
+  src: "./fonts/jetbrains-mono-latin-wght-normal.woff2",
+  weight: "100 800",
   display: "swap",
   variable: "--font-jetbrains-mono",
 });
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: ["400"],
-  style: ["normal", "italic"],
+const instrumentSerif = localFont({
+  src: [
+    { path: "./fonts/instrument-serif-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/instrument-serif-latin-400-italic.woff2", weight: "400", style: "italic" },
+  ],
   display: "swap",
   variable: "--font-instrument-serif",
 });

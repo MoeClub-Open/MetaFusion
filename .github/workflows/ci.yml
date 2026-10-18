@@ -362,6 +362,19 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v3
+      # CLI 是开源扫描器，避免组织仓库依赖 action 的商业许可证。
+      - name: Scan changed commits with gitleaks CLI
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCAN_BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
+          SCAN_AFTER: ${{ github.sha }}
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz -o /tmp/gitleaks_8.24.3_linux_x64.tar.gz
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_checksums.txt -o /tmp/gitleaks_8.24.3_checksums.txt
+          (cd /tmp && sha256sum --ignore-missing -c gitleaks_8.24.3_checksums.txt)
+          tar -xzf /tmp/gitleaks_8.24.3_linux_x64.tar.gz -C /tmp gitleaks
+          if [[ "$SCAN_BEFORE" =~ ^[0-9a-f]{40}$ && "$SCAN_BEFORE" != 0000000000000000000000000000000000000000 ]]; then
+            scan_range="$SCAN_BEFORE..$SCAN_AFTER"
+          else
+            scan_range="$SCAN_AFTER"
+          fi
+          /tmp/gitleaks git --redact --log-opts="$scan_range" --exit-code 1
