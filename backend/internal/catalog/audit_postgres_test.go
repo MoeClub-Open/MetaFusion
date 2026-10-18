@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	auditlog "github.com/metafusion/metafusion-app/internal/audit"
 	"github.com/metafusion/metafusion-app/internal/testutil"
@@ -137,162 +138,120 @@ func (f *auditFixture) expect(status int, w *httptest.ResponseRecorder, what str
 	}
 }
 
-func auditEntityBody(kind, status, title string, expected int64) string {
-	entity := map[string]any{"kind": kind, "title": title, "state": "active"}
-	if status == "published" {
-		entity["translations"] = map[string]any{"en": map[string]any{"title": "audit e2e english " + title}}
+// changeWorkspace executes each public editing step and verifies its actual
+// audit action. A batch has one route audit per request, regardless of how many
+// entities or relations it materializes when pushed.
+func (f *auditFixture) changeWorkspace(engine http.Handler, workspace Workspace, requestPrefix string, operations ...WorkspaceOperation) (Workspace, map[string]string, CollaborationCommit) {
+	f.t.Helper()
+	check := func(requestID, action, targetType, targetID, method, route string) auditRow {
+		f.t.Helper()
+		row := f.waitRow(requestID)
+		if row.action != action || row.targetType != targetType || row.targetID != targetID || row.result != "success" || row.status != http.StatusOK || row.service != auditlog.ServiceName {
+			f.t.Fatalf("working-copy audit: %#v", row)
+		}
+		if row.username != f.user.Username || row.credential != "session" || row.method != method || row.route != route || row.requestID != requestID {
+			f.t.Fatalf("working-copy audit identity/request: %#v", row)
+		}
+		return row
 	}
-	body := map[string]any{
-		"entity":    entity,
-		"edit_note": "audit e2e fixture",
-		"sources":   []map[string]string{{"kind": "url", "citation": "audit e2e fixture", "url": "https://example.org/fixture"}},
+	if workspace.ID == "" {
+		w := f.do(engine, http.MethodPost, "/api/catalog/workspaces", `{"name":"audit working copy"}`, requestPrefix+"-workspace")
+		f.expect(http.StatusOK, w, "创建工作副本")
+		if err := json.Unmarshal(w.Body.Bytes(), &workspace); err != nil {
+			f.t.Fatal(err)
+		}
+		check(requestPrefix+"-workspace", "workspace.created", "workspace", workspace.ID, http.MethodPost, "/api/catalog/workspaces")
 	}
-	if expected > 0 {
-		body["expected_version"] = expected
+	path := "/api/catalog/workspaces/" + workspace.ID
+	in := WorkspaceChanges{ExpectedVersion: workspace.Version, Operations: operations}
+	w := f.do(engine, http.MethodPut, path+"/changes", encode(in), requestPrefix+"-changes")
+	f.expect(http.StatusOK, w, "保存副本变更")
+	var changes WorkspaceChangesResult
+	if err := json.Unmarshal(w.Body.Bytes(), &changes); err != nil {
+		f.t.Fatal(err)
 	}
-	b, err := json.Marshal(body)
+	row := check(requestPrefix+"-changes", "workspace.changes_saved", "workspace", workspace.ID, http.MethodPut, "/api/catalog/workspaces/:id/changes")
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(row.changes), &detail); err != nil || detail["operation_count"] != float64(len(operations)) {
+		f.t.Fatalf("stage audit operation count: %s %v", row.changes, err)
+	}
+	commitInput := WorkspaceCommitCreate{ID: uuid.NewString(), ExpectedVersion: changes.Workspace.Version, Message: "audit committed change"}
+	w = f.do(engine, http.MethodPost, path+"/commits", encode(commitInput), requestPrefix+"-commit")
+	f.expect(http.StatusOK, w, "提交副本变更")
+	var commit CollaborationCommit
+	if err := json.Unmarshal(w.Body.Bytes(), &commit); err != nil {
+		f.t.Fatal(err)
+	}
+	check(requestPrefix+"-commit", "workspace.committed", "commit", commit.ID, http.MethodPost, "/api/catalog/workspaces/:id/commits")
+	workspace, err := f.s.GetWorkspace(context.Background(), workspace.ID, *f.user)
 	if err != nil {
-		panic(err)
+		f.t.Fatal(err)
 	}
-	return string(b)
+	w = f.do(engine, http.MethodPost, path+"/push", encode(WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: *workspace.HeadCommitID}), requestPrefix+"-push")
+	f.expect(http.StatusOK, w, "推送并合入副本")
+	var pushed WorkspacePushResult
+	if err := json.Unmarshal(w.Body.Bytes(), &pushed); err != nil {
+		f.t.Fatal(err)
+	}
+	if !pushed.Applied || pushed.Workspace == nil {
+		f.t.Fatalf("bypass user did not merge: %s", w.Body.String())
+	}
+	check(requestPrefix+"-push", "workspace.pushed", "workspace", workspace.ID, http.MethodPost, "/api/catalog/workspaces/:id/push")
+	return *pushed.Workspace, changes.Refs, commit
 }
 
 func TestPostgresAuditTrailPerAction(t *testing.T) {
 	f := newAuditFixture(t)
 	engine := f.engine(f.user)
 	ctx := context.Background()
-	audited := 0
 
-	// 1) 建实体（标题里带邮箱：验证"值里的邮箱被遮罩"在真实落库路径上生效）
+	// Structured changes are audited as editing actions; private document text
+	// stays in commit history instead of being copied into the account audit log.
 	email := "jane.doe@example.com"
-	w := f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("work", "draft", "审计用例 联系 "+email, 0), "rid-entity-create")
-	f.expect(200, w, "建实体")
-	var created Entity
-	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+	workspace, refs, _ := f.changeWorkspace(engine, Workspace{}, "rid-entity-create", WorkspaceOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(encode(Entity{Kind: "work", Title: "审计用例 联系 " + email}))})
+	created, err := f.s.Get(ctx, refs["work"], f.user)
+	if err != nil {
 		t.Fatal(err)
 	}
-	row := f.waitRow("rid-entity-create")
-	audited++
-	if row.action != "entity.created" || row.result != "success" || row.status != 200 || row.service != auditlog.ServiceName {
-		t.Fatalf("建实体审计行: %#v", row)
+	workspace, _, update := f.changeWorkspace(engine, workspace, "rid-entity-update", WorkspaceOperation{Target: "entity", Action: "update", ID: created.ID, Patch: []CommitPatch{patchValue("/title", "审计用例 改过")}})
+	created, err = f.s.Get(ctx, created.ID, f.user)
+	if err != nil || created.Title != "审计用例 改过" || created.Version != 2 {
+		t.Fatalf("committed fact: %+v %v", created, err)
 	}
-	if row.targetType != "entity" || row.targetID != created.ID {
-		t.Fatalf("建实体的 target: %#v", row)
+	history, err := f.s.Revisions(ctx, created.ID, f.user)
+	if err != nil || len(history) != 2 || history[0]["commit_id"] != update.ID {
+		t.Fatalf("materialized history provenance: %+v %v", history, err)
 	}
-	if row.username != f.user.Username || row.credential != "session" {
-		t.Fatalf("建实体的操作者: %#v", row)
-	}
-	if row.method != http.MethodPost || row.route != "/api/catalog/entities" {
-		t.Fatalf("方法/路由模板: %#v", row)
-	}
-	if strings.Contains(row.changes, email) || !strings.Contains(row.changes, "j***@example.com") {
-		t.Fatalf("changes 里的邮箱必须被遮罩: %s", row.changes)
-	}
-	// 透传：请求带了 X-Request-Id，审计行的 request_id 就是它（回写响应头只发生在缺省生成时，
-	// 见下面第 13 步；生产里 main.go 的全局中间件会先写好同名响应头）。
-	if row.requestID != "rid-entity-create" {
-		t.Fatalf("X-Request-Id 必须原样进审计行: %q", row.requestID)
+	for _, row := range f.queryRows("") {
+		if strings.Contains(row.changes, email) || strings.Contains(row.changes, "审计用例") {
+			t.Fatalf("working-copy content leaked to account audit: %s", row.changes)
+		}
 	}
 
-	// 2) 改实体：before/after 都要有（title 与 status 各一条）
-	w = f.do(engine, http.MethodPut, "/api/catalog/entities/"+created.ID, auditEntityBody("work", "pending_review", "审计用例 改过", created.Version), "rid-entity-update")
-	f.expect(200, w, "改实体")
-	row = f.waitRow("rid-entity-update")
-	audited++
-	if row.action != "entity.updated" || row.targetID != created.ID {
-		t.Fatalf("改实体审计行: %#v", row)
-	}
-	var changes map[string]any
-	if err := json.Unmarshal([]byte(row.changes), &changes); err != nil {
-		t.Fatalf("changes 不是合法 JSON: %v (%s)", err, row.changes)
-	}
-	if changes["status"] != nil || changes["state"] != nil {
-		t.Fatalf("ordinary edit changed lifecycle: %s", row.changes)
-	}
-
-	title, _ := changes["title"].(map[string]any)
-	// before 侧同样脱敏：旧题名里的邮箱在审计行里必须是遮罩形态。
-	if title["before"] != "审计用例 联系 j***@example.com" || title["after"] != "审计用例 改过" {
-		t.Fatalf("title 的 before→after: %s", row.changes)
-	}
-
-	// 3) 生命周期（删除）：终态留痕
-	lifecycleBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e delete\",\"sources\":[{\"kind\":\"url\",\"citation\":\"audit e2e\",\"url\":\"https://example.org/fixture\"}]}", created.Version+1)
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities/"+created.ID+"/lifecycle", lifecycleBody, "rid-entity-lifecycle")
+	// Lifecycle actions remain separate and leave their terminal state in audit.
+	lifecycleBody := fmt.Sprintf(`{"expected_version":%d,"edit_note":"audit e2e delete"}`, created.Version)
+	w := f.do(engine, http.MethodPost, "/api/catalog/entities/"+created.ID+"/lifecycle", lifecycleBody, "rid-entity-lifecycle")
 	f.expect(200, w, "生命周期删除")
-	row = f.waitRow("rid-entity-lifecycle")
-	audited++
-	if row.action != "entity.lifecycle_changed" || row.targetID != created.ID {
+	row := f.waitRow("rid-entity-lifecycle")
+	if row.action != "entity.lifecycle_changed" || row.targetID != created.ID || !strings.Contains(row.changes, `"after": "deleted"`) {
 		t.Fatalf("生命周期审计行: %#v", row)
 	}
-	if !strings.Contains(row.changes, "\"after\": \"deleted\"") {
-		t.Fatalf("生命周期要记终态: %s", row.changes)
-	}
 
-	// 5) 关系：创建 / 修改 / 删除
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("agent", "published", "演职人员", 0), "rid-agent-create")
-	f.expect(200, w, "建人物实体")
-	audited++
-	var actorEntity Entity
-	if err := json.Unmarshal(w.Body.Bytes(), &actorEntity); err != nil {
-		t.Fatal(err)
+	// One batch creates all relation endpoints; another batch creates the edge.
+	workspace, refs, _ = f.changeWorkspace(engine, workspace, "rid-endpoints",
+		WorkspaceOperation{Target: "entity", Action: "create", Ref: "actor", Document: json.RawMessage(`{"kind":"agent","title":"演职人员"}`)},
+		WorkspaceOperation{Target: "entity", Action: "create", Ref: "group", Document: json.RawMessage(`{"kind":"agent","title":"所属团体"}`)})
+	actorID, groupID := refs["actor"], refs["group"]
+	workspace, refs, _ = f.changeWorkspace(engine, workspace, "rid-relation-create", WorkspaceOperation{Target: "relation", Action: "create", Ref: "edge", Document: json.RawMessage(encode(Relation{Type: "member_of", SourceID: actorID, TargetID: groupID, Attributes: map[string]any{"language": "zh-CN"}}))})
+	relationID := refs["edge"]
+	workspace, _, _ = f.changeWorkspace(engine, workspace, "rid-relation-update", WorkspaceOperation{Target: "relation", Action: "update", ID: relationID, Patch: []CommitPatch{patchValue("/attributes/language", "en-US")}})
+	relation, err := relationByID(ctx, f.db, relationID)
+	if err != nil || relation.Version != 2 || relation.Attributes["language"] != "en-US" {
+		t.Fatalf("relation commit: %+v %v", relation, err)
 	}
-	f.waitRow("rid-agent-create")
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("agent", "published", "所属团体", 0), "rid-group-create")
-	f.expect(200, w, "建团体实体")
-	audited++
-	var groupEntity Entity
-	if err := json.Unmarshal(w.Body.Bytes(), &groupEntity); err != nil {
-		t.Fatal(err)
-	}
-	f.waitRow("rid-group-create")
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("work", "published", "关系用例作品", 0), "rid-work-create")
-	f.expect(200, w, "建作品实体")
-	audited++
-	var workEntity Entity
-	if err := json.Unmarshal(w.Body.Bytes(), &workEntity); err != nil {
-		t.Fatal(err)
-	}
-	f.waitRow("rid-work-create")
-	relationBody := map[string]any{
-		"relation": map[string]any{
-			"type": "member_of", "source_id": actorEntity.ID, "target_id": groupEntity.ID,
-			"attributes": map[string]any{"language": "zh-CN"},
-		},
-		"edit_note": "audit e2e relation",
-		"sources":   []map[string]string{{"kind": "url", "citation": "audit e2e", "url": "https://example.org/fixture"}},
-	}
-	b, _ := json.Marshal(relationBody)
-	w = f.do(engine, http.MethodPost, "/api/catalog/relations", string(b), "rid-relation-create")
-	f.expect(200, w, "建关系")
-	var relation Relation
-	if err := json.Unmarshal(w.Body.Bytes(), &relation); err != nil {
-		t.Fatal(err)
-	}
-	row = f.waitRow("rid-relation-create")
-	audited++
-	if row.action != "relation.created" || row.targetType != "relation" || row.targetID != relation.ID {
-		t.Fatalf("建关系审计行: %#v", row)
-	}
-	// 关系身份（type / 两端）在服务端不可变（immutable_scope），能改的只有 attributes，
-	// 所以"改关系"的摘要靠 attributes 的 before→after 体现。
-	relationBody["relation"].(map[string]any)["attributes"] = map[string]any{"language": "en-US"}
-	relationBody["expected_version"] = relation.Version
-	b, _ = json.Marshal(relationBody)
-	w = f.do(engine, http.MethodPut, "/api/catalog/relations/"+relation.ID, string(b), "rid-relation-update")
-	f.expect(200, w, "改关系")
-	row = f.waitRow("rid-relation-update")
-	audited++
-	if row.action != "relation.updated" || !strings.Contains(row.changes, "\"attributes\"") || !strings.Contains(row.changes, "\"before\": \"zh-CN\"") {
-		t.Fatalf("改关系审计行（要有 before）: %#v", row)
-	}
-	deleteBody := fmt.Sprintf("{\"expected_version\":%d,\"edit_note\":\"audit e2e\",\"sources\":[{\"kind\":\"url\",\"citation\":\"audit e2e\",\"url\":\"https://example.org/fixture\"}]}", relation.Version+1)
-	w = f.do(engine, http.MethodDelete, "/api/catalog/relations/"+relation.ID, deleteBody, "rid-relation-delete")
-	f.expect(200, w, "删关系")
-	row = f.waitRow("rid-relation-delete")
-	audited++
-	if row.action != "relation.deleted" || row.targetID != relation.ID {
-		t.Fatalf("删关系审计行: %#v", row)
+	workspace, _, _ = f.changeWorkspace(engine, workspace, "rid-relation-delete", WorkspaceOperation{Target: "relation", Action: "delete", ID: relationID})
+	if _, err := relationByID(ctx, f.db, relationID); err == nil {
+		t.Fatal("relation deletion did not merge")
 	}
 
 	// 6) 首页偏好（自服务写，非管理员）
@@ -300,7 +259,6 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	w = f.do(engine, http.MethodPut, "/api/catalog/me/home-preferences", prefsBody, "rid-preferences")
 	f.expect(200, w, "写首页偏好")
 	row = f.waitRow("rid-preferences")
-	audited++
 	if row.action != "preference.home_updated" || row.targetType != "preference" || row.targetID != f.user.ID {
 		t.Fatalf("偏好审计行: %#v", row)
 	}
@@ -320,7 +278,6 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	row = f.waitRow("rid-shelf-create")
-	audited++
 	if row.action != "shelf.created" || row.targetID != fmt.Sprint(shelfCreated.Data.ID) {
 		t.Fatalf("建货架审计行: %#v", row)
 	}
@@ -329,14 +286,12 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	w = f.do(engine, http.MethodPut, "/api/admin/shelves/"+fmt.Sprint(shelfCreated.Data.ID), string(shelfBody), "rid-shelf-update")
 	f.expect(200, w, "改货架")
 	row = f.waitRow("rid-shelf-update")
-	audited++
 	if row.action != "shelf.updated" || !strings.Contains(row.changes, "\"before\": \"false\"") {
 		t.Fatalf("改货架审计行（要 before）: %#v", row)
 	}
 	w = f.do(engine, http.MethodDelete, "/api/admin/shelves/"+fmt.Sprint(shelfCreated.Data.ID), "", "rid-shelf-delete")
 	f.expect(200, w, "删货架")
 	row = f.waitRow("rid-shelf-delete")
-	audited++
 	if row.action != "shelf.deleted" || !strings.Contains(row.changes, "\"before\"") {
 		t.Fatalf("删货架审计行（要 before）: %#v", row)
 	}
@@ -347,7 +302,6 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	w = f.do(engine, http.MethodPost, "/api/admin/external-databases", string(extBody), "rid-extdb-create")
 	f.expect(200, w, "建外部来源")
 	row = f.waitRow("rid-extdb-create")
-	audited++
 	if row.action != "external_database.created" || row.targetID != "audit_e2e" {
 		t.Fatalf("建外部来源审计行: %#v", row)
 	}
@@ -356,14 +310,12 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	w = f.do(engine, http.MethodPut, "/api/admin/external-databases/audit_e2e", string(extBody), "rid-extdb-update")
 	f.expect(200, w, "改外部来源")
 	row = f.waitRow("rid-extdb-update")
-	audited++
 	if row.action != "external_database.updated" || !strings.Contains(row.changes, "\"before\": \"all\"") {
 		t.Fatalf("改外部来源审计行: %#v", row)
 	}
 	w = f.do(engine, http.MethodDelete, "/api/admin/external-databases/audit_e2e", "", "rid-extdb-delete")
 	f.expect(200, w, "删外部来源")
 	row = f.waitRow("rid-extdb-delete")
-	audited++
 	if row.action != "external_database.deleted" || !strings.Contains(row.changes, "\"before\"") {
 		t.Fatalf("删外部来源审计行: %#v", row)
 	}
@@ -385,40 +337,20 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	w = f.do(engine, http.MethodPut, "/api/admin/catalog-definitions", string(defBody), "rid-def-update")
 	f.expect(200, w, "更新定义")
 	row = f.waitRow("rid-def-update")
-	audited++
 	if row.action != "definition.updated" || row.targetID != "definitions" || !strings.Contains(row.changes, "document_counts") {
 		t.Fatalf("更新定义审计行: %#v", row)
 	}
 
-	// 11) 失败路径：版本冲突必须留 result=failure + error_code（与响应体同值）
-	w = f.do(engine, http.MethodPost, "/api/catalog/entities", auditEntityBody("work", "published", "冲突用例", 0), "rid-conflict-create")
-	f.expect(200, w, "建冲突用例实体")
-	audited++
-	var conflict Entity
-	if err = json.Unmarshal(w.Body.Bytes(), &conflict); err != nil {
-		t.Fatal(err)
-	}
-	f.waitRow("rid-conflict-create")
-	conflictBody, err := json.Marshal(map[string]any{
-		"entity": map[string]any{
-			"kind": "work", "title": "冲突用例改",
-			"translations": map[string]any{"en": map[string]any{"title": "audit e2e english"}},
-		},
-		"expected_version": 999,
-		"edit_note":        "audit e2e conflict",
-		"sources":          []map[string]string{{"kind": "url", "citation": "audit e2e", "url": "https://example.org/fixture"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	w = f.do(engine, http.MethodPut, "/api/catalog/entities/"+conflict.ID, string(conflictBody), "rid-conflict")
-	f.expect(409, w, "改实体（版本过时）")
+	// A stale working-copy CAS fails without changing facts and records the same
+	// stable error code returned to the caller.
+	conflictBody := encode(WorkspaceChanges{ExpectedVersion: 999, Operations: []WorkspaceOperation{{Target: "entity", Action: "update", ID: actorID, Patch: []CommitPatch{patchValue("/title", "stale title")}}}})
+	w = f.do(engine, http.MethodPut, "/api/catalog/workspaces/"+workspace.ID+"/changes", conflictBody, "rid-conflict")
+	f.expect(409, w, "保存过时副本")
 	row = f.waitRow("rid-conflict")
-	audited++
-	if row.action != "entity.updated" || row.result != "failure" || row.errorCode != "version_conflict" || row.status != 409 {
+	if row.action != "workspace.changes_saved" || row.result != "failure" || row.errorCode != "workspace_version_conflict" || row.status != 409 || row.targetID != workspace.ID {
 		t.Fatalf("失败路径审计行: %#v", row)
 	}
-	if !strings.Contains(w.Body.String(), "version_conflict") {
+	if !strings.Contains(w.Body.String(), row.errorCode) {
 		t.Fatalf("响应体错误码要与审计 error_code 同值: %s", w.Body.String())
 	}
 
@@ -427,7 +359,6 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	w = f.do(anonEngine, http.MethodPut, "/api/catalog/me/home-preferences", prefsBody, "rid-anon")
 	f.expect(401, w, "匿名写偏好")
 	row = f.waitRow("rid-anon")
-	audited++
 	if row.action != "preference.home_updated" || row.result != "failure" || row.errorCode != "authentication_required" || row.status != 401 {
 		t.Fatalf("匿名写审计行: %#v", row)
 	}
@@ -436,9 +367,9 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	}
 
 	// 13) 豁免路由（POST 但零写入）与 GET：一行都不写
-	w = f.do(engine, http.MethodPost, "/api/catalog/expressions/details", "{\"ids\":[\""+actorEntity.ID+"\"]}", "rid-exempt")
+	w = f.do(engine, http.MethodPost, "/api/catalog/expressions/details", "{\"ids\":[\""+actorID+"\"]}", "rid-exempt")
 	f.expect(200, w, "批量读表达")
-	w = f.do(engine, http.MethodGet, "/api/catalog/entities/"+actorEntity.ID, "", "rid-get")
+	w = f.do(engine, http.MethodGet, "/api/catalog/entities/"+actorID, "", "rid-get")
 	f.expect(200, w, "读实体")
 	for _, rid := range []string{"rid-exempt", "rid-get"} {
 		if rows := f.queryRows("WHERE request_id=$1", rid); len(rows) != 0 {
@@ -454,9 +385,16 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 		t.Fatal("缺省 request id 必须回写同名响应头")
 	}
 	row = f.waitRow(generated)
-	audited++
 	if row.requestID != generated || row.action != "preference.home_updated" {
 		t.Fatalf("生成的 request id 必须与审计行一致: %#v", row)
+	}
+
+	for _, r := range f.queryRows("") {
+		for _, forbidden := range auditForbiddenInRow {
+			if forbidden.MatchString(fmt.Sprintf("%+v", r)) {
+				t.Fatalf("sensitive audit row matched %s: %#v", forbidden.String(), r)
+			}
+		}
 	}
 
 }

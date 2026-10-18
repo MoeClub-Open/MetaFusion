@@ -91,7 +91,7 @@ func TestAccountReviewExemptionDoesNotGrantMachineEditing(t *testing.T) {
 func TestCommitOperationPermissionFailureRemainsForbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	respondCommit(c, CommitReceipt{}, &commitOperationError{Index: 1, Cause: errForbidden})
+	respondCollaboration(c, nil, &commitOperationError{Index: 1, Cause: errForbidden})
 	var body struct {
 		Error     string `json:"error"`
 		Operation int    `json:"operation"`

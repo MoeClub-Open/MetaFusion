@@ -23,9 +23,9 @@ const testInternalToken = "test-internal-token"
 type notifyFixture struct {
 	t *testing.T
 	s *Store
-	// owner 是普通作者：只有 catalog.entity.edit，能建公开条目、也能建待审条目。
+	// owner 是原作者，夹具免审创建正式条目；PR 用例会移除免审权限。
 	owner User
-	// reviewer 持 catalog.lifecycle.manage：能发布/驳回别人的条目、能对别人的公开条目建关系。
+	// reviewer 可合入或关闭 PR，并可维护条目关系。
 	reviewer User
 }
 
@@ -43,7 +43,7 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 	return &notifyFixture{t: t, s: s, owner: owner, reviewer: reviewer}
 }
 
-// saveAs 以指定身份写一个实体（published 时补齐翻译，与真实契约一致）。
+// saveAs 以指定身份准备一个正式实体。
 func (f *notifyFixture) saveAs(u User, e Entity) Entity {
 	f.t.Helper()
 	if e.State == "" {
@@ -288,36 +288,46 @@ func TestNotificationPaginationOnPostgres(t *testing.T) {
 	}
 }
 
-// ---- 真库：目录侧三个产生端（审核通过 / 审核驳回 / 收录）----
+// ---- 真库：目录侧三个产生端（PR 合入 / PR 关闭 / 收录）----
 
 func TestNotificationProducersOnPostgres(t *testing.T) {
 	f := newNotifyFixture(t)
 	ctx := context.Background()
 
-	fixture := fixture{t, f.s, f.owner}
 	submitter := f.owner
 	submitter.Permissions = []string{PermissionEntityEdit}
-	pending := fixtureCommit(fixture, CommitOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"待审作品"}`), ReviewedCandidateIDs: []string{}})
-	if _, err := f.s.PushCommit(ctx, pending, submitter, false); err != nil {
-		t.Fatal(err)
+	changes, _, pending := prepareWorkspace(t, f.s, submitter, WorkspaceOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"待合入作品"}`)})
+	proposal, err := f.s.PushWorkspace(ctx, pending.ID, WorkspacePush{ExpectedVersion: pending.Version, ExpectedHead: *pending.HeadCommitID}, submitter)
+	if err != nil || proposal.Applied || proposal.PullRequest == nil {
+		t.Fatalf("open PR: %+v %v", proposal, err)
 	}
-	if _, err := f.s.ReviewCommit(ctx, pending.ID, CommitReviewEdit{Decision: "approve"}, f.reviewer); err != nil {
+	pr := proposal.PullRequest
+	if _, err := f.s.Get(ctx, changes.Refs["work"], nil); err == nil {
+		t.Fatal("open PR changed the main catalog")
+	}
+	if _, err := f.s.MergePullRequest(ctx, pr.ID, PullRequestMerge{ExpectedVersion: pr.Version, ExpectedHead: pr.SourceHeadID}, f.reviewer); err != nil {
 		t.Fatal(err)
 	}
 	items := f.notifs(f.owner)
-	if len(items) != 1 || items[0].SubjectType != "commit" || items[0].SubjectID != pending.ID {
-		t.Fatalf("review notification: %+v", items)
+	if len(items) != 1 || items[0].Type != NotificationReviewApproved || items[0].SubjectType != "pull_request" || items[0].SubjectID != pr.ID {
+		t.Fatalf("PR merge notification: %+v", items)
 	}
-	rejected := fixtureCommit(fixture, CommitOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"待退回作品"}`), ReviewedCandidateIDs: []string{}})
-	if _, err := f.s.PushCommit(ctx, rejected, submitter, false); err != nil {
-		t.Fatal(err)
+	closedChanges, _, rejected := prepareWorkspace(t, f.s, submitter, WorkspaceOperation{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"待关闭作品"}`)})
+	proposal, err = f.s.PushWorkspace(ctx, rejected.ID, WorkspacePush{ExpectedVersion: rejected.Version, ExpectedHead: *rejected.HeadCommitID}, submitter)
+	if err != nil || proposal.PullRequest == nil {
+		t.Fatalf("second PR: %+v %v", proposal, err)
 	}
-	if _, err := f.s.ReviewCommit(ctx, rejected.ID, CommitReviewEdit{Decision: "reject"}, f.reviewer); err != nil {
+	pr = proposal.PullRequest
+	closed := "closed"
+	if _, err := f.s.EditPullRequest(ctx, pr.ID, PullRequestEdit{ExpectedVersion: pr.Version, Status: &closed}, f.reviewer); err != nil {
 		t.Fatal(err)
 	}
 	items = f.notifs(f.owner)
-	if len(items) != 2 || items[0].Type != NotificationReviewRejected {
-		t.Fatalf("reject notification: %+v", items)
+	if len(items) != 2 || items[0].Type != NotificationReviewRejected || items[0].SubjectType != "pull_request" || items[0].SubjectID != pr.ID {
+		t.Fatalf("PR close notification: %+v", items)
+	}
+	if _, err := f.s.Get(ctx, closedChanges.Refs["work"], nil); err == nil {
+		t.Fatal("closing a PR materialized its proposal")
 	}
 	// 收录（release 声明 subjects）：owner 的作品被 reviewer 放进发行 → owner 收到 included。
 	work := f.saveAs(f.owner, Entity{Kind: "work", Title: "被收录的作品"})

@@ -1,18 +1,19 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Loader2, Upload } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
-import { api, Entity, emptyEntity, local, Source } from "./api";
+import { api, Entity, emptyEntity, local } from "./api";
 import { changeDraftKind, hasKindSpecificDraftData } from "@/lib/draftKind";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
-import { commitSubmitter, entityOperation, type CommitOperation } from "@/lib/catalogCommits";
+import { ensureEditingWorkspace, stageEditingWorkspace, entityOperation, normalizeEditorEntity, rebaseEntityEdit, resolveEntityEdit, type LocalEntityRebase, type LocalEditResolution } from "@/lib/catalogCommits";
+import { checkoutWorkspace, getWorkspace, type Workspace, type WorkspaceOperation } from "@/lib/api/collaboration";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { useAuth } from "@/lib/authContext";
 import { getAuthLoginUrl } from "@/lib/services";
-import { EntityPicker, Evidence, FieldInput, ErrorMessage, GroupFieldInput, NamesEditor } from "./Fields";
-import { catalogEvidenceError } from "@/lib/catalogEvidence";
+import { EntityPicker, FieldInput, ErrorMessage, GroupFieldInput, NamesEditor, WorkspaceEntityPickerProvider } from "./Fields";
 import { EntityCover } from "@/components/common/EntityCover";
+import { catalogPicturePreviewUrl } from "@/lib/catalogAssetPreview";
 import { LanguagePicker } from "@/components/common/LanguagePicker";
 import { RelationEditorField, type RelationDraft } from "@/components/editor/RelationEditorField";
 import { Select } from "@/components/ui/Select";
@@ -21,7 +22,6 @@ import { effectiveSchemeFields, getKindName, getTermName, matchSchemes, resolveK
 import { COVER_PICTURE_INDEX, MAX_ENTITY_PICTURES, PICTURE_ROLE_VOCABULARY } from "@/lib/cover";
 import {
   assetContentUrl,
-  bindAsset,
   completeUpload,
   initiateUpload,
   isAssetUuid,
@@ -33,9 +33,6 @@ import {
 } from "@/lib/storage";
 import { canonicalLanguageCode, languageLabel } from "@/lib/languages";
 import { ApiError } from "@/lib/api/client";
-import { fetchIdentityCandidates } from "@/lib/api/identity";
-import { identityConflictIDs, identityReviewKey, reviewedIdentityIDs, type IdentityReviewState } from "@/lib/identityReview";
-import { IdentityReviewPanel } from "./IdentityReviewPanel";
 import { ArticleEditor } from "./ArticleEditor";
 import { articleBodyError } from "@/lib/catalogArticle";
 
@@ -53,9 +50,6 @@ export function EntityEditor({
   initial,
   initialKind,
   base,
-  onSaved,
-  initialEditNote = "",
-  initialSources,
   initialSection = "basic",
   initialLocale = "",
 }: {
@@ -64,9 +58,6 @@ export function EntityEditor({
   /** 新建时的预选层级（来自 /new?kind=…，如贡献页与 /works/new 等旧入口重定向）；
    *  只接受骨架里的合法层级，非法值回落到 emptyEntity 的默认值。 */
   initialKind?: string;
-  onSaved?: (e: Entity) => void;
-  initialEditNote?: string;
-  initialSources?: Source[];
   initialSection?: string;
   initialLocale?: string;
 }) {
@@ -75,7 +66,6 @@ export function EntityEditor({
   // CatalogProvider 不再存这两份，本组件也不该依赖它被挂载。
   const { user } = useAuth();
   const { definitions, kinds: serverKinds } = useDefinitions();
-  const router = useRouter();
   // definitions：定位字段等由它声明，避免编辑器写死字段码。
   const defs = definitions ?? undefined;
   // 层级名与可选项：服务端 definitions.kinds 优先，服务端未给时才退回内置骨架清单，
@@ -131,32 +121,29 @@ export function EntityEditor({
     const union = effectiveSchemeFields(matchSchemes(defs as any, "inclusion_attributes", kindKey, mediumFormat));
     return union.length > 0 ? union : undefined;
   }, [defs, kindKey, mediumFormat]);
-  const [note, setNote] = useState(initialEditNote);
-  // 新建条目时关系先入队：条目拿到 id 之后再逐条写入（见 save）。
+  // 尚未分配 id 的新条目关系与实体一起保存到副本。
   const [pendingRelations, setPendingRelations] = useState<RelationDraft[]>([]);
-  // 同一提交载荷重试时复用原请求 ID，见 commitSubmitter。
-  const submit = useRef(commitSubmitter());
   const baseEntity = useRef(base || initial);
-  const [sources, setSources] = useState<Source[]>(initialSources || [
-    { kind: "url", citation: "", url: "" },
-  ]);
+  const [workspace, setWorkspace] = useState<Workspace>();
+  const [workspaceUser, setWorkspaceUser] = useState("");
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const [uncertainCreate, setUncertainCreate] = useState(false);
+  const [mergeNotice, setMergeNotice] = useState(false);
+  const [localMerge, setLocalMerge] = useState<{ workspace: Workspace; current: Entity; rebase: LocalEntityRebase }>();
+  const [localChoices, setLocalChoices] = useState<Record<string, { choice: string; custom: string }>>({});
+  const viewerRef = useRef(user?.id);
+  const sessionRequest = useRef<AbortController | null>(null);
+  viewerRef.current = user?.id;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [identityReview, setIdentityReview] = useState<IdentityReviewState | null>(null);
-  const currentIdentityKey = identityReviewKey(e);
-  const identityKeyRef = useRef(currentIdentityKey);
-  identityKeyRef.current = currentIdentityKey;
-  const identityReviewRequest = useRef(0);
-  useEffect(() => {
-    setIdentityReview((review) => review?.key === currentIdentityKey ? review : null);
-  }, [currentIdentityKey]);
-  useEffect(() => () => { identityReviewRequest.current += 1; }, []);
   const editorId = React.useId();
   const [requestedSection, setRequestedSection] = useState(initialSection);
   const [fieldSearch, setFieldSearch] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLFormElement>(null);
-  const baselineRef = useRef(JSON.stringify({ entity: e, note, sources, relations: pendingRelations }));
+  const baselineRef = useRef(JSON.stringify({ entity: e, relations: pendingRelations }));
   const initialKindAppliedRef = useRef(!!initial || kindOptions.length > 0);
   useEffect(() => {
     // 首次渲染时 definitions 可能尚未到达；预选只在种类清单加载后应用一次。
@@ -164,10 +151,10 @@ export function EntityEditor({
     initialKindAppliedRef.current = true;
     if (!initialKind || !kindOptions.includes(initialKind) || e.kind === initialKind) return;
     const selected = { ...e, kind: initialKind };
-    baselineRef.current = JSON.stringify({ entity: selected, note, sources, relations: pendingRelations });
+    baselineRef.current = JSON.stringify({ entity: selected, relations: pendingRelations });
     setE(selected);
-  }, [initialKind, kindOptions, e, note, sources, pendingRelations]);
-  const dirty = baselineRef.current !== JSON.stringify({ entity: e, note, sources, relations: pendingRelations });
+  }, [initialKind, kindOptions, e, pendingRelations]);
+  const dirty = baselineRef.current !== JSON.stringify({ entity: e, relations: pendingRelations });
   useEffect(() => {
     if (!dirty) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -191,6 +178,57 @@ export function EntityEditor({
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const request = new AbortController();
+    sessionRequest.current = request;
+    const userId = user?.id;
+    setWorkspace(undefined);
+    setWorkspaceUser("");
+    setWorkspaceLoading(true);
+    setSaved(false);
+    setUncertainCreate(false);
+    setMergeNotice(false);
+    setLocalMerge(undefined);
+    setBusy(false);
+    setUploadingIndex(null);
+    setUploadError("");
+    if (!userId) return () => { active = false; request.abort(); };
+    const params = new URLSearchParams(window.location.search);
+    setRequestedSection(params.get("section") || initialSection);
+    const requestedWorkspace = params.get("workspace");
+    const entityId = initial?.id || params.get("entity") || undefined;
+    void (async () => {
+      let copy = await ensureEditingWorkspace(userId, requestedWorkspace, request.signal);
+      if (entityId && !copy.objects.some((object) => object.target === "entity" && object.id === entityId)) {
+        if (!active || viewerRef.current !== userId) return;
+        copy = await checkoutWorkspace(copy.id, { expected_version: copy.version, entity_ids: [entityId], relation_ids: [] }, request.signal);
+      }
+      const object = entityId ? copy.objects.find((item) => item.target === "entity" && item.id === entityId) : undefined;
+      if (entityId && !object?.document) throw new Error("workspace_object_not_found");
+      if (!active || viewerRef.current !== userId) return;
+      const document = (base ? initial : object?.document) as Entity | undefined;
+      const next = document ? normalizeEditorEntity(document)
+        : { ...emptyEntity(initial?.kind || (initialKind && kindOptions.includes(initialKind) ? initialKind : undefined)), ...initial };
+      if (document) initialKindAppliedRef.current = true;
+      setE(next);
+      setSelectedFields(Object.keys(next.attributes || {}));
+      baselineRef.current = JSON.stringify({ entity: next, relations: [] });
+      baseEntity.current = object?.document ? normalizeEditorEntity(object.document) : undefined;
+      setPendingRelations([]);
+      setWorkspace(copy);
+      setWorkspaceUser(userId);
+      setError("");
+      const url = new URL(window.location.href);
+      url.searchParams.set("workspace", copy.id);
+      window.history.replaceState(window.history.state, "", url);
+    })().catch(() => {
+      if (active && viewerRef.current === userId) setError(t("collaboration.editor.loadFailed"));
+    }).finally(() => {
+      if (active && viewerRef.current === userId) setWorkspaceLoading(false);
+    });
+    return () => { active = false; request.abort(); };
+  }, [user?.id, initial?.id, workspaceAttempt]);
   if (!definitions) return <p>{t("catalog.loading")}</p>;
   if (!user) {
     // ?edit=1 已由 AuthGate 纳入登录闸门（未登录先跳 /login 并带回完整目标）。这里只兜底
@@ -209,6 +247,14 @@ export function EntityEditor({
         </a>
       </div>
     );
+  }
+  if (workspaceLoading || workspaceUser !== user.id || !workspace) {
+    return <section className="cv-form space-y-3" aria-live="polite">
+      {workspaceLoading ? <p>{t("collaboration.editor.loading")}</p> : <>
+        <ErrorMessage error={error || t("collaboration.editor.loadFailed")} />
+        <button type="button" onClick={() => setWorkspaceAttempt((attempt) => attempt + 1)}>{t("collaboration.editor.retry")}</button>
+      </>}
+    </section>;
   }
   const applyKindChange = (kind: string) => {
     setE((current) => changeDraftKind(current, emptyEntity(kind)));
@@ -416,16 +462,19 @@ export function EntityEditor({
     return options;
   };
   // ---- 图片直传：复用 storage 服务的 sha256 → initiate → putFile → complete 链路。
-  // 封面上传完整复用 storage 服务链路：sha256→initiate→put→complete→bind(role=cover_image)。
-  // 新建实体无 id 时跳过 bind（asset 仍由 pictures[].asset_id 引用，保存后可补绑）。
+  // 图片先上传并保留 asset_id 引用，编辑副本期间不绑定正式实体。
   // 上传成功后把 asset_id 与 assetContentUrl 一次性写回该行，缩略图随之回显。
   const startPictureUpload = async (index: number, file: File) => {
     if (!file || file.size <= 0) return;
+    const userId = user.id;
+    const uploadSignal = sessionRequest.current?.signal;
     setUploadError("");
     setUploadingIndex(index);
     setUploadProgress(0);
     try {
       const sha256 = await sha256HexOfFile(file);
+      if (viewerRef.current !== userId) return;
+      uploadSignal?.throwIfAborted();
       const init = await initiateUpload({
         fileName: file.name,
         fileSize: file.size,
@@ -433,23 +482,31 @@ export function EntityEditor({
         mimeType: file.type || "application/octet-stream",
         // 自托管图片用途码：与 storage 预设 cover_image 一致。
         bindingRole: "cover_image",
-      });
+      }, uploadSignal);
+      if (viewerRef.current !== userId) return;
       if (!init.is_instant_upload) {
-        const report = (loaded: number, total: number) =>
-          setUploadProgress(total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0);
+        const report = (loaded: number, total: number) => {
+          if (viewerRef.current === userId && !uploadSignal?.aborted) setUploadProgress(total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0);
+        };
         const direct = init.direct_upload_url;
         const presigned = init.presigned_urls && init.presigned_urls[0];
-        const runPut = (url: string) =>
-          putFile(url, file, {
+        const runPut = async (url: string) => {
+          uploadSignal?.throwIfAborted();
+          const upload = putFile(url, file, {
             onProgress: report,
             errorCode: (code, status) => new StorageRequestError(code, status),
-          }).promise;
+          });
+          uploadSignal?.addEventListener("abort", upload.abort, { once: true });
+          try { return await upload.promise; }
+          finally { uploadSignal?.removeEventListener("abort", upload.abort); }
+        };
         if (direct) {
           await runPut(new URL(direct, window.location.origin).toString());
         } else if (presigned) {
           try {
             await runPut(presigned);
           } catch (err) {
+            if (viewerRef.current !== userId) return;
             // 预签名地址不可达/CORS：回退服务端流式接收（与 EntityResourceFiles 同策略）。
             const status = err instanceof StorageRequestError ? err.status : -1;
             if (status !== 0 && status !== 403) throw err;
@@ -459,20 +516,23 @@ export function EntityEditor({
           await runPut(streamUploadUrl(init.asset_id));
         }
       }
+      if (viewerRef.current !== userId) return;
       setUploadProgress(100);
-      await completeUpload(init.asset_id, init.upload_id);
-      // 已有实体时绑定 asset 到实体（role=cover_image），新建实体跳过。
-      if (e.id) { await bindAsset(init.asset_id, e.id, "cover_image"); }
+      await completeUpload(init.asset_id, init.upload_id, undefined, uploadSignal);
+      if (viewerRef.current !== userId) return;
       patchPicture(index, {
         asset_id: init.asset_id,
         url: assetContentUrl(init.asset_id),
       });
     } catch (err) {
+      if (viewerRef.current !== userId) return;
       const mapped = storageErrorKey(err);
       setUploadError(mapped.vars ? t(mapped.key, mapped.vars) : t(mapped.key));
     } finally {
-      setUploadingIndex(null);
-      setUploadProgress(0);
+      if (viewerRef.current === userId) {
+        setUploadingIndex(null);
+        setUploadProgress(0);
+      }
     }
   };
   const onPickPictureFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -484,10 +544,7 @@ export function EntityEditor({
   };
   const save = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    // 服务端按字段的 applicable_kinds 校验；编辑器不提交布局或业务分类。
-    // 应用层证据校验：HTML required 的原生气泡在部分环境不可见，
-    // 曾表现为"点保存没反应"；noValidate 后统一在此给出明确提示。
-    const evidenceError = catalogEvidenceError(note, sources, window.location.origin);
+    if (busy || localMerge || uncertainCreate || workspaceUser !== user.id) return;
     if (!e.title.trim()) {
       setRequestedSection("basic");
       setError(t("editor.titleRequired"));
@@ -502,21 +559,13 @@ export function EntityEditor({
         return;
       }
     }
-    if (evidenceError) {
-      setRequestedSection("evidence");
-      setError(localizeCatalogError(evidenceError, t));
-      return;
-    }
-    const reviewedIDs = reviewedIdentityIDs(identityReview, currentIdentityKey);
-    if (identityReview?.key === currentIdentityKey && reviewedIDs === undefined) {
-      setError(t("catalog.identityReview.required"));
-      return;
-    }
     setBusy(true);
     setError("");
+    setSaved(false);
+    const userId = user.id;
     try {
-      const op = entityOperation(e, baseEntity.current, reviewedIDs || []);
-      const operations: CommitOperation[] = op.action === "update" && !op.patch?.length ? [] : [op];
+      const op = entityOperation(e, baseEntity.current);
+      const operations: WorkspaceOperation[] = op.action === "update" && !op.patch?.length ? [] : [op];
       for (let i=0;i<pendingRelations.length;i++) {
         const d=pendingRelations[i];
         const self = e.id || { $ref: "entity" };
@@ -526,47 +575,86 @@ export function EntityEditor({
         }});
       }
       if (!operations.length) { setError(t("editor.noChanges")); return; }
-      const receipt = await submit.current(operations,note,sources);
-      baselineRef.current = JSON.stringify({entity:e,note,sources,relations:pendingRelations});
-      if (!receipt.applied) {
-        router.push(`/submissions/${receipt.id}`);
+      const result = await stageEditingWorkspace(workspace, operations, sessionRequest.current?.signal);
+      if (viewerRef.current !== userId) return;
+      const entityId = e.id || result.refs.entity;
+      const document = result.workspace.objects.find((object) => object.target === "entity" && object.id === entityId)?.document;
+      if (!document) throw new Error("workspace_object_not_found");
+      const out = normalizeEditorEntity(document);
+      baseEntity.current = out;
+      setE(out);
+      setWorkspace(result.workspace);
+      setPendingRelations([]);
+      baselineRef.current = JSON.stringify({ entity: out, relations: [] });
+      setSaved(true);
+      setMergeNotice(false);
+      const url = new URL(window.location.href);
+      url.searchParams.set("workspace", result.workspace.id);
+      if (!initial?.id) url.searchParams.set("entity", entityId);
+      window.history.replaceState(window.history.state, "", url);
+    } catch (err) {
+      if (viewerRef.current !== userId) return;
+      if ((err as Error).message === "workspace_write_uncertain") {
+        setUncertainCreate(true);
+        setError(t("collaboration.editor.uncertainSave"));
         return;
       }
-      const out = await api<Entity>(`/catalog/entities/${e.id || receipt.refs.entity}`);
-      baseEntity.current = out;
-      if (onSaved) onSaved(out); else router.push(`/catalog/${out.id}`);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.message === "identity_candidates_changed") {
-        setError(t("catalog.error.identityCandidatesChanged"));
-        await loadIdentityReview(e, identityConflictIDs(err.details));
-      } else {
-        setError(localizeCatalogError((err as Error).message, t));
-      }
+      setError(err instanceof ApiError && err.status === 409
+        ? t("collaboration.editor.conflict") : localizeCatalogError((err as Error).message, t));
     } finally {
-      setBusy(false);
+      if (viewerRef.current === userId) setBusy(false);
     }
   };
-  const loadIdentityReview = async (entity: Entity, expectedIDs: string[] | null) => {
-    const key = identityReviewKey(entity);
-    if (identityKeyRef.current !== key) return;
-    const request = ++identityReviewRequest.current;
-    setIdentityReview({ key, expectedIDs, status: "loading", confirmed: false });
+  const applyLocalMerge = (copy: Workspace, current: Entity, merged: Entity) => {
+    baseEntity.current = current;
+    setE(merged);
+    setWorkspace(copy);
+    baselineRef.current = JSON.stringify({ entity: current, relations: [] });
+    setLocalMerge(undefined);
+    setLocalChoices({});
+    setError("");
+    setSaved(false);
+    setMergeNotice(true);
+  };
+  const mergeLocalChanges = async () => {
+    if (busy || uncertainCreate) return;
+    const userId = user.id;
+    setBusy(true);
     try {
-      const data = await fetchIdentityCandidates(entity);
-      if (request === identityReviewRequest.current && identityKeyRef.current === key) {
-        setIdentityReview({ key, expectedIDs, status: "ready", data, confirmed: false });
+      const currentWorkspace = await getWorkspace(workspace.id, sessionRequest.current?.signal);
+      if (viewerRef.current !== userId) return;
+      if (!e.id) {
+        setWorkspace(currentWorkspace);
+        setError("");
+        setMergeNotice(true);
+        return;
       }
-    } catch (err) {
-      if (request === identityReviewRequest.current && identityKeyRef.current === key) {
-        const message = err instanceof Error ? err.message : "";
-        const error = ["identity_candidates_incomplete", "identity_candidate_unresolved", "invalid_identity_review"].includes(message)
-          ? localizeCatalogError(message, t) : t("catalog.identityReview.failed");
-        setIdentityReview({ key, expectedIDs, status: "failed", confirmed: false, error });
-      }
-    }
+      if (!baseEntity.current) throw new Error("workspace_object_not_found");
+      const document = currentWorkspace.objects.find((object) => object.target === "entity" && object.id === e.id)?.document;
+      if (!document) throw new Error("workspace_object_not_found");
+      const current = normalizeEditorEntity(document);
+      const rebase = rebaseEntityEdit(baseEntity.current, e, current);
+      if (rebase.conflicts.length) {
+        setLocalMerge({ workspace: currentWorkspace, current, rebase });
+        setLocalChoices({});
+      } else applyLocalMerge(currentWorkspace, current, rebase.entity);
+    } catch {
+      if (viewerRef.current === userId) setError(t("collaboration.editor.loadFailed"));
+    } finally { if (viewerRef.current === userId) setBusy(false); }
   };
-  const activeIdentityReview = identityReview?.key === currentIdentityKey ? identityReview : null;
-  const identityReviewPending = activeIdentityReview !== null && reviewedIdentityIDs(activeIdentityReview, currentIdentityKey) === undefined;
+  const resolveLocalMerge = () => {
+    if (!localMerge) return;
+    const resolutions: Record<string, LocalEditResolution> = {};
+    try {
+      for (const conflict of localMerge.rebase.conflicts) {
+        const selected = localChoices[conflict.pointer];
+        if (!selected?.choice) return;
+        resolutions[conflict.pointer] = { choice: selected.choice as LocalEditResolution["choice"],
+          ...(selected.choice === "custom" ? { value: JSON.parse(selected.custom) } : {}) };
+      }
+      applyLocalMerge(localMerge.workspace, localMerge.current, resolveEntityEdit(localMerge.rebase, resolutions));
+    } catch { setError(t("collaboration.editor.customInvalid")); }
+  };
   const hasStructure = !!((defs?.structure?.[e.kind]?.fields || []).length || defs?.structure?.[e.kind]?.subjects || defs?.structure?.[e.kind]?.contents);
   const editorSections = [
     { id: "basic", label: t("editor.section.basic") },
@@ -575,7 +663,6 @@ export function EntityEditor({
     ...(applicableFields.length || Object.keys(e.attributes).length ? [{ id: "attributes", label: t("catalog.attributes") }] : []),
     { id: "media", label: t("editor.section.media") },
     { id: "relations", label: t("editor.section.relations") },
-    { id: "evidence", label: t("editor.section.evidence") },
   ];
   const activeSection = editorSections.some((section) => section.id === requestedSection) ? requestedSection : "basic";
   const sectionIndex = editorSections.findIndex((section) => section.id === activeSection);
@@ -586,18 +673,23 @@ export function EntityEditor({
   const searchableFields = applicableFields.filter(([code, field]) => code !== "tags" &&
     `${code} ${local(field.names, locale, "", code)}`.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase()));
   return (
+    <WorkspaceEntityPickerProvider value={workspace}>
     <form ref={editorRef} onSubmit={save} noValidate className="cv-form cv-entity-editor"
       style={{ "--cv-editor-top": initial ? "calc(var(--mf-header-h) + 3rem)" : "var(--mf-header-h)" } as React.CSSProperties}>
+      <fieldset disabled={busy || !!localMerge || uploadingIndex !== null} inert={busy || !!localMerge || uploadingIndex !== null} className="contents">
       <div className="cv-heading">
         <h1>{t(initial ? "catalog.edit" : "catalog.create")}</h1>
         <span className="cv-hint" aria-live="polite">{t(dirty ? "editor.unsaved" : "editor.draftUnchanged")}</span>
       </div>
-      <div ref={errorRef} tabIndex={-1} hidden={!error}><ErrorMessage error={error} /></div>
-      {activeIdentityReview && <IdentityReviewPanel review={activeIdentityReview} busy={busy}
-        definitions={definitions} kindLabel={kindLabel}
-        onConfirm={(confirmed) => setIdentityReview((review) => review?.key === currentIdentityKey && review.status === "ready"
-          ? { ...review, confirmed } : review)}
-        onReload={() => { void loadIdentityReview(e, activeIdentityReview.expectedIDs); }} />}
+      <div className="cv-row">
+        <Link href={`/workspaces/${workspace.id}`} className="text-primary underline">{t("collaboration.editor.openWorkspace")}</Link>
+        {saved && <span role="status">{t("collaboration.editor.saved")}</span>}
+        {mergeNotice && <span role="status">{t("collaboration.editor.merged")}</span>}
+      </div>
+      <div ref={errorRef} tabIndex={-1} hidden={!error}>
+        <ErrorMessage error={error} />
+        {!uncertainCreate && <button type="button" disabled={busy} onClick={() => void mergeLocalChanges()}>{t("collaboration.editor.reload")}</button>}
+      </div>
       <div className="cv-editor-navigation">
         <div role="tablist" aria-label={t("editor.sections")} className="cv-editor-tabs">
           {editorSections.map((section, index) => <button type="button" role="tab" key={section.id}
@@ -616,8 +708,8 @@ export function EntityEditor({
         </div>
         <div className="cv-editor-context">
           <p><span>{kindLabel(e.kind)}</span><strong>{e.title.trim() || t("editor.untitled")}</strong></p>
-          <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null || identityReviewPending}>
-            {t(busy ? "catalog.saving" : "catalog.save")}
+          <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null || uncertainCreate}>
+            {t(busy ? "catalog.saving" : "collaboration.editor.save")}
           </button>
         </div>
         {uploadingIndex !== null && <p className="cv-hint" role="status">{t("editor.pictureUploading", { progress: uploadProgress })}</p>}
@@ -798,7 +890,6 @@ export function EntityEditor({
           </div>
           {activeLocale ? <ArticleEditor key={activeLocale} value={activeTr.body || ""} locale={activeLocale}
             onChange={(body) => setTranslation({ body })} /> : <p className="cv-hint">{t("catalog.translationEmpty")}</p>}
-          <p className="cv-hint">{t("catalog.article.evidenceHint")}</p>
         </fieldset>
       </EditorPanel>
       {/* 结构区仅在当前层级有字段或收录入口时显示。 */}
@@ -1026,15 +1117,18 @@ export function EntityEditor({
       </fieldset>
       </EditorPanel>
       )}
-      {/* 关系维护：独立资源逐条提交，不复用实体 PUT；词表来自服务端 definitions。 */}
+      {/* 关系与实体共用服务器工作副本。 */}
       <EditorPanel name="relations" active={activeSection} editorId={editorId}>
-      <p className="cv-hint">{t(e.id ? "editor.relationsImmediate" : "editor.relationsQueued")}</p>
-      <button type="button" onClick={() => changeSection("evidence")}>{t("editor.completeEvidence")}</button>
       <RelationEditorField
+        workspaceId={workspace.id}
+        workspaceVersion={workspace.version}
+        onWorkspaceChange={(next) => setWorkspace((current) => current ? {
+          ...next,
+          objects: next.objects.map((object) => object.target === "entity" && object.id === e.id
+            ? current.objects.find((previous) => previous.target === "entity" && previous.id === e.id) || object : object),
+        } : next)}
         entityId={e.id}
         entityKind={e.kind}
-        note={note}
-        sources={sources}
         drafts={pendingRelations}
         onDraftsChange={setPendingRelations}
       />
@@ -1268,9 +1362,16 @@ export function EntityEditor({
           {t("catalog.pictureCount", { count: e.pictures.length, max: MAX_ENTITY_PICTURES })}
         </p>
         {e.pictures.map((p, i) => {
+          const pictureSource = p.source || { kind: "", citation: "" };
           const urlKey = String(p.url || "").trim();
           const isDuplicate = !!urlKey && (pictureUrlCounts.get(urlKey) || 0) > 1;
           const assetId = String(p.asset_id || "").trim();
+          const referencedInWorkspace = assetId && workspace.objects.some((object) => {
+            const pictures = object.target === "entity" ? object.document?.pictures : undefined;
+            return Array.isArray(pictures) && pictures.some((picture) => picture && typeof picture === "object"
+              && picture.asset_id === assetId && picture.url === p.url);
+          });
+          const previewUrl = referencedInWorkspace ? catalogPicturePreviewUrl(p, { kind: "workspace", id: workspace.id }) : urlKey;
           const assetInvalid = !isAssetUuid(assetId);
           const caption = local(p.caption, locale, e.original_language, "");
           return (
@@ -1350,7 +1451,7 @@ export function EntityEditor({
                   aria-hidden="true"
                 >
                   {urlKey ? (
-                    <EntityCover src={urlKey} title={caption || p.url} id={e.id} />
+                    <EntityCover src={previewUrl} title={caption || p.url} id={e.id} />
                   ) : null}
                 </span>
               </div>
@@ -1440,16 +1541,16 @@ export function EntityEditor({
               </div>
               <p className="cv-hint">{t("catalog.pictureAssetHint")}</p>
               {assetInvalid && <p className="cv-error">{t("catalog.pictureAssetInvalid")}</p>}
-              <p className="cv-hint">{t("catalog.evidenceSourceHint")}</p>
               <label>
                 {t("catalog.sourceKind")}
                 <Select
-                  value={p.source.kind}
+                  value={pictureSource.kind}
                   aria-label={t("catalog.sourceKind")}
-                  onChange={(kind) => patchPicture(i, { source: { ...p.source, kind } })}
+                  onChange={(kind) => patchPicture(i, { source: kind ? { ...pictureSource, kind } : { kind: "", citation: "" } })}
                   options={[
-                    ...(!["url", "publication"].includes(p.source.kind) ? [{
-                      value: p.source.kind, label: tr(`catalog.source.${p.source.kind}`, p.source.kind), disabled: true,
+                    { value: "", label: t("catalog.none") },
+                    ...(pictureSource.kind && !["url", "publication"].includes(pictureSource.kind) ? [{
+                      value: pictureSource.kind, label: tr(`catalog.source.${pictureSource.kind}`, pictureSource.kind), disabled: true,
                     }] : []),
                     ...["url", "publication"].map((kind) => ({ value: kind, label: t(`catalog.source.${kind}`) })),
                   ]}
@@ -1458,22 +1559,20 @@ export function EntityEditor({
               <label>
                 {t("catalog.citation")}
                 <input
-                  required
-                  value={p.source.citation}
+                  value={pictureSource.citation}
                   onChange={(x) =>
                     patchPicture(i, {
-                      source: { ...p.source, citation: x.target.value },
+                      source: { ...pictureSource, kind: pictureSource.kind || "publication", citation: x.target.value },
                     })
                   }
                 />
               </label>
               <label>
-                {t("catalog.sourceUrl")}{p.source.kind === "url" && " *"}
+                {t("catalog.sourceUrl")}
                 <input
                   type="url"
-                  required={p.source.kind === "url"}
-                  value={p.source.url || ""}
-                  onChange={(x) => patchPicture(i, { source: { ...p.source, url: x.target.value } })}
+                  value={pictureSource.url || ""}
+                  onChange={(x) => patchPicture(i, { source: { ...pictureSource, kind: pictureSource.kind || "url", url: x.target.value } })}
                 />
               </label>
             </div>
@@ -1489,7 +1588,7 @@ export function EntityEditor({
                 url: "",
                 caption: {},
                 taken_at: "",
-                source: { kind: "url", citation: "", url: "" },
+                source: { kind: "", citation: "" },
               },
             ])
           }
@@ -1515,20 +1614,11 @@ export function EntityEditor({
         />
       </fieldset>
       </EditorPanel>
-      <EditorPanel name="evidence" active={activeSection} editorId={editorId}>
-      <p className="cv-hint">{t("editor.evidenceHint")}</p>
-      <Evidence
-        note={note}
-        setNote={setNote}
-        sources={sources}
-        setSources={setSources}
-      />
-      </EditorPanel>
       <div className="cv-editor-footer">
         {sectionIndex > 0 && <button type="button" disabled={busy} onClick={() => changeSection(editorSections[sectionIndex - 1].id)}>{t("editor.previousSection")}</button>}
         {sectionIndex < editorSections.length - 1
           ? <button type="button" className="cv-primary" disabled={busy} onClick={() => changeSection(editorSections[sectionIndex + 1].id)}>{t("editor.nextSection")}</button>
-          : <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null || identityReviewPending}>{t(busy ? "catalog.saving" : "catalog.save")}</button>}
+          : <button type="submit" className="cv-primary" disabled={busy || uploadingIndex !== null || uncertainCreate}>{t(busy ? "catalog.saving" : "collaboration.editor.save")}</button>}
       </div>
       <ConfirmDialog
         open={!!requestedKind}
@@ -1538,6 +1628,28 @@ export function EntityEditor({
         onClose={() => setRequestedKind("")}
         onConfirm={() => { if (requestedKind) applyKindChange(requestedKind); }}
       />
+      </fieldset>
+      {localMerge && <section className="space-y-4 rounded-panel border border-line bg-surface p-4" aria-label={t("collaboration.editor.merge")}>
+        <h2>{t("collaboration.editor.merge")}</h2>
+        {error && <p role="alert" className="cv-error">{error}</p>}
+        {localMerge.rebase.conflicts.map((conflict) => <fieldset key={conflict.pointer} className="space-y-2">
+          <legend className="break-all font-mono text-sm">{conflict.pointer}</legend>
+          <div className="grid gap-2 md:grid-cols-3">
+            {(["base", "current", "proposed"] as const).map((side) => <div key={side} className="min-w-0 rounded border border-line p-2">
+              <strong className="text-xs">{t(`collaboration.editor.${side}`)}</strong>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(conflict[side], null, 2) ?? t("catalog.none")}</pre>
+            </div>)}
+          </div>
+          <Select aria-label={t("collaboration.chooseResolution")} value={localChoices[conflict.pointer]?.choice || ""}
+            onChange={(choice) => setLocalChoices((choices) => ({ ...choices, [conflict.pointer]: { choice, custom: choices[conflict.pointer]?.custom || "" } }))}
+            options={[{ value: "", label: t("collaboration.chooseResolution") }, ...["proposed", "current", "custom", "remove"].map((choice) => ({ value: choice, label: t(`collaboration.resolution.${choice}`) }))]} />
+          {localChoices[conflict.pointer]?.choice === "custom" && <textarea aria-label={t("collaboration.customJson")}
+            value={localChoices[conflict.pointer].custom} onChange={(event) => setLocalChoices((choices) => ({ ...choices,
+              [conflict.pointer]: { choice: "custom", custom: event.target.value } }))} />}
+        </fieldset>)}
+        <button type="button" className="cv-primary" disabled={localMerge.rebase.conflicts.some((conflict) => !localChoices[conflict.pointer]?.choice)} onClick={resolveLocalMerge}>{t("collaboration.editor.merge")}</button>
+      </section>}
     </form>
+    </WorkspaceEntityPickerProvider>
   );
 }

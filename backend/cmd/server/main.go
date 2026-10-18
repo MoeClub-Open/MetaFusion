@@ -33,10 +33,6 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required for the catalog runtime")
 	}
-	if err := catalog.ConfigureSourcePolicy(os.Getenv("CATALOG_PUBLIC_URL"), os.Getenv("CATALOG_SOURCE_BLOCKED_HOSTS")); err != nil {
-		log.Fatalf("catalog source policy configuration invalid: %v", err)
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

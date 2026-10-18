@@ -5,14 +5,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { CommitReviewQueue } from "@/components/catalog/CommitReview";
+import { PullRequestQueue } from "@/components/catalog/PullRequestReview";
 import { AssistantAdmin } from "@/components/assistant/AssistantAdmin";
 import { PublicSourcesAdmin } from "@/components/admin/PublicSourcesAdmin";
 import { CatalogRequestLogsAdmin } from "@/components/admin/CatalogRequestLogsAdmin";
 import { DefinitionsEditor } from "@/components/catalog/DefinitionsEditor";
-import { Evidence } from "@/components/catalog/Fields";
+import { ChangeNote } from "@/components/catalog/Fields";
 import type { Entity, Source } from "@/components/catalog/api";
-import { catalogEvidenceError } from "@/lib/catalogEvidence";
 import { useDefinitions, getKindName, resolveKindOptions } from "@/lib/definitions";
 import { PageContainer } from "@/components/ui/PageShell";
 import { Select } from "@/components/ui/Select";
@@ -48,7 +47,7 @@ import { canUseCatalogAdminTab, type CatalogAdminTab as AdminTab } from "@/lib/c
 const NAV_GROUPS: { labelKey: string; tabs: { id: AdminTab; labelKey: string; icon: LucideIcon }[] }[] = [
   { labelKey: "admin.nav.work", tabs: [
     { id: "overview", labelKey: "admin.tab.overview", icon: LayoutDashboard },
-    { id: "reviews", labelKey: "admin.tab.reviews", icon: CheckSquare },
+    { id: "reviews", labelKey: "collaboration.pullRequests", icon: CheckSquare },
     { id: "entities", labelKey: "admin.nav.entities", icon: Layers },
     { id: "merge", labelKey: "admin.tab.merge", icon: GitMerge },
   ] },
@@ -138,7 +137,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
   const [mergeNote, setMergeNote] = useState("");
-  const [mergeSources, setMergeSources] = useState<Source[]>([{ kind: "url", citation: "", url: "" }]);
   const [mergeMessage, setMergeMessage] = useState("");
   // 合并结果的成功/失败由状态位决定配色：原先靠 "Error: " 前缀判定，等于把英文前缀写进流程。
   const [mergeError, setMergeError] = useState(false);
@@ -156,7 +154,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     setStats({ pending: null, active: null, tombstones: null, extDatabases: null });
     setModules([]);
     const results = await Promise.allSettled([
-      mayManageLifecycle ? fetchApi<{states: Record<string, number>; pending_commits:number}>("/catalog/entities/stats") : Promise.resolve(null),
+      mayManageLifecycle ? fetchApi<{states: Record<string, number>; pending_pull_requests:number}>("/catalog/entities/stats") : Promise.resolve(null),
       fetchApi<{items: unknown[]}>("/catalog/external-databases"),
       fetchApi<{modules: any[]}>("/capabilities"),
     ]);
@@ -165,7 +163,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     const counts = results[0];
     if (counts.status === "fulfilled" && counts.value) {
       const statuses = counts.value.states;
-      const pending = countOrNull(counts.value.pending_commits);
+      const pending = countOrNull(counts.value.pending_pull_requests);
       const active = countOrNull(statuses?.active);
       const deleted = countOrNull(statuses?.deleted);
       const merged = countOrNull(statuses?.merged);
@@ -241,10 +239,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
     const sourceId = mergeSource.trim();
     const targetId = mergeTarget.trim();
     if (mergeBusy.current || !mayManageLifecycle) return;
-    const evidenceError = catalogEvidenceError(mergeNote, mergeSources, window.location.origin);
-    if (evidenceError) {
-      setMergeError(true); setMergeMessage(localizeCatalogError(evidenceError, t)); return;
-    }
     mergeBusy.current = true;
     setMerging(true);
     setMergeMessage("");
@@ -268,7 +262,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
         setMergeMessage(t("admin.console.mergeInvalidTarget"));
         return;
       }
-      setMergePreview({source, target, note: mergeNote.trim(), sources: structuredClone(mergeSources)});
+      setMergePreview({source, target, note: mergeNote.trim(), sources: []});
     } catch (err) {
       setMergeError(true);
       setMergeMessage(localizeCatalogError(String((err as Error).message || err), t));
@@ -292,7 +286,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
       setMergeError(false);
       setMergeMessage(t("admin.console.mergeSuccess"));
       setMergeSource(""); setMergeTarget(""); setMergeNote("");
-      setMergeSources([{ kind: "url", citation: "", url: "" }]);
       void loadOverview();
     } catch (err) {
       setMergeError(true);
@@ -619,7 +612,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
 
           {currentTab === "ratelimits" && <RateLimitsTab />}
 
-          {currentTab === "reviews" && <CommitReviewQueue/>}
+          {currentTab === "reviews" && <PullRequestQueue />}
 
           {currentTab === "merge" && (
             <div className="space-y-4">
@@ -664,7 +657,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                 </div>
 
                 <div className="catalog-v2">
-                  <Evidence note={mergeNote} setNote={setMergeNote} sources={mergeSources} setSources={setMergeSources} />
+                  <ChangeNote note={mergeNote} setNote={setMergeNote} />
                 </div>
 
                 {mergeMessage && (

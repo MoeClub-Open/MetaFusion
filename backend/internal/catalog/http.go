@@ -264,23 +264,6 @@ func routeLimiter(perMinute int, databases ...*sql.DB) gin.HandlerFunc {
 	}
 }
 
-// 幂等声明装配（R1）：Idempotency-Key -> Store 层持久幂等（见 idempotency.go）。
-// 口径：仅覆盖 POST /catalog/entities 与 POST /catalog/relations；键含用户/操作/请求键，
-// 载荷摘要进库，同键不同载荷返 409 idempotency_conflict。无请求键时不声明（行为与原来一致）。
-func idemClaim(c *gin.Context, operation string, payload any) *IdempotencyClaim {
-	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	if key == "" {
-		return nil
-	}
-	uid := ""
-	if u := user(c); u != nil {
-		uid = u.ID
-	}
-	return &IdempotencyClaim{Operation: operation, UserID: uid, Key: key, Hash: requestHash(payload)}
-}
-
-// 进程内幂等缓存已整体退役（R1）：声明走 idemClaim + Store 层持久幂等，见 idempotency.go。
-
 // queryList 读取可重复/逗号分隔的多值查询参数（与 tags 同一约定），去空去重后返回，
 // 供 kinds/types 这类多值过滤使用。
 func queryList(c *gin.Context, name string) []string {
@@ -298,6 +281,7 @@ func queryList(c *gin.Context, name string) []string {
 }
 
 func (h HTTP) Register(r *gin.Engine) {
+	h.registerStorageAssetReferences(r)
 	h.registerGroup(r.Group("/api"))
 }
 
@@ -516,29 +500,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.ExpressionComposition(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, v, err)
 	})
-	contentEdit := func(action string) gin.HandlerFunc {
-		return func(c *gin.Context) {
-			var in TrackContentEdit
-			if !body(c, &in) {
-				return
-			}
-			position := 0
-			if action != "add" {
-				var err error
-				position, err = strconv.Atoi(c.Param("position"))
-				if err != nil || position < 0 {
-					respond(c, nil, fmt.Errorf("invalid_position"))
-					return
-				}
-			}
-			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
-			v, err := s.EditTrackContent(c.Request.Context(), c.Param("id"), action, position, in, *user(c))
-			respond(c, v, err)
-		}
-	}
-	cat.POST("/tracks/:id/contents", required(""), contentEdit("add"))
-	cat.PUT("/tracks/:id/contents/:position", required(""), contentEdit("replace"))
-	cat.DELETE("/tracks/:id/contents/:position", required(""), contentEdit("delete"))
 	cat.GET("/entities/:id/resolve", func(c *gin.Context) {
 		e, err := s.Resolve(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, e, err)
@@ -589,49 +550,8 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		respond(c, gin.H{"items": items, "missing": missing}, nil)
 	})
-	h.registerCommits(cat)
-	cat.POST("/entities", required(""), func(c *gin.Context) {
-		// 目标在创建成功前还不存在：失败路径只留 target_type（"有人试图建实体"），
-		// 成功后再补 id 与变更摘要。
-		auditlog.Describe(c, auditlog.Detail{TargetType: "entity"})
-		var in Edit
-		if !body(c, &in) {
-			return
-		}
-		if in.Entity.ID != "" {
-			auditlog.Fail(c, "id_must_be_empty")
-			c.JSON(400, gin.H{"error": "id_must_be_empty"})
-			return
-		}
-		// R1：幂等声明随请求进 Store 事务（重放/冲突由 Save 判定，见 idempotency.go）。
-		in.identityReview = true
-		in.idempotency = idemClaim(c, IdempotencyOpEntityCreate, in)
-		e, err := s.Save(c.Request.Context(), in, *user(c))
-		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: e.ID, Changes: entityChangeDetail(nil, &e)})
-		}
-		respondEntityWrite(c, e, err)
-	})
-	cat.PUT("/entities/:id", required(""), func(c *gin.Context) {
-		auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
-		var in Edit
-		if !body(c, &in) {
-			return
-		}
-		// "变更前"摘要要多读一次旧值：只有写端点会多这一次读（契约 §3 明确允许）。
-		// 读不到（不存在/不可见）就不给 before，判定仍归 Save 自己——它才是 404/403 的来源。
-		var before *Entity
-		if prev, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); err == nil {
-			before = &prev
-		}
-		in.Entity.ID = c.Param("id")
-		in.identityReview = true
-		e, err := s.Save(c.Request.Context(), in, *user(c))
-		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: e.ID, Changes: entityChangeDetail(before, &e)})
-		}
-		respondEntityWrite(c, e, err)
-	})
+	h.registerCollaboration(cat)
+	h.registerAssetPreviewRoutes(cat)
 	// 生命周期只处理删除与合并；资料修订通过提交及审核流程应用。
 	cat.POST("/entities/:id/lifecycle", required(PermissionLifecycleManage), func(c *gin.Context) {
 		auditlog.Describe(c, auditlog.Detail{TargetType: "entity", TargetID: c.Param("id")})
@@ -806,14 +726,22 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		respond(c, v, err)
 	})
-	// 用户贡献视图（前端用户主页的 all/revisions/works/releases/artists 五个 tab）：匿名可读，
-	// 可见性与实体列表同口径（未发布只有创建者与生命周期管理员看得到）。口径、分页与差异形状见
-	// contributions.go；限流与 /catalog/entities 同档（每次响应还要按页算差异）。
-	// 路径归目录服务而 /users/:id/favorites 归互动服务，网关按精确正则分流（见 deploy/nginx.conf）。
+	// Public contribution activity contains only changes merged into visible catalog facts.
+	// The year is interpreted in UTC; private workspace activity is never returned.
 	api.GET("/users/:id/contributions", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		year := 0
+		if raw, present := c.GetQuery("year"); present {
+			var err error
+			year, err = strconv.Atoi(raw)
+			if err != nil || year == 0 {
+				respond(c, nil, fmt.Errorf("invalid_year"))
+				return
+			}
+		}
 		page, _ := strconv.Atoi(c.Query("page"))
 		pageSize, _ := strconv.Atoi(c.Query("page_size"))
-		v, err := s.UserContributions(c.Request.Context(), c.Param("id"), c.DefaultQuery("tab", "all"), page, pageSize, user(c))
+		v, err := s.UserContributions(c.Request.Context(), c.Param("id"), year, page, pageSize)
 		respond(c, v, err)
 	})
 	cat.GET("/compare", func(c *gin.Context) {
@@ -834,63 +762,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		v, err := s.QueryExternalSource(c.Request.Context(), in)
 		respond(c, v, err)
-	})
-	// 关系写端点强制 catalog.relation.edit：与实体编辑分开的码（账号服务已分配），
-	// 端点级闸门挡住无码者的写请求，细粒度两端判定仍在 SaveRelation（canWriteRelation/canAttachToTarget）。
-	cat.POST("/relations", required(PermissionRelationEdit), func(c *gin.Context) {
-		auditlog.Describe(c, auditlog.Detail{TargetType: "relation"})
-		var in RelationEdit
-		if !body(c, &in) {
-			return
-		}
-		if in.Relation.ID != "" {
-			auditlog.Fail(c, "id_must_be_empty")
-			c.JSON(400, gin.H{"error": "id_must_be_empty"})
-			return
-		}
-		// R1：幂等声明随请求进 Store 事务（重放/冲突由 SaveRelation 判定）。
-		in.idempotency = idemClaim(c, IdempotencyOpRelationCreate, in)
-		v, err := s.SaveRelation(c.Request.Context(), in, *user(c))
-		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "relation", TargetID: v.ID, Changes: relationChangeDetail(nil, &v)})
-		}
-		respond(c, v, err)
-	})
-	cat.PUT("/relations/:id", required(PermissionRelationEdit), func(c *gin.Context) {
-		auditlog.Describe(c, auditlog.Detail{TargetType: "relation", TargetID: c.Param("id")})
-		var in RelationEdit
-		if !body(c, &in) {
-			return
-		}
-		// 变更前摘要：目录侧没有 relation-by-id 的读取入口，就按载荷给的 source_id 在该实体的
-		// 关系列表里找同 id 的那条（只有写端点会多这一次读）。找不到就不给 before。
-		var before *Relation
-		if in.Relation.SourceID != "" {
-			if rels, rerr := s.Relations(c.Request.Context(), in.Relation.SourceID, user(c)); rerr == nil {
-				for i := range rels {
-					if rels[i].ID == c.Param("id") {
-						before = &rels[i]
-						break
-					}
-				}
-			}
-		}
-		in.Relation.ID = c.Param("id")
-		v, err := s.SaveRelation(c.Request.Context(), in, *user(c))
-		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "relation", TargetID: v.ID, Changes: relationChangeDetail(before, &v)})
-		}
-		respond(c, v, err)
-	})
-	cat.DELETE("/relations/:id", required(PermissionRelationEdit), func(c *gin.Context) {
-		// 只给 target：删掉的关系在目录侧没有按 id 的读取入口，为了 before 摘要专门造一条
-		// 查询不值得（before 的价值不如实体那里高——关系删除只有 id，没有正文）。
-		auditlog.Describe(c, auditlog.Detail{TargetType: "relation", TargetID: c.Param("id")})
-		var in LifecycleEdit
-		if !body(c, &in) {
-			return
-		}
-		respond(c, gin.H{"ok": true}, s.DeleteRelation(c.Request.Context(), c.Param("id"), in.ExpectedVersion, in.EditNote, in.Sources, *user(c)))
 	})
 	defs := api.Group("/admin/catalog-definitions", required(PermissionDefinitionsManage))
 	defs.GET("", func(c *gin.Context) {

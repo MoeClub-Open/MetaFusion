@@ -24,9 +24,9 @@
 
 Model 的 `max_tokens_parameter` 明确选择上游输出上限字段 `max_tokens` 或 `max_completion_tokens`；BYO 可通过凭据的 `upstream_model` 覆盖模型名，仍沿用所选平台模型的上下文和输出 token 上限。后台可查看封存请求及结果，仅能取消创建超过10分钟的 pending 请求；取消保留既有回执、用量和幂等 ID，不撤销已完成目录修改。backend 每分钟回收超过10分钟的预留，已调用但消耗未知的请求按预留上界保守计费。
 
-注册赠分在用户首次使用助手账户时唯一记账；被采纳且已应用的 approved/exempt 目录提交按奖励生效时间唯一奖励。BYO 凭据仅由所属用户使用，调用记录仍计 token，不扣平台积分；赞助支付未实现，管理员可通过有唯一操作 ID 的积分调整记账。Provider 与 BYO 密钥使用 `AI_ENCRYPTION_KEY` 加密，API 仅返回存在标记及掩码提示。未配置加密密钥时保留配置和记录读取，禁止凭据写入与模型调用。
+注册赠分在用户首次使用助手账户时唯一记账；实际合入的目录编辑提交按合入时间和奖励生效时间唯一奖励，副本保存、未合入提交及重基操作不计采纳。BYO 凭据仅由所属用户使用，调用记录仍计 token，不扣平台积分；赞助支付未实现，管理员可通过有唯一操作 ID 的积分调整记账。Provider 与 BYO 密钥使用 `AI_ENCRYPTION_KEY` 加密，API 仅返回存在标记及掩码提示。未配置加密密钥时保留配置和记录读取，禁止凭据写入与模型调用。
 
-问答工具读取现有目录投影，编辑复用 CatalogCommit 的版本、证据、作者和审核规则，不引入另一套实体写入器；用户不必为每次工具调用再次授权，已有写权限与免审资格仍由目录校验。AI 生成介绍作为有来源的派生内容缓存，不覆盖条目正文或结构事实；图表、表格与时间线只表达可追溯数据。缓存读取必须重新核对当前公开事实快照及依赖，事实变化后重新生成需要额度。公开百科接入统一走只读来源 API，保留原文、页面来源、内容哈希及署名和许可信息。
+问答工具读取现有目录投影，编辑统一保存至服务器副本，再 commit、push 或发起 PR，不引入另一套实体写入器；用户不必为每次工具调用再次授权，已有写权限与免审资格仍由目录校验。来源及查证记录不作为操作门槛。AI 生成介绍作为派生内容缓存，不覆盖条目正文或结构事实；图表、表格与时间线只表达可追溯数据。缓存读取必须重新核对当前公开事实快照及依赖，事实变化后重新生成需要额度。公开百科接入统一走只读来源 API，保留原文、页面来源、内容哈希及署名和许可信息。
 
 ## 完整保存的能力边界与演进方向
 
@@ -62,7 +62,7 @@ Release.subjects 是发行声明覆盖的作品，Work 的组成关系表达创�
 
 两个投影均在 RepeatableRead 事务内读取，带 `definition_etag` 并裁剪不可见或终态对端，不另建图谱事实表。
 
-单条收录用 `POST /api/catalog/tracks/:id/contents` 增加，`PUT/DELETE /api/catalog/tracks/:id/contents/:position` 替换或删除已读位置。请求携带 Track 的 expected_version、edit_note、sources，替换可用 inclusion.position 重排；一次操作产生 Track 修订及 outbox，版本冲突返回 409。`track_contents.sources` 保存直接证据；整实体保存未显式提供收录 sources 时使用本次编辑证据，需要保留直接证据时原样提交。单条编辑保留其余不可见历史收录并裁剪响应；普通编辑者不能用裁剪后的公开视图删改隐藏事实。
+单条收录在工作副本中使用 `action=content` 增加、替换或删除，替换可用 inclusion.position 重排；与其他实体和关系变更一起提交，合入时才产生 Track 修订及 outbox。`track_contents.sources` 是可选的直接来源，不从提交说明自动补造。单条编辑保留其余不可见历史收录；普通编辑者不能用裁剪后的公开视图删改隐藏事实。
 
 ## 关系读取与 Agent 遍历
 
@@ -109,17 +109,17 @@ Agent 使用只读 `POST /api/catalog/relationships/query`：
 
 ## 并发编辑与提交
 
-目录新增 checkout、commits/preview、commits 与 commits/:id（均在 /api/catalog）。工作副本按每个实体/关系的 version 保存基线，不使用全目录 head 或实体 Git 裸仓；PG 仍是关系约束和事务事实源。公开协议维护在[工作副本与提交](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/api-commits.md)，本地工具在 metafusion-skills。
+目录使用服务器工作副本、不可变提交与 PR（均在 `/api/catalog`）。工作副本按每个实体/关系保存正式基线、最近提交和当前工作树，以全副本 version 防并发覆盖；每个新对象提前分配稳定 UUID，可在后续提交引用。副本 owner 可邀请协作者，每次 commit 按实际调用者记录作者。PG 仍是结构约束和事务事实源，不建立物理 Git 仓。公开协议见[工作副本与提交](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/api-commits.md)，本地工具在 metafusion-skills。
 
-提交最多100个有序 create/update，更新从 revisions 读取权威基线，以 JSON Pointer 稀疏字段做三方比较；数组原子，重叠不同值冲突，未改字段保留。saveEntityTx/saveRelationTx 共用已有定义、权限、结构、审计与通知校验；一笔事务存实体/关系、修订、outbox、通知和不可变回执，预览整笔回滚。025 迁移加 commits 与 revisions.commit_id；026 移除父子环触发器的740202锁，父级改变必须使用 SERIALIZABLE，并发布 schema_contract 26。两条迁移均不改已有实体事实。
+保存变更与 commit 均只修改副本；同一副本支持多次操作合成一次提交，以及多次提交后 push。有未提交变更时不能 push。免审用户直接合入，普通用户 push 创建或更新 PR；PR 固定源 head，合并人必须提交实际查看过的 PR version 和 source head。两个入口共用同一事务合并器及 saveEntityTx/saveRelationTx，不保留直接实体/关系/收录写接口或旧提交审核实现。
 
-创建用题名、翻译题名、外部 ID 和 Work/Release/Medium 作用域复核 reviewed_candidate_ids。commit 创建按候选索引 term 与 kind/作用域取事务锁，后到的相同创建发现集合改变会整批拒绝；私有数据和单对象/导入入口不由此获得全局身份唯一约束，不自动按同名合并。
+合并比较副本基线到源 head 的净变更，再与当前正式事实做三方比较；撤销到基线的字段不覆盖他人修改。数组原子，互不重叠的修改自动合并，重叠且不同值返回字段冲突。解决请求携带本次看到的 current_version，明确选择当前、副本或自定义值；重基生成新提交，不改写旧提交。来源与候选查证均可选；身份候选查询仍用于人工判断，不要求提交 reviewed_candidate_ids，也不按同名自动合并。
 
 局部锁顺序为创建身份 term（稳定排序）→definitions 共享→Release（稳定排序）→实体行（UUID 排序）。同发行和同身份条件仍协调，互不关联的结构与关系不会等待全库写锁。实体用 NO KEY UPDATE 行锁；关系保存只读取端点附近的计数、重复/位置依赖及从目标可达的 cycle_group 图，定义影响检查和合并回放仍检查完整依赖集。
 
 提交期限15秒、锁等待3秒，最多16次事务尝试，带短暂随机退避。仅 SQLSTATE 40001、40P01、55P03 确认回滚时重试整笔事务；每次重建 refs/items 与输入副本，成功回执只来自最终事务。耗尽返回503 transaction_busy，提交响应 applied=false、Retry-After:1。网络断开、未知 COMMIT 和业务冲突不自动重试；此前未知推送不能被后一次忙碌响应判为失败。definitions 每批只读一次，checkout 批量补齐实体与结构。
 
-Git 兼容后续可通过 [remote helper](https://git-scm.com/docs/gitremote-helpers) 将 Git 本地提交映射到此推送协议；原生协议、服务端长期分支与多个离线提交的父子链当前未实现。每实体物理仓会拆散 Release/Track/Expression 的原子关系变更，本阶段不这样存储。
+合入在单一事务中更新事实、修订、原始提交关联、outbox 与通知；任何冲突或校验失败都不部分生效。原作者与合并人分别保留，公开贡献按 UTC 合入日期统计实际编辑提交，不按修订行计数，私人未合入活动不进入公开主页。提交、父链和贡献关联永久保留；没有 Git 文件、索引、标签或复杂分支命令。
 
 ## 查询规模、费用与接口边界
 

@@ -9,38 +9,46 @@ export interface AssistantAccountResponse {
   default_model_id: string;
 }
 
-export interface AssistantCommitReceipt {
-  id: string; applied: boolean; review_status: string;
-  items: { id: string; target: string; version: number }[];
+export interface AssistantPushReceipt {
+  applied: boolean;
+  workspace: { id: string; head_commit_id: string | null } | null;
+  commits: { id: string; merged_at: string | null; changes: { id: string; target: string }[] }[];
+  pull_request: { id: string; status: "open" | "merged" | "closed" } | null;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+export const pushReceiptKey = (receipt: AssistantPushReceipt) => `${receipt.workspace?.id || receipt.pull_request?.id || ""}:${receipt.workspace?.head_commit_id || receipt.commits.map((commit) => commit.id).join(",")}:${receipt.applied}`;
 
-/** Only actual catalog_commit tool results become receipts; dry runs are not submissions. */
-export function conversationReceipts(messages: AssistantMessage[]): AssistantCommitReceipt[] {
+/** Only authoritative push/merge tool replies become outcomes, never staging or user text. */
+export function conversationReceipts(messages: AssistantMessage[]): AssistantPushReceipt[] {
   const calls = new Set<string>();
-  const receipts = new Map<string, AssistantCommitReceipt>();
+  const receipts = new Map<string, AssistantPushReceipt>();
   for (const message of messages) {
     if (message.role === "assistant") {
       for (const call of message.tool_calls || []) {
-        if (call.function.name !== "catalog_commit") continue;
-        try {
-          const args: unknown = JSON.parse(call.function.arguments);
-          if (record(args) && args.preview !== true) calls.add(call.id);
-        } catch { /* An invalid tool request is not an applied edit. */ }
+        if (call.function.name === "catalog_workspace_push" || call.function.name === "catalog_pull_request_merge") calls.add(call.id);
       }
     }
     if (message.role !== "tool" || !message.tool_call_id || !calls.has(message.tool_call_id)) continue;
     try {
       const value: unknown = JSON.parse(message.content);
       const receipt = record(value) && record(value.receipt) ? value.receipt : value;
-      if (!record(receipt) || typeof receipt.id !== "string" || !UUID.test(receipt.id) || typeof receipt.applied !== "boolean" ||
-        typeof receipt.review_status !== "string" || !Array.isArray(receipt.items)) continue;
-      const items = receipt.items.flatMap((item) => record(item) && typeof item.id === "string" && UUID.test(item.id) &&
-        typeof item.target === "string" && typeof item.version === "number" && Number.isSafeInteger(item.version)
-        ? [{ id: item.id, target: item.target, version: item.version }] : []);
-      receipts.set(receipt.id, { id: receipt.id, applied: receipt.applied, review_status: receipt.review_status, items });
-    } catch { /* Tools may return non-receipt errors; their raw data is not displayed. */ }
+      if (!record(receipt) || typeof receipt.applied !== "boolean" || !Array.isArray(receipt.commits)) continue;
+      const workspace = receipt.workspace;
+      if (workspace !== null && (!record(workspace) || typeof workspace.id !== "string" || !UUID.test(workspace.id) ||
+        !(workspace.head_commit_id === null || typeof workspace.head_commit_id === "string" && UUID.test(workspace.head_commit_id)))) continue;
+      const commits = receipt.commits.flatMap((commit) => record(commit) && typeof commit.id === "string" && UUID.test(commit.id) &&
+        (commit.merged_at === null || typeof commit.merged_at === "string" && Number.isFinite(Date.parse(commit.merged_at)))
+        ? [{ id: commit.id, merged_at: commit.merged_at, changes: Array.isArray(commit.changes) ? commit.changes.flatMap((item) => record(item) &&
+          typeof item.id === "string" && UUID.test(item.id) && (item.target === "entity" || item.target === "relation") ? [{ id: item.id, target: item.target }] : []) : [] }] : []);
+      const pr = receipt.pull_request;
+      if (pr !== null && (!record(pr) || typeof pr.id !== "string" || !UUID.test(pr.id) || !["open", "closed", "merged"].includes(String(pr.status)))) continue;
+      const outcome: AssistantPushReceipt = {
+        applied: receipt.applied, workspace: record(workspace) ? { id: workspace.id as string, head_commit_id: workspace.head_commit_id as string | null } : null, commits,
+        pull_request: record(pr) ? { id: pr.id as string, status: pr.status as "open" | "merged" | "closed" } : null,
+      };
+      receipts.set(pushReceiptKey(outcome), outcome);
+    } catch { /* A failed tool is not a successful push. */ }
   }
   return [...receipts.values()];
 }

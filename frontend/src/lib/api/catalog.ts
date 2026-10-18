@@ -3,7 +3,6 @@ import type { User } from "./client";
 import { canonicalDetailPath } from "../entityRoutes";
 import { resolveLocalizedName } from "../localizedNames";
 import type { Source } from "@/components/catalog/api";
-import { catalogEvidenceError } from "../catalogEvidence";
 
 export interface Tag {
   id: number;
@@ -149,8 +148,6 @@ export async function mergeEntities(payload: {
   sources: Source[];
 }): Promise<{ message: string; target_id: string }> {
   const note = (payload.merge_note || "").trim();
-  const error = catalogEvidenceError(note, payload.sources);
-  if (error) throw new Error(error);
   const source = await fetchApi<{ version: number }>(`/catalog/entities/${payload.source_id}`);
   await fetchApi(`/catalog/entities/${payload.source_id}/lifecycle`, {
     method: "POST",

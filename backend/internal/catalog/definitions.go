@@ -60,7 +60,7 @@ func (s *Store) SaveDefinitions(ctx context.Context, d Definitions, expectedETag
 		if !u.Can(PermissionDefinitionsManage) {
 			return errForbidden
 		}
-		if err := validateSources(note, sources); err != nil {
+		if err := validateSources(sources); err != nil {
 			return err
 		}
 		if err := lockDefinitionsExclusive(ctx, tx); err != nil {

@@ -30,7 +30,8 @@ func TestProtectedRouteGates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// 持另一个目录码：能证明被拒的原因是"缺这个码"，而不是"没有权限声明"。
 	otherCode := &User{ID: "u-other", Permissions: []string{PermissionEntityEdit}}
-	relationUser := &User{ID: "u-rel", Permissions: []string{PermissionRelationEdit}}
+	reviewer := &User{ID: "u-review", Permissions: []string{PermissionReviewManage}}
+	lifecycleUser := &User{ID: "u-lifecycle", Permissions: []string{PermissionLifecycleManage}}
 	wildcard := &User{ID: "u-admin", Permissions: []string{permissionWildcard}}
 	id := "00000000-0000-0000-0000-000000000001"
 
@@ -41,9 +42,8 @@ func TestProtectedRouteGates(t *testing.T) {
 		withCode   *User
 		wantDenied string // 无码/匿名时的期望错误码
 	}{
-		{"relation create", http.MethodPost, "/api/catalog/relations", relationUser, ""},
-		{"relation update", http.MethodPut, "/api/catalog/relations/" + id, relationUser, ""},
-		{"relation delete", http.MethodDelete, "/api/catalog/relations/" + id, relationUser, ""},
+		{"pull request merge", http.MethodPost, "/api/catalog/pull-requests/" + id + "/merge", reviewer, ""},
+		{"entity lifecycle", http.MethodPost, "/api/catalog/entities/" + id + "/lifecycle", lifecycleUser, ""},
 	} {
 		// 匿名：401（未登录）与 403（无权限）必须是两个状态，前端据此决定跳登录还是提示无权限。
 		w := httptest.NewRecorder()
@@ -107,12 +107,12 @@ func TestExternalSourcePreviewIsRateLimited(t *testing.T) {
 }
 
 // 反向对照：只要求登录的端点对"无任何目录码的登录用户"照旧放行（400 而非 403），
-// 避免把闸门加宽的改动顺手扩到实体草稿这类既有入口。
+// 工作副本可以创建；保存与合入时再按实际操作校验目录权限。
 func TestLoginOnlyRouteStaysOpen(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	plain := &User{ID: "u-plain", Permissions: []string{"community.post.create"}}
 	w := httptest.NewRecorder()
-	gateEngine(plain).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/catalog/entities", strings.NewReader("{")))
+	gateEngine(plain).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/catalog/workspaces", strings.NewReader("{")))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("login-only endpoint rejected a logged-in user: status=%d body=%s", w.Code, w.Body.String())
 	}

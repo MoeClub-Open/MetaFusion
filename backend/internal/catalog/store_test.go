@@ -45,10 +45,10 @@ func TestLocatorAndEvidence(t *testing.T) {
 	if err := d.value(d.Fields["locator"], map[string]any{"relative_to": "track", "no_such_key": float64(1)}, ref, false); err == nil {
 		t.Fatal("undeclared locator key accepted")
 	}
-	if err := validateSources("本人首次发布", []Source{{Kind: "self", Citation: "作者自述"}}); err == nil || err.Error() != "source_not_eligible" {
-		t.Fatalf("self source accepted: %v", err)
+	if err := validateSources([]Source{{Kind: "self", Citation: "作者自述"}}); err != nil {
+		t.Fatalf("valid optional source rejected: %v", err)
 	}
-	if validateSources("x", []Source{{Kind: "url", Citation: "x", URL: "javascript:alert(1)"}}) == nil {
+	if validateSources([]Source{{Kind: "url", Citation: "x", URL: "javascript:alert(1)"}}) == nil {
 		t.Fatal("unsafe URL accepted")
 	}
 }

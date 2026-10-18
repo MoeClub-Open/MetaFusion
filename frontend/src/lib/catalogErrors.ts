@@ -14,7 +14,6 @@ const CODE_KEYS: Record<string, string> = {
   invalid_template_block: "catalog.error.invalidTemplateRules",
   invalid_template_match: "catalog.error.invalidTemplateRules",
   translation_required: "catalog.error.translationRequired",
-  evidence_required: "catalog.error.evidenceRequired",
   parent_required: "catalog.error.parentRequired",
   version_conflict: "catalog.error.versionConflict",
   immutable_scope: "catalog.error.immutableScope",
@@ -44,14 +43,9 @@ const CODE_KEYS: Record<string, string> = {
   // 源已删除或已合并、或状态值不在允许集合内（invalid_state）。
   invalid_merge_target: "catalog.error.invalidMergeTarget",
   invalid_state: "catalog.error.invalidState",
-  // 证据/来源校验：下架与合并都要求 edit_note + 至少一条合法 sources。
+  // 提供来源时检查其格式；缺少来源不阻止操作。
   invalid_source: "catalog.error.invalidSource",
-  source_not_eligible: "catalog.error.sourceNotEligible",
   rate_limit_unavailable: "catalog.error.rateLimitUnavailable",
-  identity_candidates_changed: "catalog.error.identityCandidatesChanged",
-  identity_candidates_incomplete: "catalog.error.identityCandidatesIncomplete",
-  identity_candidate_unresolved: "catalog.error.identityCandidateUnresolved",
-  invalid_identity_review: "catalog.error.invalidIdentityReview",
   invalid_isbn: "catalog.error.invalidIsbn",
   invalid_barcode: "catalog.error.invalidBarcode",
   forbidden: "catalog.error.forbidden",

@@ -13,8 +13,8 @@ export { toggleFavorite, fetchFavoriteStatus, fetchFavorites, normalizeBoard, bo
 export type { FavoriteTargetType, FavoriteItem, ForumPost, DiscussionTopic, CreateTopicPayload, CreatePostPayload, EntityComment, EntityCollectionRef, DirectMessage, ConversationItem, ForumBoard } from "./api/community";
 export { pickLocalizedName, catalogEntityHref, mergeEntities } from "./api/catalog";
 export type { Tag, ConnectedEntityItem, EntityRevision, EntityRelationship, RelationType, GraphNode, GraphLink } from "./api/catalog";
-export { fetchUserProfile, fetchUserContributions, fetchUserCommunityStats, isContributionTab, CONTRIBUTION_TABS } from "./api/users";
-export type { PublicUser, PublicUserProfile, ContributionTab, ContributionStats, ContributionSource, ContributionItem, UserContributions, CommunityUserStats } from "./api/users";
+export { fetchUserProfile, fetchUserContributions, fetchUserCommunityStats } from "./api/users";
+export type { PublicUser, PublicUserProfile, ContributionSummary, ContributionActor, ContributionEntity, ContributionDay, ContributionItem, UserContributions, CommunityUserStats } from "./api/users";
 export { fetchOwnAuditLogs, AUDIT_PAGE_SIZE } from "./api/audit";
 export type { AuditLogEntry, AuditLogPage } from "./api/audit";
 export { fetchExternalDatabases, fetchAdminExternalDatabases, createExternalDatabase, updateExternalDatabase, deleteExternalDatabase } from "./api/admin";

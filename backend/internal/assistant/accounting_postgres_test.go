@@ -152,22 +152,43 @@ func TestPostgresRewardPolicyAndUniqueness(t *testing.T) {
 	if _, err := s.DB.Exec(`UPDATE assistant.settings SET reward_effective_at=$1`, effective); err != nil {
 		t.Fatal(err)
 	}
-	insert := func(decision string, applied bool, when time.Time) {
+	coauthorID, mergerID := uuid.NewString(), uuid.NewString()
+	insert := func(author, kind string, merged bool, linkedRevisions int, when time.Time, coauthors ...string) string {
 		t.Helper()
-		status := "reviewed"
-		if decision == "pending" {
-			status = "pending_review"
+		commitID := uuid.NewString()
+		var mergedAt, mergedBy any
+		if merged {
+			mergedAt, mergedBy = when, mergerID
 		}
-		_, err := s.DB.Exec(`INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,review_status,review_decision,reviewed_at,created_at,author_snapshot) VALUES($1,$2,'test','{}',jsonb_build_object('applied',$3::boolean),$4,$5,$6,$6,jsonb_build_object('id',$2::text))`, uuid.NewString(), ownerID, applied, status, decision, when)
+		_, err := s.DB.Exec(`INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,kind,created_at,merged_at,merged_by) VALUES($1,$2,'test','{}','{}',jsonb_build_object('id',$2::text),$3,$4,$5,$6)`, commitID, author, kind, when.Add(-24*time.Hour), mergedAt, mergedBy)
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, userID := range append([]string{author}, coauthors...) {
+			if _, err = s.DB.Exec(`INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,'Author')`, commitID, userID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i := 0; i < linkedRevisions; i++ {
+			var revisionID int64
+			if err = s.DB.QueryRow(`INSERT INTO catalog.revisions(target_id,version,actor_id,edit_note,sources,snapshot,commit_id) VALUES($1,1,$2,'Edit','[]','{}',$3) RETURNING id`, uuid.NewString(), author, commitID).Scan(&revisionID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.DB.Exec(`INSERT INTO catalog.revision_commits(revision_id,commit_id) VALUES($1,$2)`, revisionID, commitID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return commitID
 	}
-	insert("approved", true, effective.Add(time.Second))
-	insert("exempt", true, effective.Add(time.Second))
-	insert("approved", true, effective.Add(-time.Second))
-	insert("pending", false, effective.Add(time.Second))
-	insert("rejected", false, effective.Add(time.Second))
+	// Rewards use merge time and original authorship. A batched edit earns once,
+	// while an unmerged commit, rebase or net-zero merge earns nothing.
+	coauthoredCommitID := insert(ownerID, "edit", true, 2, effective.Add(time.Second), coauthorID)
+	insert(ownerID, "edit", true, 1, effective.Add(time.Second))
+	insert(ownerID, "edit", true, 1, effective.Add(-time.Second))
+	insert(ownerID, "edit", false, 0, effective.Add(time.Second))
+	insert(ownerID, "rebase", true, 1, effective.Add(time.Second))
+	insert(ownerID, "edit", true, 0, effective.Add(time.Second))
+	insert(uuid.NewString(), "edit", true, 1, effective.Add(time.Second))
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
 		wg.Add(1)
@@ -177,12 +198,27 @@ func TestPostgresRewardPolicyAndUniqueness(t *testing.T) {
 			if err != nil || b.Credits != 120 {
 				t.Errorf("reward: %+v %v", b, err)
 			}
+			b, err = s.SyncCredits(ctx, coauthorID)
+			if err != nil || b.Credits != 110 {
+				t.Errorf("coauthor reward: %+v %v", b, err)
+			}
 		}()
 	}
 	wg.Wait()
 	entries, err := s.CreditEntries(ctx, ownerID, false, 50, 0)
 	if err != nil || entries.Total != 3 {
 		t.Fatalf("duplicate rewards: %+v %v", entries, err)
+	}
+	coauthorEntries, err := s.CreditEntries(ctx, coauthorID, false, 50, 0)
+	if err != nil || coauthorEntries.Total != 2 {
+		t.Fatalf("coauthor reward duplicated or missing: %+v %v", coauthorEntries, err)
+	}
+	var rewardedAuthors int
+	if err = s.DB.QueryRow(`SELECT count(*) FROM assistant.credit_entries WHERE kind='accepted_edit' AND reference_id=$1`, coauthoredCommitID).Scan(&rewardedAuthors); err != nil || rewardedAuthors != 2 {
+		t.Fatalf("coauthored commit must reward each author once: %d %v", rewardedAuthors, err)
+	}
+	if b, err := s.SyncCredits(ctx, mergerID); err != nil || b.Credits != 100 {
+		t.Fatalf("merger received authorship credits: %+v %v", b, err)
 	}
 	adjustment := CreditAdjustment{ID: uuid.NewString(), UserID: ownerID, Credits: 7, Note: "test adjustment"}
 	for i := 0; i < 2; i++ {

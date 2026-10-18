@@ -86,13 +86,13 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 ## 目录提交迁移与连接预算
 
-025 catalog_commits 新增持久回执和修订关联；027 新增清理索引及独立生命周期贡献事实，028 新增共享业务额度表。先使用同源 migrator 执行 up，再启动后端。提交回执、幂等键和修订关联永久保留，恢复不能只回滚实体表；提交请求载荷可按下述保留策略清空。旧事实不被迁移改写。Agent 工具须升级到支持 checkout/commits 的技能；旧写结果仍按原身份与键核验，不能重新创建。
+035 collaboration 将目录协作切换为服务器工作副本、不可变提交与 PR；扩展原 commits，不另设第二套提交表。历史已应用提交按已有修订关联迁为已合入历史，未决提交转为独立副本和 open PR，被拒提交转为 closed PR；原始请求、结果、作者及已知修订保留，不伪造被早期清理过的请求或父链。
 
-`CATALOG_OUTBOX_RETENTION_DAYS=7`、`CATALOG_COMMIT_REQUEST_RETENTION_DAYS=90`，两项均可设0永久保留，允许0–36500天；`CATALOG_RETENTION_INTERVAL_SECONDS=3600`，允许60–86400秒。清理每轮共享30秒预算，最多20批，每事务最多500事件和500请求载荷；仅清理明确可消费/裁剪且满足保留与确认条件的已知事件，未确认消费者事件保留。删除/合并贡献独立记录，不再依赖队列长期存在。
+切换前停旧目录与 MCP 写入端，使用同源 migrator 执行 up，再同时启用新后端、前端、助手、MCP 和技能；旧提交审核及单对象事实写接口已删除，不能混用旧客户端。迁移不可逆，回退须恢复匹配的整库备份及应用组。先在独立恢复库验证 pending、rejected、历史作者与关系删除快照的迁移结果，再执行目标实例升级。
 
-`CATALOG_PUBLIC_URL` 默认 `https://findverse.cc`，来源校验据此拒绝本站自身链接；`CATALOG_SOURCE_BLOCKED_HOSTS` 可追加逗号分隔的禁止域。自托管须填写实际公网地址，不能用容器 URL 代替。
+工作副本、提交、原始请求、修订和贡献关联永久保留，恢复不能只回滚实体表。`CATALOG_OUTBOX_RETENTION_DAYS=7` 可设0永久保留，允许0–36500天；`CATALOG_RETENTION_INTERVAL_SECONDS=3600`，允许60–86400秒。清理每轮共享30秒预算，最多20批，每事务最多500个已确认事件；未确认消费者事件保留。删除/合并贡献独立记录，不依赖队列长期存在。来源资格策略与提交载荷过期清理配置均已移除。
 
-存储生命周期投递仅在 `STORAGE_URL` 与两侧同值的 `STORAGE_CATALOG_LIFECYCLE_SECRET` 配置后启用；共享密钥默认空，默认安装不自动启用。主编排提供内部存储 URL，metadata-only 则可选接外部存储 URL。内部接口和资产回收验收见[存储运行约定](./storage-operations.md)。
+自托管封面的副本保留、私有预览与合入绑定要求目录配置 `STORAGE_URL`，目录与存储两侧显式填写同值的 `STORAGE_CATALOG_LIFECYCLE_SECRET`；没有自动生成或共享密钥的机制。默认空值仅适用于不使用自托管封面的安装，涉及资产的副本操作会明确返回 `503 storage_unavailable`。主编排提供内部存储 URL，metadata-only 可接外部存储服务；上线前同时执行存储 011 迁移。内部接口和资产回收验收见[存储运行约定](./storage-operations.md)。
 
 CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默认32（0–maxOpen），其他服务与 MCP 默认32/16。PostgreSQL 编排默认 max_connections=512，两份编排均给 `/dev/shm` 256 MiB，CI PostgreSQL 同值。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.mjs。
 

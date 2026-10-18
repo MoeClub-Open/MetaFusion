@@ -45,7 +45,7 @@ func (s *Store) SyncCredits(ctx context.Context, userID string) (Balance, error)
 		return Balance{}, err
 	}
 	// The migration activation time prevents a first visit from replaying all old edits.
-	rows, err := tx.QueryContext(ctx, `SELECT id::text FROM catalog.commits WHERE actor_id=$1 AND (result->>'applied')='true' AND ((review_decision='approved' AND reviewed_at >= $2) OR (review_decision='exempt' AND created_at >= $2)) AND NOT EXISTS(SELECT 1 FROM assistant.credit_entries e WHERE e.user_id=$1 AND e.kind='accepted_edit' AND e.reference_id=catalog.commits.id::text) ORDER BY created_at,id`, userID, settings.RewardEffectiveAt)
+	rows, err := tx.QueryContext(ctx, `SELECT c.id::text FROM catalog.commits c WHERE EXISTS(SELECT 1 FROM catalog.commit_authors a WHERE a.commit_id=c.id AND a.user_id=$1) AND c.kind='edit' AND c.merged_at >= $2 AND EXISTS(SELECT 1 FROM catalog.revision_commits rc WHERE rc.commit_id=c.id) AND NOT EXISTS(SELECT 1 FROM assistant.credit_entries e WHERE e.user_id=$1 AND e.kind='accepted_edit' AND e.reference_id=c.id::text) ORDER BY c.merged_at,c.id`, userID, settings.RewardEffectiveAt)
 	if err != nil {
 		return Balance{}, err
 	}

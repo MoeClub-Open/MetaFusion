@@ -14,9 +14,9 @@ var entityStates = []string{"active", "deleted", "merged"}
 
 // EntityStateCounts 是 /api/catalog/entities/stats 的响应：按状态分组的真实计数 + 全表总数。
 type EntityStateCounts struct {
-	PendingCommits int64            `json:"pending_commits"`
-	States         map[string]int64 `json:"states"`
-	Total          int64            `json:"total"`
+	PendingPullRequests int64            `json:"pending_pull_requests"`
+	States              map[string]int64 `json:"states"`
+	Total               int64            `json:"total"`
 }
 
 // stateGroup 是 GROUP BY state 的一行。
@@ -47,7 +47,7 @@ func (s *Store) StateCounts(ctx context.Context) (EntityStateCounts, error) {
 		return EntityStateCounts{}, err
 	}
 	out := foldStateCounts(groups)
-	err = s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.commits WHERE review_status='pending_review'").Scan(&out.PendingCommits)
+	err = s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.pull_requests WHERE status='open'").Scan(&out.PendingPullRequests)
 	return out, err
 }
 

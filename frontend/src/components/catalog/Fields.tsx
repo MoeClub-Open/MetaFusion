@@ -1,12 +1,35 @@
 "use client";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nProvider";
-import { api, Entity, Field, local, Names, Source, title } from "./api";
+import { api, Entity, Field, local, Names, title } from "./api";
 import { getKindName, useDefinitions } from "@/lib/definitions";
 import { CORE_LOCALE_CODES } from "@/lib/languages";
 import { entityIdentitySuffix } from "@/lib/entityIdentity";
 import { Select } from "@/components/ui/Select";
+import type { Workspace } from "@/lib/api/collaboration";
+
+const WorkspaceEntityContext = createContext<Workspace | null>(null);
+export const WorkspaceEntityPickerProvider = WorkspaceEntityContext.Provider;
+
+export function workspaceEntityChoices(workspace: Workspace | null, main: Entity[], search: string, kinds?: string[], query = ""): Entity[] {
+  const choices = new Map(main.map((entity) => [entity.id, entity]));
+  const stagedIds = new Set<string>();
+  for (const object of workspace?.objects || []) {
+    if (object.target !== "entity") continue;
+    stagedIds.add(object.id);
+    choices.delete(object.id);
+    if (object.document) choices.set(object.id, { ...object.document, id: object.id } as Entity);
+  }
+  const needle = search.trim().toLocaleLowerCase();
+  const filters = new URLSearchParams(query.replace(/^&/, ""));
+  return [...choices.values()].filter((entity) => {
+    if (kinds?.length && !kinds.includes(entity.kind)) return false;
+    if ([...filters].some(([field, value]) => String((entity as Record<string, unknown>)[field] ?? "") !== value)) return false;
+    const names = [entity.id, entity.title, ...Object.values(entity.translations || {}).flatMap((row) => [row.title, ...(row.aliases || [])])];
+    return !needle || !stagedIds.has(entity.id || "") || names.some((name) => name?.toLocaleLowerCase().includes(needle));
+  });
+}
 export function NamesEditor({
   value,
   onChange,
@@ -42,6 +65,7 @@ export function EntityPicker({
   query?: string;
 }) {
   const { t, tr, locale } = useI18n();
+  const workspace = useContext(WorkspaceEntityContext);
   const { kinds: serverKinds } = useDefinitions();
   // 候选行的层级名：服务端 definitions.kinds 优先，字典只作兜底（缺键退原始码）。
   const kindLabel = (code: string) =>
@@ -56,6 +80,11 @@ export function EntityPicker({
       setSelected(undefined);
       return;
     }
+    const copy = workspace?.objects.find((object) => object.target === "entity" && object.id === value);
+    if (copy) {
+      setSelected(copy.document ? { ...copy.document, id: copy.id } as Entity : undefined);
+      return;
+    }
     api<Entity>(`/catalog/entities/${value}`)
       .then((x) => {
         if (active) setSelected(x);
@@ -66,7 +95,7 @@ export function EntityPicker({
     return () => {
       active = false;
     };
-  }, [value]);
+  }, [value, workspace]);
   useEffect(() => {
     let active = true;
     setItems([]);
@@ -78,19 +107,19 @@ export function EntityPicker({
       api<{ items: Entity[] }>(`/catalog/entities?${qs}${query}`)
         .then((r) => {
           if (active) {
-            setItems(r.items.filter((x) => !kinds?.length || kinds.includes(x.kind)));
+            setItems(workspaceEntityChoices(workspace, r.items, search, kinds, query));
             setError(false);
           }
         })
         .catch(() => {
-          if (active) { setItems([]); setError(true); }
+          if (active) { setItems(workspaceEntityChoices(workspace, [], search, kinds, query)); setError(true); }
         });
     }, 200);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [search, JSON.stringify(kinds), query]);
+  }, [search, JSON.stringify(kinds), query, workspace]);
   return (
     <div className="cv-picker">
       <input
@@ -376,93 +405,11 @@ export function EntityLink({ id, fallback }: { id: string; fallback?: string }) 
     </Link>
   );
 }
-export function Evidence({
-  note,
-  setNote,
-  sources,
-  setSources,
-}: {
-  note: string;
-  setNote: (s: string) => void;
-  sources: Source[];
-  setSources: (s: Source[]) => void;
-}) {
+export function ChangeNote({ note, setNote }: { note: string; setNote: (value: string) => void }) {
   const { t } = useI18n();
-  return (
-    <fieldset>
-      <legend>{t("catalog.evidence")}</legend>
-      <p className="text-xs text-text-muted">{t("catalog.evidenceSourceHint")}</p>
-      <label>
-        {t("catalog.editNote")}
-        <textarea
-          required
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-      </label>
-      {sources.map((s, i) => (
-        <div className="cv-group" key={i}>
-          <Select
-            aria-label={t("catalog.sourceKind")}
-            value={s.kind}
-            onChange={(v) =>
-              setSources(
-                sources.map((x, j) =>
-                  i === j ? { ...x, kind: v } : x,
-                ),
-              )
-            }
-            options={[...(!["url", "publication"].includes(s.kind) ? [s.kind] : []), "url", "publication"].map((k) => ({
-              value: k,
-              label: t(`catalog.source.${k}`),
-              disabled: k !== "url" && k !== "publication",
-            }))}
-          />
-          <input
-            required
-            aria-label={t("catalog.citation")}
-            placeholder={t("catalog.citation")}
-            value={s.citation}
-            onChange={(e) =>
-              setSources(
-                sources.map((x, j) =>
-                  i === j ? { ...x, citation: e.target.value } : x,
-                ),
-              )
-            }
-          />
-          <input
-            type="url"
-            aria-label={t("catalog.sourceUrl")}
-            placeholder={t("catalog.sourceUrl")}
-            required={s.kind === "url"}
-            value={s.url || ""}
-            onChange={(e) =>
-              setSources(
-                sources.map((x, j) =>
-                  i === j ? { ...x, url: e.target.value } : x,
-                ),
-              )
-            }
-          />
-          {sources.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setSources(sources.filter((_, j) => i !== j))}
-            >
-              {t("catalog.remove")}
-            </button>
-          )}
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => setSources([...sources, { kind: "url", citation: "" }])}
-      >
-        {t("catalog.addSource")}
-      </button>
-    </fieldset>
-  );
+  return <label>{t("catalog.editNote")}
+    <textarea value={note} onChange={(event) => setNote(event.target.value)} />
+  </label>;
 }
 export function ErrorMessage({ error }: { error: string }) {
   const { t } = useI18n();

@@ -49,11 +49,13 @@ MetaFusion 是类似 MusicBrainz / Bangumi 的开放元数据目录与受控资�
 
 涉及 API 或数据行为时，以目标实例响应 + 实际处理器 + 已执行迁移为准；有矛盾记差异、停掉依赖写入，不改文案掩盖。接口或外部行为变化时，只同步直接受影响的 OpenAPI、用户和开发者文档及主仓内部契约说明。
 
-- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000034_assistant`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
+- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000035_collaboration`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
 
-## 3.1 提交证据（破坏性，无兼容）
+## 3.1 副本协作与可选来源
 
-CatalogCommit：`sources[]` 每条必须有唯一 `key`；每个操作必须有非空 `source_refs`。旧格式（无 key / 无 source_refs）以结构化 400 拒绝（`source_refs_required` 带 `operation` 索引、`source_key_required`、`source_unused` 等）。技能与公开文档在 `metafusion-skills` / `metafusion-docs`；改提交契约时同步两边示例。
+目录编辑统一经过服务器工作副本：checkout → 保存变更 → commit → push / PR → merge。保存与提交都不改变正式目录；多次操作可一起提交，同一副本可保留多次不可变提交。版本 CAS、不可变提交 ID 与 source head 防止多人覆盖；冲突使用基线、副本与当前事实三方比较，解决后生成新提交。不存在绕过副本的单对象事实写接口，也不保留旧提交审核协议。
+
+来源及查证记录均为可选，不是保存、提交或合入的前置条件；不自动造出处或要求候选身份确认。已有来源照常保留，提供时只检查合理的结构与 URL 安全。提交说明与来源分别处理。技能与公开文档在 `metafusion-skills` / `metafusion-docs`，接口变更须同步。
 
 质量诊断仅作可选提示，不是编辑、提交或应用的前置条件；不得因缺封面、缺署名、目录不全、评分或未运行审计阻断合法修改。报告中的曲序检查仍按同一 medium 内顶层曲目 `position` 从 1 连续计算（`track_position_gap`）；从 2 起或缺轨返回 `partial`，只影响诊断结果。
 
@@ -71,6 +73,8 @@ CatalogCommit：`sources[]` 每条必须有唯一 `key`；每个操作必须有�
 | Compose | 仓库根目录 | `docker compose -f deploy/docker-compose.yml config --quiet`；不输出密钥 |
 | AGENTS / 技能 | 所属仓库 | 路径、Markdown、契约一致；有验证器就跑 |
 
-## 提交审核
+## 合入与贡献
 
-条目没有发布状态；公开字段 `state` 仅 active/deleted/merged，`review_status=reviewed` 只读。普通 commit 返回 202 pending_review/applied=false，保留当前事实、版本、历史和事件。`catalog.review.bypass` 免审应用，`catalog.review.manage` 审核不可变提交，批准重新验证并保留原作者；拒绝不改条目，旧 ID 不得应用。单对象事实写入口需要免审权限。存量正常条目为 active/reviewed；032 将实体列与历史条目快照统一为 state，运行时不读取旧 status。不可变提交请求与摘要仍是原始证据，不用于执行已结案提交。
+条目没有发布状态；公开字段 `state` 仅 active/deleted/merged。`catalog.review.bypass` 用户可推送并直接合入；普通用户推送产生或更新 PR，由 `catalog.review.manage` 用户合入。两者使用同一个原子合并器并重新验证当前权限、动态定义和结构；PR 固定源提交，副本 head 改变必须重新推送。关闭 PR 不改事实，已合入提交不得再次应用。
+
+提交保留原作者，合并人独立记录；协作者在共享副本中的每次提交按实际作者归属。公开贡献按已合入提交及 UTC 合入日期聚合，不将修订行数或私人副本活动计作贡献。工作副本、提交及贡献关联永久保留，不参与 outbox 清理。历史原始提交与修订保留已知信息，不伪造父链或丢失请求。

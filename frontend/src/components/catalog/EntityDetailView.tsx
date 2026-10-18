@@ -711,11 +711,6 @@ export function EntityDetailView({ id }: { id: string }) {
             initial={entity}
             initialSection={searchParams.get("section") || "basic"}
             initialLocale={searchParams.get("article_locale") || ""}
-            onSaved={(updated) => {
-              setEntity(updated);
-              setEditing(false);
-              void load();
-            }}
           />
         </PageShell>
       </div>
@@ -1270,7 +1265,7 @@ export function EntityDetailView({ id }: { id: string }) {
                   </div>
                 )}
                 <InclusionContents contents={entity.contents} expressions={inclusionExpressions.expressions} loading={inclusionExpressions.loading} />
-                {entity.kind === "track" && <TrackContentEditor track={entity} onSaved={(updated) => {setEntity(updated);void load()}}/>}
+                {entity.kind === "track" && <TrackContentEditor track={entity} workspaceId={searchParams.get("workspace") || undefined}/>}
                 {directTracks.length > 0 && <TrackDirectory tracks={directTracks} expressions={inclusionExpressions.expressions} loading={inclusionExpressions.loading} titleOrder={titleOrder} />}
                 {mediums.length > 0 && (
                   <div className="space-y-4">

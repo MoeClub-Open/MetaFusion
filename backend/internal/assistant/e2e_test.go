@@ -46,7 +46,7 @@ func assistantE2EFixture(t *testing.T) *assistantE2E {
 		// Leave room for several full-context reservations after actual charges.
 		// Runtime reserves the configured token ceiling, not the prompt estimate.
 		{`UPDATE assistant.models SET context_window=200000,cached_input_price_microusd_per_million=1000000 WHERE id=$1`, []any{model.ID}},
-		{`UPDATE assistant.settings SET registration_credits=1000000,monthly_budget_microusd=1000000,max_tool_rounds=4`, nil},
+		{`UPDATE assistant.settings SET registration_credits=1000000,monthly_budget_microusd=1000000,max_tool_rounds=8`, nil},
 	} {
 		if _, err := s.DB.Exec(update.query, update.args...); err != nil {
 			t.Fatal(err)
@@ -61,12 +61,38 @@ func assistantE2EFixture(t *testing.T) *assistantE2E {
 
 func (f *assistantE2E) seedWork() catalog.Entity {
 	f.t.Helper()
-	entity, err := f.cat.Save(context.Background(), catalog.Edit{
-		Entity: catalog.Entity{Kind: "work", Title: "Original Work", State: "active",
-			Attributes:   map[string]any{"language": "en-US", "edition_date": "2024-01-02"},
-			Translations: map[string]catalog.Translation{"en-US": {Title: "Original Work", Body: "Original body"}}},
-		EditNote: "Publisher source fixture", Sources: []catalog.Source{{Kind: "url", Citation: "Publisher record", URL: "https://publisher.example/product"}},
+	ctx := context.Background()
+	workspace, err := f.cat.CreateWorkspace(ctx, catalog.WorkspaceCreate{Name: "Fixture work"}, f.admin)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	document, err := json.Marshal(catalog.Entity{Kind: "work", Title: "Original Work",
+		Attributes:   map[string]any{"language": "en-US", "edition_date": "2024-01-02"},
+		Translations: map[string]catalog.Translation{"en-US": {Title: "Original Work", Body: "Original body"}}})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	staged, err := f.cat.SaveWorkspaceChanges(ctx, workspace.ID, catalog.WorkspaceChanges{
+		ExpectedVersion: workspace.Version,
+		Operations:      []catalog.WorkspaceOperation{{Target: "entity", Action: "create", Ref: "work", Document: document}},
 	}, f.admin)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	commit, err := f.cat.CommitWorkspace(ctx, workspace.ID, catalog.WorkspaceCommitCreate{
+		ID: uuid.NewString(), ExpectedVersion: staged.Workspace.Version, Message: "Create fixture work",
+	}, f.admin)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	workspace, err = f.cat.GetWorkspace(ctx, workspace.ID, f.admin)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if receipt, err := f.cat.PushWorkspace(ctx, workspace.ID, catalog.WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: commit.ID}, f.admin); err != nil || !receipt.Applied {
+		f.t.Fatalf("seed merge: %+v %v", receipt, err)
+	}
+	entity, err := f.cat.Get(ctx, staged.Refs["work"], nil)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -285,7 +311,7 @@ func TestPostgresAssistantHTTPQuotaDenialNeverInvokesProvider(t *testing.T) {
 	}
 }
 
-func TestPostgresAssistantHTTPCommitUsesCallerReviewAndEvidence(t *testing.T) {
+func TestPostgresAssistantHTTPWorkspaceUsesCallerPermissionsAndPreservesAuthorship(t *testing.T) {
 	for _, bypass := range []bool{false, true} {
 		t.Run(fmt.Sprintf("bypass=%t", bypass), func(t *testing.T) {
 			f := assistantE2EFixture(t)
@@ -294,64 +320,127 @@ func TestPostgresAssistantHTTPCommitUsesCallerReviewAndEvidence(t *testing.T) {
 			}
 			work := f.seedWork()
 			commitID := uuid.NewString()
+			var workspace catalog.Workspace
+			assertUnmerged := func() {
+				t.Helper()
+				current, err := f.cat.Get(context.Background(), work.ID, nil)
+				if err != nil || current.Version != work.Version || current.Translations["en-US"].Body != "Original body" {
+					t.Fatalf("staging or committing changed main: %+v %v", current, err)
+				}
+				if _, err = f.s.SyncCredits(context.Background(), f.user.ID); err != nil {
+					t.Fatal(err)
+				}
+				var rewards int
+				if err = f.s.DB.QueryRow(`SELECT count(*) FROM assistant.credit_entries WHERE user_id=$1 AND kind='accepted_edit'`, f.user.ID).Scan(&rewards); err != nil || rewards != 0 {
+					t.Fatalf("unmerged changes earned credits: %d %v", rewards, err)
+				}
+			}
 			calls := f.provider(f.user.ID, "integration-test-secret", "test-model", func(round int, payload e2eProviderPayload) Message {
 				switch round {
 				case 1:
-					return e2eTool("catalog_checkout", map[string]any{"entity_ids": []string{work.ID}})
+					return e2eTool("catalog_workspace_create", catalog.WorkspaceCreate{Name: "Correct article", EntityIDs: []string{work.ID}})
 				case 2:
-					checked := e2eLastTool[catalog.CatalogCheckout](t, payload)
-					if len(checked.Entities) != 1 || checked.Entities[0].ID != work.ID || checked.DefinitionsETag == "" {
-						t.Fatalf("cannot prepare edit from checkout: %+v", checked)
+					workspace = e2eLastTool[catalog.Workspace](t, payload)
+					if workspace.OwnerID != f.user.ID || len(workspace.Objects) != 1 || workspace.Objects[0].ID != work.ID || workspace.Objects[0].BaseVersion != work.Version {
+						t.Fatalf("cannot prepare edit from actual working copy: %+v", workspace)
 					}
-					value, _ := json.Marshal("Corrected sourced body")
-					commit := catalog.CatalogCommit{ID: commitID, DefinitionsETag: checked.DefinitionsETag, EditNote: "Correct article from publisher source",
-						Sources: []catalog.Source{{Key: "publisher", Kind: "url", Citation: "Publisher product description", URL: "https://publisher.example/product"}},
-						Operations: []catalog.CommitOperation{{Target: "entity", Action: "update", ID: work.ID, BaseVersion: checked.Entities[0].Version,
-							Patch:      []catalog.CommitPatch{{Path: "/translations/en-US/body", Value: value}},
-							SourceRefs: []catalog.SourceRef{{Source: "publisher", Pointers: []string{"/translations/en-US/body"}}}}},
+					value, _ := json.Marshal("Corrected body")
+					return e2eTool("catalog_workspace_stage", map[string]any{
+						"workspace_id": workspace.ID, "expected_version": workspace.Version,
+						"operations": []catalog.WorkspaceOperation{{Target: "entity", Action: "update", ID: work.ID,
+							Patch: []catalog.CommitPatch{{Path: "/translations/en-US/body", Value: value}}}},
+					})
+				case 3:
+					staged := e2eLastTool[catalog.WorkspaceChangesResult](t, payload)
+					if staged.Workspace.ID != workspace.ID || staged.Workspace.DirtyCount != 1 {
+						t.Fatalf("stage did not persist an isolated change: %+v", staged)
 					}
-					return e2eTool("catalog_commit", map[string]any{"commit": commit})
+					assertUnmerged()
+					return e2eTool("catalog_workspace_commit", map[string]any{
+						"workspace_id": workspace.ID, "id": commitID, "expected_version": staged.Workspace.Version, "message": "Correct article body",
+					})
+				case 4:
+					commit := e2eLastTool[catalog.CollaborationCommit](t, payload)
+					if commit.ID != commitID || commit.Author.ID != f.user.ID || commit.MergedAt != nil || len(commit.Changes) != 1 {
+						t.Fatalf("commit lost authorship or changed main: %+v", commit)
+					}
+					assertUnmerged()
+					return e2eTool("catalog_workspace_get", map[string]any{"workspace_id": workspace.ID})
+				case 5:
+					workspace = e2eLastTool[catalog.Workspace](t, payload)
+					if workspace.DirtyCount != 0 || workspace.HeadCommitID == nil || *workspace.HeadCommitID != commitID {
+						t.Fatalf("committed head was not retained: %+v", workspace)
+					}
+					return e2eTool("catalog_workspace_push", map[string]any{
+						"workspace_id": workspace.ID, "expected_version": workspace.Version, "expected_head": *workspace.HeadCommitID, "title": "Correct article body",
+					})
 				default:
-					receipt := e2eLastTool[catalog.CommitReceipt](t, payload)
-					if receipt.ID != commitID || receipt.Applied != bypass {
-						t.Fatalf("commit tool did not return the actual review decision: %+v", receipt)
+					receipt := e2eLastTool[catalog.WorkspacePushResult](t, payload)
+					if receipt.Workspace.ID != workspace.ID || receipt.Applied != bypass {
+						t.Fatalf("push tool did not return the actual merge decision: %+v", receipt)
 					}
-					return Message{Role: "assistant", Content: "The requested edit was submitted."}
+					if bypass {
+						return Message{Role: "assistant", Content: "The requested edit was merged."}
+					}
+					if receipt.PullRequest == nil || receipt.PullRequest.Status != "open" || receipt.PullRequest.SourceHeadID != commitID || receipt.PullRequest.AuthorID != f.user.ID {
+						t.Fatalf("ordinary push did not open the author's PR: %+v", receipt)
+					}
+					return Message{Role: "assistant", Content: "The requested edit is in an open pull request."}
 				}
 			})
-			req := ChatRequest{Message: "Update this article using the publisher description", ClientRequestID: uuid.NewString()}
+			req := ChatRequest{Message: "Correct this article body", ClientRequestID: uuid.NewString()}
 			response := e2eDecode[ChatResponse](t, f.request(&f.user, "POST", "/chat", req, 200))
-			if response.Error != "" || len(response.CommitReceipts) != 1 || response.CommitReceipts[0].Applied != bypass || *calls != 3 {
+			if response.Error != "" || len(response.PushReceipts) != 1 || response.PushReceipts[0].Applied != bypass || *calls != 6 {
 				t.Fatalf("edit was lost or elevated: %+v calls=%d", response, *calls)
 			}
 			current, err := f.cat.Get(context.Background(), work.ID, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantBody, wantVersion, wantStatus := "Original body", work.Version, "pending_review"
+			wantBody, wantVersion := "Original body", work.Version
 			rewards := int64(0)
 			if bypass {
-				wantBody, wantVersion, wantStatus = "Corrected sourced body", work.Version+1, "reviewed"
+				wantBody, wantVersion = "Corrected body", work.Version+1
 				rewards = 10
 			}
-			if current.Translations["en-US"].Body != wantBody || current.Version != wantVersion || response.CommitReceipts[0].ReviewStatus != wantStatus {
-				t.Fatalf("review changed the wrong facts: entity=%+v receipt=%+v", current, response.CommitReceipts[0])
+			if current.Translations["en-US"].Body != wantBody || current.Version != wantVersion {
+				t.Fatalf("push changed the wrong facts: entity=%+v receipt=%+v", current, response.PushReceipts[0])
 			}
-			var author string
+			var author, mergedBy string
+			var merged bool
 			var raw []byte
-			if err = f.s.DB.QueryRow(`SELECT actor_id,request FROM catalog.commits WHERE id=$1`, commitID).Scan(&author, &raw); err != nil || author != f.user.ID {
-				t.Fatalf("assistant changed commit authorship: %s %v", author, err)
+			if err = f.s.DB.QueryRow(`SELECT actor_id,request,merged_at IS NOT NULL,coalesce(merged_by,'') FROM catalog.commits WHERE id=$1`, commitID).Scan(&author, &raw, &merged, &mergedBy); err != nil || author != f.user.ID || merged != bypass || bypass && mergedBy != f.user.ID {
+				t.Fatalf("assistant changed commit authorship or merge attribution: author=%s merged=%t by=%s %v", author, merged, mergedBy, err)
 			}
-			var saved catalog.CatalogCommit
-			if json.Unmarshal(raw, &saved) != nil || len(saved.Sources) != 1 || saved.Sources[0].Key != "publisher" || len(saved.Operations) != 1 || len(saved.Operations[0].SourceRefs) != 1 || saved.Operations[0].SourceRefs[0].Source != "publisher" {
-				t.Fatalf("commit evidence was not preserved: %s", raw)
+			var saved catalog.WorkspaceCommitCreate
+			if json.Unmarshal(raw, &saved) != nil || saved.ID != commitID || saved.Message != "Correct article body" {
+				t.Fatalf("immutable commit request was not preserved: %s", raw)
 			}
 			f.request(&f.user, "POST", "/chat", req, 200)
 			var commits int
-			if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.commits WHERE actor_id=$1`, f.user.ID).Scan(&commits); err != nil || commits != 1 || *calls != 3 {
+			if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.commits WHERE actor_id=$1`, f.user.ID).Scan(&commits); err != nil || commits != 1 || *calls != 6 {
 				t.Fatalf("replay duplicated a mutation: commits=%d calls=%d err=%v", commits, *calls, err)
 			}
-			f.assertPlatformCharges(f.user, 3, rewards)
+			f.assertPlatformCharges(f.user, 6, rewards)
+			if !bypass {
+				pr := response.PushReceipts[0].PullRequest
+				mergedReceipt, err := f.cat.MergePullRequest(context.Background(), pr.ID, catalog.PullRequestMerge{
+					ExpectedVersion: pr.Version, ExpectedHead: pr.SourceHeadID,
+				}, f.admin)
+				if err != nil || !mergedReceipt.Applied {
+					t.Fatalf("reviewer could not merge the assistant-authored PR: %+v %v", mergedReceipt, err)
+				}
+				if err = f.s.DB.QueryRow(`SELECT actor_id,coalesce(merged_by,'') FROM catalog.commits WHERE id=$1`, commitID).Scan(&author, &mergedBy); err != nil || author != f.user.ID || mergedBy != f.admin.ID {
+					t.Fatalf("PR merge overwrote the author's contribution: author=%s merged_by=%s %v", author, mergedBy, err)
+				}
+				current, err = f.cat.Get(context.Background(), work.ID, nil)
+				if err != nil || current.Version != work.Version+1 || current.Translations["en-US"].Body != "Corrected body" {
+					t.Fatalf("PR merge did not materialize the authored edit: %+v %v", current, err)
+				}
+				// Approval credits the original author; it is unrelated to which
+				// account performed the merge or whether the author chats again.
+				f.assertPlatformCharges(f.user, 6, 10)
+			}
 		})
 	}
 }
@@ -403,19 +492,41 @@ func TestPostgresAssistantHTTPGeneratedCacheIsFreeAndBYOPrivate(t *testing.T) {
 		t.Run(fmt.Sprintf("byo=%t", byo), func(t *testing.T) {
 			f := assistantE2EFixture(t)
 			work := f.seedWork()
-			agent, err := f.cat.Save(context.Background(), catalog.Edit{
-				Entity:   catalog.Entity{Kind: "agent", Title: "Recorded Creator", State: "active", Translations: map[string]catalog.Translation{"en-US": {Title: "Recorded Creator"}}},
-				EditNote: "Creator source fixture", Sources: []catalog.Source{{Kind: "url", Citation: "Publisher credits", URL: "https://publisher.example/product"}},
+			ctx := context.Background()
+			workspace, err := f.cat.CreateWorkspace(ctx, catalog.WorkspaceCreate{Name: "Fixture creator credit", EntityIDs: []string{work.ID}}, f.admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			creatorDocument, err := json.Marshal(catalog.Entity{Kind: "agent", Title: "Recorded Creator", Translations: map[string]catalog.Translation{"en-US": {Title: "Recorded Creator"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			creditDocument, err := json.Marshal(map[string]any{"type": "created_by", "source_id": work.ID, "target_id": map[string]string{"$ref": "creator"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			staged, err := f.cat.SaveWorkspaceChanges(ctx, workspace.ID, catalog.WorkspaceChanges{
+				ExpectedVersion: workspace.Version,
+				Operations: []catalog.WorkspaceOperation{
+					{Target: "entity", Action: "create", Ref: "creator", Document: creatorDocument},
+					{Target: "relation", Action: "create", Ref: "credit", Document: creditDocument},
+				},
 			}, f.admin)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = f.cat.SaveRelation(context.Background(), catalog.RelationEdit{
-				Relation: catalog.Relation{Type: "created_by", SourceID: work.ID, TargetID: agent.ID},
-				EditNote: "Publisher creator credit", Sources: []catalog.Source{{Kind: "url", Citation: "Publisher credits", URL: "https://publisher.example/product"}},
-			}, f.admin); err != nil {
+			commit, err := f.cat.CommitWorkspace(ctx, workspace.ID, catalog.WorkspaceCommitCreate{ID: uuid.NewString(), ExpectedVersion: staged.Workspace.Version, Message: "Create fixture creator credit"}, f.admin)
+			if err != nil {
 				t.Fatal(err)
 			}
+			workspace, err = f.cat.GetWorkspace(ctx, workspace.ID, f.admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if receipt, err := f.cat.PushWorkspace(ctx, workspace.ID, catalog.WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: commit.ID}, f.admin); err != nil || !receipt.Applied {
+				t.Fatalf("creator credit fixture merge: %+v %v", receipt, err)
+			}
+
 			key, upstream, credentialID := "integration-test-secret", "test-model", ""
 			if byo {
 				key, upstream = "private-generation-key", "personal-model"

@@ -413,6 +413,12 @@ func reference(ctx context.Context, q queryer, u *User) func(string, []string) e
 			return fmt.Errorf("invalid_reference")
 		}
 		e, err := get(ctx, q, id)
+		if planned, ok := ctx.Value(collaborationReferencesKey{}).(map[string]Entity); ok {
+			if candidate, found := planned[id]; found {
+				e = candidate
+				err = nil
+			}
+		}
 		if err != nil || !contains(kinds, e.Kind) || !visible(e, u) || e.State == "deleted" || e.State == "merged" {
 			return fmt.Errorf("invalid_reference")
 		}
@@ -423,6 +429,7 @@ func reference(ctx context.Context, q queryer, u *User) func(string, []string) e
 // audit keeps entity and relation revisions. Definition updates only pass
 // aggregate counts as snapshot, so this table is not a hidden definition archive.
 func audit(ctx context.Context, tx *sql.Tx, id string, version int64, u User, note string, sources []Source, snapshot any, eventType string) error {
+	u = collaborationAttribution(ctx, u)
 	// actor_name 与 actor_id 一起落库：读取修订历史不再需要 JOIN auth.users
 	// （账号表归账号服务，跨 schema 读会让两个系统在数据层重新耦合）。
 	if _, err := tx.ExecContext(ctx, "INSERT INTO catalog.revisions(target_id,version,actor_id,actor_name,edit_note,sources,snapshot) VALUES($1,$2,$3,$4,$5,$6,$7)", id, version, u.ID, u.Username, note, encode(sources), encode(snapshot)); err != nil {
@@ -430,18 +437,6 @@ func audit(ctx context.Context, tx *sql.Tx, id string, version int64, u User, no
 	}
 	_, err := tx.ExecContext(ctx, "INSERT INTO catalog.outbox(id,type,entity_id,version,payload) VALUES($1,$2,$3,$4,$5)", uuid.NewString(), eventType, id, version, encode(snapshot))
 	return err
-}
-func (s *Store) Save(ctx context.Context, input Edit, u User) (Entity, error) {
-	if !u.CanBypassReview() {
-		return Entity{}, fmt.Errorf("commit_required")
-	}
-	var e Entity
-	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
-		var err error
-		e, err = s.saveEntityTx(ctx, tx, input, u)
-		return err
-	})
-	return e, err
 }
 
 // saveEntityTx shares validation, facts, revisions, outbox and notifications.
@@ -460,7 +455,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 	if err = json.Unmarshal(raw, &e); err != nil {
 		return e, err
 	}
-	if err = validateSources(input.EditNote, input.Sources); err != nil {
+	if err = validateSources(input.Sources); err != nil {
 		return e, err
 	}
 	if !input.identityLocksHeld {
@@ -499,7 +494,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 				e.ID = newID()
 			}
 			e.Version = 1
-			e.CreatedBy = u.ID
+			e.CreatedBy = collaborationAttribution(ctx, u).ID
 			// R1 幂等声明与业务写入同一事务：已存在响应即重放返回（不写业务），
 			// 否则占位并继续，提交前回填首创响应（见 audit 调用点之后）。
 			if input.idempotency != nil {
@@ -542,9 +537,6 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		}
 		if err = prepareEntityWriteState(old, &e, u); err != nil {
 			return err
-		}
-		if !input.preserveContents {
-			assignInclusionSources(&e, input.Sources)
 		}
 		if err = preserveHiddenTrackContents(ctx, tx, old, e, u); err != nil {
 			return err
@@ -595,14 +587,6 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		}
 		if err = validateEntityStructuralReferences(e, ref); err != nil {
 			return err
-		}
-		if err = validateChangedEntitySources(e, old); err != nil {
-			return err
-		}
-		if input.identityReview && entityNeedsIdentityReview(old, e) {
-			if err = reviewEntityIdentity(ctx, tx, e, input.ReviewedCandidateIDs, u, nil, 0); err != nil {
-				return err
-			}
 		}
 		if e.ExternalLinks == nil {
 			e.ExternalLinks = []ExternalLink{}

@@ -60,7 +60,10 @@ export default function ContributeHubPage() {
           </p>
         </div>
 
-        <Link href="/submissions" className="inline-block text-primary underline">{t("catalog.review.mySubmissions")}</Link>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <Link href="/workspaces" className="text-primary underline">{t("collaboration.workspaces")}</Link>
+          <Link href="/pull-requests" className="text-primary underline">{t("collaboration.pullRequests")}</Link>
+        </div>
         <div className="space-y-2">
           <div className="text-xs font-mono text-text-muted uppercase tracking-wider font-semibold">
             {t("create.hub.manualSectionTitle")}

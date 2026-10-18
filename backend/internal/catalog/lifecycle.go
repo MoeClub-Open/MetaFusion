@@ -27,7 +27,7 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 		if !u.Can(PermissionLifecycleManage) {
 			return errForbidden
 		}
-		if err := validateSources(input.EditNote, input.Sources); err != nil {
+		if err := validateSources(input.Sources); err != nil {
 			return err
 		}
 		var err error

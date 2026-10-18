@@ -6,7 +6,7 @@ import { Activity, KeyRound, Loader2, MessageSquare, Plus, Send, Sparkles, Trash
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { assistantRequest, type AssistantAccount, type AssistantConversation, type AssistantCredential, type AssistantMessage, type AssistantModel, type AssistantTokenUsage } from "@/lib/assistantApi";
-import { assistantAllPages, conversationReceipts, describeAssistantError, type AssistantAccountResponse, type AssistantCommitReceipt } from "@/lib/assistantUser";
+import { assistantAllPages, conversationReceipts, pushReceiptKey, describeAssistantError, type AssistantAccountResponse, type AssistantPushReceipt } from "@/lib/assistantUser";
 import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
@@ -17,7 +17,7 @@ import { AssistantUsagePanel } from "./AssistantUsagePanel";
 
 interface ChatResult {
   conversation_id: string; answer: string; usage: AssistantTokenUsage;
-  credits_spent: number; balance: AssistantAccount; commit_receipts?: AssistantCommitReceipt[]; error?: string; usage_estimated?: boolean;
+  credits_spent: number; balance: AssistantAccount; push_receipts?: AssistantPushReceipt[]; error?: string; usage_estimated?: boolean;
 }
 
 export function AssistantChat() {
@@ -105,8 +105,14 @@ export function AssistantChat() {
       if (next.balance.user_id === ownerID) setAccount((previous) => previous ? { ...previous, balance: next.balance } : previous);
       if (next.error) setError(t("assistant.user.error.partial"));
       try {
-        const nextConversations = await assistantAllPages<AssistantConversation>("/conversations");
-        if (currentUser.current === ownerID) setConversations(nextConversations);
+        const [nextConversations, saved] = await Promise.all([
+          assistantAllPages<AssistantConversation>("/conversations"),
+          assistantRequest<AssistantConversation>(`/conversations/${next.conversation_id}`),
+        ]);
+        if (currentUser.current === ownerID) {
+          setConversations(nextConversations);
+          setMessages(saved.messages || []);
+        }
       } catch { /* The answer is saved; sidebar refresh may be retried by reopening the page. */ }
     } catch (cause) { if (currentUser.current === ownerID) setError(describeAssistantError(cause, t)); }
     finally { setBusy(false); }
@@ -127,7 +133,7 @@ export function AssistantChat() {
   if (authLoading) return <PageShell title={t("assistant.user.title")}><p role="status" className="text-sm text-text-muted">{t("common.loading")}</p></PageShell>;
   if (!user) return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")}><Card><p className="text-sm text-text-muted">{t("assistant.user.loginRequired")}</p><Link href="/login?redirect=%2Fassistant" className="inline-block mt-3 text-sm text-primary hover:underline">{t("navbar.signIn")}</Link></Card></PageShell>;
   const number = new Intl.NumberFormat(locale);
-  const receipts = [...new Map([...conversationReceipts(messages), ...(result?.commit_receipts || [])].map((receipt) => [receipt.id, receipt])).values()];
+  const receipts = [...new Map([...conversationReceipts(messages), ...(result?.push_receipts || [])].map((receipt) => [pushReceiptKey(receipt), receipt])).values()];
   const tabs = [{ id: "chat", icon: MessageSquare }, { id: "credentials", icon: KeyRound }, { id: "usage", icon: Activity }] as const;
   return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="h-5 w-5 text-primary mt-0.5" />}>
     <Card className="flex flex-wrap items-center justify-between gap-3">
@@ -156,7 +162,7 @@ export function AssistantChat() {
           <div ref={endRef} />
         </div>
         {(result || receipts.length > 0) && <div className="text-[11px] text-text-muted space-y-2">{result && <p>{t("assistant.user.consumed", { input: number.format(result.usage.input_tokens), output: number.format(result.usage.output_tokens), credits: number.format(result.credits_spent) })}{result.usage_estimated && <span className="ml-2 text-warn">{t("assistant.user.estimated")}</span>}</p>}
-          {receipts.map((receipt) => <div key={receipt.id} className="rounded-control border border-line-subtle p-2"><p className={receipt.applied ? "text-success" : "text-warn"}>{t(receipt.applied ? "assistant.user.editApplied" : "assistant.user.editPending")}</p><Link href={`/submissions/${receipt.id}`} className="font-mono block mt-1 text-[10px] text-primary break-all hover:underline">{receipt.id}</Link><div className="flex flex-wrap gap-2 mt-1">{receipt.items?.filter((item) => item.target === "entity").map((item) => <Link key={item.id} href={`/catalog/${item.id}#revisions`} className="text-primary hover:underline">{t("assistant.user.recordVersion", { version: item.version })}</Link>)}</div></div>)}
+          {receipts.map((receipt) => <div key={pushReceiptKey(receipt)} className="rounded-control border border-line-subtle p-2"><p className={receipt.applied ? "text-success" : "text-warn"}>{t(receipt.applied ? "assistant.user.editApplied" : "assistant.user.editPending")}</p><Link href={receipt.pull_request ? `/pull-requests/${receipt.pull_request.id}` : receipt.workspace ? `/workspaces/${receipt.workspace.id}` : `/commits/${receipt.commits[0]?.id || ""}`} className="font-mono block mt-1 text-[10px] text-primary break-all hover:underline">{receipt.pull_request?.id || receipt.workspace?.id || receipt.commits[0]?.id}</Link><div className="flex flex-wrap gap-2 mt-1">{[...new Set(receipt.commits.flatMap((commit) => commit.changes.filter((item) => item.target === "entity").map((item) => item.id)))].map((id) => <Link key={id} href={`/catalog/${id}#revisions`} className="text-primary hover:underline">{t("assistant.user.recordHistory")}</Link>)}</div></div>)}
         </div>}
         <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="space-y-2">
           <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label>

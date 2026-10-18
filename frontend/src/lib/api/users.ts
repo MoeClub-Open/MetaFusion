@@ -3,7 +3,7 @@
 // 都是常态。这里只负责"按各自的真实形状取数与归位"，降级由调用方按来源分别处理——
 // 不把"某个上游没响应"折成 0 或空列表，那会把取不到讲成"这个人什么都没做"。
 import { fetchApi } from "./client";
-import { requireArray, safeCount } from "./fields";
+import { requireArray } from "./fields";
 
 // ── 账号资料：GET /users/:id（匿名可读）──
 //
@@ -41,128 +41,121 @@ export async function fetchUserProfile(id: string): Promise<PublicUserProfile> {
 
 // ── 目录贡献：GET /users/:id/contributions ──
 //
-// 目录侧只服务这五个 tab（其余取值 400 invalid_tab）：篇目/载体/轨道只能作为修订出现，
-// 主题/回复/审计不在目录服务里，别把它们的页签指到这里。
-export type ContributionTab = "all" | "revisions" | "works" | "releases" | "artists";
-
-export const CONTRIBUTION_TABS: readonly ContributionTab[] = ["all", "revisions", "works", "releases", "artists"];
-
-export function isContributionTab(tab: string): tab is ContributionTab {
-  return (CONTRIBUTION_TABS as readonly string[]).includes(tab);
+export interface ContributionSummary {
+  merged_commits: number;
+  changed_entities: number;
+  created_entities: number;
+  merged_pull_requests: number;
+  legacy_revisions: number;
 }
 
-/** 目录的五个计数：works/releases/artists 是"创建的实体数"，revisions 是修订行数，audit_actions 是生命周期动作次数。 */
-export interface ContributionStats {
-  works_created?: number;
-  releases_created?: number;
-  artists_created?: number;
-  revisions_count?: number;
-  audit_actions?: number;
+export interface ContributionActor {
+  id: string;
+  name: string;
 }
 
-export interface ContributionSource {
-  kind?: string;
-  citation?: string;
-  url?: string;
+export interface ContributionEntity {
+  id: string;
+  kind: string;
+  title: string;
+}
+
+export interface ContributionDay {
+  date: string;
+  count: number;
 }
 
 export interface ContributionItem {
   id: string;
-  tab?: string;
-  kind?: string;
-  title?: string;
-  /** 实体 id（创建项与修订项都指向被编辑的实体）。 */
-  target_id?: string;
-  version?: number;
-  /** create / update：后端字段名是 edit_type，冻结契约里写作 action，两种都认。 */
-  action?: string;
-  edit_note?: string;
-  sources: ContributionSource[];
-  state?: string;
-  created_at?: string;
-  updated_at?: string;
-  /** 字段级差异，键为字段路径（attributes.tags 这类下钻一层），形状与 DiffViewer 的输入一致（old/new 可能为 null）。 */
-  diff?: Record<string, { old: any; new: any }>;
-  /** 后端只给摘要文案时的降级形态（契约里的 diff.summary）。 */
-  diff_summary?: string;
+  commit_id?: string;
+  message: string;
+  authored_at: string;
+  merged_at: string;
+  author: ContributionActor;
+  authors: ContributionActor[];
+  merged_by?: ContributionActor;
+  pull_request_id?: string;
+  changes_count: number;
+  entities: ContributionEntity[];
+  /** 未关联提交的历史修订，保持原始归属，不伪造批次。 */
+  legacy: boolean;
 }
 
 export interface UserContributions {
+  year: number;
+  timezone: "UTC";
+  summary: ContributionSummary;
+  calendar: ContributionDay[];
   items: ContributionItem[];
-  /** 与 tab 无关的全量总数，不是本页条数。 */
   total: number;
-  /** 与 tab / 分页无关的五个计数；后端未给时保持 null（调用方显示"未知"）。 */
-  stats: ContributionStats | null;
+  page: number;
+  page_size: number;
 }
 
 export async function fetchUserContributions(
   id: string,
-  opts: { tab?: ContributionTab; page?: number; pageSize?: number } = {}
+  opts: { year?: number; page?: number; pageSize?: number } = {}
 ): Promise<UserContributions> {
   const params = new URLSearchParams({
-    tab: opts.tab ?? "all",
+    year: String(opts.year ?? new Date().getUTCFullYear()),
     page: String(opts.page ?? 1),
     page_size: String(opts.pageSize ?? 20),
   });
-  const res = await fetchApi<{ items?: unknown[]; total?: number; stats?: ContributionStats }>(
+  const res = await fetchApi<UserContributions>(
     "/users/" + encodeURIComponent(id) + "/contributions?" + params.toString()
   );
-  // 本文件开头那条约束就在这里落地：上游没响应/换型时**不要**折成 0 或空列表
-  // （用户主页对空列表有"暂无贡献"文案，折成空就是把取不到讲成"这个人什么都没做"）。
-  const rows = requireArray<unknown>(res?.items, "items");
-  return {
-    items: rows.map(normalizeContributionItem),
-    total: safeCount(res?.total, rows.length),
-    stats: res?.stats && typeof res.stats === "object" ? res.stats : null,
-  };
-}
-
-// normalizeContributionItem 把一条贡献项收敛成页面只认的形状：字段名与
-// 服务端 ContributionItem 的 json tag 逐字对齐（不接受任何旧别名字段），
-// 来源列表统一成 {kind,citation,url}、差异在"字段级 diff"与"摘要文案"之间二选一。
-function normalizeContributionItem(raw: unknown): ContributionItem {
-  const row = (raw ?? {}) as Record<string, any>;
-  const item: ContributionItem = {
-    id: String(row.id ?? ""),
-    tab: row.tab,
-    kind: row.kind,
-    title: row.title,
-    target_id: row.target_id,
-    version: typeof row.version === "number" ? row.version : undefined,
-    action: row.edit_type,
-    edit_note: row.edit_note,
-    sources: normalizeContributionSources(row),
-    state: row.state,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-
-  const diff = row.diff;
-  if (diff && typeof diff === "object" && !Array.isArray(diff)) {
-    const entries = Object.entries(diff as Record<string, any>).filter(
-      ([, v]) => v && typeof v === "object" && ("old" in v || "new" in v)
-    );
-    if (entries.length > 0) {
-      item.diff = Object.fromEntries(entries) as ContributionItem["diff"];
-    } else if (typeof (diff as Record<string, unknown>).summary === "string") {
-      item.diff_summary = String((diff as Record<string, unknown>).summary);
+  if (!res || res.timezone !== "UTC" || !Number.isInteger(res.year) || res.year < 1970 || res.year > 9999) {
+    throw new Error("invalid_response: contribution_year");
+  }
+  const summary = res.summary;
+  if (!summary || ![summary.merged_commits, summary.changed_entities, summary.created_entities,
+    summary.merged_pull_requests, summary.legacy_revisions].every(isContributionCount)) {
+    throw new Error("invalid_response: contribution_summary");
+  }
+  if (!isContributionCount(res.total) || !isContributionCount(res.page) || res.page < 1 ||
+      !isContributionCount(res.page_size) || res.page_size < 1) {
+    throw new Error("invalid_response: contribution_pagination");
+  }
+  const calendar = requireArray<ContributionDay>(res.calendar, "calendar");
+  if (calendar.some((day) => !day || !/^\d{4}-\d{2}-\d{2}$/.test(day.date) ||
+      !day.date.startsWith(`${res.year}-`) || !Number.isFinite(Date.parse(`${day.date}T00:00:00Z`)) ||
+      new Date(`${day.date}T00:00:00Z`).toISOString().slice(0, 10) !== day.date ||
+      !isContributionCount(day.count))) {
+    throw new Error("invalid_response: contribution_calendar");
+  }
+  const items = requireArray<ContributionItem>(res.items, "items");
+  for (const item of items) {
+    if (!item || typeof item.id !== "string" || !item.id || typeof item.message !== "string" ||
+        !validContributionTime(item.authored_at) || !validContributionTime(item.merged_at) ||
+        typeof item.legacy !== "boolean" || !validContributionActor(item.author) ||
+        (item.merged_by !== undefined && !validContributionActor(item.merged_by)) ||
+        !isContributionCount(item.changes_count) ||
+        [item.commit_id, item.pull_request_id].some((value) => value !== undefined && (typeof value !== "string" || !value))) {
+      throw new Error("invalid_response: contribution_item");
+    }
+    const authors = requireArray<ContributionActor>(item.authors, "authors");
+    if (authors.length === 0 || authors.some((actor) => !validContributionActor(actor))) {
+      throw new Error("invalid_response: contribution_authors");
+    }
+    const entities = requireArray<ContributionEntity>(item.entities, "entities");
+    if (entities.some((entity) => !entity || typeof entity.id !== "string" || !entity.id ||
+        typeof entity.kind !== "string" || typeof entity.title !== "string")) {
+      throw new Error("invalid_response: contribution_entities");
     }
   }
-  if (!item.diff_summary && typeof row.summary === "string" && row.summary.trim() !== "") {
-    item.diff_summary = row.summary;
-  }
-  return item;
+  return res;
 }
 
-function normalizeContributionSources(row: Record<string, any>): ContributionSource[] {
-  const out: ContributionSource[] = [];
-  if (Array.isArray(row.sources)) {
-    for (const s of row.sources) {
-      if (typeof s === "string" && s.trim() !== "") out.push({ url: s });
-      else if (s && typeof s === "object") out.push({ kind: s.kind, citation: s.citation, url: s.url });
-    }
-  }
-  return out.filter((s) => Boolean(s.url) || Boolean(s.citation));
+function isContributionCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function validContributionActor(value: ContributionActor): boolean {
+  return Boolean(value && typeof value.id === "string" && value.id && typeof value.name === "string");
+}
+
+function validContributionTime(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
 }
 
 // ── 互动统计：GET /users/:id/stats（匿名可读）──

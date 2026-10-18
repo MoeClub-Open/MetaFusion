@@ -207,7 +207,7 @@ func TestOpenAPIRequestAdministration(t *testing.T) {
 		t.Errorf("cancel response must retain the sealed record, got %v", responseRef)
 	}
 	requestResponse := schemas["AssistantRequestResponse"].(map[string]any)["properties"].(map[string]any)
-	for _, name := range []string{"tool_results", "commit_receipts", "usage", "error", "admin_cancel_note", "cancelled_by"} {
+	for _, name := range []string{"tool_results", "push_receipts", "usage", "error", "admin_cancel_note", "cancelled_by"} {
 		if _, exists := requestResponse[name]; !exists {
 			t.Errorf("persisted partial response or cancellation metadata missing: %s", name)
 		}

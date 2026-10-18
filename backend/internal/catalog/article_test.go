@@ -54,23 +54,19 @@ func TestPostgresArticleCommitRevisionsAndConflicts(t *testing.T) {
 	ctx := context.Background()
 	initial := f.save(Entity{Kind: "work", Title: "Article work", OriginalLanguage: "en", Attributes: map[string]any{"language": "ja"},
 		Translations: map[string]Translation{"en": {Title: "Article work", Summary: "Short introduction", Body: "## Background\nOriginal article"}, "ja": {Title: "記事", Body: "## 背景\n元の本文"}}})
-	metadataEdit := fixtureCommit(f, updateCommit(initial, patchValue("/attributes/language", "en")))
-	if _, err := f.s.PushCommit(ctx, metadataEdit, f.u, false); err != nil {
+	newBody := "## Background\nRevised article[^official]\n\n[^official]: https://example.org/source"
+	_, _, metadata := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: initial.ID, Patch: []CommitPatch{patchValue("/attributes/language", "en")}})
+	_, articleCommit, article := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: initial.ID, Patch: []CommitPatch{patchValue("/translations/en/body", newBody)}})
+	_, _, conflicting := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: initial.ID, Patch: []CommitPatch{patchValue("/translations/en/body", "conflicting article")}})
+	preview, err := f.s.Get(ctx, initial.ID, &f.u)
+	if err != nil || preview.Translations["en"].Body != initial.Translations["en"].Body || preview.Version != 1 || articleCommit.MergedAt != nil {
+		t.Fatalf("working copy changed main catalog: %+v %v", preview, err)
+	}
+	if _, err := f.s.PushWorkspace(ctx, metadata.ID, WorkspacePush{ExpectedVersion: metadata.Version, ExpectedHead: *metadata.HeadCommitID}, f.u); err != nil {
 		t.Fatal(err)
 	}
-	newBody := "## Background\nRevised article[^official]\n\n[^official]: https://example.org/source"
-	op := updateCommit(initial, patchValue("/translations/en/body", newBody))
-	op.SourceRefs = []SourceRef{{Source: "fixture", Pointers: []string{"/translations/en/body"}}}
-	articleEdit := fixtureCommit(f, op)
-	if _, err := f.s.PushCommit(ctx, articleEdit, f.u, true); err != nil {
-		t.Fatalf("article preview: %v", err)
-	}
-	preview, err := f.s.Get(ctx, initial.ID, &f.u)
-	if err != nil || preview.Translations["en"].Body != initial.Translations["en"].Body || preview.Version != 2 {
-		t.Fatalf("preview persisted article: %+v %v", preview, err)
-	}
-	out, err := f.s.PushCommit(ctx, articleEdit, f.u, false)
-	if err != nil || len(out.Items) != 1 || !out.Items[0].Merged {
+	out, err := f.s.PushWorkspace(ctx, article.ID, WorkspacePush{ExpectedVersion: article.Version, ExpectedHead: *article.HeadCommitID}, f.u)
+	if err != nil || !out.Applied {
 		t.Fatalf("disjoint structured/article edits: %+v %v", out, err)
 	}
 	current, err := f.s.Get(ctx, initial.ID, nil)
@@ -82,24 +78,16 @@ func TestPostgresArticleCommitRevisionsAndConflicts(t *testing.T) {
 		t.Fatalf("history: %d %v", len(history), err)
 	}
 	var snapshot Entity
-	var sources []Source
 	if err := json.Unmarshal([]byte(encode(history[0]["snapshot"])), &snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(encode(history[0]["sources"])), &sources); err != nil {
-		t.Fatal(err)
+	if snapshot.Translations["en"].Body != newBody || history[0]["commit_id"] != articleCommit.ID {
+		t.Fatalf("article snapshot/provenance: %+v", history[0])
 	}
-	if snapshot.Translations["en"].Body != newBody || len(sources) != 1 || len(sources[0].Pointers) != 1 || sources[0].Pointers[0] != "/translations/en/body" {
-		t.Fatalf("article snapshot/evidence: %+v %+v", snapshot.Translations, sources)
-	}
-	conflicting := fixtureCommit(f, updateCommit(initial, patchValue("/translations/en/body", "conflicting article")))
-	_, err = f.s.PushCommit(ctx, conflicting, f.u, false)
-	var conflict *commitConflictError
-	if !errors.As(err, &conflict) || len(conflict.Conflict.Conflicts) != 1 || conflict.Conflict.Conflicts[0].Pointer != "/translations/en/body" {
+	_, err = f.s.PushWorkspace(ctx, conflicting.ID, WorkspacePush{ExpectedVersion: conflicting.Version, ExpectedHead: *conflicting.HeadCommitID}, f.u)
+	var conflict *workspaceConflictError
+	if !errors.As(err, &conflict) || len(conflict.Conflicts) != 1 || conflict.Conflicts[0].Pointer != "/translations/en/body" {
 		t.Fatalf("concurrent body conflict: %v", err)
-	}
-	if _, err = f.s.Save(ctx, Edit{Entity: initial, ExpectedVersion: initial.Version, EditNote: "stale full replacement", Sources: fixtureSources()}, f.u); !errors.Is(err, errVersionConflict) {
-		t.Fatalf("stale replacement: %v", err)
 	}
 	draft := f.save(Entity{Kind: "work", Title: "Private article", State: "active", Translations: map[string]Translation{"en": {Title: "Private article", Body: "private body"}}})
 	draft = f.retire(draft)

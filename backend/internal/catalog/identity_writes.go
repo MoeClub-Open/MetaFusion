@@ -3,38 +3,8 @@ package catalog
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"sort"
-	"strings"
-
-	"github.com/google/uuid"
 )
-
-// Replacing an ancestor can change a title even when its name is absent from
-// the pointer. Summary-only translation patches do not require identity review.
-func commitNeedsIdentityReview(op CommitOperation) bool {
-	if op.Target != "entity" {
-		return false
-	}
-	if op.Action == "create" {
-		return true
-	}
-	for _, patch := range op.Patch {
-		parts, err := pointerParts(patch.Path)
-		if err != nil {
-			continue
-		}
-		switch parts[0] {
-		case "title", "external_links":
-			return true
-		case "translations":
-			if len(parts) <= 2 || parts[2] == "title" {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 func identityWriteDocument(e Entity) map[string]any {
 	translations := map[string]map[string]any{}
@@ -96,91 +66,4 @@ func lockEntityIdentityWrite(ctx context.Context, tx *sql.Tx, e Entity, u User) 
 		return err
 	}
 	return lockIdentityWriteKeys(ctx, tx, keys)
-}
-
-func entityNeedsIdentityReview(old, e Entity) bool {
-	if old.ID == "" || old.Title != e.Title || encode(old.ExternalLinks) != encode(e.ExternalLinks) {
-		return true
-	}
-	titles := func(translations map[string]Translation) map[string]string {
-		out := map[string]string{}
-		for locale, translation := range translations {
-			if translation.Title != "" {
-				out[locale] = translation.Title
-			}
-		}
-		return out
-	}
-	return encode(titles(old.Translations)) != encode(titles(e.Translations))
-}
-
-func reviewEntityIdentity(ctx context.Context, tx *sql.Tx, e Entity, reviewedIDs []string, u User, refs map[string]string, operation int) error {
-	if len(reviewedIDs) > 1000 {
-		return fmt.Errorf("invalid_identity_review")
-	}
-	reviewed := map[string]bool{}
-	for _, id := range reviewedIDs {
-		if strings.HasPrefix(id, "@local:") {
-			id = refs[strings.TrimPrefix(id, "@local:")]
-		}
-		parsed, err := uuid.Parse(id)
-		if err != nil || parsed.String() != id || reviewed[id] {
-			return fmt.Errorf("invalid_identity_review")
-		}
-		reviewed[id] = true
-	}
-	query, docs, limit, err := normalizeIdentityCandidateQuery(commitIdentityQuery(e))
-	if err != nil {
-		return err
-	}
-	candidates, err := identityCandidatesFrom(ctx, tx, query, docs, limit, &u, e.ID)
-	if err != nil {
-		return err
-	}
-	if !candidates.Complete {
-		return fmt.Errorf("identity_candidates_incomplete")
-	}
-	actual := map[string]bool{}
-	for _, candidate := range candidates.Items {
-		if candidate.Canonical == nil || candidate.ResolutionError != "" {
-			return fmt.Errorf("identity_candidate_unresolved")
-		}
-		if candidate.Canonical.ID != e.ID {
-			actual[candidate.Canonical.ID] = true
-		}
-	}
-	ids := keysOf(actual)
-	sort.Strings(ids)
-	if len(reviewed) != len(actual) {
-		return &commitIdentityError{operation, ids}
-	}
-	for id := range actual {
-		if !reviewed[id] {
-			return &commitIdentityError{operation, ids}
-		}
-	}
-	return nil
-}
-
-func identityPatchedEntity(e Entity, patch []CommitPatch, refs map[string]string) (Entity, error) {
-	doc := commitMap(e)
-	for _, p := range patch {
-		parts, err := pointerParts(p.Path)
-		if err != nil {
-			return Entity{}, err
-		}
-		value := p.Value
-		if !p.Remove {
-			value, err = resolveCommitRefs(value, refs)
-			if err != nil {
-				return Entity{}, err
-			}
-		}
-		if err = putPointer(doc, parts, value, p.Remove); err != nil {
-			return Entity{}, err
-		}
-	}
-	var out Entity
-	err := strictCommitDocument([]byte(encode(doc)), &out)
-	return out, err
 }

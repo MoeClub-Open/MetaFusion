@@ -29,6 +29,7 @@ func auditRegistry() (actions, exempt map[string]string) {
 }
 
 func TestEveryWriteRouteIsRegisteredOrReasonedExempt(t *testing.T) {
+	t.Setenv("STORAGE_CATALOG_LIFECYCLE_SECRET", "audit-contract-test")
 	gin.SetMode(gin.TestMode)
 	// 与 cmd/server/main.go 同一装配。例外：/healthz、/health、/ready 是 GET，与本守卫无关；
 	// 以后若在引擎上直接注册写路由（而不是挂在 /api 组里），必须在这里补上，否则守卫看不见它。
@@ -89,30 +90,31 @@ func TestEveryWriteRouteIsRegisteredOrReasonedExempt(t *testing.T) {
 // 改任何一个已有码都会让本用例失败——那是要契约层面批准的变更，不是顺手重命名。
 func TestAuditActionCodesAreStable(t *testing.T) {
 	want := map[string]string{
-		"POST /api/catalog/commits/:id/review":              "commit.reviewed",
-		"POST /api/catalog/commits":                         "commit.pushed",
-		"POST /api/catalog/entities":                        "entity.created",
-		"PUT /api/catalog/entities/:id":                     "entity.updated",
-		"POST /api/catalog/entities/:id/lifecycle":          "entity.lifecycle_changed",
-		"PUT /api/catalog/me/home-preferences":              "preference.home_updated",
-		"POST /api/catalog/relations":                       "relation.created",
-		"PUT /api/catalog/relations/:id":                    "relation.updated",
-		"DELETE /api/catalog/relations/:id":                 "relation.deleted",
-		"POST /api/catalog/tracks/:id/contents":             "inclusion.created",
-		"PUT /api/catalog/tracks/:id/contents/:position":    "inclusion.updated",
-		"DELETE /api/catalog/tracks/:id/contents/:position": "inclusion.deleted",
-		"PUT /api/admin/catalog-definitions":                "definition.updated",
-		"PUT /api/admin/rate-limits":                        "rate_limit.updated",
-		"PUT /api/admin/public-sources":                     "public_source.updated",
-		"POST /api/admin/external-databases":                "external_database.created",
-		"PUT /api/admin/external-databases/:code":           "external_database.updated",
-		"DELETE /api/admin/external-databases/:code":        "external_database.deleted",
-		"POST /api/admin/shelves":                           "shelf.created",
-		"PUT /api/admin/shelves/:id":                        "shelf.updated",
-		"DELETE /api/admin/shelves/:id":                     "shelf.deleted",
-		"POST /api/notifications/:id/read":                  "notification.read",
-		"POST /api/notifications/read-all":                  "notification.all_read",
-		"POST /api/notifications/internal":                  "notification.delivered",
+		"POST /api/catalog/workspaces":               "workspace.created",
+		"PATCH /api/catalog/workspaces/:id":          "workspace.updated",
+		"POST /api/catalog/workspaces/:id/checkout":  "workspace.checked_out",
+		"PUT /api/catalog/workspaces/:id/changes":    "workspace.changes_saved",
+		"PUT /api/catalog/workspaces/:id/members":    "workspace.members_updated",
+		"POST /api/catalog/workspaces/:id/commits":   "workspace.committed",
+		"POST /api/catalog/workspaces/:id/push":      "workspace.pushed",
+		"POST /api/catalog/workspaces/:id/rebase":    "workspace.rebased",
+		"POST /api/catalog/pull-requests":            "pull_request.created",
+		"PATCH /api/catalog/pull-requests/:id":       "pull_request.updated",
+		"POST /api/catalog/pull-requests/:id/merge":  "pull_request.merged",
+		"POST /api/catalog/entities/:id/lifecycle":   "entity.lifecycle_changed",
+		"PUT /api/catalog/me/home-preferences":       "preference.home_updated",
+		"PUT /api/admin/catalog-definitions":         "definition.updated",
+		"PUT /api/admin/rate-limits":                 "rate_limit.updated",
+		"PUT /api/admin/public-sources":              "public_source.updated",
+		"POST /api/admin/external-databases":         "external_database.created",
+		"PUT /api/admin/external-databases/:code":    "external_database.updated",
+		"DELETE /api/admin/external-databases/:code": "external_database.deleted",
+		"POST /api/admin/shelves":                    "shelf.created",
+		"PUT /api/admin/shelves/:id":                 "shelf.updated",
+		"DELETE /api/admin/shelves/:id":              "shelf.deleted",
+		"POST /api/notifications/:id/read":           "notification.read",
+		"POST /api/notifications/read-all":           "notification.all_read",
+		"POST /api/notifications/internal":           "notification.delivered",
 	}
 	got, _ := auditRegistry()
 	if len(got) != len(want) {
@@ -129,13 +131,39 @@ func TestAuditActionCodesAreStable(t *testing.T) {
 // 却因为在豁免表里而静默不留痕。
 func TestAuditExemptRoutesAreReadOnlyByDesign(t *testing.T) {
 	exempt := AuditExempt()
-	if len(exempt) != 12 {
+	if len(exempt) != 11 {
 		t.Fatalf("豁免表条数变了（%d）：新增豁免要在测试里说明它为什么零写入", len(exempt))
 	}
-	// 来源 query/fetch/wiki 仅出站读取公开资料；其他豁免仅执行只读事务或整笔回滚预览。
-	for _, key := range []string{"POST /api/catalog/checkout", "POST /api/catalog/commits/preview", "POST /api/catalog/expressions/details", "POST /api/external-sources/query", "POST /api/external-sources/fetch", "POST /api/external-sources/wiki", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/entities/candidates/batch", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
+	// 来源 query/fetch/wiki 仅出站读取公开资料；其他豁免仅执行只读事务。
+	for _, key := range []string{"POST /internal/storage/asset-references", "POST /api/catalog/expressions/details", "POST /api/external-sources/query", "POST /api/external-sources/fetch", "POST /api/external-sources/wiki", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/entities/candidates/batch", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
 		if strings.TrimSpace(exempt[key]) == "" {
 			t.Fatalf("%s 必须带豁免理由", key)
+		}
+	}
+}
+
+func TestCollaborationMutationsAreNeverAuditExempt(t *testing.T) {
+	actions, exempt := auditRegistry()
+	// checkout 现在持久化服务器上的工作副本，与旧只读快照的语义不同。
+	// 尚未合入正式目录的副本修改、协作者管理和 PR 状态变化同样需要留痕。
+	for _, key := range []string{
+		"POST /api/catalog/workspaces",
+		"PATCH /api/catalog/workspaces/:id",
+		"POST /api/catalog/workspaces/:id/checkout",
+		"PUT /api/catalog/workspaces/:id/changes",
+		"PUT /api/catalog/workspaces/:id/members",
+		"POST /api/catalog/workspaces/:id/commits",
+		"POST /api/catalog/workspaces/:id/push",
+		"POST /api/catalog/workspaces/:id/rebase",
+		"POST /api/catalog/pull-requests",
+		"PATCH /api/catalog/pull-requests/:id",
+		"POST /api/catalog/pull-requests/:id/merge",
+	} {
+		if _, found := exempt[key]; found {
+			t.Errorf("%s 会持久化协作状态，不能豁免审计", key)
+		}
+		if strings.TrimSpace(actions[key]) == "" {
+			t.Errorf("%s 必须登记独立的协作动作码", key)
 		}
 	}
 }

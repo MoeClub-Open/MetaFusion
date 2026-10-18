@@ -42,6 +42,28 @@ func validURL(s string) bool {
 	return e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
 }
 
+// Pictures can use the stable same-origin storage route. Other URL fields,
+// including sources, still require an absolute HTTP(S) URL via validURL.
+func validPictureURL(s string) bool {
+	if validURL(s) {
+		return true
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawPath != "" || u.Path != s {
+		return false
+	}
+	id, ok := strings.CutPrefix(u.Path, "/api/storage/assets/")
+	if !ok {
+		return false
+	}
+	id, ok = strings.CutSuffix(id, "/content")
+	if !ok {
+		return false
+	}
+	parsed, err := uuid.Parse(id)
+	return err == nil && parsed.String() == id
+}
+
 // toFloat 把数值统一为 float64：JSON 往返是 float64，而代码内部构造的属性
 // （如 track duration）可能是 int/int64，两者都必须接受。
 func toFloat(v any) (float64, bool) {
@@ -205,21 +227,10 @@ func isEmptyValue(v any) bool {
 	}
 	return false
 }
-func validateSources(note string, sources []Source) error {
-	policy := configuredSourcePolicy.Load()
-	if policy == nil {
-		policy = &defaultSourcePolicy
-	}
-	return validateSourcesWithPolicy(note, sources, policy)
-}
 
-// validateSourceShapes accepts historical self sources for read/impact checks.
-// New submissions additionally pass validateSources and changed nested evidence
-// passes validateChangedEntitySources before it is written.
-func validateSourceShapes(note string, sources []Source) error {
-	if strings.TrimSpace(note) == "" || len(sources) == 0 {
-		return fmt.Errorf("evidence_required")
-	}
+// validateSources checks optional source metadata without imposing an evidence
+// requirement or deciding whether a source is authoritative.
+func validateSources(sources []Source) error {
 	for _, s := range sources {
 		if !contains([]string{"url", "publication", "self"}, s.Kind) || strings.TrimSpace(s.Citation) == "" || (s.Kind == "url" && !validURL(s.URL)) || (s.URL != "" && !validURL(s.URL)) {
 			return fmt.Errorf("invalid_source")
@@ -1058,7 +1069,7 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 	}
 	seenPictureURLs := make(map[string]bool, len(e.Pictures))
 	for _, p := range e.Pictures {
-		if !validURL(p.URL) {
+		if !validPictureURL(p.URL) {
 			return fmt.Errorf("invalid_picture")
 		}
 		if !validPictureTime(p.TakenAt) {
@@ -1073,8 +1084,10 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 				return fmt.Errorf("invalid_picture_period")
 			}
 		}
-		if err := validateSourceShapes("picture", []Source{p.Source}); err != nil {
-			return err
+		if p.Source.Kind != "" || p.Source.Citation != "" || p.Source.URL != "" || p.Source.Key != "" || p.Source.Scope != "" || len(p.Source.Pointers) > 0 {
+			if err := validateSources([]Source{p.Source}); err != nil {
+				return err
+			}
 		}
 		if p.Role != "" {
 			v, ok := d.Vocabularies[pictureRoleVocabulary]
@@ -1184,10 +1197,8 @@ func (d Definitions) validateEntity(e Entity, reference func(string, []string) e
 	// 仅当 ExpressionID 与 Locator 定位切片完全相同时，才判定为无意义的重复收录报 duplicate_content。
 	seenExprLoc := map[string]bool{}
 	for _, c := range e.Contents {
-		if len(c.Sources) > 0 {
-			if err := validateSourceShapes("inclusion", c.Sources); err != nil {
-				return err
-			}
+		if err := validateSources(c.Sources); err != nil {
+			return err
 		}
 		if c.Position < 0 || positions[c.Position] {
 			return fmt.Errorf("duplicate_position")

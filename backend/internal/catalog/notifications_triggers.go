@@ -1,6 +1,6 @@
 package catalog
 
-// 收录通知与事实写入同事务；审核通知由 commit_review.go 发给提交者。
+// 收录通知与事实写入同事务；合并结果通知由协作合并器发送。
 
 import (
 	"context"
@@ -31,6 +31,7 @@ func notifySaveOutcome(ctx context.Context, tx *sql.Tx, before *Entity, after En
 // notifyIncludedSubjects 处理"发行声明收录某作品"这类收录：本次新增而旧版本没有的 subject 各自通知其 owner。
 // 旧版本里的既有 subject 不重复通知（不然每次改个封面都会把收录事件重播一遍）。
 func notifyIncludedSubjects(ctx context.Context, tx *sql.Tx, before *Entity, after Entity, actor User) error {
+	actor = collaborationAttribution(ctx, actor)
 	if after.Kind != "release" || len(after.Subjects) == 0 {
 		return nil
 	}
@@ -74,6 +75,7 @@ func notifyIncludedSubjects(ctx context.Context, tx *sql.Tx, before *Entity, aft
 // notifyIncludedRelation 处理 includes 关系（集合/作品包含另一作品或集合）里的"被收录"方向：
 // 收件人是 target 的 owner，容器是 source。只在新建关系时通知——改属性不是新的收录事件。
 func notifyIncludedRelation(ctx context.Context, tx *sql.Tx, r Relation, src, tgt Entity, actor User) error {
+	actor = collaborationAttribution(ctx, actor)
 	if r.Type != "includes" {
 		return nil
 	}

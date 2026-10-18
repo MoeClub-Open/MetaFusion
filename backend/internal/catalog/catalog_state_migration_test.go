@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/migrator"
 	"github.com/metafusion/metafusion-app/internal/testutil"
-	"github.com/metafusion/metafusion-app/migrations"
 )
 
 func TestCatalogStateMigrationConvertsStoredProjections(t *testing.T) {
@@ -41,7 +40,7 @@ func TestCatalogStateMigrationConvertsStoredProjections(t *testing.T) {
 	if err := db.QueryRow(`SELECT md5(string_agg((to_jsonb(e)-'status')::text,'' ORDER BY id)) FROM catalog.entities e`).Scan(&facts); err != nil {
 		t.Fatal(err)
 	}
-	upgrade := migrator.New(db, migrations.FS)
+	upgrade := migrator.New(db, catalogMigrationsBefore(t, "000033"))
 	if err := upgrade.Up(ctx); err != nil {
 		t.Fatal(err)
 	}

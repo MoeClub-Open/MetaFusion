@@ -162,20 +162,20 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	schemas["AssistantChatResponse"] = object(map[string]any{
 		"conversation_id": id(), "answer": str(), "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance"),
 		"usage_estimated": map[string]any{"type": "boolean", "description": "True when at least one upstream call may have run without reporting usage and settlement conservatively used its reserved token bounds. Token counts and charges then include estimates rather than only provider-reported usage; individual usage records carry status=unknown."},
-		"tool_results":    array(ref("ToolResult")), "commit_receipts": array(map[string]any{"$ref": "#/components/schemas/CommitReceipt"}), "error": str(),
+		"tool_results":    array(ref("ToolResult")), "push_receipts": array(map[string]any{"$ref": "#/components/schemas/WorkspacePushResult"}), "error": str(),
 	}, "conversation_id", "answer", "usage", "credits_spent", "balance")
-	schemas["AssistantChatResponse"].(map[string]any)["description"] = "A completed turn is always recorded and replayable. HTTP 200 may include error after partial execution; usage and authoritative commit_receipts must still be inspected, since a catalog edit may already be applied or pending review. BYO API usage spends zero platform credits."
+	schemas["AssistantChatResponse"].(map[string]any)["description"] = "A completed turn is always recorded and replayable. HTTP 200 may include error after partial execution; usage and authoritative push_receipts must still be inspected, since a working copy may already have been merged or submitted as a pull request. BYO API usage spends zero platform credits."
 	schemas["AssistantError"] = object(map[string]any{"error": map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Stable machine-readable error code; upstream secrets and raw errors are not returned."}, "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance")}, "error")
 
 	assistantGeneratedOpenAPI(schemas)
 	requestResponse := object(map[string]any{
 		"conversation_id": id(), "answer": str(), "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance"),
 		"usage_estimated": schemas["AssistantChatResponse"].(map[string]any)["properties"].(map[string]any)["usage_estimated"],
-		"tool_results":    array(ref("ToolResult")), "commit_receipts": array(map[string]any{"$ref": "#/components/schemas/CommitReceipt"}),
+		"tool_results":    array(ref("ToolResult")), "push_receipts": array(map[string]any{"$ref": "#/components/schemas/WorkspacePushResult"}),
 		"item": map[string]any{"allOf": []any{ref("GeneratedOverview")}, "nullable": true}, "stale": map[string]any{"type": "boolean"},
 		"error": str(), "admin_cancel_note": map[string]any{"type": "string", "maxLength": 1000}, "cancelled_by": str(),
 	})
-	requestResponse["description"] = "Persisted partial or final chat/generation result. An unstarted request can contain an empty object. Cancellation preserves existing usage, tool results and commit receipts while adding assistant_request_interrupted and administrator metadata. Deleting a conversation clears response text and retains the sealed request ID with assistant_conversation_deleted, preventing a billed call or catalog edit from replaying."
+	requestResponse["description"] = "Persisted partial or final chat/generation result. An unstarted request can contain an empty object. Cancellation preserves existing usage, tool results and push receipts while adding assistant_request_interrupted and administrator metadata. Deleting a conversation clears response text and retains the sealed request ID with assistant_conversation_deleted, preventing a billed call or catalog edit from replaying."
 	schemas["AssistantRequestResponse"] = requestResponse
 	schemas["AssistantChatRequestRecord"] = object(map[string]any{
 		"id": id(), "owner_id": str(), "conversation_id": id(),

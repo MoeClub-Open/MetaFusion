@@ -148,13 +148,10 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
       case "version_conflict":
       case "conflict":
         return t("admin.ratelimits.versionConflict");
-      case "evidence_required":
       case "edit_note_required":
-        return t("admin.ratelimits.evidenceRequired");
+        return t("admin.ratelimits.noteRequired");
       case "rate_limit_unavailable":
         return t("catalog.error.rateLimitUnavailable");
-      case "source_not_eligible":
-        return t("catalog.error.sourceNotEligible");
       case "invalid_rate_limit":
         return t("admin.ratelimits.invalidRateLimit");
       case "forbidden":

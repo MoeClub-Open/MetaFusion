@@ -3,7 +3,10 @@ package catalog
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // 多图契约的服务端一侧：pictures 是数组，**数组顺序就是展示顺序、pictures[0] 就是封面**，
@@ -19,6 +22,35 @@ func testPicture(url string) Picture {
 	return Picture{
 		URL:    url,
 		Source: Source{Kind: "url", Citation: "test", URL: url},
+	}
+}
+
+func TestPictureURLAllowsOnlyCanonicalRelativeStorageContent(t *testing.T) {
+	id := uuid.NewString()
+	canonical := "/api/storage/assets/" + id + "/content"
+	for _, tc := range []struct {
+		url     string
+		allowed bool
+	}{
+		{canonical, true}, {"https://external.example" + canonical, true}, {"https://external.example/cover.png", true},
+		{"/cover.png", false}, {"//external.example" + canonical, false}, {canonical + "?preview=1", false}, {canonical + "?", false}, {canonical + "#preview", false}, {canonical + "/", false},
+		{"/api/storage/assets/" + strings.ToUpper(id) + "/content", false}, {"/api/storage/assets/not-a-uuid/content", false}, {strings.Replace(canonical, "/api", "/%61pi", 1), false}, {"https://user:password@external.example/cover.png", false},
+	} {
+		t.Run(tc.url, func(t *testing.T) {
+			if got := validPictureURL(tc.url); got != tc.allowed {
+				t.Fatalf("validPictureURL=%t want=%t", got, tc.allowed)
+			}
+			if err := Defaults().validateEntityContent(pictureOnlyEntity(Picture{URL: tc.url}), allowAllRef, false); (err == nil) != tc.allowed {
+				t.Fatalf("picture validation=%v wantAllowed=%t", err, tc.allowed)
+			}
+		})
+	}
+	if validURL(canonical) {
+		t.Fatal("ordinary URL validation accepted a relative storage address")
+	}
+	withRelativeSource := Picture{URL: canonical, Source: Source{Kind: "url", Citation: "Source remains absolute", URL: canonical}}
+	if err := Defaults().validateEntityContent(pictureOnlyEntity(withRelativeSource), allowAllRef, false); err == nil {
+		t.Fatal("source URL was widened with picture URL rules")
 	}
 }
 

@@ -47,13 +47,15 @@
 - 目录配置 `STORAGE_URL` 与双方一致的 `STORAGE_CATALOG_LIFECYCLE_SECRET` 后启用
   `storage-lifecycle-v1` 消费者；空密钥关闭，启用时无效 URL 在目录启动期明确失败。
   存储的 `GET /internal/catalog/binding-targets` 只列当前有绑定的实体 UUID，每页至多 100，按 UUID 游标前进。
-  消费者启动先复核该库存，随后消费 `entity.saved/deleted/merged/unpublished`；长期关闭后重新启用不依赖旧事件仍在。
+  消费者启动先复核该库存，随后消费 `entity.saved/deleted/merged`；长期关闭后重新启用不依赖旧事件仍在。
 - 内部 `POST /internal/catalog/lifecycle` 仅接受专用服务凭据，外部网关必须拒绝 `/internal/`。
   生命周期消费者读取目录当前 canonical、完整 aliases、实体版本与图片资产集合；实际存储应用后才记录独立 delivery ACK。
-  目录 outbox 保留清理等待所有启用消费者 ACK，存储故障不阻断目录主写入。
+  目录 outbox 保留清理等待所有启用消费者 ACK。新增自托管封面在副本保存和合入前同步验证资产授权及可用性，存储不可用时返回503；普通无资产变更不依赖该调用。
 - 删除撤 canonical 与历史 aliases 的全部文件绑定；合并迁移全部用途并去重，保留历史别名图片资产。
-  下架回草稿保留文件。TrackContent 只有 Expression 收录引用，替换收录不会撤 Track 或 Expression 文件。
-  普通图片编辑仅撤已移除的 `cover_image` 绑定，不撤其他用途，也不自动创建未经资产所有者授权的绑定。
+  TrackContent 只有 Expression 收录引用，替换收录不会撤 Track 或 Expression 文件。
+  工作副本保存图片时建立私有引用，不增加公开绑定；合入前按保存者的真实身份验证授权，合入后的生命周期投递才创建 `cover_image`，并撤已移除的封面绑定。其他用途不变，公开绑定接口禁止直接新增或删除 `cover_image`。
+- 存储011迁移保存工作副本的私有资产引用；未决保存暂保留48小时，GC到期后通过目录内部接口精确核对 workspace/entity/asset 的当前值及不可变提交。确认无引用才删除，目录不可用时保留；已提交历史的原图持续受保护。
+  副本、PR和提交图片分别经目录上下文鉴权代理读取，PR只包含推送时冻结的图片；代理响应 `private, no-store`，不改变权威图片地址。共享服务密钥与 `STORAGE_URL` 是自托管封面协作的必要配置。
 - 重复 Bind 保留绑定 ID、创建者与创建时间，并刷新内部确认时间；旧快照只撤确认时间不晚于该次目录写入的封面。
   存储迁移 `000008` 将存量确认时间从迁移时刻保守起算；旧实体图片绑定在下一次目录新写入后才按新快照撤销。
   读取身份后、落绑定前实体已合并/删除时，存储返回 `409 binding_target_changed`，客户端重新读取身份再写。

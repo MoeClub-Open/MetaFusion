@@ -2,7 +2,7 @@ package catalog
 
 // PAT 下游接入的回归：本地形态预检、60 秒缓存与单飞、上限逐出、401/503 的分工，
 // 以及"PAT 身份与 JWT 同形进上下文、授权仍走 Can"这条端到端链路。
-// 账号服务用同形的桩代替（内省端点尚未在本仓实现，桩保证契约面被钉住）。
+// 账号服务使用公开内省契约的同形桩，验证下游身份与权限处理。
 
 import (
 	"context"
@@ -302,14 +302,14 @@ func TestPATCacheEvictsExpiredFirst(t *testing.T) {
 // 端到端：走真实路由 + 真库，PAT 与 JWT 的身份形状一致（授权仍走 User.Can）。
 func TestPATEndToEnd(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	editor := patToken('e')       // scopes 含 catalog.relation.edit
+	editor := patToken('e')       // 免审账号，scopes 仅含 catalog.relation.edit
 	outsider := patToken('o')     // 只有互动码：对目录写接口越权
 	adminNoScope := patToken('d') // 管理员但 scopes 为空
 	fresh := patToken('f')        // 只在最后阶段用：账号服务届时已下线
 	f, srv := newFakeAuth(t, map[string]fakeAuthDoc{
-		editor:       {Valid: true, UserID: "44444444-4444-4444-4444-444444444444", Username: "pat-editor", Permissions: []string{PermissionRelationEdit}},
+		editor:       {Valid: true, UserID: "44444444-4444-4444-4444-444444444444", Username: "pat-editor", Permissions: []string{PermissionRelationEdit}, CatalogReviewExempt: true},
 		outsider:     {Valid: true, UserID: "55555555-5555-5555-5555-555555555555", Username: "pat-outsider", Permissions: []string{"community.post.create"}},
-		adminNoScope: {Valid: true, UserID: "66666666-6666-6666-6666-666666666666", Username: "pat-admin"},
+		adminNoScope: {Valid: true, UserID: "66666666-6666-6666-6666-666666666666", Username: "pat-admin", Role: "admin"},
 		fresh:        {Valid: true, UserID: "77777777-7777-7777-7777-777777777777", Username: "pat-fresh", Permissions: []string{PermissionEntityEdit}},
 	})
 	// Verifier 刻意留空：PAT 路径不依赖本地验签材料。
@@ -338,21 +338,86 @@ func TestPATEndToEnd(t *testing.T) {
 	if cookie := w.Header().Get("Set-Cookie"); cookie != "" {
 		t.Fatalf("PAT 请求不该产出 cookie: %s", cookie)
 	}
-	// 2) 越权写：scopes 里没有目录码 → 403（不是 401，也不是放行）。
-	//    探针选**带权限码闸门**的关系写端点，载荷刻意非法：400 只可能出现在闸门放行之后。
-	w = do(http.MethodPost, "/api/catalog/relations", "{", outsider)
-	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "forbidden") {
-		t.Fatalf("scopes 收紧的 PAT 写目录应 403，实际 %d：%s", w.Code, w.Body.String())
+	// 只用 Store 建立原有正式条目；后续 PAT 的全部变更走真实 HTTP 副本链路。
+	owner := User{ID: "44444444-4444-4444-4444-444444444444", Username: "pat-editor", Permissions: []string{PermissionEntityEdit, PermissionReviewBypass}}
+	source, err := s.Save(context.Background(), Edit{Entity: Entity{Kind: "work", Title: "PAT source"}, EditNote: "Fixture"}, owner)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// 3) 持码的 PAT 过闸门（载荷不合由处理器回 400，证明身份进了上下文）。
-	w = do(http.MethodPost, "/api/catalog/relations", "{", editor)
+	target, err := s.Save(context.Background(), Edit{Entity: Entity{Kind: "agent", Title: "PAT author"}, EditNote: "Fixture"}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createWorkspace := func(bearer string) Workspace {
+		t.Helper()
+		response := do(http.MethodPost, "/api/catalog/workspaces", encode(WorkspaceCreate{Name: "PAT edit"}), bearer)
+		if response.Code != http.StatusOK {
+			t.Fatalf("PAT 创建副本应 200，实际 %d：%s", response.Code, response.Body.String())
+		}
+		var workspace Workspace
+		if err := json.Unmarshal(response.Body.Bytes(), &workspace); err != nil || workspace.ID == "" {
+			t.Fatalf("副本响应无效：%s，err=%v", response.Body.String(), err)
+		}
+		return workspace
+	}
+	relationOperation := WorkspaceOperation{Target: "relation", Action: "create", Ref: "credit", Document: json.RawMessage(encode(Relation{Type: "written_by", SourceID: source.ID, TargetID: target.ID}))}
+	// 2) 副本本身只要求登录；保存关系时仍按 PAT scope 授权。
+	//    管理员角色与账号免审资格都不能补授未委托的操作权限。
+	for _, bearer := range []string{outsider, adminNoScope} {
+		workspace := createWorkspace(bearer)
+		w = do(http.MethodPut, "/api/catalog/workspaces/"+workspace.ID+"/changes", encode(WorkspaceChanges{ExpectedVersion: workspace.Version, Operations: []WorkspaceOperation{relationOperation}}), bearer)
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "forbidden") {
+			t.Fatalf("没有关系 scope 的 PAT 保存应 403，实际 %d：%s", w.Code, w.Body.String())
+		}
+	}
+	// 3) 持码 PAT 进入处理器；非法载荷保持稳定的 400 机器码。
+	workspace := createWorkspace(editor)
+	w = do(http.MethodPut, "/api/catalog/workspaces/"+workspace.ID+"/changes", "{", editor)
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_payload") {
 		t.Fatalf("持码 PAT 应过闸门到处理器，实际 %d：%s", w.Code, w.Body.String())
 	}
-	// 4) 管理员但 scopes 空：PAT 身份永不回落角色兜底，否则 scopes=[] 就是全权。
-	w = do(http.MethodPost, "/api/catalog/relations", "{", adminNoScope)
+	// 4) 免审不扩大 scope：仅有关系权限的 PAT 仍不能建立实体。
+	w = do(http.MethodPut, "/api/catalog/workspaces/"+workspace.ID+"/changes", encode(WorkspaceChanges{ExpectedVersion: workspace.Version, Operations: []WorkspaceOperation{{Target: "entity", Action: "create", Ref: "entity", Document: json.RawMessage(`{"kind":"work","title":"Not delegated"}`)}}}), editor)
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("scopes 为空的管理员 PAT 不该按角色兜底放行，实际 %d：%s", w.Code, w.Body.String())
+		t.Fatalf("关系 scope 不该授予实体编辑权限，实际 %d：%s", w.Code, w.Body.String())
+	}
+	// 保存、提交均不改事实；免审 PAT 推送后才原子合入自己的关系。
+	w = do(http.MethodPut, "/api/catalog/workspaces/"+workspace.ID+"/changes", encode(WorkspaceChanges{ExpectedVersion: workspace.Version, Operations: []WorkspaceOperation{relationOperation}}), editor)
+	if w.Code != http.StatusOK {
+		t.Fatalf("持码 PAT 保存关系应 200，实际 %d：%s", w.Code, w.Body.String())
+	}
+	var saved WorkspaceChangesResult
+	if err := json.Unmarshal(w.Body.Bytes(), &saved); err != nil || saved.Refs["credit"] == "" {
+		t.Fatalf("保存响应无效：%s，err=%v", w.Body.String(), err)
+	}
+	w = do(http.MethodPost, "/api/catalog/workspaces/"+workspace.ID+"/commits", encode(WorkspaceCommitCreate{ID: newID(), ExpectedVersion: saved.Workspace.Version, Message: "Credit author"}), editor)
+	if w.Code != http.StatusOK {
+		t.Fatalf("持码 PAT 提交应 200，实际 %d：%s", w.Code, w.Body.String())
+	}
+	var commit CollaborationCommit
+	if err := json.Unmarshal(w.Body.Bytes(), &commit); err != nil || commit.Author.ID != owner.ID {
+		t.Fatalf("PAT 提交作者未保留：%s，err=%v", w.Body.String(), err)
+	}
+	if relations, err := s.Relations(context.Background(), source.ID, nil); err != nil || len(relations) != 0 {
+		t.Fatalf("未推送提交改变了正式关系：%+v，err=%v", relations, err)
+	}
+	w = do(http.MethodGet, "/api/catalog/workspaces/"+workspace.ID, "", editor)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PAT 读取已提交副本应 200，实际 %d：%s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &workspace); err != nil || workspace.HeadCommitID == nil || *workspace.HeadCommitID != commit.ID {
+		t.Fatalf("副本提交头无效：%s，err=%v", w.Body.String(), err)
+	}
+	w = do(http.MethodPost, "/api/catalog/workspaces/"+workspace.ID+"/push", encode(WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: commit.ID}), editor)
+	if w.Code != http.StatusOK {
+		t.Fatalf("免审 PAT 推送应 200，实际 %d：%s", w.Code, w.Body.String())
+	}
+	var pushed WorkspacePushResult
+	if err := json.Unmarshal(w.Body.Bytes(), &pushed); err != nil || !pushed.Applied || pushed.PullRequest != nil {
+		t.Fatalf("免审 PAT 应直接合入：%s，err=%v", w.Body.String(), err)
+	}
+	if relations, err := s.Relations(context.Background(), source.ID, nil); err != nil || len(relations) != 1 || relations[0].ID != saved.Refs["credit"] {
+		t.Fatalf("推送后未找到 PAT 关系：%+v，err=%v", relations, err)
 	}
 	// 5) 无效 PAT：401 + 稳定机器码（不区分无效/吊销/过期）。形态合法，所以会问一次内省。
 	w = do(http.MethodGet, "/api/catalog/me/home-preferences", "", patToken('z'))
@@ -365,7 +430,7 @@ func TestPATEndToEnd(t *testing.T) {
 		t.Fatalf("形态非法的 PAT 应 401 %s，实际 %d：%s", CodeInvalidToken, w.Code, w.Body.String())
 	}
 	if n := f.callCount(); n != 4 {
-		// editor / outsider / adminNoScope / 未知令牌各一次；editor 的第二次请求命中缓存，
+		// editor / outsider / adminNoScope / 未知令牌各一次；editor 的后续请求命中缓存，
 		// 形态非法的明文在本地被拒，都不产生调用。
 		t.Fatalf("内省调用次数应停在 4（缓存与本地预检生效），实际 %d", n)
 	}

@@ -445,24 +445,11 @@ func attrsOrEmpty(m map[string]any) map[string]any {
 	return m
 }
 
-func (s *Store) SaveRelation(ctx context.Context, input RelationEdit, u User) (Relation, error) {
-	if !u.CanBypassReview() {
-		return Relation{}, fmt.Errorf("commit_required")
-	}
-	var r Relation
-	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
-		var err error
-		r, err = s.saveRelationTx(ctx, tx, input, u)
-		return err
-	})
-	return r, err
-}
-
 func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEdit, u User) (Relation, error) {
 	r := input.Relation
 	r.Attributes = attrsOrEmpty(r.Attributes)
 	err := func() error {
-		if err := validateSources(input.EditNote, input.Sources); err != nil {
+		if err := validateSources(input.Sources); err != nil {
 			return err
 		}
 		// M02：关系写同样定义敏感（端点类型/属性/无环），取共享。
@@ -591,15 +578,8 @@ func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEd
 	return r, err
 }
 
-func (s *Store) DeleteRelation(ctx context.Context, id string, expected int64, note string, sources []Source, u User) error {
-	if !u.CanBypassReview() {
-		return fmt.Errorf("commit_required")
-	}
-	return s.writeCatalog(ctx, func(tx *sql.Tx) error { return s.deleteRelationTx(ctx, tx, id, expected, note, sources, u) })
-}
-
 func (s *Store) deleteRelationTx(ctx context.Context, tx *sql.Tx, id string, expected int64, note string, sources []Source, u User) error {
-	if err := validateSources(note, sources); err != nil {
+	if err := validateSources(sources); err != nil {
 		return err
 	}
 	var b []byte

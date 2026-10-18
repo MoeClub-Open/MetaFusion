@@ -64,7 +64,7 @@ func TestDefaultsValidateReleaseTrackWorks(t *testing.T) {
 		t.Fatalf("subject references were not validated: %v", seen)
 	}
 	release.Subjects[1].Role = "unknown_role"
-	if err := d.validateEntity(release, reference, false); errCode(err) != "invalid_term" {
+	if err := d.validateEntity(release, reference, false); err == nil || err.Error() != "invalid_term" {
 		t.Fatalf("unknown release role: got %v, want invalid_term", err)
 	}
 }

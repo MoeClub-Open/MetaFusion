@@ -34,40 +34,36 @@ func TestQualityAuditReleaseWithoutTracks(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	ref := func(name string) any { return map[string]string{"$ref": name} }
-	op := func(kind, name string, extra map[string]any) CommitOperation {
+	op := func(kind, name string, extra map[string]any) WorkspaceOperation {
 		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}
-		return CommitOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc)), ReviewedCandidateIDs: []string{}}
+		return WorkspaceOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc))}
 	}
-	in := fixtureCommit(f, op("work", "w", nil),
+	operations := []WorkspaceOperation{op("work", "w", nil),
 		op("release", "r", map[string]any{"subjects": []any{map[string]any{"work_id": ref("w"), "role": "primary", "position": 0}}}),
-		op("medium", "m", map[string]any{"release_id": ref("r"), "attributes": map[string]any{"format": "cd"}}))
+		op("medium", "m", map[string]any{"release_id": ref("r"), "attributes": map[string]any{"format": "cd"}})}
 
-	preview, err := f.s.PushCommit(ctx, in, f.u, true)
-	if err != nil {
-		t.Fatal(err)
+	changes, commit, w := prepareWorkspace(t, f.s, f.u, operations...)
+	if len(commit.Changes) != 3 || commit.MergedAt != nil {
+		t.Fatalf("incomplete catalog data must remain committable: %+v", commit)
 	}
-	if preview.Applied || len(preview.Preview) != 3 {
-		t.Fatalf("incomplete catalog data must remain previewable: %+v", preview)
+	if _, err := f.s.Get(ctx, changes.Refs["r"], nil); err == nil {
+		t.Fatal("working copy leaked before push")
 	}
-
-	out, err := f.s.PushCommit(ctx, in, f.u, false)
-	if err != nil {
-		t.Fatal(err)
+	out, err := f.s.PushWorkspace(ctx, w.ID, WorkspacePush{ExpectedVersion: w.Version, ExpectedHead: *w.HeadCommitID}, f.u)
+	if err != nil || !out.Applied {
+		t.Fatalf("incomplete catalog data must remain editable: %+v %v", out, err)
 	}
-	if !out.Applied {
-		t.Fatal("incomplete catalog data must remain editable")
-	}
-	rep, err := f.s.EntityQuality(ctx, out.Refs["r"], &f.u)
+	rep, err := f.s.EntityQuality(ctx, changes.Refs["r"], &f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rep.Status != QualityPartial || len(rep.Issues) == 0 {
 		t.Fatalf("release report: %+v", rep)
 	}
-	batch, err := f.s.QualityBatch(ctx, QualityBatchRequest{IDs: []string{out.Refs["w"], out.Refs["r"], "bad", "00000000-0000-0000-0000-000000000000"}}, &f.u)
+	batch, err := f.s.QualityBatch(ctx, QualityBatchRequest{IDs: []string{changes.Refs["w"], changes.Refs["r"], "bad", "00000000-0000-0000-0000-000000000000"}}, &f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +82,14 @@ func TestQualityAuditMediumTrackPositionsStartAt2(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	ref := func(name string) any { return map[string]string{"$ref": name} }
-	op := func(kind, name string, extra map[string]any) CommitOperation {
+	op := func(kind, name string, extra map[string]any) WorkspaceOperation {
 		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}
-		return CommitOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc)), ReviewedCandidateIDs: []string{}}
+		return WorkspaceOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc))}
 	}
-	in := fixtureCommit(f,
+	operations := []WorkspaceOperation{
 		op("work", "w", nil),
 		op("expression", "x1", map[string]any{"work_id": ref("w")}),
 		op("expression", "x2", map[string]any{"work_id": ref("w")}),
@@ -101,12 +97,13 @@ func TestQualityAuditMediumTrackPositionsStartAt2(t *testing.T) {
 		op("medium", "m", map[string]any{"release_id": ref("r"), "attributes": map[string]any{"format": "cd"}}),
 		op("track", "t2", map[string]any{"medium_id": ref("m"), "position": 2, "number": "2", "contents": []any{map[string]any{"expression_id": ref("x1"), "position": 0}}}),
 		op("track", "t3", map[string]any{"medium_id": ref("m"), "position": 3, "number": "3", "contents": []any{map[string]any{"expression_id": ref("x2"), "position": 0}}}),
-	)
-	out, err := f.s.PushCommit(ctx, in, f.u, false)
+	}
+	changes, _, w := prepareWorkspace(t, f.s, f.u, operations...)
+	_, err := f.s.PushWorkspace(ctx, w.ID, WorkspacePush{ExpectedVersion: w.Version, ExpectedHead: *w.HeadCommitID}, f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mediumID := out.Refs["m"]
+	mediumID := changes.Refs["m"]
 	rep, err := f.s.EntityQuality(ctx, mediumID, &f.u)
 	if err != nil {
 		t.Fatal(err)
@@ -133,14 +130,14 @@ func TestQualityAuditMediumAllNonNumericTrackNumbers(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	ref := func(name string) any { return map[string]string{"$ref": name} }
-	op := func(kind, name string, extra map[string]any) CommitOperation {
+	op := func(kind, name string, extra map[string]any) WorkspaceOperation {
 		doc := map[string]any{"kind": kind, "title": name, "translations": map[string]any{"en": map[string]any{"title": name}}}
 		for k, v := range extra {
 			doc[k] = v
 		}
-		return CommitOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc)), ReviewedCandidateIDs: []string{}}
+		return WorkspaceOperation{Target: "entity", Action: "create", Ref: name, Document: json.RawMessage(encode(doc))}
 	}
-	in := fixtureCommit(f,
+	operations := []WorkspaceOperation{
 		op("work", "w", nil),
 		op("expression", "x1", map[string]any{"work_id": ref("w")}),
 		op("expression", "x2", map[string]any{"work_id": ref("w")}),
@@ -150,12 +147,13 @@ func TestQualityAuditMediumAllNonNumericTrackNumbers(t *testing.T) {
 		op("track", "ta", map[string]any{"medium_id": ref("m"), "position": 1, "number": "A", "contents": []any{map[string]any{"expression_id": ref("x1"), "position": 0}}}),
 		op("track", "tb", map[string]any{"medium_id": ref("m"), "position": 2, "number": "B", "contents": []any{map[string]any{"expression_id": ref("x2"), "position": 0}}}),
 		op("track", "tii", map[string]any{"medium_id": ref("m"), "position": 3, "number": "II", "contents": []any{map[string]any{"expression_id": ref("x3"), "position": 0}}}),
-	)
-	out, err := f.s.PushCommit(ctx, in, f.u, false)
+	}
+	changes, _, w := prepareWorkspace(t, f.s, f.u, operations...)
+	_, err := f.s.PushWorkspace(ctx, w.ID, WorkspacePush{ExpectedVersion: w.Version, ExpectedHead: *w.HeadCommitID}, f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mediumID := out.Refs["m"]
+	mediumID := changes.Refs["m"]
 	rep, err := f.s.EntityQuality(ctx, mediumID, &f.u)
 	if err != nil {
 		t.Fatal(err)

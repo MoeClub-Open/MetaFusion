@@ -30,8 +30,8 @@ func TestCatalogRetryRequiresConfirmedAbort(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	respondCommit(c, CommitReceipt{}, errTransactionBusy)
-	if w.Code != 503 || !strings.Contains(w.Body.String(), `"applied":false`) || w.Header().Get("Retry-After") != "1" {
+	respondCollaboration(c, nil, errTransactionBusy)
+	if w.Code != 503 || w.Body.String() != `{"error":"transaction_busy"}` || w.Header().Get("Retry-After") != "1" {
 		t.Fatalf("busy response: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -98,12 +98,12 @@ func TestPostgresStructuralCommitIgnoresFormerGlobalLock(t *testing.T) {
 	if _, err = holder.ExecContext(ctx, `SELECT pg_advisory_xact_lock(740202)`); err != nil {
 		t.Fatal(err)
 	}
-	in := fixtureCommit(f, updateCommit(a, patchValue("/parent_id", b.ID)))
-	if out, err := f.s.PushCommit(ctx, in, f.u, false); err != nil || len(out.Items) != 1 {
+	_, _, workspace := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: a.ID, Patch: []CommitPatch{patchValue("/parent_id", b.ID)}})
+	if out, err := f.s.PushWorkspace(ctx, workspace.ID, WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: *workspace.HeadCommitID}, f.u); err != nil || !out.Applied || len(out.Commits) != 1 {
 		t.Fatalf("structure still waits on global lock: %+v %v", out, err)
 	}
-	in = fixtureCommit(f, CommitOperation{Target: "relation", Action: "create", Ref: "edge", Document: json.RawMessage(encode(Relation{Type: "includes", SourceID: w.ID, TargetID: f.save(Entity{Kind: "work", Title: "other work"}).ID}))})
-	if out, err := f.s.PushCommit(ctx, in, f.u, false); err != nil || len(out.Items) != 1 {
+	_, _, workspace = prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "relation", Action: "create", Ref: "edge", Document: json.RawMessage(encode(Relation{Type: "includes", SourceID: w.ID, TargetID: f.save(Entity{Kind: "work", Title: "other work"}).ID}))})
+	if out, err := f.s.PushWorkspace(ctx, workspace.ID, WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: *workspace.HeadCommitID}, f.u); err != nil || !out.Applied || len(out.Commits) != 1 {
 		t.Fatalf("relation still waits on global lock: %+v %v", out, err)
 	}
 }
@@ -125,16 +125,19 @@ func TestPostgresIndependentReleaseCommitCompletesWhileOtherWaits(t *testing.T) 
 	if err = lockRelease(ctx, holder, r1.ID); err != nil {
 		t.Fatal(err)
 	}
-	in1 := fixtureCommit(f, updateCommit(m1, patchValue("/title", "m1 changed")))
-	in2 := fixtureCommit(f, updateCommit(m2, patchValue("/title", "m2 changed")))
+	_, _, workspace1 := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: m1.ID, Patch: []CommitPatch{patchValue("/title", "m1 changed")}})
+	_, _, workspace2 := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: m2.ID, Patch: []CommitPatch{patchValue("/title", "m2 changed")}})
 	done := make(chan error, 1)
-	go func() { _, err := f.s.PushCommit(ctx, in1, f.u, false); done <- err }()
+	go func() {
+		_, err := f.s.PushWorkspace(ctx, workspace1.ID, WorkspacePush{ExpectedVersion: workspace1.Version, ExpectedHead: *workspace1.HeadCommitID}, f.u)
+		done <- err
+	}()
 	select {
 	case err := <-done:
 		t.Fatalf("held release unexpectedly completed: %v", err)
 	case <-time.After(100 * time.Millisecond):
 	}
-	if _, err = f.s.PushCommit(ctx, in2, f.u, false); err != nil {
+	if _, err = f.s.PushWorkspace(ctx, workspace2.ID, WorkspacePush{ExpectedVersion: workspace2.Version, ExpectedHead: *workspace2.HeadCommitID}, f.u); err != nil {
 		t.Fatalf("unrelated release blocked: %v", err)
 	}
 	select {
@@ -304,32 +307,41 @@ func TestPostgresConcurrentDeleteAndNewRelationCannotLeaveLiveEdge(t *testing.T)
 	}
 }
 
-func TestPostgresCommitRetryDiscardsAbandonedRefsAndItems(t *testing.T) {
+func TestPostgresWorkspacePushRetryDiscardsAbandonedMaterialization(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.s.DB.Exec(`CREATE SEQUENCE catalog.retry_probe;
-	CREATE FUNCTION catalog.fail_second_commit_entity_once() RETURNS trigger LANGUAGE plpgsql AS $$
+	CREATE FUNCTION catalog.fail_second_workspace_entity_once() RETURNS trigger LANGUAGE plpgsql AS $$
 	BEGIN
-	 IF NEW.title='retry second' AND nextval('catalog.retry_probe')=1 THEN
+	 IF nextval('catalog.retry_probe')=2 THEN
 	  RAISE EXCEPTION 'injected serialization failure' USING ERRCODE='40001';
 	 END IF;
 	 RETURN NEW;
 	END $$;
-	CREATE TRIGGER retry_probe AFTER INSERT ON catalog.entities FOR EACH ROW EXECUTE FUNCTION catalog.fail_second_commit_entity_once();`); err != nil {
+	CREATE TRIGGER retry_probe AFTER INSERT ON catalog.entities FOR EACH ROW EXECUTE FUNCTION catalog.fail_second_workspace_entity_once();`); err != nil {
 		t.Fatal(err)
 	}
-	in := fixtureCommit(f,
-		CommitOperation{Target: "entity", Action: "create", Ref: "first", Document: json.RawMessage(`{"kind":"work","title":"retry first"}`)},
-		CommitOperation{Target: "entity", Action: "create", Ref: "second", Document: json.RawMessage(`{"kind":"work","title":"retry second"}`)})
-	out, err := f.s.PushCommit(context.Background(), in, f.u, false)
-	if err != nil || len(out.Items) != 2 || len(out.Refs) != 2 {
-		t.Fatalf("abandoned result retained: %+v %v", out, err)
+	ctx := context.Background()
+	saved, commit, workspace := prepareWorkspace(t, f.s, f.u,
+		WorkspaceOperation{Target: "entity", Action: "create", Ref: "first", Document: json.RawMessage(`{"kind":"work","title":"retry first"}`)},
+		WorkspaceOperation{Target: "entity", Action: "create", Ref: "second", Document: json.RawMessage(`{"kind":"work","title":"retry second"}`)})
+	if len(saved.Refs) != 2 || len(commit.Changes) != 2 {
+		t.Fatalf("workspace lost stable object identities: %+v %+v", saved, commit)
 	}
-	for i, item := range out.Items {
-		if out.Refs[in.Operations[i].Ref] != item.ID {
-			t.Fatalf("refs disagree: %+v", out)
+	for _, table := range []string{"entities", "revisions", "outbox"} {
+		var count int
+		if err := f.s.DB.QueryRow(`SELECT count(*) FROM catalog.` + table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("workspace materialized %s before push: %d %v", table, count, err)
 		}
-		if _, err = f.s.Get(context.Background(), item.ID, &f.u); err != nil {
-			t.Fatal(err)
+	}
+	out, err := f.s.PushWorkspace(ctx, workspace.ID, WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: *workspace.HeadCommitID}, f.u)
+	if err != nil || !out.Applied || len(out.Commits) != 1 || out.Commits[0].ID != commit.ID || len(out.Commits[0].Changes) != 2 {
+		t.Fatalf("abandoned merge result retained: %+v %v", out, err)
+	}
+	for ref, title := range map[string]string{"first": "retry first", "second": "retry second"} {
+		id := saved.Refs[ref]
+		entity, err := f.s.Get(ctx, id, &f.u)
+		if err != nil || entity.ID != id || entity.Title != title || entity.Version != 1 {
+			t.Fatalf("stable ref changed during retry: %s %+v %v", ref, entity, err)
 		}
 	}
 	for _, table := range []string{"entities", "revisions", "outbox"} {
@@ -339,41 +351,59 @@ func TestPostgresCommitRetryDiscardsAbandonedRefsAndItems(t *testing.T) {
 		}
 	}
 	var count int
-	if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, in.ID).Scan(&count); err != nil || count != 2 {
+	if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, commit.ID).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("provenance: %d %v", count, err)
 	}
-	replay, err := f.s.PushCommit(context.Background(), in, f.u, false)
-	if err != nil || encode(replay) != encode(out) {
-		t.Fatalf("receipt changed: %+v %v", replay, err)
+	persisted, err := f.s.GetCollaborationCommit(ctx, commit.ID, f.u)
+	if err != nil || persisted.MergedAt == nil || persisted.Author.ID != f.u.ID || len(persisted.Changes) != 2 {
+		t.Fatalf("merged commit attribution lost: %+v %v", persisted, err)
+	}
+	replay, err := f.s.PushWorkspace(ctx, workspace.ID, WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: *workspace.HeadCommitID}, f.u)
+	if err != nil || !replay.Applied || len(replay.Commits) != 1 || encode(replay.Commits[0]) != encode(persisted) {
+		t.Fatalf("merged push replay changed its immutable commit: %+v %v", replay, err)
+	}
+	if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, commit.ID).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("repeat push changed revisions: %d %v", count, err)
 	}
 }
 
-func TestPostgres32ConcurrentStructuralCommits(t *testing.T) {
+func TestPostgres32ConcurrentStructuralWorkspacePushes(t *testing.T) {
 	f := newFixture(t)
 	f.s.DB.SetMaxOpenConns(20)
 	f.s.DB.SetMaxIdleConns(10)
 	const n = 32
-	inputs := make([]CatalogCommit, n)
+	type pushInput struct {
+		workspace Workspace
+		commit    CollaborationCommit
+		entityID  string
+		title     string
+	}
+	inputs := make([]pushInput, n)
 	for i := range inputs {
 		w := f.save(Entity{Kind: "work", Title: fmt.Sprintf("parallel owner %d", i)})
 		e := f.save(Entity{Kind: "content_unit", WorkID: w.ID, Title: fmt.Sprintf("parallel unit %d", i)})
-		inputs[i] = fixtureCommit(f, updateCommit(e, patchValue("/title", fmt.Sprintf("updated unit %d", i))))
+		title := fmt.Sprintf("updated unit %d", i)
+		_, commit, workspace := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: e.ID, Patch: []CommitPatch{patchValue("/title", title)}})
+		inputs[i] = pushInput{workspace: workspace, commit: commit, entityID: e.ID, title: title}
+	}
+	push := func(in pushInput) (WorkspacePushResult, error) {
+		return f.s.PushWorkspace(context.Background(), in.workspace.ID, WorkspacePush{ExpectedVersion: in.workspace.Version, ExpectedHead: *in.workspace.HeadCommitID}, f.u)
 	}
 	start := make(chan struct{})
 	type result struct {
-		input CatalogCommit
+		input pushInput
 		err   error
 	}
 	results := make(chan result, n)
 	var wg sync.WaitGroup
 	for _, in := range inputs {
 		wg.Add(1)
-		go func(in CatalogCommit) {
+		go func(in pushInput) {
 			defer wg.Done()
 			<-start
-			out, err := f.s.PushCommit(context.Background(), in, f.u, false)
-			if err == nil && len(out.Items) != 1 {
-				err = fmt.Errorf("unexpected receipt size %d", len(out.Items))
+			out, err := push(in)
+			if err == nil && (!out.Applied || len(out.Commits) != 1 || out.Commits[0].ID != in.commit.ID) {
+				err = fmt.Errorf("unexpected merge result %+v", out)
 			}
 			results <- result{in, err}
 		}(in)
@@ -382,17 +412,17 @@ func TestPostgres32ConcurrentStructuralCommits(t *testing.T) {
 	close(start)
 	wg.Wait()
 	close(results)
-	pending := []CatalogCommit{}
+	pending := []pushInput{}
 	for result := range results {
 		if errors.Is(result.err, errTransactionBusy) {
-			// SSI may reject even disjoint writes (for example page/predicate
-			// lock escalation in a tiny fixture under -race). A bounded push is
-			// allowed to be busy; it must leave no partial receipt or revision.
-			if _, err := f.s.CommitReceipt(context.Background(), result.input.ID, f.u); !errors.Is(err, sql.ErrNoRows) {
-				t.Fatalf("busy push has receipt: %v", err)
+			// A bounded merge may exhaust SSI retries, but the immutable fork
+			// commit remains available and no part of it reaches the catalog.
+			commit, err := f.s.GetCollaborationCommit(context.Background(), result.input.commit.ID, f.u)
+			if err != nil || commit.MergedAt != nil || len(commit.Changes) != 1 {
+				t.Fatalf("busy push lost or merged its commit: %+v %v", commit, err)
 			}
 			var revisions int
-			if err := f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, result.input.ID).Scan(&revisions); err != nil || revisions != 0 {
+			if err := f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, result.input.commit.ID).Scan(&revisions); err != nil || revisions != 0 {
 				t.Fatalf("busy push leaked revisions: %d %v", revisions, err)
 			}
 			pending = append(pending, result.input)
@@ -401,24 +431,28 @@ func TestPostgres32ConcurrentStructuralCommits(t *testing.T) {
 		}
 	}
 	if len(pending) > 0 {
-		// Explicit caller recovery after Retry-After, keeping the immutable ID
-		// and payload. No automatic replay of network/unknown failures.
+		// Caller recovery reuses the existing workspace head and immutable
+		// commit after Retry-After; it does not create another commit.
 		time.Sleep(time.Second)
 		for _, in := range pending {
-			if out, err := f.s.PushCommit(context.Background(), in, f.u, false); err != nil || len(out.Items) != 1 {
-				t.Fatalf("same-ID busy recovery failed: %+v %v", out, err)
+			if out, err := push(in); err != nil || !out.Applied || len(out.Commits) != 1 || out.Commits[0].ID != in.commit.ID {
+				t.Fatalf("same-head busy recovery failed: %+v %v", out, err)
 			}
 		}
 	}
-	var count int
-	if err := f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id IS NOT NULL`).Scan(&count); err != nil || count != n {
-		t.Fatalf("duplicate/lost revisions: %d %v", count, err)
-	}
 	for _, in := range inputs {
-		out, err := f.s.CommitReceipt(context.Background(), in.ID, f.u)
-		if err != nil || len(out.Items) != 1 || out.Items[0].Version != 2 {
-			t.Fatalf("missing/duplicate final receipt: %+v %v", out, err)
+		commit, err := f.s.GetCollaborationCommit(context.Background(), in.commit.ID, f.u)
+		if err != nil || commit.MergedAt == nil || len(commit.Changes) != 1 || commit.Author.ID != f.u.ID {
+			t.Fatalf("missing or unattributed merged commit: %+v %v", commit, err)
+		}
+		var count int
+		if err := f.s.DB.QueryRow(`SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, in.commit.ID).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("duplicate/lost revisions: %d %v", count, err)
+		}
+		entity, err := f.s.Get(context.Background(), in.entityID, &f.u)
+		if err != nil || entity.Version != 2 || entity.Title != in.title {
+			t.Fatalf("missing/duplicate final edit: %+v %v", entity, err)
 		}
 	}
-	t.Logf("%d simultaneous structural commits completed in %s; busy pushes recovered with the same ID: %d (isolated local PostgreSQL correctness test)", n, time.Since(began), len(pending))
+	t.Logf("%d simultaneous structural workspace pushes completed in %s; busy pushes recovered with the same head: %d (isolated PostgreSQL correctness test)", n, time.Since(began), len(pending))
 }

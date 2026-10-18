@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"time"
@@ -36,6 +37,9 @@ func OpenAPI() map[string]any {
 		if t == reflect.TypeOf(time.Time{}) {
 			return map[string]any{"type": "string", "format": "date-time"}
 		}
+		if t == reflect.TypeOf(json.RawMessage{}) {
+			return map[string]any{}
+		}
 		switch t.Kind() {
 		case reflect.Struct:
 			name := t.Name()
@@ -44,6 +48,18 @@ func OpenAPI() map[string]any {
 				props := map[string]any{}
 				for i := 0; i < t.NumField(); i++ {
 					f := t.Field(i)
+					if f.Anonymous && f.Tag.Get("json") == "" {
+						embedded := schema(f.Type)
+						if ref, ok := embedded["$ref"].(string); ok {
+							embedded = schemas[strings.TrimPrefix(ref, "#/components/schemas/")].(map[string]any)
+						}
+						if embeddedProps, ok := embedded["properties"].(map[string]any); ok {
+							for key, value := range embeddedProps {
+								props[key] = value
+							}
+						}
+						continue
+					}
 					key := strings.Split(f.Tag.Get("json"), ",")[0]
 					if key != "" && key != "-" {
 						props[key] = schema(f.Type)
@@ -68,37 +84,35 @@ func OpenAPI() map[string]any {
 			return map[string]any{}
 		}
 	}
-	for _, v := range []any{CatalogCommit{}, CommitReceipt{}, CommitSubmission{}, CommitReviewEdit{}, FieldConflict{}, CommitConflict{}, CheckoutRequest{}, CatalogCheckout{}, Entity{}, IdentityCandidateQuery{}, IdentityCandidateResponse{}, IdentityContext{}, CandidateAssessment{}, IdentityBatchRequest{}, IdentityBatchResponse{}, IdentityBatchQuery{}, IdentityBatchResult{}, EntitySearchPage{}, EntityLinksPage{}, RelationshipQueryRequest{}, RelationshipQueryResponse{}, ReleaseTOC{}, ExpressionComposition{}, ReleaseEditions{}, TrackContentEdit{}, Edit{}, Relation{}, RelationEdit{}, LifecycleEdit{}, DefinitionConfig{}, Definitions{}, ExternalDatabase{}, Shelf{}, HomePreferences{}, HomeSection{}, UserContributions{}, ContributionItem{}, UserContributionStats{}, ExternalSourceQueryRequest{}, ExternalSourceQueryResponse{}, FetchMeta{}, ExternalSourcePreviewResponse{}, ExternalSourceDefinition{}, VersionInfo{}, DefinitionImpact{}, Notification{}, RateLimitConfig{}, RateLimitSave{}} {
+	for _, v := range []any{CommitPatch{}, Entity{}, IdentityCandidateQuery{}, IdentityCandidateResponse{}, IdentityContext{}, CandidateAssessment{}, IdentityBatchRequest{}, IdentityBatchResponse{}, IdentityBatchQuery{}, IdentityBatchResult{}, EntitySearchPage{}, EntityLinksPage{}, RelationshipQueryRequest{}, RelationshipQueryResponse{}, ReleaseTOC{}, ExpressionComposition{}, ReleaseEditions{}, Relation{}, LifecycleEdit{}, DefinitionConfig{}, Definitions{}, ExternalDatabase{}, Shelf{}, HomePreferences{}, HomeSection{}, UserContributions{}, ContributionItem{}, UserContributionStats{}, ExternalSourceQueryRequest{}, ExternalSourceQueryResponse{}, FetchMeta{}, ExternalSourcePreviewResponse{}, ExternalSourceDefinition{}, VersionInfo{}, DefinitionImpact{}, Notification{}, RateLimitConfig{}, RateLimitSave{}} {
 		schema(reflect.TypeOf(v))
 	}
 	entityProps := schemas["Entity"].(map[string]any)["properties"].(map[string]any)
 	entityProps["state"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"active", "deleted", "merged"}}
-	entityProps["review_status"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"reviewed"}, "description": "Applied facts are reviewed. Pending review belongs to a commit and never changes the current entity."}
+	entityProps["review_status"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"reviewed"}, "description": "Applied facts are reviewed. Pending collaboration changes belong to a private workspace or pull request and never change the current entity."}
 
 	translationProps := schemas["Translation"].(map[string]any)["properties"].(map[string]any)
 	translationProps["summary"].(map[string]any)["description"] = "Short plain-text introduction for lists and sharing; distinct from the collaborative article body."
 	translationProps["body"] = map[string]any{
 		"type": "string", "maxLength": MaxArticleLength,
-		"description": "Optional collaborative Markdown article in this locale. Supports headings, tables, images, footnotes and canonical /catalog/{id} links. Stored with the entity, sources and revision snapshot; entity permissions, lifecycle state, optimistic locking and commit source_refs apply. Omitted/empty means no article. More than 100000 Unicode code points returns article_too_long; NUL returns invalid_article_body. Whole-entity PUT replaces this field too: preserve other locales and their bodies when editing.",
+		"description": "Optional collaborative Markdown article in this locale. Supports headings, tables, images, footnotes and canonical /catalog/{id} links. Edited in a workspace and applied only after push or pull-request merge. Omitted/empty means no article. More than 100000 Unicode code points returns article_too_long; NUL returns invalid_article_body. Preserve other locales and their bodies when replacing a workspace entity document.",
 	}
-	// Historical responses can contain self; new evidence cannot use it or this
-	// instance's host. Keep a separate input schema rather than rewriting history.
+	// Sources are optional metadata. Existing revision annotations remain readable;
+	// input never requires a source or a per-operation verification record.
 	if src, ok := schemas["Source"].(map[string]any); ok {
 		props := src["properties"].(map[string]any)
-		props["kind"] = map[string]any{"type": "string", "enum": []string{"url", "publication", "self"}, "description": "self is historical-only and is rejected in new evidence"}
+		props["kind"] = map[string]any{"type": "string", "enum": []string{"url", "publication", "self"}}
+		props["key"] = map[string]any{"type": "string", "pattern": "^$|^[A-Za-z][A-Za-z0-9_-]{0,63}$", "description": "Optional source identifier."}
+		props["pointers"] = map[string]any{"type": "array", "readOnly": true, "items": map[string]any{"type": "string"}, "description": "Stored revision JSON Pointer annotations."}
+		props["scope"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"commit"}, "description": "Historical whole-commit source scope."}
 		inputProps := map[string]any{}
-		for k, v := range props {
-			inputProps[k] = v
+		for key, value := range props {
+			if key != "pointers" && key != "scope" {
+				inputProps[key] = value
+			}
 		}
-		inputProps["kind"] = map[string]any{"type": "string", "enum": []string{"url", "publication"}}
-		props["key"] = map[string]any{"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$", "description": "Commit-local evidence pool name referenced by CommitOperation.source_refs; required on every commit source and unique within one commit (source_key_required / duplicate_source_key / invalid_source_key). Kept on stored revisions"}
-		props["pointers"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Server-written on revisions only: JSON Pointer field paths this source supports for that revision, copied from source_refs; absent means the whole operation. Never accepted in input (source_pointers_not_allowed)"}
-		props["scope"] = map[string]any{"type": "string", "enum": []string{"commit"}, "description": "Read-only, historical revisions only: commit = this source was the whole commit's evidence pool (written before per-operation source_refs existed) and does not prove any specific field of this revision. Never accepted in input (source_scope_not_allowed)"}
-		inputProps["key"] = props["key"]
-		delete(inputProps, "pointers")
-		delete(inputProps, "scope")
-		schemas["SourceInput"] = map[string]any{"type": "object", "properties": inputProps, "required": []string{"kind", "citation", "key"}, "description": "Externally eligible evidence; every source needs a unique commit-local key (source_key_required). self and URLs on the configured instance host (including subdomains) return source_not_eligible. Publication citations may omit URL. Community sources are eligible."}
-		for _, name := range []string{"Edit", "RelationEdit", "LifecycleEdit", "TrackContentEdit", "CommitOperation", "RateLimitSave", "ExternalSourceQueryRequest"} {
+		schemas["SourceInput"] = map[string]any{"type": "object", "additionalProperties": false, "properties": inputProps, "required": []string{"kind", "citation"}, "description": "Optional source metadata; no evidence or verification prerequisite."}
+		for _, name := range []string{"LifecycleEdit", "RateLimitSave"} {
 			if obj, ok := schemas[name].(map[string]any); ok {
 				if p, ok := obj["properties"].(map[string]any); ok {
 					if _, exists := p["sources"]; exists {
@@ -109,37 +123,7 @@ func OpenAPI() map[string]any {
 		}
 	}
 	schemas["RateLimitSave"].(map[string]any)["required"] = []string{"policy", "expected_etag", "edit_note"}
-	schemas["CommitOperation"].(map[string]any)["properties"].(map[string]any)["document"] = map[string]any{"type": "object", "additionalProperties": true}
 	schemas["CommitPatch"].(map[string]any)["properties"].(map[string]any)["value"] = map[string]any{}
-	schemas["CatalogCommit"].(map[string]any)["required"] = []string{"id", "definitions_etag", "edit_note", "sources", "operations"}
-
-	commitSchema := schemas["CatalogCommit"].(map[string]any)
-	commitProps := commitSchema["properties"].(map[string]any)
-	commitProps["id"].(map[string]any)["format"] = "uuid"
-	commitProps["operations"].(map[string]any)["minItems"] = 1
-	commitProps["operations"].(map[string]any)["maxItems"] = 100
-	opSchema := schemas["CommitOperation"].(map[string]any)
-	opSchema["required"] = []string{"target", "action"}
-	opProps := opSchema["properties"].(map[string]any)
-	opProps["target"].(map[string]any)["enum"] = []string{"entity", "relation"}
-	opProps["action"].(map[string]any)["enum"] = []string{"create", "update", "delete", "content"}
-	opSchema["oneOf"] = []any{
-		map[string]any{"properties": map[string]any{"target": map[string]any{"const": "relation"}, "action": map[string]any{"const": "delete"}}, "required": []string{"id", "base_version"}},
-		map[string]any{"properties": map[string]any{"target": map[string]any{"const": "entity"}, "action": map[string]any{"const": "content"}}, "required": []string{"id", "base_version", "content_change"}},
-		map[string]any{"properties": map[string]any{"target": map[string]any{"const": "entity"}, "action": map[string]any{"const": "create"}}, "required": []string{"ref", "document", "reviewed_candidate_ids"}},
-		map[string]any{"properties": map[string]any{"target": map[string]any{"const": "relation"}, "action": map[string]any{"const": "create"}}, "required": []string{"ref", "document"}},
-		map[string]any{"properties": map[string]any{"action": map[string]any{"const": "update"}}, "required": []string{"id", "base_version", "patch"}},
-	}
-	opProps["patch"].(map[string]any)["minItems"] = 1
-	opProps["patch"].(map[string]any)["maxItems"] = 200
-	opProps["reviewed_candidate_ids"].(map[string]any)["maxItems"] = 1000
-	opProps["source_refs"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"$ref": "#/components/schemas/SourceRef"}, "description": "Required evidence mapping for this operation: only the referenced commit sources (by key) are written to this operation's revision, each with its pointers. Errors: source_refs_required (missing or empty), unknown_source_ref, duplicate_source_ref, invalid_source_pointer, source_pointer_not_in_document (create: pointer must resolve in the document), source_pointer_not_patched (update: pointer must equal, contain or lie under a patch path); every pool source must be referenced by some operation (source_unused)"}
-	opSchema["required"] = []string{"target", "action", "source_refs"}
-	commitProps["sources"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"$ref": "#/components/schemas/SourceInput"}, "description": "Commit evidence pool; every source needs a unique key and must be referenced by at least one operation's source_refs"}
-	schemas["SourceRef"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"source"}, "properties": map[string]any{
-		"source":   map[string]any{"type": "string", "description": "key of a source in CatalogCommit.sources"},
-		"pointers": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "JSON Pointer paths (e.g. /attributes/catalog_number) this source supports; omitted = the whole operation"},
-	}}
 	schemas["CommitPatch"].(map[string]any)["required"] = []string{"path"}
 	schemas["CommitPatch"].(map[string]any)["oneOf"] = []any{map[string]any{"required": []string{"value"}, "properties": map[string]any{"remove": map[string]any{"const": false}}}, map[string]any{"required": []string{"remove"}, "properties": map[string]any{"remove": map[string]any{"const": true}}, "not": map[string]any{"required": []string{"value"}}}}
 
@@ -167,22 +151,7 @@ func OpenAPI() map[string]any {
 	batchProps["queries"].(map[string]any)["maxItems"] = 50
 	batchQuery := schemas["IdentityBatchQuery"].(map[string]any)
 	batchQuery["required"] = []string{"key", "kind"}
-	// Anonymous embed of IdentityCandidateQuery is promoted by encoding/json but the
-	// OpenAPI walker skips tag-less fields; copy the query properties explicitly.
-	bqProps, _ := batchQuery["properties"].(map[string]any)
-	if bqProps == nil {
-		bqProps = map[string]any{}
-		batchQuery["properties"] = bqProps
-	}
-	if iq, ok := schemas["IdentityCandidateQuery"].(map[string]any); ok {
-		if iqProps, ok := iq["properties"].(map[string]any); ok {
-			for k, v := range iqProps {
-				if _, exists := bqProps[k]; !exists {
-					bqProps[k] = v
-				}
-			}
-		}
-	}
+	bqProps := batchQuery["properties"].(map[string]any)
 	if k, ok := bqProps["key"].(map[string]any); ok {
 		k["minLength"] = 1
 		k["maxLength"] = 64
@@ -208,7 +177,7 @@ func OpenAPI() map[string]any {
 			}
 		}
 	}
-	schemas["DefinitionSave"] = map[string]any{"type": "object", "required": []string{"document", "expected_etag", "edit_note", "sources"}, "properties": map[string]any{"document": schema(reflect.TypeOf(Definitions{})), "expected_etag": map[string]any{"type": "string"}, "edit_note": map[string]any{"type": "string"}, "sources": schema(reflect.TypeOf([]Source{}))}}
+	schemas["DefinitionSave"] = map[string]any{"type": "object", "required": []string{"document", "expected_etag", "edit_note"}, "properties": map[string]any{"document": schema(reflect.TypeOf(Definitions{})), "expected_etag": map[string]any{"type": "string"}, "edit_note": map[string]any{"type": "string"}, "sources": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/SourceInput"}}}}
 	schemas["DefinitionImpactRequest"] = map[string]any{"type": "object", "required": []string{"document"}, "properties": map[string]any{"document": schema(reflect.TypeOf(Definitions{}))}}
 	paths := map[string]any{}
 	add := func(path, method, summary, request, response string, auth bool) {
@@ -276,9 +245,9 @@ func OpenAPI() map[string]any {
 		stateProps[code] = map[string]any{"type": "integer", "minimum": 0}
 	}
 	schemas["EntityStateCounts"] = map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
-		"states":          map[string]any{"type": "object", "additionalProperties": false, "description": "Every state of the catalog.entities.state constraint, zero-filled: a missing key is not the same statement as a real zero", "properties": stateProps},
-		"total":           map[string]any{"type": "integer", "minimum": 0},
-		"pending_commits": map[string]any{"type": "integer", "minimum": 0},
+		"states":                map[string]any{"type": "object", "additionalProperties": false, "description": "Every state of the catalog.entities.state constraint, zero-filled: a missing key is not the same statement as a real zero", "properties": stateProps},
+		"total":                 map[string]any{"type": "integer", "minimum": 0},
+		"pending_pull_requests": map[string]any{"type": "integer", "minimum": 0},
 	}}
 	// 可用导入源清单：items 的元素类型单列，客户端不必猜 names 的语种键与 category 取值。
 	schemas["ExternalSourceList"] = map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
@@ -318,40 +287,28 @@ func OpenAPI() map[string]any {
 	for _, r := range [][6]string{
 		{"/catalog/releases/{id}/editions", "get", "Read explicitly grouped editions in one visible snapshot. Shared release subjects do not imply a group; ungrouped releases return group=null and editions=[].", "", "ReleaseEditions", ""},
 		{"/catalog/expressions/{id}/composition", "get", "Read ordered direct parts and containing expressions from relations declaring expression_composition usage. Hidden or retired peers are omitted.", "", "ExpressionComposition", ""},
-		{"/catalog/tracks/{id}/contents", "post", "Add one inclusion with Track expected_version and edit evidence; returns the visible updated Track. No other inclusion is replaced.", "TrackContentEdit", "Entity", "auth"},
-		{"/catalog/tracks/{id}/contents/{position}", "put", "Replace one inclusion identified by its previous position; inclusion.position may reorder it. Track expected_version prevents stale edits.", "TrackContentEdit", "Entity", "auth"},
-		{"/catalog/tracks/{id}/contents/{position}", "delete", "Delete one visible inclusion with Track expected_version and edit evidence in the request body. Hidden records are preserved.", "TrackContentEdit", "Entity", "auth"},
 		{"/version", "get", "Build identity of the running catalog process: the version and git SHA injected at build time, the build timestamp, and when this process started (all UTC, RFC 3339). Anonymous and read-only — it exists so that a deploy, a cutover or a rollback can be answered with 'which commit is actually running' instead of guessing from behaviour. Deliberately free of configuration, credentials, host names and database or object-storage details; anything the build did not inject comes back as the literal string unknown (an empty field would be indistinguishable from a broken build)", "", "VersionInfo", ""},
 		{"/catalog/definitions", "get", "Published dynamic definitions, fixed entity-skeleton names, and a relationship registry. Structural endpoints are database-constrained; their forward and reverse display names are editable in definitions.structure", "", "PublishedDefinitions", ""}, {"/catalog/developer/request-logs", "get", "Own API request log, newest first (authenticated calls only; route is the gin template path without entity ids or query strings; 30-day retention)", "", "Result", ""},
-		{"/catalog/entities", "get", "Entity search (kind/kinds/q/state/work_id/content_unit_id/release_id/medium_id/parent_id/field/value/tags/original_language/has_pictures; field takes a published field code; a dotted path works only when every level is searchable and enabled, so the seed definitions expose top-level codes such as tags, duration, edition_date and barcode; items + total (browse: exact PostgreSQL count; text search: OpenSearch snapshot with total_relation=index_snapshot, has_more and next_cursor), plus 400 invalid_sort / invalid_order for a sort key or direction outside the whitelist, and 400 invalid_query_param / query_too_long / invalid_limit / invalid_offset / invalid_page / pagination_conflict for parameters that cannot be sent as given (see each parameter). Throttled to a 180-request-per-minute shared read/write default budget across catalog replicas, counted per account for a signed-in caller and per client IP otherwise; the live policy (group presets and per-account overrides, including unlimited) is readable at GET /admin/rate-limits. Every throttled response carries X-RateLimit-Limit, X-RateLimit-Remaining and X-RateLimit-Reset (seconds until the window resets), and an exhausted budget answers 429 rate_limited with Retry-After; a subject marked unlimited is not counted at all and therefore carries none of those headers, because there is no window to report)", "", "EntitySearchPage", ""}, {"/catalog/entities", "post", "Create entity with eligible external evidence. Supports Idempotency-Key with durable replay protection. New identity candidates return 409 identity_candidates_changed with identity_review; reviewed_candidate_ids explicitly confirms inspected candidates. No candidates requires no review field", "Edit", "Entity", "auth"},
-		{"/catalog/entities/stats", "get", "Entity counts grouped by state over the whole catalog.entities table, plus the real table total (requires catalog.lifecycle.manage; throttled to a 180/min shared read/write budget (admin is unlimited by default, overridable by account/admin-group policy), per account when signed in and otherwise per client IP). The list endpoint's shared filter always excludes deleted and merged rows — that visibility rule is deliberate and unchanged — so this aggregate is the only source for the tombstone count. states always carries active, deleted and merged; pending_commits counts pending submissions, zero-filled when a state has no rows, and total equals count(*) of the table, so a key that is present with 0 is a fact while an absent key means the count was not obtained", "", "EntityStateCounts", "auth"},
+		{"/catalog/entities", "get", "Entity search (kind/kinds/q/state/work_id/content_unit_id/release_id/medium_id/parent_id/field/value/tags/original_language/has_pictures; field takes a published field code; a dotted path works only when every level is searchable and enabled, so the seed definitions expose top-level codes such as tags, duration, edition_date and barcode; items + total (browse: exact PostgreSQL count; text search: OpenSearch snapshot with total_relation=index_snapshot, has_more and next_cursor), plus 400 invalid_sort / invalid_order for a sort key or direction outside the whitelist, and 400 invalid_query_param / query_too_long / invalid_limit / invalid_offset / invalid_page / pagination_conflict for parameters that cannot be sent as given (see each parameter). Throttled to a 180-request-per-minute shared read/write default budget across catalog replicas, counted per account for a signed-in caller and per client IP otherwise; the live policy (group presets and per-account overrides, including unlimited) is readable at GET /admin/rate-limits. Every throttled response carries X-RateLimit-Limit, X-RateLimit-Remaining and X-RateLimit-Reset (seconds until the window resets), and an exhausted budget answers 429 rate_limited with Retry-After; a subject marked unlimited is not counted at all and therefore carries none of those headers, because there is no window to report)", "", "EntitySearchPage", ""}, {"/catalog/entities/stats", "get", "Entity counts grouped by state over the whole catalog.entities table, plus the real table total (requires catalog.lifecycle.manage; throttled to a 180/min shared read/write budget (admin is unlimited by default, overridable by account/admin-group policy), per account when signed in and otherwise per client IP). The list endpoint's shared filter always excludes deleted and merged rows — that visibility rule is deliberate and unchanged — so this aggregate is the only source for the tombstone count. states always carries active, deleted and merged; pending_pull_requests counts open pull requests, zero-filled when a state has no rows, and total equals count(*) of the table, so a key that is present with 0 is a fact while an absent key means the count was not obtained", "", "EntityStateCounts", "auth"},
 		{"/catalog/tags", "get", "Tag frequency aggregation over active entities' attributes.tags (q filter, limit<=500)", "", "Result", ""},
 		{"/catalog/releases/{id}/toc", "get", "Read a visible release with ordered media and tracks plus deduplicated visible expressions in one consistent snapshot (throttled to a 180/min shared read/write budget (admin is unlimited by default, overridable by account/admin-group policy), per account when signed in and otherwise per client IP; override per group or per account via /admin/rate-limits). Hidden child entities and their inclusions are omitted; each entity carries its own version and definition_etag identifies the live field contract. Errors: 400 invalid_id / not_release, 404 not_found", "", "ReleaseTOC", ""},
 		{"/catalog/entities/{id}/quality", "get", "Computed-on-demand quality audit of one visible entity (never stored, advisory only, never modifies data). status: complete = automated checks found no issue (UI label 无缺项; NOT human-verified), partial = structural gaps (warning issues), needs_verification = data problems such as dangling references (error issues). checks lists the check codes actually run: dangling_reference, missing_required_field, release_missing_media, medium_missing_tracks, track_empty_contents, track_position_gap (within one medium, top-level track positions must be contiguous from 1; starting at 2 or 0-based is partial). Required relationships are not checked (relationship rules carry no minimum). Shares the catalog 180/min read/write budget. Errors: 400 invalid_id, 404 not_found", "", "Result", ""},
 		{"/catalog/quality/batch", "post", "Batch quality audit, JSON body {ids:[...]} with 1-100 UUIDs in one repeatable-read snapshot; returns {reports:[...], errors:{id:invalid_id|not_found}} so one bad id never fails the batch. Same semantics as GET /catalog/entities/{id}/quality. Errors: 400 ids_required / too_many_ids. Shares the catalog 180/min read/write budget", "Result", "Result", ""},
-		{"/catalog/entities/{id}", "get", "Read visible entity", "", "Entity", ""}, {"/catalog/entities/{id}", "put", "Replace entity with optimistic version check. Changes to title, localized titles or external_links recheck identity candidates and require explicit reviewed_candidate_ids when candidates exist (409 identity_candidates_changed). Track reads omit inclusions of expressions the reader cannot see; a whole-entity PUT that removes or changes such hidden historical inclusions is forbidden unless the editor has catalog.lifecycle.manage, so a filtered read cannot erase uninspected facts. Whole-entity replacement, pictures included: the pictures array is ordered and **array order is the display order**, so pictures[0] is the manually selected current cover (the server never re-sorts). taken_at is image creation/publication metadata. Optional version_label (localized names), usage_period {begin,end} describes a historically or concurrently valid image version; dates accept YYYY, YYYY-MM, YYYY-MM-DD or RFC3339 and a definitely reversed period is rejected with invalid_picture_period. Open/overlapping periods are allowed and never auto-select the cover. Optional role must be an enabled code of the picture_role vocabulary (empty = undeclared), asset_id must be a storage-service asset UUID (self-hosted cover bound with binding_role=cover_image). Writes are refused with duplicate_picture (same URL twice on one entity), too_many_pictures (over 40, because every picture is copied into each revision snapshot) and invalid_term (or unknown_vocabulary when the picture_role vocabulary itself is gone) for a role code outside the vocabulary", "Edit", "Entity", "auth"}, {"/catalog/entities/{id}/resolve", "get", "Resolve merged identity", "", "Entity", ""}, {"/catalog/entities/{id}/identity", "get", "Resolve canonical identity plus historical aliases (X01 identity contract: canonical_id, aliases, entity; read-only, rewrites nothing)", "", "Result", ""}, {"/catalog/entities/identity", "post", "Batch identity resolution for cross-service alias aggregation (files/comments/favorites); JSON body {ids:[...]} up to 500, unresolvable identities (missing, invisible or redirect cycles) listed in missing; database, cancellation and timeout failures abort the entire request with a server error rather than returning partial items", "Result", "Result", ""}, {"/catalog/entities/{id}/lifecycle", "post", "Merge or retire (requires catalog.lifecycle.manage)", "LifecycleEdit", "Entity", "auth"},
+		{"/catalog/entities/{id}", "get", "Read visible entity", "", "Entity", ""}, {"/catalog/entities/{id}/resolve", "get", "Resolve merged identity", "", "Entity", ""}, {"/catalog/entities/{id}/identity", "get", "Resolve canonical identity plus historical aliases (X01 identity contract: canonical_id, aliases, entity; read-only, rewrites nothing)", "", "Result", ""}, {"/catalog/entities/identity", "post", "Batch identity resolution for cross-service alias aggregation (files/comments/favorites); JSON body {ids:[...]} up to 500, unresolvable identities (missing, invisible or redirect cycles) listed in missing; database, cancellation and timeout failures abort the entire request with a server error rather than returning partial items", "Result", "Result", ""}, {"/catalog/entities/{id}/lifecycle", "post", "Merge or retire (requires catalog.lifecycle.manage)", "LifecycleEdit", "Entity", "auth"},
 		{"/catalog/entities/{id}/revisions", "get", "Read visible revision history; historical track contents are filtered by current expression visibility, while stored revision snapshots remain unchanged", "", "Result", ""}, {"/catalog/entities/{id}/occurrences", "get", "Read own reverse inclusions, scoped by entity kind (expression=itself, content_unit=its expressions, work=its expressions); an inclusion is returned only when its expression, release, medium and track are visible, and returned track contents omit hidden expressions", "", "Result", ""}, {"/catalog/expressions/details", "post", "Batch expression details (entity + own inclusions + same-content-unit siblings + credit) for release pages; JSON body {ids:[...]}. Own and sibling inclusions require visible expressions and carrier chains; hidden expression IDs, locators and inclusion attributes are omitted", "Result", "Result", ""}, {"/catalog/external-databases", "get", "List active external authority database definitions", "", "Result", ""},
 		{"/catalog/entities/{id}/links", "get", "Read visible direct structural and semantic links from their canonical stores; each link has a direction relative to subject_id. The returned window includes endpoint entities, the live definitions ETag, and has_more. Fixed links are edited only through their owning entities. Pagination follows endpoint visibility and historical semantic attribute filtering (throttled to a 180/min shared read/write budget (admin is unlimited by default, overridable by account/admin-group policy), per account when signed in and otherwise per client IP; override per group or per account via /admin/rate-limits); this first version does not claim per-edge evidence or historical rule versions", "", "EntityLinksPage", ""},
-		{"/catalog/commits", "get", "List own submissions, or all submissions with catalog.review.manage; review_status, limit and offset filters", "", "Result", "auth"},
-		{"/catalog/commits/{id}/submission", "get", "Read frozen request, proposed diff and review result; owner or catalog.review.manage", "", "CommitSubmission", "auth"},
-		{"/catalog/commits/{id}/review", "post", "Approve or reject a sealed pending commit; requires catalog.review.manage. Approval revalidates the complete atomic batch, preserving its author. Conflicts leave the head unchanged and commit pending. Rejected ids cannot be reapplied.", "CommitReviewEdit", "CommitReceipt", "auth"},
-		{"/catalog/checkout", "post", "Read versioned entities and relations in one repeatable-read snapshot (0..100 IDs total). Includes definitions_etag, visibility-filtered Track contents; this is a working copy, not an identity query. Authentication required", "CheckoutRequest", "CatalogCheckout", "auth"},
-		{"/catalog/commits/preview", "post", "Validate an atomic commit through the real write path and return before/after changes, then roll back every fact, revision, notification and outbox event. Up to 100 ordered create/update operations; use explicit local references {\"$ref\":\"name\"}. Preview IDs are provisional. No durable receipt. Does not run quality diagnostics. Shares the catalog 180/min read/write budget", "CatalogCommit", "CommitReceipt", "auth"},
-		{"/catalog/commits", "post", "Submit up to 100 ordered operations (entity/relation create/update, relation delete, entity content). Without account review exemption, return 202 with applied=false, review_status=pending_review and a frozen diff; no facts, revisions, search events or notifications are changed. Bypass applies immediately with reviewed/exempt. GET /commits/{id} returns the same durable receipt (200) and never retries a write. Review requires catalog.review.manage and revalidates the immutable request. Atomically apply approved operations with evidence and definitions_etag. Entity creates and identity-changing entity updates require reviewed_candidate_ids (empty array allowed): formal/localized titles plus external IDs are rechecked within Work/Release/Medium scope under sorted identity-term locks; changed candidate sets return 409 identity_candidates_changed. @local:ref can identify a previously created candidate in this batch. Direct entity POST/PUT also recheck changed identity and allow explicit reviewed_candidate_ids; this review permits inspected distinct objects with shared titles, rather than imposing global semantic uniqueness. Canonical UUID commit id is a durable idempotency key: same owner+payload replays receipt; changed payload returns 409 idempotency_conflict. Updates carry authoritative base_version and granular JSON Pointer set/remove patches: disjoint edits merge, identical edits are no-ops, overlapping divergent edits return 409 commit_conflict with applied=false, a conflict summary (operation/id/base_version/current_version) and conflicts[] of FieldConflict (pointer, base, current, proposed, kind, suggestions: manual_merge|take_current|rebase_keep_mine); the same conflicts array is also top-level. Arrays are atomic; server-owned fields and scopes cannot be patched. For individual Track inclusions use action=content, content_change={action:add|replace|delete,position,inclusion?}; preserve invisible historical records. Direct entity/relation/content endpoints require catalog.review.bypass (otherwise commit_required). Any validation/conflict rolls back the entire batch. Schema changes return 409 definitions_conflict. Deadlines 15s, lock waits 3s; shares the catalog 180/min read/write budget. A lost response is recovered with GET /catalog/commits/{id}, not a new commit id. Evidence: sources is a keyed pool (every source needs a unique key) and every operation must declare source_refs [{source:key, pointers:[json-pointer]}]; each revision then stores only its referenced sources with their pointers, so batch evidence never mixes across entities. BREAKING: old commit format (sources without key, operations without source_refs) is rejected with no compatibility mode — clients must upgrade. Preview and push both reject an operation without source_refs as 400 with error=source_refs_required, applied=false and operation=<0-based index>; a source without key is source_key_required; a pool source no operation references is source_unused; related codes include unknown_source_ref, duplicate_source_ref, duplicate_source_key, invalid_source_pointer, source_pointer_not_in_document, source_pointer_not_patched. Historical revisions written before source_refs carry sources with scope=commit (whole-commit pool, not field-level evidence)", "CatalogCommit", "CommitReceipt", "auth"},
-		{"/catalog/commits/{id}", "get", "Read durable push receipt by UUID, only for its original actor; 404 if no committed receipt or not owned. A 404 during an in-flight push is not proof of failure; retry the same immutable payload/id to reconcile", "", "CommitReceipt", "auth"},
-		{"/catalog/entities/candidates", "post", "Read-only identity candidates from the authoritative PostgreSQL index in one repeatable-read snapshot, including canonical resolution. Required kind plus at least one criterion: titles (base/localized title and aliases; case/whitespace normalized), external_links [{kind,value}] or attributes [{key,value}] (exact scalar or scalar-list value). Criteria are OR, optional work_id restricts expression/content_unit, release_id restricts medium and medium_id restricts track scope. Optional context {creator,performer,label,catalog_number} only adjusts ranking/confidence/recommended_action — it NEVER filters candidates (same-name different-artist entities remain). Each item carries assessment {matched_fields,conflicts?,context_summary?,confidence,recommended_action:reuse|review|distinct}; advisory only, server never auto-merges. At most 20 criteria per category, values up to 256 bytes. limit=1000, max=1000; total is the exact matched-original count in this snapshot, complete=false when truncated. Never treat partial or unresolved canonical candidates as absence; narrow broad criteria instead of blindly retrying. Current caller visibility only, deleted originals excluded. items contain matched and canonical summaries; summaries must not be used for entity PUT. This read does not reserve identity or lock a later creation. Invalid kind/criteria/work_id/limit/context return 400; strict JSON; shares the catalog 180/min read/write budget. No OpenSearch dependency or offset pagination", "IdentityCandidateQuery", "IdentityCandidateResponse", ""},
+		{"/catalog/entities/candidates", "post", "Read-only identity candidates from the authoritative PostgreSQL index in one repeatable-read snapshot, including canonical resolution. Required kind plus at least one criterion: titles (base/localized title and aliases; case/whitespace normalized), external_links [{kind,value}] or attributes [{key,value}] (exact scalar or scalar-list value). Criteria are OR, optional work_id restricts expression/content_unit, release_id restricts medium and medium_id restricts track scope. Optional context {creator,performer,label,catalog_number} only adjusts ranking/confidence/recommended_action — it NEVER filters candidates (same-name different-artist entities remain). Each item carries assessment {matched_fields,conflicts?,context_summary?,confidence,recommended_action:reuse|review|distinct}; advisory only, server never auto-merges. At most 20 criteria per category, values up to 256 bytes. limit=1000, max=1000; total is the exact matched-original count in this snapshot, complete=false when truncated. Never treat partial or unresolved canonical candidates as absence; narrow broad criteria instead of blindly retrying. Current caller visibility only, deleted originals excluded. items contain matched and canonical summaries; summaries must not replace complete workspace entity documents. This read does not reserve identity or lock a later creation. Invalid kind/criteria/work_id/limit/context return 400; strict JSON; shares the catalog 180/min read/write budget. No OpenSearch dependency or offset pagination", "IdentityCandidateQuery", "IdentityCandidateResponse", ""},
 		{"/catalog/entities/candidates/batch", "post", "Batch identity candidate check (1-50 queries) in one repeatable-read snapshot. Body {queries:[{key, kind, titles?, external_links?, attributes?, work_id?, release_id?, medium_id?, limit?, context?}...]}; key is a client correlation id unique in the batch. Each query has the same semantics as POST /catalog/entities/candidates (context ranks only, never filters; assessment with recommended_action reuse|review|distinct; server never auto-merges). Per-query validation failures are returned as results[].error without failing the whole batch; empty queries or >50 return 400 queries_required / too_many_queries; duplicate/blank key return 400 duplicate_query_key / invalid_query_key. Shares the catalog 180/min read/write budget", "IdentityBatchRequest", "IdentityBatchResponse", ""},
 		{"/catalog/relationships/query", "post", "Query direct structural, semantic and definitions-declared nested attribute-reference neighbors for 1-20 entity UUIDs (deduplicated in request order) in one read-only repeatable-read snapshot with the definitions ETag. direction=both/outgoing/incoming; self-links are outgoing. rule_codes are validated against /catalog/definitions relationship_rules, including disabled historical rules; peer_kinds filter the other endpoint. Visibility and attribute-reference checks precede per-subject pagination (limit=25, max=100; offset>=0). Unavailable subjects have no page and are listed in unavailable_ids without distinguishing hidden from missing. attribute: rules carry field paths; references identify third-party typed entity references and via marks a third-party subject. entities contains only deduplicated RelationshipEntity summaries for visible subjects, returned endpoints and references, never full editable entities or recursive expansion. Strict JSON; invalid_ids/invalid_id/invalid_direction/invalid_rule_code/invalid_peer_kind/invalid_limit/invalid_offset return 400. Default shared read/write budget 180/min per account or client IP, counted atomically in PostgreSQL across replicas, overridable through the shared rate-limit policy; exhausted budgets return 429 with Retry-After", "RelationshipQueryRequest", "RelationshipQueryResponse", ""},
 		{"/catalog/compare", "get", "Compare two to six entities of any kinds (throttled to a 180/min shared read/write budget (admin is unlimited by default, overridable by account/admin-group policy), per account when signed in and otherwise per client IP; override per group or per account via /admin/rate-limits); releases/mediums include their containment tree", "", "Result", ""},
 		{"/exchange/entities/{id}", "get", "Export an entity snapshot for another instance, respecting caller visibility and current expression visibility in track contents; missing or invisible entities return 404, while database and internal decoding failures return a generic server error", "", "Entity", ""},
 		{"/external-sources", "get", "List external source adapters that can be queried (requires authentication). Each item is {id, names, category, icon, description, url_pattern} from the external authority database registry joined with the compiled adapter set (bangumi/dlsite/dmm). Read-only; never writes the catalog", "", "ExternalSourceList", "auth"},
 		{"/external-sources/query", "post", "Unified read-only external source query: op=search|lookup|detail. Returns raw upstream data plus FetchMeta {url, fetched_at, content_hash} and, for lookup/detail, the existing preview mapping. search needs q; lookup/detail need id or url_or_id. source may be empty/auto (detect from URL/ID for lookup/detail; search defaults to bangumi). DLsite/DMM search returns search_not_supported. Outbound fetches use a per-source wait throttle (~1 req/s), separate from the inbound API rate_budget. Never auto-imports, merges or modifies catalog entities. Requires authentication", "ExternalSourceQueryRequest", "ExternalSourceQueryResponse", "auth"},
-		{"/catalog/relations", "post", "Create contextual relation (requires catalog.relation.edit; supports Idempotency-Key, persistent: same key replays the first result across restarts/replicas, same key with a different payload returns 409 idempotency_conflict)", "RelationEdit", "Relation", "auth"}, {"/catalog/relations/{id}", "put", "Replace relation context (requires catalog.relation.edit)", "RelationEdit", "Relation", "auth"}, {"/catalog/relations/{id}", "delete", "Remove relation with evidence (requires catalog.relation.edit)", "LifecycleEdit", "Result", "auth"},
 		{"/admin/catalog-definitions", "get", "Read the single live definition configuration (requires catalog.definitions.manage)", "", "DefinitionConfig", "auth"},
 		{"/admin/catalog-definitions", "put", "Replace the live definition document after impact validation; expected_etag prevents stale edits (requires catalog.definitions.manage)", "DefinitionSave", "DefinitionConfig", "auth"},
 		{"/admin/catalog-definitions/impact", "post", "Replay a proposed definition document against current data without saving it (requires catalog.definitions.manage)", "DefinitionImpactRequest", "DefinitionImpact", "auth"},
 		{"/admin/rate-limits", "get", "Read the live API rate-limit policy (requires catalog.definitions.manage). One cached policy document drives every throttled route; counters are shared atomically through PostgreSQL across replicas; it lives outside /catalog/definitions on purpose, so changing a quota never invalidates the metadata contract or replays it over the catalog. Budgets resolve per request in this order: accounts (matched against the token subject, then preferred_username) → groups (the most permissive match wins, since groups only grant) → default_per_minute → the route's built-in budget. The reserved group code anonymous applies to requests with no token, whose subject is the client IP. A rule with unlimited=true skips counting entirely for that subject (no X-RateLimit-* headers are sent, because there is no window to report); an empty document means 'inherit every built-in budget', which is exactly the behaviour before this endpoint existed", "", "RateLimitConfig", "auth"},
-		{"/admin/rate-limits", "put", "Replace the live API rate-limit policy; expected_etag prevents stale edits (requires catalog.definitions.manage). The whole policy object is replaced, never merged: removing a group or account entry is how a previous override is withdrawn, and a partial merge would make deletion impossible to express. Errors: 409 version_conflict when expected_etag is missing or stale, 400 invalid_rate_limit for a negative or above-ceiling per_minute (over 1000000 is a typo, not generosity), a blank, whitespace-padded or over-long subject key, more than 200 group entries or 2000 account entries, and edit_note_required for a missing operational decision note. Sources are optional for runtime policy; when supplied, invalid_source and source_not_eligible apply. unlimited and per_minute may both be set, and unlimited wins; the effective budgets are visible in GET /admin/rate-limits without waiting for a restart", "RateLimitSave", "RateLimitConfig", "auth"},
+		{"/admin/rate-limits", "put", "Replace the live API rate-limit policy; expected_etag prevents stale edits (requires catalog.definitions.manage). The whole policy object is replaced, never merged: removing a group or account entry is how a previous override is withdrawn, and a partial merge would make deletion impossible to express. Errors: 409 version_conflict when expected_etag is missing or stale, 400 invalid_rate_limit for a negative or above-ceiling per_minute (over 1000000 is a typo, not generosity), a blank, whitespace-padded or over-long subject key, more than 200 group entries or 2000 account entries, and edit_note_required for a missing operational decision note. Sources are optional metadata; malformed provided entries return invalid_source. unlimited and per_minute may both be set, and unlimited wins; the effective budgets are visible in GET /admin/rate-limits without waiting for a restart", "RateLimitSave", "RateLimitConfig", "auth"},
 		{"/admin/external-databases", "get", "List external authority databases (requires catalog.definitions.manage)", "", "Result", "auth"},
 		{"/admin/external-databases", "post", "Create external authority database (requires catalog.definitions.manage); names must carry zh-CN, zh-TW, en-US and ja or ja-JP (four_locale_names_required)", "ExternalDatabase", "Result", "auth"},
 		{"/admin/external-databases/{code}", "put", "Update external authority database (requires catalog.definitions.manage); names must carry zh-CN, zh-TW, en-US and ja or ja-JP (four_locale_names_required)", "ExternalDatabase", "Result", "auth"},
@@ -396,48 +353,6 @@ func OpenAPI() map[string]any {
 	schemas["RelationshipQueryPage"].(map[string]any)["required"] = []string{"subject_id", "items", "limit", "offset", "has_more"}
 	queryOp := paths["/catalog/relationships/query"].(map[string]any)["post"].(map[string]any)
 	queryOp["responses"].(map[string]any)["429"] = map[string]any{"description": "rate_limited; Retry-After reports seconds until another request is allowed"}
-	if fc, ok := schemas["FieldConflict"].(map[string]any); ok {
-		fc["required"] = []string{"operation", "pointer", "base", "current", "proposed", "kind", "suggestions"}
-		fc["description"] = "One divergent JSON Pointer from a three-way merge on commit preview/push. base/current/proposed are decoded JSON values (null when the pointer was absent). remove=true means the proposed patch deletes the pointer."
-		props := fc["properties"].(map[string]any)
-		props["kind"] = map[string]any{"type": "string", "enum": []string{"concurrent_edit", "stale_base"}, "description": "concurrent_edit = both sides changed relative to base; stale_base = proposed equals base while current diverged"}
-		props["suggestions"] = map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"manual_merge", "take_current", "rebase_keep_mine"}}, "description": "Ordered resolution hints; agents/UI present them, never auto-apply"}
-		props["pointer"] = map[string]any{"type": "string", "description": "JSON Pointer of the conflicting field (e.g. /title, /attributes/catalog_number)"}
-		props["base"] = map[string]any{"description": "Value at base_version (null if absent)"}
-		props["current"] = map[string]any{"description": "Value on the server now (null if absent)"}
-		props["proposed"] = map[string]any{"description": "Value from the commit patch (null when remove=true or proposed absent)"}
-	}
-	if cc, ok := schemas["CommitConflict"].(map[string]any); ok {
-		cc["required"] = []string{"operation", "id", "base_version", "current_version", "conflicts"}
-		cc["description"] = "409 commit_conflict summary. conflicts replaces the former paths[] list (no compatibility shim)."
-	}
-	conflict409 := map[string]any{
-		"description": "commit_conflict: overlapping divergent edits. conflict is the operation summary; conflicts is the field-level array (also nested under conflict.conflicts). Suggestions are advisory only.",
-		"content": map[string]any{"application/json": map[string]any{"schema": map[string]any{
-			"type": "object", "required": []string{"error", "applied", "conflict", "conflicts"}, "additionalProperties": false,
-			"properties": map[string]any{
-				"error":     map[string]any{"type": "string", "enum": []string{"commit_conflict"}},
-				"applied":   map[string]any{"type": "boolean", "enum": []bool{false}},
-				"conflict":  map[string]any{"$ref": "#/components/schemas/CommitConflict"},
-				"conflicts": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/FieldConflict"}},
-			},
-		}}},
-	}
-	for _, path := range []string{"/catalog/commits", "/catalog/commits/preview"} {
-		op := paths[path].(map[string]any)["post"].(map[string]any)
-		op["description"] = "Structural and relation writes run concurrently under SERIALIZABLE, without a global graph lock. Only confirmed database rollbacks (40001/40P01/55P03) restart the whole transaction, up to 16 attempts within the deadline. Local release/identity/row coordination remains. Connection errors or uncertain COMMITs are never automatically replayed."
-		op["responses"].(map[string]any)["409"] = conflict409
-		op["responses"].(map[string]any)["503"] = map[string]any{
-			"description": "transaction_busy: this request rolled back after bounded attempts; Retry-After: 1. Retain the same commit ID/payload. This response cannot resolve uncertainty about an earlier same-ID request; recover its receipt first.",
-			"headers":     map[string]any{"Retry-After": map[string]any{"schema": map[string]any{"type": "integer", "minimum": 1}}},
-			"content": map[string]any{"application/json": map[string]any{"schema": map[string]any{
-				"type": "object", "required": []string{"error", "applied"}, "properties": map[string]any{
-					"error":   map[string]any{"type": "string", "enum": []string{"transaction_busy"}},
-					"applied": map[string]any{"type": "boolean", "enum": []bool{false}},
-				},
-			}}},
-		}
-	}
 	params := []any{}
 	for _, p := range []struct{ name, desc string }{
 		{"kind", "Single entity kind filter"},
@@ -494,37 +409,14 @@ func OpenAPI() map[string]any {
 		qp("credential", "Filter by credential name (PAT name, exact); empty returns all", false),
 		qp("limit", "Page size, default 50, max 100", false),
 	}
-	// 用户贡献视图：items 的形状随 tab 变化（创建项 vs 修订项），响应 schema 见 UserContributions。
-	// tab 之外的取值（topics/comments/audits 属互动服务）返回 400 invalid_tab，不静默给空列表。
-	add("/users/{id}/contributions", "get", "User contribution feed for the profile page: tab=all (default) mixes the entities the user created (works/releases/artists, judged by the version=1 revision actor snapshot) with their later edits (revision rows above version 1), revisions lists their entity revision rows with a field-level diff (diff keys follow the entity fields, attributes/translations drilled one level; ignored: id/version/created_by/created_at/updated_at), works/releases/artists list the entities the user created (artists maps to the agent kind); anonymous readable and filtered by the same visibility rules as entity lists (deleted/merged targets are excluded); pending submissions do not replace reviewed facts; page defaults to 1 and page_size to 20 (both clamped, never rejected); an unknown tab is 400 invalid_tab, while an id that is not a UUID is 404 not_found — the same status and code the account profile (GET /users/{id}) and the community stats (GET /users/{id}/stats) answer with, so the profile page degrades all three sources alike instead of showing a parameter error; the directory never reads the account tables, so an unknown user and a user without contributions are both a 200 with zero counts; stats carry five counts derived from the revision actor snapshot columns without joining the account tables: works_created/releases_created/artists_created count first revisions (version 1) on visible targets, revisions_count counts revision rows on visible targets, while audit_actions counts durable lifecycle management facts (entity.deleted / entity.merged, stored independently of the outbox) the user performed regardless of the target's current state, because deleting or merging removes the target from the visible set", "", "UserContributions", false)
+	add("/users/{id}/contributions", "get", "Public merged contributions for one UTC calendar year, with daily zero-filled counts and a paginated commit feed. A merged multi-object commit counts once. Frozen participant authors, the commit caller and the merger are separate. Each participant receives one contribution per merged commit. The calendar and merged statistics count only applied commits. Legacy revisions without a commit are explicitly marked in activity and counted separately; no private workspace, unmerged commit or pending pull request is exposed. Hidden targets are excluded; messages and pull-request identifiers are omitted when a commit also contains hidden objects. Invalid UUID returns 404 not_found; unknown users return an empty feed without reading account tables. Invalid year returns 400 invalid_year.", "", "UserContributions", false)
 	paths["/users/{id}/contributions"].(map[string]any)["get"].(map[string]any)["parameters"] = []any{
-		map[string]any{"name": "id", "in": "path", "required": true, "schema": map[string]any{"type": "string"}},
-		qp("tab", "all (default) | revisions | works | releases | artists", false),
-		qp("page", "Page number, default 1; values below 1 are clamped", false),
-		qp("page_size", "Items per page, default 20, max 100; out-of-range values fall back to 20", false),
+		map[string]any{"name": "id", "in": "path", "required": true, "schema": map[string]any{"type": "string", "format": "uuid"}},
+		map[string]any{"name": "year", "in": "query", "description": "UTC calendar year; defaults to the current UTC year. An invalid explicit value returns 400 invalid_year.", "schema": map[string]any{"type": "integer", "minimum": 1970, "maximum": 9999}},
+		map[string]any{"name": "page", "in": "query", "description": "Page number; values below one fall back to one.", "schema": map[string]any{"type": "integer", "minimum": 1, "default": 1}},
+		map[string]any{"name": "page_size", "in": "query", "description": "Items per page; missing or values outside 1..100 fall back to 20.", "schema": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
 	}
-	// 权限级别说明：OpenAPI security 只区分匿名/登录；管理端点的权限码在 summary 标注
-	// （见各 admin/* 与 lifecycle 行），与 http.go required(<code>) 对应，不另加字段。
-	// 机器凭据的操作权限与账号当前免审资格分开，组名不作为授权回退。
-	pushOp := paths["/catalog/commits"].(map[string]any)["post"].(map[string]any)
-	pushOp["description"] = "Review exemption follows the account's current permission groups. Sessions use catalog.review.bypass; PAT and MCP use the trusted catalog_review_exempt introspection field, independently of token operation scopes. Administrators' scoped editing keys apply immediately without a separate bypass scope. Read-only keys cannot create or edit even their owner's entries. Account permission changes follow the at-most-60-second introspection cache window."
-	pushOp["responses"].(map[string]any)["202"] = map[string]any{"description": "Accepted for review; current facts unchanged", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/CommitReceipt"}}}}
-	schemas["CommitSubmissionList"] = map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/CommitSubmission"}}
-	paths["/catalog/commits"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"] = map[string]any{"$ref": "#/components/schemas/CommitSubmissionList"}
-	paths["/catalog/commits"].(map[string]any)["get"].(map[string]any)["parameters"] = []any{
-		map[string]any{"name": "review_status", "in": "query", "description": "Omit to list all visible submissions; an unknown status returns 400 invalid_review_status", "schema": map[string]any{"type": "string", "enum": []string{"pending_review", "reviewed"}}},
-		map[string]any{"name": "limit", "in": "query", "description": "Page size; absent, invalid or out-of-range values fall back to 20", "schema": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
-		map[string]any{"name": "offset", "in": "query", "description": "Rows to skip; invalid or negative values fall back to zero", "schema": map[string]any{"type": "integer", "minimum": 0, "default": 0}},
-	}
-	reviewSchema := schemas["CommitReviewEdit"].(map[string]any)
-	reviewSchema["required"] = []string{"decision"}
-	reviewProps := reviewSchema["properties"].(map[string]any)
-	reviewProps["decision"] = map[string]any{"type": "string", "enum": []string{"approve", "reject"}}
-	reviewProps["note"] = map[string]any{"type": "string", "maxLength": 2000, "description": "Optional review note; trimmed before validation"}
-	receiptProps := schemas["CommitReceipt"].(map[string]any)["properties"].(map[string]any)
-	receiptProps["review_status"] = map[string]any{"type": "string", "enum": []string{"pending_review", "reviewed"}}
-	receiptProps["review_decision"] = map[string]any{"type": "string", "enum": []string{"pending", "approved", "rejected", "exempt", "legacy"}}
-	paths["/catalog/commits/{id}"].(map[string]any)["get"].(map[string]any)["summary"] = "Read the durable commit receipt; only its author or catalog.review.manage. A missing receipt during an in-flight push does not prove failure; recover the same id and payload."
+	addCollaborationOpenAPI(paths, schemas, schema)
 
 	for path, item := range publicSourcePaths() {
 		paths[path] = item
@@ -546,6 +438,7 @@ func OpenAPI() map[string]any {
 			map[string]any{"url": "/api", "description": "标准统一主干 API"},
 		},
 		"tags": []any{
+			map[string]any{"name": "Collaboration", "description": "私有副本、不可变提交、推送、三方合并和合并请求"},
 			map[string]any{"name": "Catalog", "description": "核心实体编目与查询 (Work, Release, Medium, Track, ContentUnit, Agent, Collection)"},
 			map[string]any{"name": "Definitions", "description": "无代码动态元数据类型、属性与关系定义管理"},
 			map[string]any{"name": "Notifications", "description": "站内通知：本人收件箱、未读数角标、标记已读，以及服务间投递（互动服务 → 目录）"},
@@ -556,8 +449,9 @@ func OpenAPI() map[string]any {
 		"components": map[string]any{
 			"schemas": schemas,
 			"securitySchemes": map[string]any{
-				"session": map[string]any{"type": "apiKey", "in": "cookie", "name": "mf_session"},
-				"bearer":  map[string]any{"type": "http", "scheme": "bearer"},
+				"session":        map[string]any{"type": "apiKey", "in": "cookie", "name": "mf_session"},
+				"bearer":         map[string]any{"type": "http", "scheme": "bearer"},
+				"storageService": map[string]any{"type": "http", "scheme": "bearer", "description": "Dedicated shared storage/catalog lifecycle service secret; no user credential is accepted."},
 			},
 		},
 	}

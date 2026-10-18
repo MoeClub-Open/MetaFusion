@@ -269,7 +269,7 @@ func (s *Store) SaveRateLimitPolicy(ctx context.Context, p RateLimitPolicy, expe
 			return fmt.Errorf("edit_note_required")
 		}
 		if len(sources) > 0 {
-			if err := validateSources(note, sources); err != nil {
+			if err := validateSources(sources); err != nil {
 				return err
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/testutil"
 )
 
@@ -203,20 +204,39 @@ func TestPostgresAccountRoutesAreGone(t *testing.T) {
 	// 目录自己的写接口仍然要求身份，且身份只来自账号服务签发的 RS256 令牌。
 	key := testKey(t)
 	f.s.Verifier = testVerifier(t, key)
-	if res := request(http.MethodPost, "/api/catalog/entities", `{"kind":"work","title":"匿名写入"}`, ""); res.Code != http.StatusUnauthorized {
-		t.Fatalf("anonymous write = %d, want 401", res.Code)
+	if res := request(http.MethodPost, "/api/catalog/workspaces", `{"name":"Anonymous copy"}`, ""); res.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous workspace = %d, want 401", res.Code)
 	}
-	// 写入必须用真实信封（entity + expected_version + edit_note + sources）：
-	// 裸 entity 会被严格解析拒掉，这正是这一条要守住的行为。
-	body := `{"entity":{"kind":"work","title":"验签写入","translations":{"en":{"title":"verified write"}}},"expected_version":0,"edit_note":"acceptance fixture","sources":[{"kind":"url","citation":"acceptance fixture","url":"https://example.org/fixture"}]}`
 	editToken := signTestToken(t, key, func(c Claims) Claims {
 		c.Permissions = []string{PermissionEntityEdit, PermissionReviewBypass}
 		return c
 	})
-	if res := request(http.MethodPost, "/api/catalog/entities", body, editToken); res.Code != http.StatusOK {
-		t.Fatalf("authenticated write = %d: %s", res.Code, res.Body.String())
+	call := func(method, path string, input, output any) {
+		t.Helper()
+		res := request(method, path, encode(input), editToken)
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s %s = %d: %s", method, path, res.Code, res.Body.String())
+		}
+		if output != nil {
+			if err := json.Unmarshal(res.Body.Bytes(), output); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
-	if res := request(http.MethodPost, "/api/catalog/entities", `{"kind":"work","title":"裸实体"}`, editToken); res.Code != http.StatusBadRequest {
+	var workspace Workspace
+	call(http.MethodPost, "/api/catalog/workspaces", WorkspaceCreate{Name: "Verified working copy"}, &workspace)
+	var saved WorkspaceChangesResult
+	call(http.MethodPut, "/api/catalog/workspaces/"+workspace.ID+"/changes", WorkspaceChanges{ExpectedVersion: workspace.Version, Operations: []WorkspaceOperation{{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"Verified write"}`)}}}, &saved)
+	var commit CollaborationCommit
+	call(http.MethodPost, "/api/catalog/workspaces/"+workspace.ID+"/commits", WorkspaceCommitCreate{ID: uuid.NewString(), ExpectedVersion: saved.Workspace.Version, Message: "Verified catalog contribution"}, &commit)
+	call(http.MethodGet, "/api/catalog/workspaces/"+workspace.ID, nil, &workspace)
+	var pushed WorkspacePushResult
+	call(http.MethodPost, "/api/catalog/workspaces/"+workspace.ID+"/push", WorkspacePush{ExpectedVersion: workspace.Version, ExpectedHead: commit.ID}, &pushed)
+	if !pushed.Applied {
+		t.Fatal("authorized push did not apply")
+	}
+	if res := request(http.MethodPost, "/api/catalog/workspaces", `{"kind":"work","title":"Bare entity"}`, editToken); res.Code != http.StatusBadRequest {
 		t.Fatalf("bare entity payload = %d, want 400", res.Code)
 	}
+
 }

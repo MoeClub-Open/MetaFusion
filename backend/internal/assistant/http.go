@@ -387,7 +387,7 @@ func (h HTTP) chat(c *gin.Context) {
 		c.JSON(200, response)
 		return
 	}
-	// Even a later upstream failure must return the actual commit receipts and
+	// Even a later upstream failure must return the actual push receipts and
 	// charged usage; hiding successful edits behind a generic error is unsafe.
 	c.JSON(200, response)
 }

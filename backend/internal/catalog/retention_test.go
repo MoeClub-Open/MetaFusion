@@ -27,19 +27,18 @@ func retentionFixturePolicy(t *testing.T) RetentionPolicy {
 
 func TestRetentionPolicyConfiguration(t *testing.T) {
 	p := retentionFixturePolicy(t)
-	if p.OutboxDays != 7 || p.CommitRequestDays != 90 || p.Interval != time.Hour ||
+	if p.OutboxDays != 7 || p.Interval != time.Hour ||
 		len(p.RequiredConsumers) != 1 || p.RequiredConsumers[0] != openSearchConsumer {
 		t.Fatalf("defaults: %+v", p)
 	}
-	values := map[string]string{"CATALOG_OUTBOX_RETENTION_DAYS": "0", "CATALOG_COMMIT_REQUEST_RETENTION_DAYS": "0", "CATALOG_RETENTION_INTERVAL_SECONDS": "60"}
+	values := map[string]string{"CATALOG_OUTBOX_RETENTION_DAYS": "0", "CATALOG_RETENTION_INTERVAL_SECONDS": "60"}
 	p, err := RetentionPolicyFromEnv(func(key string) string { return values[key] })
-	if err != nil || p.OutboxDays != 0 || p.CommitRequestDays != 0 || p.Interval != time.Minute {
+	if err != nil || p.OutboxDays != 0 || p.Interval != time.Minute {
 		t.Fatalf("forever retention: %+v %v", p, err)
 	}
 	for key, bad := range map[string]string{
-		"CATALOG_OUTBOX_RETENTION_DAYS":         "-1",
-		"CATALOG_COMMIT_REQUEST_RETENTION_DAYS": "36501",
-		"CATALOG_RETENTION_INTERVAL_SECONDS":    "59",
+		"CATALOG_OUTBOX_RETENTION_DAYS":      "-1",
+		"CATALOG_RETENTION_INTERVAL_SECONDS": "59",
 	} {
 		t.Run(key, func(t *testing.T) {
 			if _, err := RetentionPolicyFromEnv(func(k string) string {
@@ -133,9 +132,9 @@ func TestPostgresRetentionConsumersAndLifecycleFacts(t *testing.T) {
 	if _, err := f.s.DB.ExecContext(ctx, "DELETE FROM catalog.entities WHERE id=$1", deleted.ID); err != nil {
 		t.Fatal(err)
 	}
-	stats, err := f.s.UserContributions(ctx, f.u.ID, "all", 1, 20, &f.u)
-	if err != nil || stats.Stats.AuditActions != 2 {
-		t.Fatalf("delete and merge actions must survive queue cleanup: %+v %v", stats.Stats, err)
+	var lifecycleActions int64
+	if err := f.s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.lifecycle_actions WHERE actor_id=$1", f.u.ID).Scan(&lifecycleActions); err != nil || lifecycleActions != 2 {
+		t.Fatalf("delete and merge actions must survive queue cleanup: %d %v", lifecycleActions, err)
 	}
 	var orphans int
 	if err := f.s.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.deliveries d LEFT JOIN catalog.outbox o ON o.id=d.event_id WHERE o.id IS NULL`).Scan(&orphans); err != nil || orphans != 0 {
@@ -143,61 +142,57 @@ func TestPostgresRetentionConsumersAndLifecycleFacts(t *testing.T) {
 	}
 }
 
-func TestPostgresRetentionPreservesCommitAndCreateReplay(t *testing.T) {
+func TestPostgresRetentionPreservesWorkingCopyAndCommitHistory(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	in := fixtureCommit(f, CommitOperation{Target: "entity", Action: "create", Ref: "w",
+	changes, commit, w := prepareWorkspace(t, f.s, f.u, WorkspaceOperation{Target: "entity", Action: "create", Ref: "w",
 		Document: json.RawMessage(`{"kind":"work","title":"retention push"}`)})
-	receipt, err := f.s.PushCommit(ctx, in, f.u, false)
-	if err != nil {
+	out, err := f.s.PushWorkspace(ctx, w.ID, WorkspacePush{ExpectedVersion: w.Version, ExpectedHead: *w.HeadCommitID}, f.u)
+	if err != nil || !out.Applied {
+		t.Fatalf("push: %+v %v", out, err)
+	}
+	merged, err := f.s.GetCollaborationCommit(ctx, commit.ID, f.u)
+	if err != nil || merged.MergedAt == nil || len(merged.Changes) != 1 {
+		t.Fatalf("merged commit: %+v %v", merged, err)
+	}
+	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.commits SET created_at=now()-interval '100 days' WHERE id=$1`, commit.ID); err != nil {
 		t.Fatal(err)
 	}
-	edit := Edit{Entity: Entity{Kind: "work", Title: "retention idempotent", State: "active"},
-		EditNote: "create guard", Sources: fixtureSources()}
-	edit.idempotency = &IdempotencyClaim{Operation: IdempotencyOpEntityCreate, UserID: f.u.ID, Key: "retention-key", Hash: requestHash(edit)}
-	created, err := f.s.Save(ctx, edit, f.u)
-	if err != nil {
+	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.workspaces SET created_at=now()-interval '100 days',updated_at=now()-interval '100 days' WHERE id=$1`, w.ID); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"commits", "idempotency_keys"} {
-		if _, err := f.s.DB.ExecContext(ctx, "UPDATE catalog."+table+" SET created_at=now()-interval '100 days'"); err != nil {
-			t.Fatal(err)
-		}
+	beforeCleanup, err := f.s.GetCollaborationCommit(ctx, commit.ID, f.u)
+	if err != nil {
+		t.Fatal(err)
 	}
 	p := retentionFixturePolicy(t)
-	p.OutboxDays, p.CommitRequestDays = 0, 0
-	if result, err := f.s.CleanupRetention(ctx, p); err != nil || result.CommitRequests != 0 {
-		t.Fatalf("forever request policy: %+v %v", result, err)
+	if _, err := f.s.CleanupRetention(ctx, p); err != nil {
+		t.Fatal(err)
 	}
-	p.CommitRequestDays = 90
-	if result, err := f.s.CleanupRetention(ctx, p); err != nil || result.CommitRequests != 1 {
-		t.Fatalf("only old request payload pruned: %+v %v", result, err)
+	var request string
+	if err := f.s.DB.QueryRowContext(ctx, `SELECT request::text FROM catalog.commits WHERE id=$1`, commit.ID).Scan(&request); err != nil || request == "null" {
+		t.Fatalf("immutable commit request was erased: %s %v", request, err)
 	}
-	var raw string
-	if err := f.s.DB.QueryRowContext(ctx, `SELECT request::text FROM catalog.commits WHERE id=$1`, in.ID).Scan(&raw); err != nil || raw != "null" {
-		t.Fatalf("old request remains: %s %v", raw, err)
+	got, err := f.s.GetCollaborationCommit(ctx, commit.ID, f.u)
+	if err != nil || encode(got) != encode(beforeCleanup) {
+		t.Fatalf("commit history changed during cleanup: %+v %v", got, err)
 	}
-	for _, read := range []func() (CommitReceipt, error){
-		func() (CommitReceipt, error) { return f.s.PushCommit(ctx, in, f.u, false) },
-		func() (CommitReceipt, error) { return f.s.CommitReceipt(ctx, in.ID, f.u) },
-	} {
-		got, err := read()
-		if err != nil || encode(got) != encode(receipt) {
-			t.Fatalf("old commit receipt/replay changed: %+v %v", got, err)
-		}
+	in := WorkspaceCommitCreate{ID: commit.ID, ExpectedVersion: changes.Workspace.Version, Message: commit.Message}
+	replayed, err := f.s.CommitWorkspace(ctx, w.ID, in, f.u)
+	if err != nil || encode(replayed) != encode(got) {
+		t.Fatalf("immutable commit replay changed: %+v %v", replayed, err)
 	}
-	mutated := in
-	mutated.EditNote = "different content"
-	if _, err := f.s.PushCommit(ctx, mutated, f.u, false); !errors.Is(err, errIdempotencyConflict) {
+	in.Message = "different content"
+	if _, err := f.s.CommitWorkspace(ctx, w.ID, in, f.u); !errors.Is(err, errIdempotencyConflict) {
 		t.Fatalf("old ID lost conflict guard: %v", err)
 	}
-	replay, err := f.s.Save(ctx, edit, f.u)
-	if err != nil || replay.ID != created.ID {
-		t.Fatalf("old create key lost replay: %+v %v", replay, err)
+	retained, err := f.s.GetWorkspace(ctx, w.ID, f.u)
+	if err != nil || len(retained.Objects) != 1 || retained.HeadCommitID == nil || *retained.HeadCommitID != commit.ID {
+		t.Fatalf("working copy disappeared: %+v %v", retained, err)
 	}
 	var revisions int
-	if err := f.s.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.revisions WHERE commit_id=$1`, in.ID).Scan(&revisions); err != nil || revisions != 1 {
-		t.Fatalf("commit provenance changed: %d %v", revisions, err)
+	if err := f.s.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.revision_commits WHERE commit_id=$1`, commit.ID).Scan(&revisions); err != nil || revisions != 1 {
+		t.Fatalf("contribution provenance changed: %d %v", revisions, err)
 	}
 }
 

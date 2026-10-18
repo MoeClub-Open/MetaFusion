@@ -9,6 +9,7 @@ import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { FieldValue } from "./TemplateAttributeSections";
 import { revisionChanges } from "./revisionData";
 import { diffText } from "./revisionDiff";
+import { catalogPicturePreviewUrl, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
 
 const removedPanel = "bg-rose-500/[0.07] dark:bg-rose-500/10";
 const addedPanel = "bg-emerald-500/[0.07] dark:bg-emerald-500/10";
@@ -23,13 +24,14 @@ function InlineChanges({ before, after, side }: { before: string; after: string;
 }
 
 // 所有取值来自两份历史文档；definitions 只解释显示名与类型，不请求当前实体填补旧版本。
-export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definitions, kinds = {} }: {
+export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definitions, kinds = {}, assetContext }: {
   before: unknown;
   after: unknown;
   oldLabel: string;
   newLabel: string;
   definitions?: DynamicDefinitions | null;
   kinds?: KindMap;
+  assetContext?: CatalogAssetContext;
 }) {
   const { t, tr, locale } = useI18n();
   const prefix = `revision-diff-${useId().replace(/:/g, "")}`;
@@ -103,7 +105,7 @@ export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definiti
     if (key.endsWith("_id")) return fieldValue(key, value, reference(key));
     if (key === "pictures" && Array.isArray(value)) return value.length ? <div className="flex flex-wrap items-start gap-4">{value.map((picture, index) => {
       if (!picture || typeof picture !== "object" || Array.isArray(picture)) return <span key={index}>{fieldValue("", picture)}</span>;
-      const url = typeof picture?.url === "string" ? picture.url : "";
+      const url = catalogPicturePreviewUrl(picture, assetContext);
       const src = safeExternalAuthorityURL(url) || (/^\/(?!\/)/.test(url) ? url : "");
       return <figure key={index} className="min-w-0 max-w-full space-y-2">
         {src && <a href={src} target="_blank" rel="noopener noreferrer"><img src={src} alt={resolveLocalizedName(picture.caption, locale, "")}

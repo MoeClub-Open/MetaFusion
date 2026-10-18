@@ -88,7 +88,8 @@ function notificationHref(n: Notification): string | null {
     case "entity.included":
     case "entity.review_approved":
     case "entity.review_rejected": {
-      if (n.subject_type === "commit") return `/submissions/${encodeURIComponent(n.subject_id)}`;
+      if (n.subject_type === "pull_request") return `/pull-requests/${encodeURIComponent(n.subject_id)}`;
+      if (n.subject_type === "commit") return `/commits/${encodeURIComponent(n.subject_id)}`;
       const entityId = payloadText(payload, "entity_id") || (n.subject_type === "entity" ? n.subject_id : "");
       if (!entityId) return null;
       return catalogEntityHref(entityId);

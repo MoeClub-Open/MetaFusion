@@ -36,8 +36,6 @@ export const BINDING_ROLE_PRESETS = [
   "scans",
   "subtitle",
   "ebook",
-  // 自托管封面：目录侧 pictures[].asset_id 指向的就是这条绑定对应的资产。
-  "cover_image",
 ] as const;
 
 /**
@@ -166,9 +164,10 @@ export function initiateUpload(payload: {
   sha256Hash: string;
   mimeType: string;
   bindingRole: string;
-}): Promise<InitiateUploadResponse> {
+}, signal?: AbortSignal): Promise<InitiateUploadResponse> {
   return fetchApi<InitiateUploadResponse>("/storage/upload/initiate", {
     method: "POST",
+    signal,
     body: JSON.stringify({
       file_name: payload.fileName,
       file_size: payload.fileSize,
@@ -184,7 +183,8 @@ export function initiateUpload(payload: {
 export function completeUpload(
   assetId: string,
   uploadId?: string,
-  parts?: UploadedPart[]
+  parts?: UploadedPart[],
+  signal?: AbortSignal
 ): Promise<{ asset: StorageAsset; already_complete?: boolean }> {
   const body: Record<string, unknown> = { asset_id: assetId };
   if (uploadId) body.upload_id = uploadId;
@@ -192,6 +192,7 @@ export function completeUpload(
   if (uploadId && parts && parts.length > 0) body.parts = parts;
   return fetchApi<{ asset: StorageAsset; already_complete?: boolean }>("/storage/upload/complete", {
     method: "POST",
+    signal,
     body: JSON.stringify(body),
   });
 }

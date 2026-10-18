@@ -10,7 +10,7 @@ import (
 )
 
 func TestAssistantToolsRefuseCallerImpersonation(t *testing.T) {
-	for _, name := range []string{"catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_checkout", "catalog_commit", "catalog_definitions", "external_sources", "external_source_query", "public_fetch", "public_wiki"} {
+	for _, name := range []string{"catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_workspace_create", "catalog_workspace_list", "catalog_workspace_get", "catalog_workspace_edit", "catalog_workspace_checkout", "catalog_workspace_stage", "catalog_workspace_members", "catalog_workspace_commit", "catalog_workspace_commits", "catalog_workspace_push", "catalog_workspace_rebase", "catalog_pull_request_create", "catalog_pull_request_list", "catalog_pull_request_get", "catalog_pull_request_edit", "catalog_pull_request_merge", "catalog_commit_get", "catalog_definitions", "external_sources", "external_source_query", "public_fetch", "public_wiki"} {
 		t.Run(name, func(t *testing.T) {
 			_, err := runCatalogTool(context.Background(), &catalog.Store{}, catalog.User{ID: "caller"}, name, json.RawMessage(`{"actor_id":"other","permissions":["*"]}`))
 			if err == nil || err.Error() != "invalid_tool_arguments" {
@@ -20,55 +20,21 @@ func TestAssistantToolsRefuseCallerImpersonation(t *testing.T) {
 	}
 }
 
-func TestAssistantCommitDoesNotElevateOAuthOrAnonymous(t *testing.T) {
-	for _, user := range []catalog.User{
-		{},
-		{ID: "oauth", Permissions: []string{"*"}, IsThirdParty: true},
-		{ID: "oauth", Permissions: []string{catalog.PermissionEntityEdit, catalog.PermissionReviewBypass}, IsThirdParty: true},
-	} {
-		_, err := runCatalogTool(context.Background(), &catalog.Store{}, user, "catalog_commit", json.RawMessage(`{}`))
-		if err == nil || err.Error() != "forbidden" {
-			t.Fatalf("write accepted unauthorized identity %+v: %v", user, err)
+func TestAssistantWorkspaceWritesDoNotElevateOAuthOrAnonymous(t *testing.T) {
+	for _, user := range []catalog.User{{}, {ID: "oauth", Permissions: []string{"*"}, IsThirdParty: true}} {
+		for _, name := range []string{"catalog_workspace_create", "catalog_workspace_stage", "catalog_workspace_commit", "catalog_workspace_push", "catalog_workspace_rebase", "catalog_pull_request_create", "catalog_pull_request_merge"} {
+			_, err := runCatalogTool(context.Background(), &catalog.Store{}, user, name, json.RawMessage(`{}`))
+			if err == nil || err.Error() != "forbidden" {
+				t.Fatalf("%s elevated %+v: %v", name, user, err)
+			}
 		}
 	}
 }
 
-func TestAssistantCommitPreservesExplicitEvidenceContract(t *testing.T) {
-	base := catalog.CatalogCommit{
-		ID: "6eb26bfe-bbf7-4124-8669-5048e38f50e8", DefinitionsETag: "known-etag", EditNote: "Correct the original title",
-		Sources:    []catalog.Source{{Key: "publisher", Kind: "url", Citation: "Publisher's product page", URL: "https://publisher.example/product"}},
-		Operations: []catalog.CommitOperation{{Target: "entity", Action: "create", Ref: "work", Document: json.RawMessage(`{"kind":"work","title":"Original title"}`), ReviewedCandidateIDs: []string{}}},
-	}
-	for _, preview := range []bool{false, true} {
-		for _, test := range []struct {
-			name string
-			edit func(*catalog.CatalogCommit)
-			want string
-		}{
-			{"missing operation source refs", func(in *catalog.CatalogCommit) { in.Operations[0].SourceRefs = nil }, "source_refs_required"},
-			{"unknown source key", func(in *catalog.CatalogCommit) {
-				in.Operations[0].SourceRefs = []catalog.SourceRef{{Source: "invented"}}
-			}, "unknown_source_ref"},
-			{"missing source key", func(in *catalog.CatalogCommit) {
-				in.Sources[0].Key = ""
-				in.Operations[0].SourceRefs = []catalog.SourceRef{{Source: "publisher"}}
-			}, "source_key_required"},
-		} {
-			t.Run(test.name, func(t *testing.T) {
-				// Round-trip for independent slices between cases.
-				raw, _ := json.Marshal(base)
-				var commit catalog.CatalogCommit
-				if err := json.Unmarshal(raw, &commit); err != nil {
-					t.Fatal(err)
-				}
-				test.edit(&commit)
-				args, _ := json.Marshal(map[string]any{"commit": commit, "preview": preview})
-				_, err := runCatalogTool(context.Background(), &catalog.Store{}, catalog.User{ID: "caller"}, "catalog_commit", args)
-				if err == nil || err.Error() != test.want {
-					t.Fatalf("expected catalog evidence rejection %q, got %v", test.want, err)
-				}
-			})
-		}
+func TestAssistantRemovedDirectCommitToolCannotBeInvoked(t *testing.T) {
+	_, err := runCatalogTool(context.Background(), &catalog.Store{}, catalog.User{ID: "caller"}, "catalog_commit", json.RawMessage(`{}`))
+	if err == nil || err.Error() != "unknown_tool" {
+		t.Fatalf("old direct mutation path remains: %v", err)
 	}
 }
 
@@ -116,6 +82,32 @@ func TestAssistantToolOversizeOutputCannotBecomeEditableSnapshot(t *testing.T) {
 	object, ok := result.(map[string]any)
 	if !ok || object["error"] != "tool_output_too_large" || object["complete"] != false || object["body"] != nil {
 		t.Fatalf("oversize response looked like a complete snapshot: %#v", result)
+	}
+}
+
+func TestAssistantLargeMutationRetainsAuthoritativeOutcome(t *testing.T) {
+	large := json.RawMessage(`{"body":"` + strings.Repeat("x", maxAssistantToolOutput) + `"}`)
+	workspace := catalog.Workspace{ID: "copy", Version: 7, Objects: []catalog.WorkspaceObject{{Document: large}}}
+	commit := catalog.CollaborationCommit{ID: "commit", Changes: []catalog.CommitObject{{After: large}}}
+	value, err := boundedAssistantToolOutput(catalog.WorkspacePushResult{Applied: true, Workspace: &workspace, Commits: []catalog.CollaborationCommit{commit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := value.(map[string]any)
+	receipt := wrapped["receipt"].(catalog.WorkspacePushResult)
+	if !receipt.Applied || receipt.Workspace.ID != "copy" || receipt.Workspace.Version != 7 || receipt.Commits[0].ID != "commit" || wrapped["editable_snapshot"] != false {
+		t.Fatalf("large push lost its merge receipt: %#v", value)
+	}
+	if len(receipt.Workspace.Objects) != 0 || len(receipt.Commits[0].Changes) != 0 {
+		t.Fatal("large snapshots were not omitted")
+	}
+	value, err = boundedAssistantToolOutput(catalog.WorkspacePushResult{Applied: true, Commits: []catalog.CollaborationCommit{commit}})
+	if err != nil || value.(map[string]any)["receipt"].(catalog.WorkspacePushResult).Workspace != nil {
+		t.Fatalf("reviewer receipt gained a private workspace: %#v %v", value, err)
+	}
+	value, err = boundedAssistantToolOutput(catalog.WorkspaceChangesResult{Workspace: workspace, Refs: map[string]string{"new": "stable-id"}})
+	if err != nil || value.(map[string]any)["workspace"].(catalog.Workspace).Version != 7 || value.(map[string]any)["refs"].(map[string]string)["new"] != "stable-id" {
+		t.Fatalf("large staging reply lost CAS or stable IDs: %#v %v", value, err)
 	}
 }
 
@@ -170,26 +162,32 @@ func TestAssistantToolDefinitionsHaveStrictTopLevelArguments(t *testing.T) {
 			t.Fatalf("%s is not serializable: %v", name, err)
 		}
 	}
-	for _, name := range []string{"catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_checkout", "catalog_commit", "catalog_definitions", "external_sources", "external_source_query", "public_fetch", "public_wiki"} {
+	for _, name := range []string{"catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_workspace_create", "catalog_workspace_list", "catalog_workspace_get", "catalog_workspace_edit", "catalog_workspace_checkout", "catalog_workspace_stage", "catalog_workspace_members", "catalog_workspace_commit", "catalog_workspace_commits", "catalog_workspace_push", "catalog_workspace_rebase", "catalog_pull_request_create", "catalog_pull_request_list", "catalog_pull_request_get", "catalog_pull_request_edit", "catalog_pull_request_merge", "catalog_commit_get", "catalog_definitions", "external_sources", "external_source_query", "public_fetch", "public_wiki"} {
 		if !seen[name] {
 			t.Fatalf("missing required tool: %s", name)
 		}
 	}
-	function := assistantToolDefinitions()[5]["function"].(map[string]any)
-	params := function["parameters"].(map[string]any)["properties"].(map[string]any)
-	commit := params["commit"].(map[string]any)["properties"].(map[string]any)
-	operation := commit["operations"].(map[string]any)["items"].(map[string]any)
-	properties := operation["properties"].(map[string]any)
-	actions := properties["action"].(map[string]any)["enum"].([]string)
+	if seen["catalog_commit"] {
+		t.Fatal("old direct commit tool remains")
+	}
+	var stage map[string]any
+	for _, definition := range assistantToolDefinitions() {
+		fn := definition["function"].(map[string]any)
+		if fn["name"] == "catalog_workspace_stage" {
+			stage = fn["parameters"].(map[string]any)
+		}
+	}
+	properties := stage["properties"].(map[string]any)
+	operation := properties["operations"].(map[string]any)["items"].(map[string]any)
+	opProperties := operation["properties"].(map[string]any)
+	actions := opProperties["action"].(map[string]any)["enum"].([]string)
 	if strings.Join(actions, ",") != "create,update,delete,content" {
-		t.Fatalf("commit schema diverges from catalog action vocabulary: %v", actions)
+		t.Fatalf("invalid operation vocabulary: %v", actions)
 	}
-	if properties["source_refs"].(map[string]any)["minItems"] != 1 {
-		t.Fatal("commit schema omitted mandatory per-operation evidence")
+	if opProperties["source_refs"] != nil || opProperties["reviewed_candidate_ids"] != nil {
+		t.Fatal("staging still requires an evidence workflow")
 	}
-	if len(properties["reviewed_candidate_ids"].(map[string]any)["items"].(map[string]any)["anyOf"].([]any)) != 2 {
-		t.Fatal("commit schema does not accept UUID and same-commit local candidate references")
-	}
+
 }
 
 func TestAssistantPublicSourceExcerptsPreserveProvenance(t *testing.T) {

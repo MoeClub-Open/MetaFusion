@@ -8,6 +8,7 @@ import (
 )
 
 func TestOpenAPIRouteCoverage(t *testing.T) {
+	t.Setenv("STORAGE_CATALOG_LIFECYCLE_SECRET", "openapi-contract-test")
 	doc := OpenAPI()
 	if _, err := json.Marshal(doc); err != nil {
 		t.Fatal(err)
@@ -24,11 +25,7 @@ func TestOpenAPIRouteCoverage(t *testing.T) {
 			route.Path == "/api/swagger" || route.Path == "/api/docs/assets/*filepath" {
 			continue
 		}
-		clean := strings.TrimPrefix(route.Path, "/api")
-		clean = strings.TrimPrefix(clean, "/api")
-		path := strings.ReplaceAll(clean, ":id", "{id}")
-		path = strings.ReplaceAll(path, ":code", "{code}")
-		path = strings.ReplaceAll(path, ":position", "{position}")
+		path := registeredOpenAPIPath(route.Path)
 		p, ok := paths[path].(map[string]any)
 		if !ok || p[strings.ToLower(route.Method)] == nil {
 			t.Fatalf("undocumented endpoint: %s %s", route.Method, path)
@@ -41,35 +38,75 @@ func TestOpenAPIRouteCoverage(t *testing.T) {
 	}
 }
 
-func TestOpenAPIReviewWorkflowContract(t *testing.T) {
+func TestOpenAPICollaborationWorkflowContract(t *testing.T) {
 	doc := OpenAPI()
 	paths := doc["paths"].(map[string]any)
-	list := paths["/catalog/commits"].(map[string]any)["get"].(map[string]any)
-	params := map[string]bool{}
-	for _, p := range list["parameters"].([]any) {
-		params[p.(map[string]any)["name"].(string)] = true
-	}
-	for _, name := range []string{"review_status", "limit", "offset"} {
-		if !params[name] {
-			t.Fatalf("missing submission filter: %s", name)
+	for _, path := range []string{"/catalog/checkout", "/catalog/commits/preview", "/catalog/commits/{id}/submission", "/catalog/commits/{id}/review"} {
+		if paths[path] != nil {
+			t.Fatalf("retired workflow remains documented: %s", path)
 		}
 	}
-	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	review := schemas["CommitReviewEdit"].(map[string]any)
-	decision := review["properties"].(map[string]any)["decision"].(map[string]any)
-	if encode(decision["enum"]) != `["approve","reject"]` {
-		t.Fatalf("review decisions: %+v", decision)
+	if paths["/catalog/commits"] != nil {
+		t.Fatal("retired global commit write/list remains documented")
 	}
-	if schemas["CommitSubmissionList"].(map[string]any)["type"] != "array" {
-		t.Fatal("submission list must match its actual array response")
+	for _, item := range [][2]string{{"/catalog/entities", "post"}, {"/catalog/entities/{id}", "put"}, {"/catalog/relations", "post"}, {"/catalog/relations/{id}", "put"}, {"/catalog/relations/{id}", "delete"}} {
+		if ops, ok := paths[item[0]].(map[string]any); ok && ops[item[1]] != nil {
+			t.Fatalf("retired direct fact write remains documented: %v", item)
+		}
 	}
-	push := paths["/catalog/commits"].(map[string]any)["post"].(map[string]any)
+	push := paths["/catalog/workspaces/{id}/push"].(map[string]any)["post"].(map[string]any)
 	if push["responses"].(map[string]any)["202"] == nil || !strings.Contains(push["description"].(string), "catalog_review_exempt") {
-		t.Fatal("missing queue or account exemption contract")
+		t.Fatal("missing pull-request or account exemption contract")
+	}
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, name := range []string{"Workspace", "WorkspaceChanges", "WorkspaceCommitCreate", "CollaborationCommit", "PullRequest", "PullRequestCreate", "WorkspaceRebase"} {
+		if schemas[name] == nil {
+			t.Fatalf("missing collaboration schema: %s", name)
+		}
+	}
+	create := schemas["PullRequestCreate"].(map[string]any)["properties"].(map[string]any)
+	for _, name := range []string{"workspace_id", "expected_version", "expected_head", "title"} {
+		if create[name] == nil {
+			t.Fatalf("embedded push field omitted from PullRequestCreate: %s", name)
+		}
+	}
+	operation := schemas["WorkspaceOperation"].(map[string]any)["properties"].(map[string]any)
+	if operation["source_refs"] != nil || operation["reviewed_candidate_ids"] != nil {
+		t.Fatal("workspace operations must not impose source or candidate verification records")
+	}
+	if operation["document"].(map[string]any)["type"] != "object" {
+		t.Fatal("workspace document must be JSON object, not RawMessage bytes")
+	}
+	for _, name := range []string{"CatalogCommit", "CommitReceipt", "CommitSubmission", "CommitReviewEdit"} {
+		if schemas[name] != nil {
+			t.Fatalf("retired write DTO remains in public schemas: %s", name)
+		}
+	}
+	for _, name := range []string{"WorkspacePage", "PullRequestPage"} {
+		properties := schemas[name].(map[string]any)["properties"].(map[string]any)
+		for _, field := range []string{"items", "total", "limit", "offset"} {
+			if properties[field] == nil {
+				t.Fatalf("%s missing actual page field %s", name, field)
+			}
+		}
+	}
+	for _, path := range []string{"/catalog/workspaces", "/catalog/pull-requests"} {
+		operation := paths[path].(map[string]any)["get"].(map[string]any)
+		params := map[string]bool{}
+		for _, item := range operation["parameters"].([]any) {
+			params[item.(map[string]any)["name"].(string)] = true
+		}
+		if !params["limit"] || !params["offset"] || !params["page"] {
+			t.Fatalf("%s missing actual pagination parameters", path)
+		}
+		if path == "/catalog/pull-requests" && (!params["status"] || !params["workspace_id"]) {
+			t.Fatal("pull request list missing actual filters")
+		}
 	}
 }
 
 func TestOpenAPIReverseCoverage(t *testing.T) {
+	t.Setenv("STORAGE_CATALOG_LIFECYCLE_SECRET", "openapi-contract-test")
 	// 反向检查：文档中的每条 path+method 必须在 gin 路由中真实注册，
 	// 防止文档残留已删除端点（如重复的 /catalog/shelves）。
 	doc := OpenAPI()
@@ -77,11 +114,7 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 	HTTP{Store: &Store{}}.Register(r)
 	registered := map[string]bool{}
 	for _, route := range r.Routes() {
-		clean := strings.TrimPrefix(route.Path, "/api")
-		clean = strings.TrimPrefix(clean, "/api")
-		path := strings.ReplaceAll(clean, ":id", "{id}")
-		path = strings.ReplaceAll(path, ":code", "{code}")
-		path = strings.ReplaceAll(path, ":position", "{position}")
+		path := registeredOpenAPIPath(route.Path)
 		registered[strings.ToLower(route.Method)+" "+path] = true
 	}
 	paths := doc["paths"].(map[string]any)
@@ -106,14 +139,17 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 		path, method string
 		wantAuth     bool
 	}{
-		{"/catalog/entities", "post", true},
+		{"/catalog/workspaces", "post", true},
 		{"/catalog/entities", "get", false},
 		// 概览计数是管理台口径的聚合，必须登录 + catalog.lifecycle.manage：它含 deleted/merged，
 		// 匿名读会绕过列表端点刻意的可见性过滤。
 		{"/catalog/entities/stats", "get", true},
 		{"/catalog/me/home-preferences", "get", true},
 		{"/catalog/me/home-preferences", "put", true},
-		{"/catalog/commits/{id}/review", "post", true},
+		{"/catalog/pull-requests/{id}/merge", "post", true},
+		{"/catalog/pull-requests", "get", false},
+		{"/catalog/pull-requests/{id}", "get", false},
+		{"/catalog/commits/{id}", "get", false},
 		{"/external-sources", "get", true},
 	} {
 		op := paths[p.path].(map[string]any)[p.method].(map[string]any)
@@ -142,6 +178,16 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 			t.Fatalf("%s %s missing query param %q", p.method, p.path, p.param)
 		}
 	}
+}
+
+func registeredOpenAPIPath(route string) string {
+	segments := strings.Split(strings.TrimPrefix(route, "/api"), "/")
+	for index, segment := range segments {
+		if strings.HasPrefix(segment, ":") {
+			segments[index] = "{" + strings.TrimPrefix(segment, ":") + "}"
+		}
+	}
+	return strings.Join(segments, "/")
 }
 
 // 路径模板变量与参数声明必须一一对应：{code} 这类变量漏声明会让文档成为无效 OpenAPI，
@@ -263,6 +309,9 @@ func TestOpenAPIEntityStatsEndpoint(t *testing.T) {
 	if props["states"] == nil || props["total"] == nil {
 		t.Fatalf("EntityStateCounts schema 缺 statuses/total: %+v", props)
 	}
+	if props["pending_pull_requests"] == nil || props["pending_commits"] != nil {
+		t.Fatal("entity stats must expose open pull requests instead of the retired submission queue")
+	}
 	// 五个状态键逐个冻结，且与 Go 侧 entityStates（迁移 CHECK 的全集）逐字一致。
 	statusProps, ok := props["states"].(map[string]any)["properties"].(map[string]any)
 	if !ok || len(statusProps) != len(entityStates) {
@@ -305,76 +354,136 @@ func TestOpenAPIDefinitionsResponseIncludesKinds(t *testing.T) {
 	}
 }
 
-func TestOpenAPICommitFieldConflicts(t *testing.T) {
+func TestOpenAPIWorkspaceFieldConflicts(t *testing.T) {
 	doc := OpenAPI()
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	fc, ok := schemas["FieldConflict"].(map[string]any)
-	if !ok {
-		t.Fatal("FieldConflict schema missing")
-	}
-	props := fc["properties"].(map[string]any)
-	for _, key := range []string{"operation", "pointer", "base", "current", "proposed", "kind", "suggestions"} {
+	props := schemas["WorkspaceConflict"].(map[string]any)["properties"].(map[string]any)
+	for _, key := range []string{"target", "id", "base_version", "current_version", "pointer", "base", "current", "proposed", "base_present", "current_present", "proposed_present", "kind"} {
 		if props[key] == nil {
-			t.Fatalf("FieldConflict.%s missing", key)
+			t.Fatalf("WorkspaceConflict.%s missing", key)
 		}
 	}
-	kind, _ := props["kind"].(map[string]any)
-	if encode(kind["enum"]) != encode([]string{"concurrent_edit", "stale_base"}) {
-		t.Fatalf("kind enum: %#v", kind["enum"])
+	response := schemas["WorkspaceConflictResponse"].(map[string]any)
+	for _, key := range []string{"error", "applied", "conflicts"} {
+		if !requiredSet(response["required"])[key] {
+			t.Fatalf("conflict response required field missing: %s", key)
+		}
 	}
-	ccProps := schemas["CommitConflict"].(map[string]any)["properties"].(map[string]any)
-	if ccProps["conflicts"] == nil {
-		t.Fatal("CommitConflict.conflicts missing")
-	}
-	if ccProps["paths"] != nil {
-		t.Fatal("legacy CommitConflict.paths must be gone")
-	}
-	for _, path := range []string{"/catalog/commits", "/catalog/commits/preview"} {
+	for _, path := range []string{"/catalog/workspaces/{id}/push", "/catalog/workspaces/{id}/rebase", "/catalog/pull-requests/{id}/merge"} {
 		op := doc["paths"].(map[string]any)[path].(map[string]any)["post"].(map[string]any)
-		resp, ok := op["responses"].(map[string]any)["409"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s missing 409 response", path)
+		if !strings.Contains(encode(op["responses"].(map[string]any)["409"]), "WorkspaceConflictResponse") {
+			t.Fatalf("%s missing structured conflict schema", path)
 		}
-		schema := resp["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
-		p := schema["properties"].(map[string]any)
-		if p["conflicts"] == nil || p["conflict"] == nil {
-			t.Fatalf("%s 409 schema missing conflict(s): %#v", path, p)
-		}
-	}
-	summary, _ := doc["paths"].(map[string]any)["/catalog/commits"].(map[string]any)["post"].(map[string]any)["summary"].(string)
-	if !strings.Contains(summary, "FieldConflict") || !strings.Contains(summary, "conflicts[]") {
-		snippet := summary
-		if len(snippet) > 240 {
-			snippet = snippet[:240]
-		}
-		t.Fatalf("commit summary should document FieldConflict: %s", snippet)
 	}
 }
 
-func TestOpenAPISourceInputRequiresKey(t *testing.T) {
+func TestOpenAPISourcesAreOptionalMetadata(t *testing.T) {
 	doc := OpenAPI()
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	src, ok := schemas["SourceInput"].(map[string]any)
-	if !ok {
-		t.Fatal("SourceInput schema missing")
+	src := schemas["SourceInput"].(map[string]any)
+	if requiredSet(src["required"])["key"] {
+		t.Fatal("source key must be optional")
 	}
-	got := requiredSet(src["required"])
-	for _, want := range []string{"kind", "citation", "key"} {
-		if !got[want] {
-			t.Fatalf("SourceInput.required missing %q: %#v", want, src["required"])
+	for _, name := range []string{"DefinitionSave", "WorkspaceChanges", "WorkspaceCommitCreate", "WorkspacePush", "PullRequestCreate", "PullRequestMerge"} {
+		object := schemas[name].(map[string]any)
+		for _, field := range []string{"sources", "source_refs", "reviewed_candidate_ids"} {
+			if requiredSet(object["required"])[field] {
+				t.Fatalf("%s requires retired evidence field %s", name, field)
+			}
 		}
 	}
-	props, _ := src["properties"].(map[string]any)
-	if props["key"] == nil {
-		t.Fatal("SourceInput.properties.key missing")
+}
+
+func TestOpenAPIContributionYearAndPagination(t *testing.T) {
+	doc := OpenAPI()
+	op := doc["paths"].(map[string]any)["/users/{id}/contributions"].(map[string]any)["get"].(map[string]any)
+	params := map[string]bool{}
+	for _, value := range op["parameters"].([]any) {
+		params[value.(map[string]any)["name"].(string)] = true
 	}
-	op, ok := schemas["CommitOperation"].(map[string]any)
-	if !ok {
-		t.Fatal("CommitOperation schema missing")
+	for _, key := range []string{"id", "year", "page", "page_size"} {
+		if !params[key] {
+			t.Fatalf("contribution query parameter missing: %s", key)
+		}
 	}
-	if !requiredSet(op["required"])["source_refs"] {
-		t.Fatalf("CommitOperation.required missing source_refs: %#v", op["required"])
+	if params["tab"] {
+		t.Fatal("retired contribution tabs remain documented")
 	}
+}
+
+func TestOpenAPIPrivateAssetPreviewsAndReferenceCheck(t *testing.T) {
+	t.Setenv("STORAGE_CATALOG_LIFECYCLE_SECRET", "openapi-contract-test")
+	doc := OpenAPI()
+	paths := doc["paths"].(map[string]any)
+	for _, scope := range []string{"workspaces", "pull-requests", "commits"} {
+		path := "/catalog/" + scope + "/{id}/assets/{assetID}/content"
+		op := paths[path].(map[string]any)["get"].(map[string]any)
+		parameters := op["parameters"].([]any)
+		if len(parameters) != 2 || parameters[1].(map[string]any)["name"] != "assetID" {
+			t.Fatalf("%s missing assetID path parameter", path)
+		}
+		response := op["responses"].(map[string]any)["200"].(map[string]any)
+		content := response["content"].(map[string]any)
+		for _, mime := range []string{"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"} {
+			if content[mime] == nil {
+				t.Fatalf("%s missing binary response %s", path, mime)
+			}
+		}
+		if content["application/json"] != nil {
+			t.Fatalf("%s must document image bytes instead of a JSON result", path)
+		}
+		if response["headers"].(map[string]any)["Cache-Control"] == nil {
+			t.Fatalf("%s missing private cache contract", path)
+		}
+	}
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	push := schemas["WorkspacePushResult"].(map[string]any)
+	workspace := push["properties"].(map[string]any)["workspace"].(map[string]any)
+	if workspace["nullable"] != true || !requiredSet(push["required"])["workspace"] {
+		t.Fatal("push result must retain a required nullable workspace field")
+	}
+	commitObject := schemas["CommitObject"].(map[string]any)
+	if !requiredSet(commitObject["required"])["base"] {
+		t.Fatal("immutable commit objects must document their distinct base snapshot")
+	}
+	internal := paths["/internal/storage/asset-references"].(map[string]any)["post"].(map[string]any)
+	if internal["servers"].([]any)[0].(map[string]any)["url"] != "/" {
+		t.Fatal("internal reference check must override the public /api server base")
+	}
+	if !strings.Contains(encode(internal["security"]), "storageService") {
+		t.Fatal("internal reference check must require its dedicated service credential")
+	}
+	if schemas["CatalogAssetReferencesRequest"] == nil || schemas["CatalogAssetReferencesResponse"] == nil {
+		t.Fatal("internal reference check must have exact request and response schemas")
+	}
+	t.Setenv("STORAGE_CATALOG_LIFECYCLE_SECRET", "")
+	if OpenAPI()["paths"].(map[string]any)["/internal/storage/asset-references"] != nil {
+		t.Fatal("disabled internal route must not remain documented")
+	}
+}
+
+func TestOpenAPIReferencesResolve(t *testing.T) {
+	doc := OpenAPI()
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	var inspect func(any)
+	inspect = func(value any) {
+		switch item := value.(type) {
+		case map[string]any:
+			if ref, ok := item["$ref"].(string); ok && strings.HasPrefix(ref, "#/components/schemas/") {
+				if schemas[strings.TrimPrefix(ref, "#/components/schemas/")] == nil {
+					t.Errorf("unresolved schema reference: %s", ref)
+				}
+			}
+			for _, nested := range item {
+				inspect(nested)
+			}
+		case []any:
+			for _, nested := range item {
+				inspect(nested)
+			}
+		}
+	}
+	inspect(doc)
 }
 
 func requiredSet(v any) map[string]bool {

@@ -155,7 +155,8 @@ func TestSingleInclusionEditsPreserveHiddenRecordsAndEvidence(t *testing.T) {
 	hidden := f.save(Entity{Kind: "expression", Title: "Hidden master", WorkID: work.ID})
 	release := f.save(Entity{Kind: "release", Title: "CD", Subjects: []Subject{{WorkID: work.ID, Role: "primary"}}})
 	medium := f.save(Entity{Kind: "medium", Title: "Disc", ReleaseID: release.ID})
-	track := f.save(Entity{Kind: "track", Title: "Track", MediumID: medium.ID, Contents: []Inclusion{{ExpressionID: first.ID, Position: 0, Locator: Locator{}}, {ExpressionID: hidden.ID, Position: 1, Locator: Locator{}}}})
+	hiddenSources := []Source{{Kind: "url", Citation: "Existing hidden inclusion", URL: "https://example.org/hidden-master"}}
+	track := f.save(Entity{Kind: "track", Title: "Track", MediumID: medium.ID, Contents: []Inclusion{{ExpressionID: first.ID, Position: 0, Locator: Locator{}}, {ExpressionID: hidden.ID, Position: 1, Locator: Locator{}, Sources: hiddenSources}}})
 	if _, err := f.s.Lifecycle(ctx, hidden.ID, LifecycleEdit{ExpectedVersion: hidden.Version, EditNote: "hide", Sources: fixtureSources()}, f.u); err != nil {
 		t.Fatal(err)
 	}
@@ -165,12 +166,18 @@ func TestSingleInclusionEditsPreserveHiddenRecordsAndEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Version != track.Version+1 || len(updated.Contents) != 1 || len(updated.Contents[0].Sources) != 1 || updated.Contents[0].Sources[0].Kind != "url" {
+	if updated.Version != track.Version+1 || len(updated.Contents) != 1 || len(updated.Contents[0].Sources) != 0 {
 		t.Fatalf("updated response: %+v", updated)
 	}
 	all, err := get(ctx, f.s.DB, track.ID)
-	if err != nil || len(all.Contents) != 2 {
-		t.Fatalf("opaque inclusion lost: %+v %v", all, err)
+	keptHidden := false
+	for _, inclusion := range all.Contents {
+		if inclusion.ExpressionID == hidden.ID {
+			keptHidden = reflect.DeepEqual(inclusion.Sources, hiddenSources)
+		}
+	}
+	if err != nil || len(all.Contents) != 2 || !keptHidden {
+		t.Fatalf("untouched hidden inclusion or its evidence was lost: %+v %v", all, err)
 	}
 	if _, err = f.s.EditTrackContent(ctx, track.ID, "replace", 0, in, editor); !errors.Is(err, errVersionConflict) {
 		t.Fatalf("stale edit accepted: %v", err)
@@ -178,14 +185,25 @@ func TestSingleInclusionEditsPreserveHiddenRecordsAndEvidence(t *testing.T) {
 	if _, err = f.s.EditTrackContent(ctx, track.ID, "delete", 1, TrackContentEdit{ExpectedVersion: updated.Version, EditNote: "guess hidden", Sources: fixtureSources()}, editor); !errors.Is(err, errForbidden) {
 		t.Fatalf("hidden inclusion edited: %v", err)
 	}
-	// Explicit per-inclusion evidence is retained; missing evidence belongs to
-	// the current edit rather than being inferred from an old client shape.
+	// Per-inclusion sources are optional and independent from the edit sources.
+	explicitSources := []Source{{Kind: "url", Citation: "Explicit inclusion source", URL: "https://example.org/explicit-inclusion"}}
+	explicit := *in.Inclusion
+	explicit.Sources = explicitSources
+	updated, err = f.s.EditTrackContent(ctx, track.ID, "replace", 2, TrackContentEdit{ExpectedVersion: updated.Version, Inclusion: &explicit, EditNote: "Explicit optional evidence"}, editor)
+	if err != nil || len(updated.Contents) != 1 || !reflect.DeepEqual(updated.Contents[0].Sources, explicitSources) {
+		t.Fatalf("explicit inclusion sources were not retained: %+v %v", updated, err)
+	}
+	// A whole-object edit may also explicitly clear sources without inheriting
+	// the unrelated edit-level source supplied by the fixture.
 	edited := f.save(Entity{Kind: "track", Title: "Whole-entity edit", MediumID: medium.ID, Contents: []Inclusion{updated.Contents[0]}})
-	edited.Contents[0].Sources = nil
+	if !reflect.DeepEqual(edited.Contents[0].Sources, explicitSources) {
+		t.Fatal("explicit sources changed during whole-object save")
+	}
+	edited.Contents[0].Sources = []Source{}
 	edited.Title = "Retitled track"
 	again := f.save(edited)
-	if len(again.Contents[0].Sources) != 1 || !reflect.DeepEqual(again.Contents[0].Sources[0], fixtureSources()[0]) {
-		t.Fatal("omitted inclusion evidence must inherit the current edit")
+	if len(again.Contents[0].Sources) != 0 {
+		t.Fatal("empty inclusion sources must not inherit edit-level evidence")
 	}
 	// Two editors reading one version cannot both overwrite the record.
 	var wg sync.WaitGroup

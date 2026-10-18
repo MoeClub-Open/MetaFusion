@@ -138,21 +138,18 @@ type Entity struct {
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
 type Edit struct {
-	Entity               Entity   `json:"entity"`
-	ExpectedVersion      int64    `json:"expected_version"`
-	EditNote             string   `json:"edit_note"`
-	Sources              []Source `json:"sources"`
-	ReviewedCandidateIDs []string `json:"reviewed_candidate_ids,omitempty"`
+	Entity          Entity   `json:"entity"`
+	ExpectedVersion int64    `json:"expected_version"`
+	EditNote        string   `json:"edit_note"`
+	Sources         []Source `json:"sources"`
 	// idempotency 是 HTTP 创建端点（POST /entities）的幂等声明：HTTP 层在 body 解码后
 	// 按 Idempotency-Key 头填充（见 IdempotencyClaim），Save 在业务事务内声明/回填。
 	// PUT 更新不带（键只覆盖创建）。
-	idempotency      *IdempotencyClaim
-	contentPatch     *trackContentPatch
-	preserveContents bool
-	createID         string
-	definitions      *DefinitionConfig
-	// Public single-entity writes review candidates; every writer shares identity-term locks.
-	identityReview    bool
+	idempotency       *IdempotencyClaim
+	contentPatch      *trackContentPatch
+	preserveContents  bool
+	createID          string
+	definitions       *DefinitionConfig
 	identityLocksHeld bool
 }
 type Relation struct {

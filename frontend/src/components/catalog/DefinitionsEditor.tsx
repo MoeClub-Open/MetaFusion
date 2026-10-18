@@ -6,7 +6,6 @@ import {
   Definitions,
   Field,
   Names,
-  Source,
   local,
 } from "./api";
 import { CATALOG_DEFINITIONS_MANAGE, can } from "@/lib/permissions";
@@ -20,10 +19,9 @@ import {
   useDefinitions,
 } from "@/lib/definitions";
 import type { DynamicDefinitions } from "@/lib/definitions";
-import { Evidence, ErrorMessage, NamesEditor } from "./Fields";
+import { ChangeNote, ErrorMessage, NamesEditor } from "./Fields";
 import { TemplateRulesEditor } from "./TemplateRulesEditor";
 import { RelationRulesEditor } from "./RelationRulesEditor";
-import { catalogEvidenceError } from "@/lib/catalogEvidence";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 
 // 同一份服务端定义文档在前端有两个方向不同的类型：lib/definitions.ts 的 DynamicDefinitions
@@ -391,9 +389,6 @@ export function DefinitionsEditor() {
   const [issues, setIssues] = useState<string[]>();
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
-  const [sources, setSources] = useState<Source[]>([
-    { kind: "url", citation: "", url: "" },
-  ]);
   const [tab, setTab] = useState<keyof Definitions | "schemes">("fields");
   useEffect(() => {
     if (published && etag !== null && !d) {
@@ -956,12 +951,7 @@ export function DefinitionsEditor() {
           }}
         />
       )}
-      <Evidence
-        note={note}
-        setNote={setNote}
-        sources={sources}
-        setSources={setSources}
-      />
+      <ChangeNote note={note} setNote={setNote} />
       <div className="cv-row">
         <button onClick={async () => {
           try {
@@ -973,11 +963,9 @@ export function DefinitionsEditor() {
           }
         }}>{t("catalog.impact")}</button>
         <button className="cv-primary" onClick={async () => {
-          const evidenceError = catalogEvidenceError(note, sources, window.location.origin);
-          if (evidenceError) { setError(localizeCatalogError(evidenceError, t)); return; }
           try {
             await api("/admin/catalog-definitions", "PUT", {
-              document: d, expected_etag: base, edit_note: note, sources,
+              document: d, expected_etag: base, edit_note: note, sources: [],
             });
             await reloadPublished();
           } catch (err) {

@@ -6,9 +6,8 @@ import Link from "next/link";
 import { catalogEntityHref, mergeEntities } from "@/lib/api";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { useAuth } from "@/lib/authContext";
-import { api, type Entity, type Source, title } from "@/components/catalog/api";
-import { EntityPicker, Evidence } from "@/components/catalog/Fields";
-import { catalogEvidenceError } from "@/lib/catalogEvidence";
+import { api, type Entity, title } from "@/components/catalog/api";
+import { EntityPicker, ChangeNote } from "@/components/catalog/Fields";
 import { isCompatibleMergeTarget, type MergeIdentity } from "@/lib/mergeTarget";
 import { entityIdentitySuffix } from "@/lib/entityIdentity";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -33,7 +32,6 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
   const { t, locale } = useI18n();
   const [targetId, setTargetId] = useState("");
   const [mergeNote, setMergeNote] = useState("");
-  const [sources, setSources] = useState<Source[]>([{ kind: "url", citation: "", url: "" }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,7 +43,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
 
   useEffect(() => {
     setTargetId(""); setTarget(null); setMergeNote("");
-    setSources([{ kind: "url", citation: "", url: "" }]); setError("");
+    setError("");
   }, [isOpen, sourceEntity.id]);
 
   useEffect(() => {
@@ -77,17 +75,11 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
       setError(t("editor.merge.targetUuidPlaceholder"));
       return;
     }
-    if (!mergeNote.trim()) {
-      setError(t("editor.merge.notePlaceholder"));
-      return;
-    }
     // 自合并（源与目标同一条）服务端必然回 invalid_merge_target：先在本地拦掉并讲清楚原因。
     if (!targetReady) {
       setError(t("catalog.error.invalidMergeTarget"));
       return;
     }
-    const evidenceError = catalogEvidenceError(mergeNote, sources, window.location.origin);
-    if (evidenceError) { setError(localizeCatalogError(evidenceError, t)); return; }
 
     submitLock.current = true;
     setSubmitting(true);
@@ -97,7 +89,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
         source_id: sourceEntity.id,
         target_id: target!.id!,
         merge_note: mergeNote.trim(),
-        sources,
+        sources: [],
       });
       alert(res.message || t("editor.merge.successAlert"));
       onClose();
@@ -218,7 +210,7 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
           )}
 
           <div className="catalog-v2">
-            <Evidence note={mergeNote} setNote={setMergeNote} sources={sources} setSources={setSources} />
+            <ChangeNote note={mergeNote} setNote={setMergeNote} />
           </div>
 
           {error && (

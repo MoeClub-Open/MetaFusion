@@ -25,7 +25,7 @@ func retryableCatalogTransaction(err error) bool {
 // and lifecycle endpoints. The callback must recreate attempt-local state and
 // perform effects only through tx; it may run again after a confirmed rollback.
 func (s *Store) writeCatalog(ctx context.Context, fn func(*sql.Tx) error) error {
-	// PushCommit owns its 15s request deadline. Preserve the caller's deadline
+	// Workspace push owns its 15s request deadline. Preserve the caller's deadline
 	// for administrative merges, whose reference rewrite may cover many rows.
 	// The retry budget applies after a confirmed rollback, not to a successful
 	// first attempt of an existing lifecycle operation.

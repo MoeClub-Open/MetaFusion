@@ -266,7 +266,7 @@ func TestMigrationLockUsesSingleSessionAndSerializes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var locks int
-	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND objid=88481001 AND granted").Scan(&locks); err != nil || locks != 0 {
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND objid=88481001 AND granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())").Scan(&locks); err != nil || locks != 0 {
 		t.Fatalf("migration lock leaked: %d %v", locks, err)
 	}
 }

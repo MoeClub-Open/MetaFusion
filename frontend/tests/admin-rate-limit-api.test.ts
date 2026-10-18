@@ -26,13 +26,20 @@ test("service policy writes preserve community message limits and do not invent 
   }
 });
 
-test("metadata lifecycle wrappers reject missing evidence before making a request", async () => {
+test("metadata lifecycle governance accepts an empty source list and keeps its version check", async () => {
   const originalFetch = globalThis.fetch;
-  let requests = 0;
-  globalThis.fetch = (async () => { requests += 1; return Response.json({ version: 1 }); }) as typeof fetch;
+  const requests: Array<{url: string; body?: Record<string, unknown>}> = [];
+  globalThis.fetch = (async (url, options) => {
+    requests.push({url: String(url), ...(options?.body ? {body: JSON.parse(String(options.body))} : {})});
+    return Response.json({version: 3});
+  }) as typeof fetch;
   try {
-    await assert.rejects(mergeEntities({ source_id: "source", target_id: "target", merge_note: "reason", sources: [{ kind: "self", citation: "reason" }] }), /source_not_eligible/);
-    assert.equal(requests, 0);
+    await mergeEntities({ source_id: "source", target_id: "target", merge_note: "reason", sources: [] });
+    assert.equal(requests.length, 2);
+    assert.equal(new URL(requests[0].url, "https://example.test").pathname, "/api/catalog/entities/source");
+    assert.equal(new URL(requests[1].url, "https://example.test").pathname, "/api/catalog/entities/source/lifecycle");
+    assert.equal(requests[1].body?.expected_version, 3);
+    assert.deepEqual(requests[1].body?.sources, []);
   } finally {
     globalThis.fetch = originalFetch;
   }

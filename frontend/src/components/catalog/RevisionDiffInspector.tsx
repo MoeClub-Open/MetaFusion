@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { RevisionVisualDiff } from "./RevisionVisualDiff";
 import { buildRevisionDiff, isRevisionSnapshot, type DiffHunk } from "./revisionDiff";
 import { revisionChanges } from "./revisionData";
+import type { CatalogAssetContext } from "@/lib/catalogAssetPreview";
 
 export interface DiffSnapshot {
   label?: string;
@@ -51,10 +52,11 @@ function HunkRows({ hunk }: { hunk: DiffHunk }) {
   </>;
 }
 
-export function RevisionDiffInspector({ base, current, onClose }: {
+export function RevisionDiffInspector({ base, current, onClose, assetContext }: {
   base: DiffSnapshot | null;
   current: DiffSnapshot;
   onClose?: () => void;
+  assetContext?: CatalogAssetContext;
 }) {
   const { t } = useI18n();
   const { definitions, kinds } = useDefinitions();
@@ -129,7 +131,7 @@ export function RevisionDiffInspector({ base, current, onClose }: {
 
   const content = !comparison.available ? <p role="status" className="p-6 text-center text-sm text-text-muted">{t("revisions.diffUnavailable")}</p>
     : view === "visual" ? <RevisionVisualDiff before={comparison.before} after={comparison.after} definitions={definitions} kinds={kinds}
-      oldLabel={comparison.oldLabel} newLabel={comparison.newLabel} />
+      oldLabel={comparison.oldLabel} newLabel={comparison.newLabel} assetContext={assetContext} />
     : <RevisionCodeDiff hunks={comparison.diff.hunks} oldLabel={comparison.oldLabel} newLabel={comparison.newLabel} />;
 
   // 历史入口使用真正的 body portal 弹窗；审核页各个操作保留内嵌比较。

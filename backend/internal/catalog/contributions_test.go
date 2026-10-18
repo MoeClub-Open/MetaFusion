@@ -7,312 +7,257 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
-// 分页口径：越界静默收敛（与 List 的 limit 同风格），不硬拒绝。
+func TestContributionCalendarUsesWholeUTCYear(t *testing.T) {
+	for _, tc := range []struct{ year, days int }{{2024, 366}, {2026, 365}} {
+		days := contributionCalendar(tc.year, map[string]int64{"2024-02-29": 3, "2026-01-01": 2})
+		if len(days) != tc.days || days[0].Date != time.Date(tc.year, 1, 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02") || days[len(days)-1].Date[5:] != "12-31" {
+			t.Fatalf("calendar %d: first=%+v last=%+v days=%d", tc.year, days[0], days[len(days)-1], len(days))
+		}
+		if tc.year == 2024 && (days[59].Date != "2024-02-29" || days[59].Count != 3) {
+			t.Fatalf("leap day lost: %+v", days[59])
+		}
+		if days[1].Count != 0 {
+			t.Fatalf("days without merged activity must be explicit zeroes: %+v", days[1])
+		}
+	}
+	if year, err := contributionYear(0); err != nil || year != time.Now().UTC().Year() {
+		t.Fatalf("default UTC year: %d %v", year, err)
+	}
+	for _, year := range []int{1969, 10000, -1} {
+		if _, err := contributionYear(year); err == nil {
+			t.Fatalf("invalid year accepted: %d", year)
+		}
+	}
+}
+
 func TestContributionPageClamping(t *testing.T) {
 	for _, tc := range []struct{ page, size, wantPage, wantSize int }{
-		{0, 0, 1, 20},
-		{-3, -1, 1, 20},
-		{2, 50, 2, 50},
-		{5, 101, 5, 20},
+		{0, 0, 1, 20}, {-3, -1, 1, 20}, {2, 50, 2, 50}, {5, 101, 5, 20},
 	} {
 		if page, size := contributionPage(tc.page, tc.size); page != tc.wantPage || size != tc.wantSize {
-			t.Fatalf("contributionPage(%d,%d)=(%d,%d), want (%d,%d)", tc.page, tc.size, page, size, tc.wantPage, tc.wantSize)
+			t.Fatalf("page(%d,%d)=(%d,%d), want (%d,%d)", tc.page, tc.size, page, size, tc.wantPage, tc.wantSize)
 		}
+	}
+	if got := contributionOffset(int(^uint(0)>>1), 100); got < 0 {
+		t.Fatalf("a very large page produced a negative SQL offset: %d", got)
 	}
 }
 
-// tab 与 kind 的映射：artists 是前端口径，骨架里对应 agent；目录不服务的 tab 必须被拒。
-func TestContributionTabAndKindMapping(t *testing.T) {
-	for tab, kind := range map[string]string{"works": "work", "releases": "release", "artists": "agent"} {
-		if got := contributionKindOfTab(tab); got != kind {
-			t.Fatalf("%s → %s, want %s", tab, got, kind)
-		}
-		if got := contributionKindTab(kind); got != tab {
-			t.Fatalf("%s → %s, want %s", kind, got, tab)
-		}
-	}
-	// 非创建 kind（篇目/载体/轨道）与 all/revisions 都不映射成创建项 tab。
-	for _, kind := range []string{"track", "medium", "content_unit", "expression", "collection"} {
-		if contributionKindTab(kind) != "" {
-			t.Fatalf("%s 不该映射成创建项 tab", kind)
-		}
-	}
-	for _, tab := range []string{"all", "revisions", "works", "releases", "artists"} {
-		if !contributionTabValid(tab) {
-			t.Fatalf("%s 应被接受", tab)
-		}
-	}
-	// topics/comments/audits 属互动服务的口径：必须被拒，不能静默返回空列表。
-	for _, tab := range []string{"topics", "comments", "audits", ""} {
-		if contributionTabValid(tab) {
-			t.Fatalf("%s 不该被目录服务接受", tab)
-		}
-	}
-}
-
-// 差异口径与前端 revisionData.ts 的 revisionChanges 逐条对齐：忽略每次写入都变的键，
-// attributes / translations 下钻一层，其余按顶层字段比。
-func TestContributionDiffMatchesRevisionChanges(t *testing.T) {
-	before := []byte(`{"id":"a","kind":"work","version":1,"created_by":"u-1","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","title":"旧题名","attributes":{"tags":["a"],"duration":100},"translations":{"zh-CN":{"title":"旧题名"}}}`)
-	after := []byte(`{"id":"a","kind":"work","version":2,"created_by":"u-1","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-02-01T00:00:00Z","title":"新题名","attributes":{"tags":["a","b"],"duration":100},"translations":{"zh-CN":{"title":"新题名"},"en":{"title":"New"}}}`)
-	got := contributionDiff(before, after)
-	keys := make([]string, 0, len(got))
-	for key := range got {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	want := []string{"attributes.tags", "title", "translations.en", "translations.zh-CN"}
-	if strings.Join(keys, ",") != strings.Join(want, ",") {
-		t.Fatalf("差异键 %v, want %v", keys, want)
-	}
-	if got["title"].Old != "旧题名" || got["title"].New != "新题名" {
-		t.Fatalf("title 差异不符: %+v", got["title"])
-	}
-	if encode(got["attributes.tags"].New) != `["a","b"]` {
-		t.Fatalf("tags 差异取了未归一的值: %s", encode(got["attributes.tags"].New))
-	}
-	// 只有被忽略的键变了（version/updated_at）：nil，响应里整个 diff 键省略。
-	same := contributionDiff(before, []byte(`{"id":"a","kind":"work","version":9,"created_by":"u-1","created_at":"2026-03-01T00:00:00Z","updated_at":"2026-03-01T00:00:00Z","title":"旧题名","attributes":{"tags":["a"],"duration":100},"translations":{"zh-CN":{"title":"旧题名"}}}`))
-	if same != nil {
-		t.Fatalf("无字段变化应返回 nil: %+v", same)
-	}
-	// 快照解不出 JSON 时宁可没有 diff，也不编一份出来。
-	if broken := contributionDiff(before, []byte("not json")); broken != nil {
-		t.Fatalf("非法快照应返回 nil: %+v", broken)
-	}
-	// 超限值截断成 utf8 安全的前缀：差异是摘要，不是第二份快照。
-	long := strings.Repeat("题", 400)
-	truncated := contributionDiff([]byte(`{"title":"x"}`), []byte(`{"title":"`+long+`"}`))
-	value, ok := truncated["title"].New.(string)
-	if !ok || len(value) > contributionDiffMaxValue || !utf8.ValidString(value) {
-		t.Fatalf("超限值应截断成 utf8 安全字符串: %#v", truncated["title"].New)
-	}
-}
-
-// 项形状：创建项 id 是实体 id、带 status/updated_at；修订项 id 是修订行 id、实体 id 落在 target_id。
-// 这里只喂 version=1 的行——取"上一版快照"要连库，那条路径由集成用例覆盖。
-func TestContributionItemShapes(t *testing.T) {
-	s := &Store{}
-	entityID := "11111111-1111-1111-1111-111111111111"
-	rows := []contributionRow{{
-		revID: 7, version: 1, entityID: entityID, kind: "work", title: "作品", state: "active",
-		editNote: "建立条目", sources: []byte(`[{"kind":"self","citation":"作者自述"}]`),
-		createdAt: time.Unix(0, 0).UTC(), updatedAt: time.Unix(1, 0).UTC(),
-	}}
-	created, err := s.userContributionItems(context.Background(), rows, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if created[0].ID != entityID || created[0].Tab != "works" || created[0].EditType != "create" || created[0].State != "active" || created[0].UpdatedAt == nil {
-		t.Fatalf("创建项字段不符: %+v", created[0])
-	}
-	if len(created[0].Sources) != 1 || created[0].Sources[0].Citation != "作者自述" {
-		t.Fatalf("创建项应带回修订行的来源: %+v", created[0].Sources)
-	}
-	if raw, _ := json.Marshal(created[0]); strings.Contains(string(raw), "diff") {
-		t.Fatalf("创建项不该带 diff 键: %s", raw)
-	}
-	revised, err := s.userContributionItems(context.Background(), rows, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if revised[0].ID != "7" || revised[0].Tab != "revisions" || revised[0].TargetID != entityID || revised[0].EditType != "create" || revised[0].State != "" {
-		t.Fatalf("修订项字段不符: %+v", revised[0])
-	}
-	raw, _ := json.Marshal(revised[0])
-	if strings.Contains(string(raw), "status") || strings.Contains(string(raw), "updated_at") {
-		t.Fatalf("修订项不该带实体状态字段: %s", raw)
-	}
-}
-
-// 参数校验不必连库（Store 为空也走不到查询）：非法 user id 与账号 /users/{id}、互动
-// /users/{id}/stats 同口径——404 not_found（前端三路聚合按同一类降级，目录这一路回
-// 400 invalid_id 会弹出"参数错误"）；目录不服务的 tab 仍是 400 invalid_tab。
 func TestUserContributionsRejectsBadParameters(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tc := range []struct {
-		path   string
-		status int
-		code   string
+		path, code string
+		status     int
 	}{
-		{"/api/users/not-a-uuid/contributions", http.StatusNotFound, "not_found"},
-		{"/api/users/11111111-1111-1111-1111-111111111111/contributions?tab=topics", http.StatusBadRequest, "invalid_tab"},
+		{"/api/users/not-a-uuid/contributions", "not_found", http.StatusNotFound},
+		{"/api/users/11111111-1111-1111-1111-111111111111/contributions?year=no", "invalid_year", http.StatusBadRequest},
+		{"/api/users/11111111-1111-1111-1111-111111111111/contributions?year=1969", "invalid_year", http.StatusBadRequest},
+		{"/api/users/11111111-1111-1111-1111-111111111111/contributions?year=0", "invalid_year", http.StatusBadRequest},
 	} {
 		w := httptest.NewRecorder()
 		gateEngine(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
 		if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) {
-			t.Fatalf("%s: status=%d body=%s, want %d %s", tc.path, w.Code, w.Body.String(), tc.status, tc.code)
+			t.Fatalf("%s: %d %s", tc.path, w.Code, w.Body.String())
 		}
+	}
+	if _, err := (&Store{}).UserContributions(context.Background(), "not-a-uuid", 2026, 1, 20); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("invalid user ID should be not found: %v", err)
 	}
 }
 
-// 集成口径（需要隔离库，无 MF_V2_TEST_DSN 时跳过）：归属只看 actor 快照列、可见性跟随实体口径、
-// total 是同谓词下的真实计数、stats 五个计数与注释里的口径逐条对上。
-func TestUserContributionsFeedAndStats(t *testing.T) {
+// The fixture stores immutable commit objects and associates them with retained
+// main-catalog revisions. Several original authors can point at the same merged
+// revision; that association, rather than the revision's single actor, is credit.
+func TestPostgresUserContributionsMergedActivityAndPrivacy(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	author := fixtureUser("editor")
-	admin := fixtureUser("admin")
-	other := fixtureUser("editor")
-
-	save := func(u User, e Entity) Entity {
-		if e.State == "" {
-			e.State = "active"
-		}
-		// 发布态要求至少一条翻译（真实契约）：在夹具里补齐，免得每个调用点各记这件事。
-		if e.State == "active" && len(e.Translations) == 0 {
-			e.Translations = map[string]Translation{"en": {Title: e.Title}}
-		}
-		// 与 HTTP 解码同形：动态值经 JSON 往返。
-		var copy Entity
-		if err := json.Unmarshal([]byte(encode(e)), &copy); err != nil {
-			t.Fatal(err)
-		}
-		out, err := f.s.Save(ctx, Edit{Entity: copy, ExpectedVersion: e.Version, EditNote: "贡献夹具", Sources: fixtureSources()}, u)
-		if err != nil {
-			t.Fatalf("save %s: %v", e.Title, err)
-		}
-		return out
-	}
-	work := save(author, Entity{Kind: "work", Title: "初版题名"})
-	save(author, Entity{Kind: "release", Title: "发行版"})
-	save(author, Entity{Kind: "agent", Title: "作者"})
-	save(author, Entity{Kind: "work", Title: "普通条目", State: "active"})
-	work.Title = "初版题名2"
-	work = save(author, work)
-	work.Title = "初版题名3"
-	work = save(author, work)
-
-	read := func(u *User, tab string, page, pageSize int) UserContributions {
-		t.Helper()
-		got, err := f.s.UserContributions(ctx, author.ID, tab, page, pageSize, u)
-		if err != nil {
-			t.Fatalf("contributions %s: %v", tab, err)
-		}
-		return got
-	}
-
-	// 匿名：只看已发布条目，草稿既不进列表也不进统计。
-	anon := read(nil, "works", 1, 20)
-	if anon.Total != 2 || len(anon.Items) != 2 {
-		t.Fatalf("匿名 works: total=%d items=%d, want 1/1", anon.Total, len(anon.Items))
-	}
-	item := anon.Items[0]
-	for _, candidate := range anon.Items {
-		if candidate.TargetID == work.ID {
-			item = candidate
-		}
-	}
-	// 作品的 title 经两轮编辑变成"初版题名3"。
-	if item.Kind != "work" || item.Title != "初版题名3" || item.Tab != "works" || item.EditType != "create" {
-		t.Fatalf("创建项字段不符: %+v", item)
-	}
-	if item.State != "active" || item.UpdatedAt == nil || item.Version != 1 {
-		t.Fatalf("创建项应带 status/updated_at 且版本为首次修订: %+v", item)
-	}
-	if st := anon.Stats; st.WorksCreated != 2 || st.ReleasesCreated != 1 || st.ArtistsCreated != 1 || st.AuditActions != 0 {
-		t.Fatalf("统计口径不符: %+v", st)
-	}
-	// 修订条数：work 三版 + release 一版 + agent 一版 = 5（草稿那条被可见性过滤掉）。
-	if anon.Stats.RevisionsCount != 6 {
-		t.Fatalf("revisions_count=%d, want 5", anon.Stats.RevisionsCount)
-	}
-
-	// 本人与生命周期管理员看得到自己的草稿；别人看不到（与实体列表同口径）。
-	if own := read(&author, "works", 1, 20); own.Total != 2 {
-		t.Fatalf("本人应看到自己的草稿: total=%d", own.Total)
-	}
-	if adm := read(&admin, "works", 1, 20); adm.Total != 2 {
-		t.Fatalf("管理员应看到草稿: total=%d", adm.Total)
-	}
-	if alien := read(&other, "works", 1, 20); alien.Total != 2 {
-		t.Fatalf("他人不该看到草稿: total=%d", alien.Total)
-	}
-
-	// revisions tab：全部实体修订行（含首次创建），改动项带与上一版的字段差异。
-	revs := read(nil, "revisions", 1, 20)
-	if revs.Total != 6 || len(revs.Items) != 6 {
-		t.Fatalf("匿名 revisions: total=%d items=%d, want 5/5", revs.Total, len(revs.Items))
-	}
-	updates := 0
-	for _, it := range revs.Items {
-		if it.Tab != "revisions" || it.TargetID == "" || it.State != "" {
-			t.Fatalf("修订项字段不符: %+v", it)
-		}
-		if it.EditType == "update" {
-			updates++
-			change, ok := it.Diff["title"]
-			if !ok || change.Old == change.New {
-				t.Fatalf("改动项缺少 title 差异: %+v", it)
-			}
-		}
-	}
-	if updates != 2 {
-		t.Fatalf("改动项 %d, want 2", updates)
-	}
-
-	// all：创建项（作品/发行/艺术家）与后续改动（作品第 2、3 版）混排，同一事件不重复出现。
-	all := read(nil, "all", 1, 20)
-	if all.Total != 6 || len(all.Items) != 6 {
-		t.Fatalf("匿名 all: total=%d items=%d, want 5/5", all.Total, len(all.Items))
-	}
-	tabs := map[string]int{}
-	for _, it := range all.Items {
-		tabs[it.Tab]++
-	}
-	if tabs["works"] != 2 || tabs["releases"] != 1 || tabs["artists"] != 1 || tabs["revisions"] != 2 {
-		t.Fatalf("all 混排分布不符: %+v", tabs)
-	}
-
-	// 分页：total 是真实计数，不随 page_size 变；越界收敛而不是拒绝。
-	last := read(nil, "all", 3, 2)
-	if last.Total != 6 || last.Page != 3 || last.PageSize != 2 || len(last.Items) != 2 {
-		t.Fatalf("分页口径不符: total=%d page=%d size=%d items=%d", last.Total, last.Page, last.PageSize, len(last.Items))
-	}
-	if clamped := read(nil, "all", 0, 500); clamped.Page != 1 || clamped.PageSize != 20 {
-		t.Fatalf("越界分页应静默收敛: page=%d size=%d", clamped.Page, clamped.PageSize)
-	}
-
-	// 生命周期管理动作按"发生过"计数：目标删除后同口径统计消失，但动作仍计入 audit_actions。
-	doomed := save(author, Entity{Kind: "work", Title: "待清退"})
-	if _, err := f.s.Lifecycle(ctx, doomed.ID, LifecycleEdit{ExpectedVersion: doomed.Version, EditNote: "清退", Sources: fixtureSources()}, admin); err != nil {
-		t.Fatalf("lifecycle: %v", err)
-	}
-	adminStats, err := f.s.UserContributions(ctx, admin.ID, "all", 1, 20, &admin)
+	author, coauthor := fixtureUser("editor"), fixtureUser("editor")
+	work := f.save(Entity{Kind: "work", Title: "Public work"})
+	release := f.save(Entity{Kind: "release", Title: "Public release"})
+	agent := f.save(Entity{Kind: "agent", Title: "Public composer"})
+	hidden := f.save(Entity{Kind: "work", Title: "Secret removed object"})
+	legacy := f.save(Entity{Kind: "collection", Title: "Historical collection"})
+	relation, err := f.s.SaveRelation(ctx, RelationEdit{Relation: Relation{Type: "composed_by", SourceID: work.ID, TargetID: agent.ID}, EditNote: "relation fixture"}, f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adminStats.Stats.AuditActions != 1 {
-		t.Fatalf("删除应计入管理动作: %+v", adminStats.Stats)
+	type object struct {
+		target, id string
+		base       int64
+		before     any
+		after      any
+		associate  bool
 	}
-	// 墓碑目标对所有人不可见：管理员的"修订条数"不包含它（可见性口径），与 audit_actions 的差别是刻意的。
-	if adminStats.Stats.RevisionsCount != 0 {
-		t.Fatalf("墓碑目标不该计入 revisions_count: %+v", adminStats.Stats)
+	entityObject := func(e Entity, base int64) object {
+		var before any
+		if base > 0 {
+			before = map[string]any{"kind": e.Kind, "title": "Before"}
+		}
+		return object{"entity", e.ID, base, before, e, true}
 	}
-	if after := read(&author, "works", 1, 20); after.Total != 2 {
-		t.Fatalf("删除后本人作品数应为 2（另一作品 + 草稿）: %d", after.Total)
+	commit := func(u User, message, authored, merged string, objects ...object) string {
+		t.Helper()
+		id := uuid.NewString()
+		var mergedAt any
+		if merged != "" {
+			mergedAt = merged
+		}
+		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,message,created_at,merged_at,merged_by)
+            VALUES($1,$2,'fixture','{}','{}',$3,$4,$5,$6,$7)`, id, u.ID,
+			encode(map[string]any{"username": u.Username, "permissions": []string{"private-permission-snapshot"}}), message, authored, mergedAt, f.u.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,$3)`, id, u.ID, u.Username); err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range objects {
+			var before, after any
+			if o.before != nil {
+				before = encode(o.before)
+			}
+			if o.after != nil {
+				after = encode(o.after)
+			}
+			if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,before_document,after_document) VALUES($1,$2,$3,$4,$5,$6)`, id, o.target, o.id, o.base, before, after); err != nil {
+				t.Fatal(err)
+			}
+			if o.associate {
+				if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.revision_commits(revision_id,commit_id) SELECT id,$2 FROM catalog.revisions WHERE target_id=$1 ORDER BY id LIMIT 1`, o.id, id); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		return id
 	}
-
-	// 非法参数：Store 层按 respond 的判据返回（sql.ErrNoRows → 404 not_found / 400 invalid_tab）。
-	if _, err := f.s.UserContributions(ctx, "not-a-uuid", "all", 1, 20, nil); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("非法 user id 应按 not_found 处理: %v", err)
+	first := commit(author, "Create public objects", "2025-12-31T23:00:00Z", "2026-01-01T00:30:00Z", entityObject(work, 0), entityObject(release, 0))
+	coauthored := commit(coauthor, "Coauthor contribution", "2025-12-31T23:30:00Z", "2026-01-01T00:30:00Z", entityObject(work, 1))
+	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,$3)`, first, coauthor.ID, coauthor.Username); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := f.s.UserContributions(ctx, author.ID, "topics", 1, 20, nil); err == nil || err.Error() != "invalid_tab" {
-		t.Fatalf("目录不服务的 tab 应报 invalid_tab: %v", err)
+	relationCommit := commit(author, "Add composer relationship", "2026-01-01T18:00:00-05:00", "2026-01-01T19:15:00-05:00", object{"relation", relation.ID, 0, nil, relation, true})
+	commit(author, "Secret private fork", "2026-01-02T00:00:00Z", "", entityObject(work, 1))
+	noRevision := entityObject(work, 1)
+	noRevision.associate = false
+	commit(author, "No actual main revision", "2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z", noRevision)
+	commit(author, "Secret removed object only", "2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z", entityObject(hidden, 0))
+	partial := commit(author, "Secret removed object in mixed commit", "2026-01-03T00:00:00Z", "2026-01-03T01:00:00Z", entityObject(work, 1), entityObject(hidden, 0))
+	// A hidden no-op is still private metadata of this commit, even though it
+	// must not add another changed object or contribution day.
+	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,before_document,after_document) VALUES($1,'entity',$2,1,$3,$3)`, partial, agent.ID, encode(agent)); err != nil {
+		t.Fatal(err)
 	}
-	// 不存在的用户：目录不查账号服务（账号表归账号服务），"没有这个人"与"有这个人但零贡献"
-	// 分不出来，两者都是 200 + 空列表；404 只留给"这个 id 根本不是 uuid"。
-	ghost, err := f.s.UserContributions(ctx, fixtureUser("member").ID, "all", 1, 20, nil)
-	if err != nil || ghost.Total != 0 || len(ghost.Items) != 0 {
-		t.Fatalf("无贡献用户应返回空列表: %+v %v", ghost, err)
+	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.revisions SET actor_id=$2,actor_name='Historical author',edit_note='Historical edit',created_at='2026-01-01T01:00:00Z' WHERE target_id=$1`, legacy.ID, author.ID); err != nil {
+		t.Fatal(err)
+	}
+	workspaceID, prID := uuid.NewString(), uuid.NewString()
+	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.workspaces(id,owner_id,name) VALUES($1,$2,'Merged collaboration')`, workspaceID, author.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.pull_requests(id,workspace_id,author_id,title,status,source_head_id,merged_at,merged_by) VALUES($1,$2,$3,'Merged work','merged',$4,'2026-01-02T00:15:00Z',$5)`, prID, workspaceID, author.ID, relationCommit, f.u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.commits SET pull_request_id=$1 WHERE id IN ($2,$3,$4)`, prID, first, relationCommit, coauthored); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.Lifecycle(ctx, hidden.ID, LifecycleEdit{ExpectedVersion: hidden.Version, EditNote: "remove fixture"}, f.u); err != nil {
+		t.Fatal(err)
+	}
+	read := func(userID string, year, page, size int) UserContributions {
+		t.Helper()
+		out, err := f.s.UserContributions(ctx, userID, year, page, size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	out := read(author.ID, 2026, 1, 20)
+	want := UserContributionStats{MergedCommits: 3, ChangedEntities: 3, CreatedEntities: 2, MergedPullRequests: 1, LegacyRevisions: 1}
+	if out.Summary != want || out.Total != 4 || len(out.Items) != 4 || out.Timezone != "UTC" || len(out.Calendar) != 365 {
+		t.Fatalf("merged contribution projection: summary=%+v total=%d items=%+v", out.Summary, out.Total, out.Items)
+	}
+	if out.Calendar[0].Count != 1 || out.Calendar[1].Count != 1 || out.Calendar[2].Count != 1 {
+		t.Fatalf("calendar must use UTC merge days, one count per commit: %+v", out.Calendar[:3])
+	}
+	var foundRelation, foundPartial bool
+	for _, item := range out.Items {
+		if !item.Legacy && (item.Author.ID != author.ID || item.Author.Name != author.Username || item.MergedBy == nil || item.MergedBy.ID != f.u.ID) {
+			t.Fatalf("author and merger attribution changed: %+v", item)
+		}
+		if item.ID == relationCommit {
+			foundRelation = true
+			if item.ChangesCount != 1 || len(item.Entities) != 2 || item.PullRequestID != prID {
+				t.Fatalf("relation endpoints or PR attribution missing: %+v", item)
+			}
+		}
+		if item.ID == partial {
+			foundPartial = true
+			if item.CommitID != "" || item.PullRequestID != "" || item.Message != "" || item.ChangesCount != 1 || len(item.Entities) != 1 || item.Entities[0].ID != work.ID {
+				t.Fatalf("partially hidden commit leaked metadata: %+v", item)
+			}
+		}
+	}
+	if !foundRelation || !foundPartial {
+		t.Fatalf("relation/mixed contribution missing: %+v", out.Items)
+	}
+	raw, _ := json.Marshal(out)
+	for _, secret := range []string{"Secret", "private-permission-snapshot", "No actual main revision"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("private activity leaked %q: %s", secret, raw)
+		}
+	}
+	other := read(coauthor.ID, 2026, 1, 20)
+	if other.Summary.MergedCommits != 2 || other.Summary.LegacyRevisions != 0 || len(other.Items) != 2 {
+		t.Fatalf("coauthor lost attribution on shared revision: %+v", other)
+	}
+	for _, item := range other.Items {
+		if item.CommitID == first && (item.Author.ID != author.ID || len(item.Authors) != 2) {
+			t.Fatalf("shared staged authors replaced original committer: %+v", item)
+		}
+		if item.CommitID == coauthored && (item.Author.ID != coauthor.ID || len(item.Authors) != 1) {
+			t.Fatalf("original author lost on shared revision: %+v", item)
+		}
+	}
+	if prior := read(author.ID, 2025, 1, 20); prior.Total != 0 || len(prior.Items) != 0 {
+		t.Fatalf("authored year must not be mistaken for merged year: %+v", prior)
+	}
+	if last := read(author.ID, 2026, 2, 3); last.Total != 4 || len(last.Items) != 1 || last.Summary != want {
+		t.Fatalf("pagination changed annual summary or total: %+v", last)
+	}
+	if empty := read(fixtureUser("member").ID, 2026, 1, 20); empty.Total != 0 || len(empty.Items) != 0 || len(empty.Calendar) != 365 {
+		t.Fatalf("empty profile: %+v", empty)
+	}
+	if huge := read(author.ID, 2026, int(^uint(0)>>1), 100); huge.Total != 4 || len(huge.Items) != 0 {
+		t.Fatalf("oversized page must be an empty page, not an overflowing offset: %+v", huge)
+	}
+	// PR visibility includes other authors' commit objects, including no-ops.
+	// The visible commit's own link remains usable, but its PR must not become
+	// an unavailable link or reveal another contributor's hidden object.
+	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,before_document,after_document) VALUES($1,'entity',$2,1,$3,$3)`, coauthored, hidden.ID, encode(hidden)); err != nil {
+		t.Fatal(err)
+	}
+	masked := read(author.ID, 2026, 1, 20)
+	if masked.Summary.MergedCommits != 3 || masked.Summary.MergedPullRequests != 0 || masked.Total != 4 {
+		t.Fatalf("another author's hidden PR object changed contribution credit: %+v", masked)
+	}
+	for _, item := range masked.Items {
+		if item.PullRequestID != "" {
+			t.Fatalf("PR with a hidden object was linked: %+v", item)
+		}
+		if item.ID == first && (item.CommitID != first || item.Message != "Create public objects") {
+			t.Fatalf("public commit lost its independent visible projection: %+v", item)
+		}
+	}
+	for _, item := range read(coauthor.ID, 2026, 1, 20).Items {
+		if item.ID == coauthored && (item.CommitID != "" || item.Message != "") {
+			t.Fatalf("hidden no-op object leaked commit metadata: %+v", item)
+		}
 	}
 }

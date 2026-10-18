@@ -105,9 +105,6 @@ export function EntityRevisions({
             key={`${restore.revision.id}:${restore.entity.version}`}
             initial={restore.entity}
             base={restore.base}
-            initialEditNote={t("revisions.restoreNote", { version: restore.revision.version, id: String(restore.revision.id) })}
-            initialSources={[{ kind: "publication", citation: `catalog:${restore.entity.id}/revisions/${restore.revision.id}` }]}
-            onSaved={() => window.location.reload()}
           />
         </section>
       )}

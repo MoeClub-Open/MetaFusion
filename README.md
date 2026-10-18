@@ -8,14 +8,14 @@ MetaFusion 是开放的多媒介元数据目录，记录作品、内容表达、
 
 - [快速开始](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/quickstart.md)：浏览、搜索和参与编辑。
 - [元数据目录](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/catalog.md)：区分作品、表达、发行与实际收录。
-- [词条编辑与审查](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/editing-guide.md)：查重、核对来源、保存与复核。
+- [词条编辑与协作](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/editing-guide.md)：副本保存、批量提交、PR 与冲突处理。
 - [资源上传与下载](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/upload-download.md)：文件、绑定与访问范围。
 
 正式题名与内容身份以来源为准；季数、Vol、OST 等不能机械删除。发行版、包装和载体规格记录在相应层级。同一内容表达可被多个发行收录，收录不会改变其作品归属。
 
 ## 开发者与 Agent
 
-统一 API 入口为 `/api`。接入时读取目标实例的 `/api/openapi.json` 和 `/api/catalog/definitions`，按当前协议和启用定义查询；认证、分页、写入版本与证据要求集中维护于独立文档仓。
+统一 API 入口为 `/api`。接入时读取目标实例的 `/api/openapi.json` 和 `/api/catalog/definitions`，按当前协议和启用定义查询；认证、分页、副本版本和合入规则集中维护于独立文档仓。来源与查证记录可选，不作为编辑门槛。
 
 | 入口 | 内容 |
 | --- | --- |
