@@ -12,7 +12,8 @@ func TestAssistantWriteRoutesAreAudited(t *testing.T) {
 	HTTP{Store: &Store{}, Catalog: &catalog.Store{}}.Register(r.Group("/api"))
 	actions := AuditActions()
 	for _, route := range r.Routes() {
-		if route.Method == "GET" {
+		// Context preview uses a body for the private draft, but performs no writes.
+		if route.Method == "GET" || (route.Method == "POST" && route.Path == "/api/assistant/context") {
 			continue
 		}
 		key := route.Method + " " + route.Path

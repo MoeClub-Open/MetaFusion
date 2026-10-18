@@ -70,6 +70,11 @@ export interface AssistantConversation {
   messages: AssistantMessage[]; created_at: string; updated_at: string;
 }
 
+export interface AssistantContextPreview {
+  input_tokens_bound: number; context_window: number; max_output_tokens: number;
+  message_count: number; tool_count: number; estimated: boolean;
+}
+
 export interface AssistantRequestRecord {
   id: string; owner_id: string; conversation_id?: string; status: "pending" | "completed" | "failed";
   created_at: string; updated_at: string; response?: unknown;

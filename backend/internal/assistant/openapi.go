@@ -93,7 +93,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 			panic("unsupported assistant OpenAPI field: " + t.String())
 		}
 	}
-	for _, value := range []any{Settings{}, Provider{}, Model{}, BYOCredential{}, Balance{}, CreditEntry{}, TokenUsage{}, UsageRecord{}, BudgetUsage{}, Message{}, Conversation{}, GeneratedOverview{}, ChatRequest{}} {
+	for _, value := range []any{Settings{}, Provider{}, Model{}, BYOCredential{}, Balance{}, CreditEntry{}, TokenUsage{}, UsageRecord{}, BudgetUsage{}, Message{}, Conversation{}, GeneratedOverview{}, ChatRequest{}, ContextRequest{}, ContextPreview{}} {
 		schema(reflect.TypeOf(value))
 	}
 	props := func(name string) map[string]any {
@@ -154,6 +154,11 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	props("ChatRequest")["conversation_id"] = id()
 	props("ChatRequest")["credential_id"] = map[string]any{"oneOf": []any{id(), map[string]any{"type": "string", "enum": []string{""}}}, "description": "Omit to retain the conversation's BYO credential. An explicit empty string clears it and switches to platform billing; otherwise supply a credential owned by the caller."}
 	props("ChatRequest")["client_request_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Idempotency ID retained unchanged when retrying the same turn. A changed payload or an in-flight duplicate returns 409."}
+	props("ContextRequest")["model_id"] = id()
+	props("ContextRequest")["conversation_id"] = id()
+	props("ContextRequest")["message"] = map[string]any{"type": "string", "maxLength": 32768, "description": "Optional unsent draft; at most 32768 encoded UTF-8 bytes. Never persisted or sent to a provider."}
+	props("ContextPreview")["input_tokens_bound"] = map[string]any{"type": "integer", "format": "int64", "minimum": 0, "description": "Conservative runtime input bound including the current system prompt, caller-owned saved conversation, optional draft, tool schemas and protocol overhead. This is not provider-reported token usage."}
+	schemas["AssistantContextPreview"].(map[string]any)["description"] = "Free read-only preview. estimated is always true; context_window and max_output_tokens follow the selected enabled model. No credits, conversation changes or upstream calls."
 	schemas["AssistantChatRequest"].(map[string]any)["required"] = []string{"message", "client_request_id"}
 	schemas["AssistantToolResult"] = object(map[string]any{
 		"name":   str(),
@@ -252,6 +257,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	add("/assistant/conversations/{id}", "get", "Read the caller's conversation and messages", "", "Conversation", "self", false)
 	add("/assistant/conversations/{id}", "delete", "Delete the caller's conversation unless a turn is in progress", "", "", "self", false)
 	add("/assistant/chat", "post", "Ask the catalog assistant and execute requested edits as the current user", "ChatRequest", "ChatResponse", "self", false)
+	add("/assistant/context", "post", "Preview the caller's next chat context without saving or invoking a model", "ContextRequest", "ContextPreview", "self", false)
 	getGenerated := add("/assistant/generated/{entity_id}", "get", "Read the cached generated overview of public catalog facts", "", "GeneratedResponse", "public", false)
 	getGenerated["description"] = "Reads only content based on public catalog facts. A first-party caller's private BYO cache is preferred; other callers can only read shared platform-generated content. A read never invokes an LLM or spends credits. A changed context returns item=null and stale=true."
 	getGenerated["parameters"] = append(getGenerated["parameters"].([]any), map[string]any{"name": "locale", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"zh-CN", "zh-TW", "en-US", "ja-JP"}, "default": "zh-CN"}})

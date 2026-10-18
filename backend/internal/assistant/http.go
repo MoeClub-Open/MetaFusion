@@ -164,6 +164,7 @@ func (h HTTP) Register(api *gin.RouterGroup) {
 	self.GET("/conversations/:id", h.getConversation(false))
 	self.DELETE("/conversations/:id", h.deleteConversation(false))
 	self.POST("/chat", h.chat)
+	self.POST("/context", h.previewContext)
 	self.POST("/generated/:entity_id", h.generate)
 	admin := a.Group("/admin", assistantIdentity(true))
 	admin.GET("/settings", func(c *gin.Context) { v, e := h.Store.GetSettings(c.Request.Context()); writeResponse(c, v, e) })
@@ -363,8 +364,7 @@ func (h HTTP) chat(c *gin.Context) {
 		defer cancel()
 		return h.Store.persistChat(checkpointCtx, u.ID, in.ClientRequestID, conv, ChatResponse{ConversationID: conv.ID, CompletionRun: progress}, "pending")
 	}
-	messages := append([]Message{{Role: "system", Content: catalogAssistantPrompt}}, withoutSystemMessages(conv.Messages)...)
-	messages = append(messages, Message{Role: "user", Content: in.Message})
+	messages := chatMessages(conv.Messages, in.Message)
 	run, runErr := h.complete(c.Request.Context(), u, in, messages, true, "chat", "")
 	if run.Messages == nil {
 		run.Messages = messages

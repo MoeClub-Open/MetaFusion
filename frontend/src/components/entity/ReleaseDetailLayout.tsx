@@ -15,7 +15,6 @@ import {
 import { orderedTracksWithDepth } from "@/lib/trackTree";
 import { PageShell } from "@/components/ui/PageShell";
 import { EntityIdentityHeader } from "@/components/entity/EntityIdentityHeader";
-import { QualityBadge } from "@/components/catalog/QualityBadge";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EntityStaffSection } from "@/components/entity/EntityStaffSection";
@@ -728,18 +727,6 @@ export default function ReleaseDetailLayout() {
             <div className="space-y-1.5 min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] tracking-wide">
                 <span className="px-2 py-0.5 rounded-sm bg-primary text-white font-semibold">{t("release.detail.badge")}</span>
-                {release?.review_status && (
-                  <span className="px-2 py-0.5 rounded-sm bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body uppercase font-semibold">
-                    {t("catalog.review.reviewed")}
-                  </span>
-                )}
-                <QualityBadge
-                  entityId={releaseId}
-                  onNavigate={() => {
-                    const el = document.getElementById("release-directory");
-                    if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
-                  }}
-                />
                 {editionLabel && (
                   <span className="px-2 py-0.5 rounded-sm bg-violet-500/10 text-violet-600 dark:text-alt-soft border border-violet-500/25 font-semibold">
                     {editionLabel}

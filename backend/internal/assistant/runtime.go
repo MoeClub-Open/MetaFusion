@@ -65,6 +65,24 @@ func completionInputBound(messages []Message, tools []Tool) int64 {
 	return int64(len(b)) + int64(len(messages))*64 + 512
 }
 
+func chatMessages(history []Message, message string) []Message {
+	messages := append([]Message{{Role: "system", Content: catalogAssistantPrompt}}, withoutSystemMessages(history)...)
+	if message != "" {
+		messages = append(messages, Message{Role: "user", Content: message})
+	}
+	return messages
+}
+
+func completionTools() ([]Tool, error) {
+	b, err := json.Marshal(assistantToolDefinitions())
+	if err != nil {
+		return nil, err
+	}
+	var tools []Tool
+	err = json.Unmarshal(b, &tools)
+	return tools, err
+}
+
 func (h HTTP) complete(ctx context.Context, u catalog.User, req ChatRequest, messages []Message, toolsEnabled bool, purpose, entityID string) (run CompletionRun, err error) {
 	return runCompletion(ctx, h.Store, h.Catalog, u, req, messages, toolsEnabled, purpose, entityID)
 }
@@ -111,8 +129,7 @@ func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.
 	}
 	var tools []Tool
 	if toolsEnabled {
-		b, _ := json.Marshal(assistantToolDefinitions())
-		if err = json.Unmarshal(b, &tools); err != nil {
+		if tools, err = completionTools(); err != nil {
 			return run, err
 		}
 	}

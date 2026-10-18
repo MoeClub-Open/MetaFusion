@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { AssistantModelPicker } from "./AssistantModelPicker";
+import { AssistantContextMeter } from "./AssistantContextMeter";
 import { AssistantCredentials } from "./AssistantCredentials";
 import { AssistantUsagePanel } from "./AssistantUsagePanel";
 
@@ -154,7 +155,7 @@ function AssistantWorkspace() {
   return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle pb-2">
       <div className="flex gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({id,icon:Icon})=><button key={id} type="button" role="tab" aria-selected={tab===id} aria-controls={`assistant-panel-${id}`} id={`assistant-tab-${id}`} disabled={busy} onClick={()=>setTab(id)} className={`inline-flex items-center gap-2 rounded-control px-3 py-2 text-sm ${tab===id?"bg-primary/10 text-primary":"text-text-muted hover:bg-surfaceSubtle"}`}><Icon className="size-4"/>{t(`assistant.user.${id}`)}</button>)}</div>
-      {account&&<span className="text-xs text-text-muted">{t("assistant.user.balance",{credits:number.format(account.balance.available_credits)})}</span>}
+      {account&&tab!=="chat"&&<span className="text-xs text-text-muted">{t("assistant.user.balance",{credits:number.format(account.balance.available_credits)})}</span>}
     </div>
     {error&&<p role="alert" className="rounded-control border border-danger/20 bg-danger/5 p-3 text-sm text-danger">{error}</p>}
     {tab==="chat"&&<section id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="overflow-hidden rounded-panel border border-line bg-surface">
@@ -194,6 +195,7 @@ function AssistantWorkspace() {
               <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label><textarea id="assistant-message" rows={2} maxLength={16000} value={message} disabled={busy||loading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();void send();}}} placeholder={t("assistant.user.placeholder")} className="max-h-48 min-h-16 w-full resize-y bg-transparent px-1 py-1 text-sm outline-none disabled:opacity-50"/>
               <div className="flex items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} credentials={credentials} modelID={modelID} credentialID={credentialID} onModel={setModelID} onCredential={setCredentialID} disabled={busy||loading}/><button type="submit" disabled={busy||loading||!modelID||!message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control bg-primary px-3 text-xs font-medium text-white disabled:opacity-40"><Send className="size-3.5"/>{t("assistant.user.send")}</button></div>
             </form>
+            <div className="mt-2 flex flex-wrap items-start justify-between gap-2"><AssistantContextMeter conversationID={conversationID} modelID={modelID} message={message} revision={messages.length} disabled={busy||loading}/>{account&&<span className="shrink-0 text-xs text-text-muted">{t("assistant.user.balance",{credits:number.format(account.balance.available_credits)})}</span>}</div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-faint"><details><summary className="cursor-pointer">{t("assistantUI.editBehavior")}</summary><p className="mt-1 max-w-lg leading-relaxed">{t("assistant.user.editHint")}</p></details>{result&&<span>{t("assistant.user.consumed",{input:number.format(result.usage.input_tokens),output:number.format(result.usage.output_tokens),credits:number.format(result.credits_spent)})}{result.usage_estimated&&` · ${t("assistant.user.estimated")}`}</span>}</div>
           </footer>
         </div>

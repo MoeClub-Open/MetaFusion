@@ -43,7 +43,6 @@ import {
 } from "@/lib/api";
 import type { EntityComment, EntityCollectionRef } from "@/lib/api";
 import { EntityRevisions } from "./EntityRevisions";
-import { QualityBadge } from "./QualityBadge";
 import { EntityRelationDirectory } from "@/components/entity/EntityRelationDirectory";
 import { PageShell, PageContainer } from "@/components/ui/PageShell";
 import { TabPanel } from "@/components/ui/TabPanel";
@@ -819,16 +818,6 @@ export function EntityDetailView({ id }: { id: string }) {
               <span className="text-[11px] font-mono text-amber-600 dark:text-warn">{t("common.copyFailed")}</span>
             )}
 
-            <span className="px-2.5 py-1 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body text-xs uppercase font-semibold font-mono">
-              {t("catalog.review.reviewed")}
-            </span>
-            <QualityBadge
-              entityId={entity.id || id}
-              onNavigate={(tabId) => {
-                const shown = tabs.some((tab) => tab.id === tabId && tab.visible !== false);
-                select(shown ? tabId : "overview");
-              }}
-            />
           </div>
         </div>
 
