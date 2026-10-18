@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,6 +220,57 @@ func TestCollaborationPublicReadsAgainstPostgres(t *testing.T) {
 	}
 	if _, err := f.s.GetCollaborationCommit(ctx, relationCommit, User{}); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("relation endpoint leaked through public history: %v", err)
+	}
+}
+
+func TestCollaborationPublicReadsRejectNoncanonicalUUIDsAgainstPostgres(t *testing.T) {
+	f := newCollaborationReadFixture(t)
+	ctx := context.Background()
+	w := f.workspace()
+	expression, track := f.entity("expression"), f.entity("track")
+	source, target := f.entity("agent"), f.entity("work")
+	for _, invalid := range []string{"not-a-uuid", strings.ToUpper(expression), strings.ReplaceAll(expression, "-", "")} {
+		snapshot := json.RawMessage(encode(map[string]any{"kind": "track", "contents": []any{
+			map[string]any{"expression_id": invalid},
+		}}))
+		id := f.commit(w.ID, nil, true, CommitObject{Target: "entity", ID: track, Base: snapshot, After: snapshot})
+		if _, err := f.s.GetCollaborationCommit(ctx, id, User{}); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("noncanonical inclusion %q must remain private without a cast error: %v", invalid, err)
+		}
+	}
+	for _, endpoints := range []map[string]any{
+		{"source_id": "not-a-uuid", "target_id": target},
+		{"source_id": source, "target_id": strings.ToUpper(target)},
+		{"source_id": source, "target_id": strings.ReplaceAll(target, "-", "")},
+	} {
+		snapshot := json.RawMessage(encode(endpoints))
+		id := f.commit(w.ID, nil, true, CommitObject{Target: "relation", ID: uuid.NewString(), Base: snapshot, After: snapshot})
+		if _, err := f.s.GetCollaborationCommit(ctx, id, User{}); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("noncanonical endpoints must remain private without a cast error: %v", err)
+		}
+	}
+	for _, tc := range []struct {
+		target   string
+		snapshot map[string]any
+		public   bool
+	}{
+		{"legacy:missing-entity", map[string]any{"kind": "work"}, false},
+		{strings.ToUpper(target), map[string]any{"kind": "work"}, false},
+		{"legacy:relation", map[string]any{"source_id": source, "target_id": target, "type": "created_by"}, true},
+	} {
+		id := f.commit(w.ID, nil, true)
+		var revision int64
+		if err := f.s.DB.QueryRow(`INSERT INTO catalog.revisions(target_id,version,actor_id,actor_name,edit_note,sources,snapshot)
+			VALUES($1,1,$2,'Historical author','Retained history','[]',$3) RETURNING id`, tc.target, f.u.ID, encode(tc.snapshot)).Scan(&revision); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.DB.Exec(`INSERT INTO catalog.revision_commits(revision_id,commit_id) VALUES($1,$2)`, revision, id); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.s.GetCollaborationCommit(ctx, id, User{})
+		if tc.public && err != nil || !tc.public && !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("legacy target %q visibility changed: %v", tc.target, err)
+		}
 	}
 }
 

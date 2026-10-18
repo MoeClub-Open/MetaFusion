@@ -200,20 +200,26 @@ func workspaceCommitsFrom(ctx context.Context, q queryer, id string, pendingOnly
 // commit without retained objects is public only when its actual revision
 // links prove every affected target. Unknown history is never guessed public.
 // Both sides of relation changes must remain public, including deletions.
+// Keep UUID columns indexed. Historical JSON/text IDs must be canonical before
+// casting, so malformed snapshots remain private without aborting the query.
 const collaborationCommitPublicPredicate = `c.merged_at IS NOT NULL AND COALESCE((
 	SELECT bool_and(CASE WHEN o.target='entity' THEN
-		EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id::text=o.target_id AND e.state='active')
+		EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id=CASE
+			WHEN o.target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN o.target_id::uuid END AND e.state='active')
 		AND NOT EXISTS(SELECT 1 FROM (VALUES(o.base_document),(o.before_document),(o.after_document)) v(document)
 			CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(v.document->'contents')='array'
 				THEN v.document->'contents' ELSE '[]'::jsonb END) inclusion
 			WHERE v.document->>'kind'='track' AND NOT EXISTS(SELECT 1 FROM catalog.entities e
-				WHERE e.id::text=inclusion->>'expression_id' AND e.kind='expression' AND e.state='active'))
+				WHERE e.id=CASE WHEN inclusion->>'expression_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+					THEN (inclusion->>'expression_id')::uuid END AND e.kind='expression' AND e.state='active'))
 	WHEN o.target='relation' THEN
 		(o.base_document IS NOT NULL OR o.before_document IS NOT NULL OR o.after_document IS NOT NULL) AND NOT EXISTS(
 			SELECT 1 FROM (VALUES(o.base_document),(o.before_document),(o.after_document)) v(document)
 			WHERE v.document IS NOT NULL AND NOT (
-				EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id::text=v.document->>'source_id' AND e.state='active')
-				AND EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id::text=v.document->>'target_id' AND e.state='active')))
+				EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id=CASE WHEN v.document->>'source_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+					THEN (v.document->>'source_id')::uuid END AND e.state='active')
+				AND EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id=CASE WHEN v.document->>'target_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+					THEN (v.document->>'target_id')::uuid END AND e.state='active')))
 	ELSE false END)
 	FROM (
 		SELECT target,target_id::text,base_document,before_document,after_document FROM catalog.commit_objects WHERE commit_id=c.id
@@ -223,7 +229,8 @@ const collaborationCommitPublicPredicate = `c.merged_at IS NOT NULL AND COALESCE
 			r.target_id,NULL::jsonb,r.snapshot,NULL::jsonb
 		FROM catalog.revision_commits rc JOIN catalog.revisions r ON r.id=rc.revision_id
 		WHERE rc.commit_id=c.id AND NOT EXISTS(SELECT 1 FROM catalog.commit_objects
-			WHERE commit_id=c.id AND target_id::text=r.target_id)
+			WHERE commit_id=c.id AND target_id=CASE WHEN r.target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+				THEN r.target_id::uuid END)
 	) o
 ),false)`
 
