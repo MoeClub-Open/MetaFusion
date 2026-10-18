@@ -391,6 +391,10 @@ func OpenAPI() map[string]any {
 	paths["/notifications"].(map[string]any)["get"].(map[string]any)["parameters"] = []any{
 		qp("limit", "Page size, default 20, max 100; out-of-range values are clamped (never rejected)", false),
 		qp("offset", "Page offset, default 0; negative values are clamped to 0", false),
+		qp("category", "discussion / catalog / review / system; empty selects all, including historical types", false),
+		qp("read", "unread / read; empty selects both", false),
+		qp("from", "Inclusive UTC date YYYY-MM-DD, filtering latest event time", false),
+		qp("to", "Inclusive UTC date YYYY-MM-DD; invalid or reversed ranges return 400", false),
 	}
 	paths["/catalog/tags"].(map[string]any)["get"].(map[string]any)["parameters"] = []any{
 		qp("q", "Substring filter on tag name", false),
@@ -411,6 +415,8 @@ func OpenAPI() map[string]any {
 	}
 	add("/users/{id}/contributions", "get", "Public merged contributions for one UTC calendar year, with daily zero-filled counts and a paginated commit feed. A merged multi-object commit counts once. Frozen participant authors, the commit caller and the merger are separate. Each participant receives one contribution per merged commit. The calendar and merged statistics count only applied commits. Legacy revisions without a commit are explicitly marked in activity and counted separately; no private workspace, unmerged commit or pending pull request is exposed. Hidden targets are excluded; messages and pull-request identifiers are omitted when a commit also contains hidden objects. Invalid UUID returns 404 not_found; unknown users return an empty feed without reading account tables. Invalid year returns 400 invalid_year.", "", "UserContributions", false)
 	paths["/users/{id}/contributions"].(map[string]any)["get"].(map[string]any)["parameters"] = []any{
+		qp("from", "Inclusive UTC date YYYY-MM-DD within the selected year; filters only activity and its total, leaving annual summary/calendar unchanged", false),
+		qp("to", "Inclusive UTC date YYYY-MM-DD within the selected year", false),
 		map[string]any{"name": "id", "in": "path", "required": true, "schema": map[string]any{"type": "string", "format": "uuid"}},
 		map[string]any{"name": "year", "in": "query", "description": "UTC calendar year; defaults to the current UTC year. An invalid explicit value returns 400 invalid_year.", "schema": map[string]any{"type": "integer", "minimum": 1970, "maximum": 9999}},
 		map[string]any{"name": "page", "in": "query", "description": "Page number; values below one fall back to one.", "schema": map[string]any{"type": "integer", "minimum": 1, "default": 1}},

@@ -50,12 +50,30 @@ export interface AuditLogPage {
 /** 与账号服务的响应形状一致：单页 20 条足够读完一屏，翻页由调用方控制。 */
 export const AUDIT_PAGE_SIZE = 20;
 
-export async function fetchOwnAuditLogs(userId: string, page = 1, perPage = AUDIT_PAGE_SIZE): Promise<AuditLogPage> {
+export interface OwnAuditQuery {
+  page?: number;
+  per_page?: number;
+  service?: string;
+  action?: string;
+  result?: "" | "success" | "failure";
+  from?: string;
+  to?: string;
+  target_id?: string;
+  request_id?: string;
+}
+
+export async function fetchOwnAuditLogs(userId: string, query: OwnAuditQuery = {}, signal?: AbortSignal): Promise<AuditLogPage> {
   const actorUserId = userId.trim();
   if (!actorUserId) throw new Error("actor_user_id_required");
+  const page = query.page ?? 1;
+  const perPage = query.per_page ?? AUDIT_PAGE_SIZE;
   const params = new URLSearchParams({ actor_user_id: actorUserId, page: String(page), per_page: String(perPage) });
+  for (const key of ["service", "action", "result", "from", "to", "target_id", "request_id"] as const) {
+    const value = query[key]?.trim();
+    if (value) params.set(key, value);
+  }
   const res = await fetchApi<{ items?: unknown[]; total?: number; page?: number; per_page?: number }>(
-    "/admin/audit-logs?" + params.toString()
+    "/admin/audit-logs?" + params.toString(), { signal }
   );
   // 界面上有"暂无记录"文案，所以取不到 items 必须抛（requireArray），不能折成空数组——
   // 那会把"读不到"讲成"你没做过任何操作"（同 lib/api/fields.ts 的口径）。
@@ -72,7 +90,7 @@ export async function fetchOwnAuditLogs(userId: string, page = 1, perPage = AUDI
 }
 
 // normalizeAuditEntry 收敛一条记录：只给高频字段稳定类型，changes 原样透传——
-// 它的形状由写入侧与契约决定，界面按 JSON 展示，不做二次加工（更不"还原"脱敏值）。
+// 它的形状由写入侧与契约决定，可读摘要和原始详情都保留服务端的脱敏值。
 function normalizeAuditEntry(raw: unknown): AuditLogEntry {
   const row = (raw ?? {}) as Record<string, any>;
   return {

@@ -15,6 +15,7 @@ export interface PublicUser {
   username: string;
   /** 空串=未设置，调用方回退用户名。 */
   display_name?: string;
+  avatar_url?: string;
   /** 空串=未设置，调用方不渲染简介区。 */
   bio?: string;
   /** 仅封禁账号带出（后端 omitempty）；封禁是账号状态，不代表资料不存在。 */
@@ -94,13 +95,15 @@ export interface UserContributions {
 
 export async function fetchUserContributions(
   id: string,
-  opts: { year?: number; page?: number; pageSize?: number } = {}
+  opts: { year?: number; page?: number; pageSize?: number; from?: string; to?: string } = {}
 ): Promise<UserContributions> {
   const params = new URLSearchParams({
     year: String(opts.year ?? new Date().getUTCFullYear()),
     page: String(opts.page ?? 1),
     page_size: String(opts.pageSize ?? 20),
   });
+  if (opts.from) params.set("from", opts.from);
+  if (opts.to) params.set("to", opts.to);
   const res = await fetchApi<UserContributions>(
     "/users/" + encodeURIComponent(id) + "/contributions?" + params.toString()
   );

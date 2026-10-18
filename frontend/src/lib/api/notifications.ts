@@ -96,11 +96,13 @@ function normalizeNotification(raw: Record<string, any>): Notification {
 
 /** GET /notifications?limit=&offset= —— 按时间倒序，未登录 401 authentication_required。 */
 export async function fetchNotifications(
-  params: { limit?: number; offset?: number } = {}
+  params: { limit?: number; offset?: number; category?: string; read?: string; from?: string; to?: string } = {}, signal?: AbortSignal
 ): Promise<NotificationListResponse> {
   const limit = clampInt(params.limit, NOTIFICATION_PAGE_SIZE_DEFAULT, 1, NOTIFICATION_PAGE_SIZE_MAX);
   const offset = clampInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-  const res = await fetchApi<Record<string, any>>(`/notifications?limit=${limit}&offset=${offset}`);
+  const query = new URLSearchParams({ limit:String(limit), offset:String(offset) });
+  for (const key of ["category","read","from","to"] as const) if (params[key]) query.set(key,params[key]);
+  const res = await fetchApi<Record<string, any>>("/notifications?"+query.toString(), { signal });
   // 非数组即抛 invalid_response: items：界面上有"暂无通知"文案，漂移不能伪装成空列表。
   const items = requireArray<Record<string, any>>(res?.items, "items").map(normalizeNotification);
   return {

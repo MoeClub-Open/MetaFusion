@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { displayNameOf } from "@/lib/api";
+import { useAuth } from "@/lib/authContext";
 
 export interface UserAvatarProps {
   user?: {
+    id?: string;
     username?: string;
     display_name?: string | null;
     avatar_url?: string | null;
@@ -66,7 +68,10 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 }) => {
   const [imgError, setImgError] = useState(false);
 
-  const avatarUrl = src ?? user?.avatar_url ?? null;
+  const {user:viewer}=useAuth();
+  const userID=user?.id;
+  const publicAvatar=userID && /^[0-9a-f-]{36}$/i.test(userID) ? `/api/users/${encodeURIComponent(userID)}/avatar` : null;
+  const avatarUrl = src ?? (userID===viewer?.id ? viewer?.avatar_url : undefined) ?? user?.avatar_url ?? publicAvatar;
   const username = user?.username || "";
   const name = user ? displayNameOf(user as { username: string; display_name?: string }) : alt || "U";
   const initial = (name ? name.slice(0, 1) : "U").toUpperCase();

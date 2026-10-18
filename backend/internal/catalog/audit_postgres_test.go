@@ -161,6 +161,9 @@ func (f *auditFixture) changeWorkspace(engine http.Handler, workspace Workspace,
 			f.t.Fatal(err)
 		}
 		check(requestPrefix+"-workspace", "workspace.created", "workspace", workspace.ID, http.MethodPost, "/api/catalog/workspaces")
+		if got := f.waitRow(requestPrefix + "-workspace"); !strings.Contains(got.changes, `"target_name": "audit working copy"`) {
+			f.t.Fatalf("workspace audit must capture its name: %s", got.changes)
+		}
 	}
 	path := "/api/catalog/workspaces/" + workspace.ID
 	in := WorkspaceChanges{ExpectedVersion: workspace.Version, Operations: operations}
@@ -183,6 +186,10 @@ func (f *auditFixture) changeWorkspace(engine http.Handler, workspace Workspace,
 		f.t.Fatal(err)
 	}
 	check(requestPrefix+"-commit", "workspace.committed", "commit", commit.ID, http.MethodPost, "/api/catalog/workspaces/:id/commits")
+	row = f.waitRow(requestPrefix + "-commit")
+	if err := json.Unmarshal([]byte(row.changes), &detail); err != nil || detail["message"] != commitInput.Message || detail["object_count"] != float64(len(commit.Changes)) {
+		f.t.Fatalf("commit audit must capture message and object count: %s %v", row.changes, err)
+	}
 	workspace, err := f.s.GetWorkspace(context.Background(), workspace.ID, *f.user)
 	if err != nil {
 		f.t.Fatal(err)
@@ -197,6 +204,10 @@ func (f *auditFixture) changeWorkspace(engine http.Handler, workspace Workspace,
 		f.t.Fatalf("bypass user did not merge: %s", w.Body.String())
 	}
 	check(requestPrefix+"-push", "workspace.pushed", "workspace", workspace.ID, http.MethodPost, "/api/catalog/workspaces/:id/push")
+	row = f.waitRow(requestPrefix + "-push")
+	if err := json.Unmarshal([]byte(row.changes), &detail); err != nil || detail["applied"] != true || detail["commit_count"] != float64(len(pushed.Commits)) {
+		f.t.Fatalf("push audit must distinguish applied changes: %s %v", row.changes, err)
+	}
 	return *pushed.Workspace, changes.Refs, commit
 }
 

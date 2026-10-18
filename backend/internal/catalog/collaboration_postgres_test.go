@@ -566,7 +566,7 @@ func TestPostgresWorkspaceResolutionCreditsOnlyNewChanges(t *testing.T) {
 			if _, err = f.s.PushWorkspace(ctx, mine.ID, pushWorkspaceInput(rebased.Workspace), author); err != nil {
 				t.Fatal(err)
 			}
-			contributions, err := f.s.UserContributions(ctx, author.ID, 0, 1, 20)
+			contributions, err := f.s.UserContributions(ctx, author.ID, ContributionQuery{Year: 0, Page: 1, PageSize: 20})
 			expected := int64(1)
 			if keepCurrent {
 				expected = 0

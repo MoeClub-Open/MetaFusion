@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { PageShell } from "@/components/ui/PageShell";
@@ -20,17 +20,14 @@ import { getAuthLoginUrl } from "@/lib/services";
 import {
   AlertCircle,
   Bell,
-  Check,
   CheckCheck,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Inbox,
   Loader2,
-  LogIn,
   MessageSquare,
   PackagePlus,
-  RotateCw,
   UploadCloud,
   XCircle,
 } from "lucide-react";
@@ -129,8 +126,8 @@ function notificationRows(n: Notification, t: Translate): { label: string; value
     }
     case "entity.review_approved":
     case "entity.review_rejected": {
-      const entity = payloadText(payload, "entity_title");
-      if (entity) rows.push({ label: t("notifications.field.entity"), value: entity });
+      const entity = payloadText(payload, "entity_title") || payloadText(payload,"pull_request_title");
+      if (entity) rows.push({ label: t(n.subject_type === "pull_request" ? "notifications.field.pullRequest" : "notifications.field.entity"), value: entity });
       const version = payloadNumberText(payload, "version");
       if (version) rows.push({ label: t("notifications.field.version"), value: version });
       break;
@@ -155,333 +152,80 @@ function notificationRows(n: Notification, t: Translate): { label: string; value
 }
 
 export default function NotificationsPage() {
-  const { user, loading: authLoading } = useAuth();
-  const { t, locale } = useI18n();
+  const {user,loading} = useAuth();
+  const {t} = useI18n();
+  return <><Navbar /><PageShell title={t("notifications.title")} icon={<Bell className="size-5 text-primary" />} spacing="compact">
+    {loading ? <p role="status">{t("common.loading")}</p> : user ? <NotificationInbox key={user.id} /> : <a href={getAuthLoginUrl("/notifications")} className="text-sm text-primary">{t("notifications.goLogin")}</a>}
+  </PageShell></>;
+}
 
-  const [offset, setOffset] = useState(0);
-  const [data, setData] = useState<NotificationListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  // 失败与"没有通知"是两种状态：失败只说失败并给重试，绝不再显示空态文案
-  // （同屏把失败讲成空是本项目修过多次的残留，见 docs-local/dev-log.md v0.2.5 段）。
-  const [failed, setFailed] = useState(false);
-  const [actionFailed, setActionFailed] = useState(false);
-  const [markingAll, setMarkingAll] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  // 本会话里已确认读过的 id：翻页重新取列表时若服务端仍回 read=false（缓存/竞态），
-  // 不能把用户刚点过的行翻回未读。Set 只做查询，不迭代（target es5 无 downlevelIteration）。
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
-
-  const load = useCallback(async (nextOffset: number) => {
-    setLoading(true);
-    setFailed(false);
-    // offset 先落定再发请求：失败时"重试"重试的是用户想去的这一页，而不是上一页。
-    setOffset(nextOffset);
-    try {
-      const res = await fetchNotifications({ limit: NOTIFICATION_PAGE_SIZE_DEFAULT, offset: nextOffset });
-      setData(res);
-    } catch {
-      // 失败必须如实显示：绝不 setData({ items: [] })，那会把"取不到"讲成"没有通知"。
-      setData(null);
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      setData(null);
-      setFailed(false);
-      setLoading(false);
-      return;
-    }
-    load(0);
-  }, [user, authLoading, load]);
-
-  const items = data ? data.items : [];
-  const total = data ? data.total : 0;
-  const unread = data ? data.unread : 0;
-  const pageCount = Math.max(1, Math.ceil(total / NOTIFICATION_PAGE_SIZE_DEFAULT));
-  const page = Math.floor(offset / NOTIFICATION_PAGE_SIZE_DEFAULT) + 1;
-
-  const handleMarkRead = async (n: Notification) => {
-    if (busyId !== null || markingAll) return;
-    setActionFailed(false);
-    setBusyId(n.id);
-    try {
-      const res = await markNotificationRead(n.id);
-      setReadIds((prev) => {
-        const next = new Set(prev);
-        next.add(n.id);
-        return next;
-      });
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              unread: res.unread,
-              items: prev.items.map((item) => (item.id === n.id ? { ...item, read: true } : item)),
-            }
-          : prev
-      );
-      // 顶栏角标据此立即刷新，不必为它开一条轮询。
-      emitNotificationsChanged();
-    } catch {
-      setActionFailed(true);
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handleMarkAll = async () => {
-    if (markingAll || unread <= 0) return;
-    setActionFailed(false);
-    setMarkingAll(true);
-    try {
-      const res = await markAllNotificationsRead();
-      setReadIds((prev) => {
-        const next = new Set(prev);
-        for (let i = 0; i < items.length; i += 1) next.add(items[i].id);
-        return next;
-      });
-      setData((prev) =>
-        prev
-          ? { ...prev, unread: res.unread, items: prev.items.map((item) => ({ ...item, read: true })) }
-          : prev
-      );
-      emitNotificationsChanged();
-    } catch {
-      setActionFailed(true);
-    } finally {
-      setMarkingAll(false);
-    }
-  };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <PageShell width="narrow" center>
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        </PageShell>
-      </div>
-    );
+function NotificationInbox() {
+  const {t,locale} = useI18n();
+  const [category,setCategory] = useState("");
+  const [read,setRead] = useState("");
+  const [dates,setDates] = useState({from:"",to:""});
+  const [draft,setDraft] = useState({from:"",to:""});
+  const [offset,setOffset] = useState(0);
+  const [data,setData] = useState<NotificationListResponse|null>(null);
+  const [loading,setLoading] = useState(true);
+  const [failed,setFailed] = useState(false);
+  const [actionFailed,setActionFailed] = useState(false);
+  const [busy,setBusy] = useState(false);
+  const [reload,setReload] = useState(0);
+  useEffect(()=>{
+    const controller = new AbortController();
+    setLoading(true);setFailed(false);setData(null);
+    fetchNotifications({category,read,...dates,offset,limit:NOTIFICATION_PAGE_SIZE_DEFAULT},controller.signal).then(result=>{
+      if(controller.signal.aborted)return;
+      if(offset>0 && offset>=result.total){setOffset(Math.max(0,Math.ceil(result.total/NOTIFICATION_PAGE_SIZE_DEFAULT)-1)*NOTIFICATION_PAGE_SIZE_DEFAULT);return;}
+      setData(result);
+    }).catch(()=>{if(!controller.signal.aborted)setFailed(true);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    return ()=>controller.abort();
+  },[category,read,dates,offset,reload]);
+  async function mark(id?:string){
+    if(busy)return;
+    setBusy(true);setActionFailed(false);
+    try { if(id)await markNotificationRead(id);else await markAllNotificationsRead();emitNotificationsChanged();setReload(n=>n+1); }
+    catch {setActionFailed(true);} finally{setBusy(false);}
   }
-
-  // 未登录：/notifications 不在 AuthGate 的受保护前缀里（它要能匿名打开），所以本页自己给
-  // 登录入口，不整屏空白、也不把 401 显示成"暂无通知"。
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <PageShell width="narrow" center>
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Bell className="w-10 h-10 text-text-faint" strokeWidth={1.5} />
-            <p className="text-sm font-medium text-text-strong">{t("notifications.loginRequired")}</p>
-            <p className="text-xs text-text-muted">{t("notifications.loginRequiredHint")}</p>
-            <a
-              href={getAuthLoginUrl("/notifications")}
-              className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg bg-primary/15 hover:bg-primary/25 border border-primary/30 text-xs font-semibold text-primary transition-colors duration-fast ease-soft"
-            >
-              <LogIn className="w-3.5 h-3.5" strokeWidth={1.8} />
-              <span>{t("notifications.goLogin")}</span>
-            </a>
-          </div>
-        </PageShell>
+  const selectClass="h-8 rounded-control border border-line bg-surface px-2 text-xs text-text-body";
+  return <div className="grid items-start gap-5 md:grid-cols-[11rem_minmax(0,1fr)]">
+    <nav aria-label={t("notifications.category")} className="flex gap-1 overflow-x-auto md:sticky md:top-20 md:flex-col">
+      {["","discussion","catalog","review","system"].map(value=><button type="button" key={value} onClick={()=>{setCategory(value);setOffset(0);}} aria-current={category===value?"page":undefined} className={`flex shrink-0 items-center justify-between gap-2 rounded-control px-3 py-2 text-left text-sm ${category===value?"bg-primary/10 font-medium text-primary":"text-text-muted hover:bg-surfaceSubtle"}`}>
+        {t(`notifications.category.${value||"all"}`)}{!value && data && data.unread>0 && <span className="rounded-chip bg-primary/10 px-1.5 text-xs">{data.unread}</span>}
+      </button>)}
+    </nav>
+    <div className="min-w-0 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle pb-3">
+        <div className="flex items-center gap-1" role="group" aria-label={t("notifications.readFilter")}>
+          {["","unread","read"].map(value=><button key={value} type="button" aria-pressed={read===value} onClick={()=>{setRead(value);setOffset(0);}} className={`rounded-control px-3 py-1.5 text-xs ${read===value?"bg-primary/10 text-primary":"text-text-muted hover:bg-surfaceSubtle"}`}>{t(`notifications.read.${value||"all"}`)}</button>)}
+        </div>
+        <button type="button" onClick={()=>void mark()} disabled={busy||!data?.unread} className="inline-flex items-center gap-1.5 rounded-control border border-line px-2.5 py-1.5 text-xs text-text-muted disabled:opacity-40"><CheckCheck className="size-3.5" />{t("notifications.markAllRead")}</button>
       </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <PageShell
-        width="narrow"
-        icon={<Bell className="w-5 h-5 text-primary" strokeWidth={1.8} />}
-        title={t("notifications.title")}
-        subtitle={unread > 0 ? t("notifications.unreadSummary", { count: unread }) : undefined}
-        actions={
-          <button
-            type="button"
-            onClick={handleMarkAll}
-            disabled={markingAll || unread <= 0}
-            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-line bg-emphasis/[0.04] hover:bg-emphasis/[0.08] text-xs font-medium text-text-strong transition-colors duration-fast ease-soft disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <CheckCheck className="w-3.5 h-3.5" strokeWidth={1.8} />
-            <span>{markingAll ? t("notifications.processing") : t("notifications.markAllRead")}</span>
-          </button>
-        }
-        spacing="compact"
-      >
-        {actionFailed && (
-          <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3 text-amber-600 dark:text-warn-soft text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="min-w-0 break-words">{t("notifications.actionFailed")}</span>
-          </div>
-        )}
-
-        {/* 失败态：只有失败文案 + 重试，没有空态文案。 */}
-        {failed && (
-          <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-red-500 dark:text-danger-soft flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-medium break-words">{t("notifications.error")}</p>
-              <p className="text-xs opacity-80 break-words">{t("notifications.errorHint")}</p>
-              <button
-                type="button"
-                onClick={() => load(offset)}
-                className="mt-1 inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-red-500/30 font-mono text-[11px] hover:bg-red-500/10 transition-colors duration-fast ease-soft"
-              >
-                <RotateCw className="w-3 h-3" />
-                <span>{t("notifications.retry")}</span>
-              </button>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={event=>{event.preventDefault();if(!draft.from||!draft.to||draft.from<=draft.to){setDates(draft);setOffset(0);}}}>
+        {(["from","to"] as const).map(field=><label key={field} className="space-y-1 text-xs text-text-muted"><span className="block">{t(`accountUI.${field}`)} (UTC)</span><input aria-label={t(`accountUI.${field}`)} type="date" className={selectClass} value={draft[field]} onChange={event=>setDraft({...draft,[field]:event.target.value})} max={field==="from"?draft.to||undefined:undefined} min={field==="to"?draft.from||undefined:undefined}/></label>)}
+        <button className={selectClass} type="submit">{t("accountUI.filter")}</button>
+        {(dates.from||dates.to) && <button className="px-2 py-1 text-xs text-text-muted" type="button" onClick={()=>{setDraft({from:"",to:""});setDates({from:"",to:""});setOffset(0);}}>{t("accountUI.reset")}</button>}
+      </form>
+      {(failed||actionFailed) && <div role="alert" className="flex items-center gap-2 rounded-control border border-danger/20 p-3 text-sm text-danger"><AlertCircle className="size-4"/><span className="flex-1">{t(failed?"notifications.error":"notifications.actionFailed")}</span><button type="button" onClick={()=>setReload(n=>n+1)}>{t("common.retry")}</button></div>}
+      {loading ? <div role="status" className="flex justify-center gap-2 py-12 text-sm text-text-muted"><Loader2 className="size-4 animate-spin"/>{t("common.loading")}</div> : !failed && !data?.items.length ? <div className="rounded-control border border-line-subtle py-12 text-center text-sm text-text-muted"><Inbox className="mx-auto mb-3 size-6"/>{t("notifications.empty")}</div> : null}
+      {!!data?.items.length && <ul className="divide-y divide-line-subtle overflow-hidden rounded-control border border-line bg-surface">
+        {data.items.map(n=>{
+          const Icon=TYPE_ICON[n.type]||Bell;
+          const label=t(n.subject_type==="pull_request" && n.type==="entity.review_approved"?"notifications.type.prMerged":n.subject_type==="pull_request"&&n.type==="entity.review_rejected"?"notifications.type.prClosed":TYPE_LABEL_KEY[n.type]||"notifications.type.unknown");
+          const href=notificationHref(n);
+          const context=notificationRows(n,t).filter(row=>![t("notifications.field.actor"),t("notifications.field.role"),t("notifications.field.version")].includes(row.label));
+          return <li key={n.id} className={`flex gap-3 px-3 py-3 sm:px-4 ${n.read?"":"bg-primary/[0.04]"}`}>
+            <Icon className={`mt-0.5 size-4 shrink-0 ${n.read?"text-text-faint":"text-primary"}`}/>
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2"><span className={`text-sm ${n.read?"text-text-body":"font-medium text-text-strong"}`}>{label}</span>{!n.read&&<span className="size-1.5 rounded-full bg-primary" aria-label={t("notifications.read.unread")}/>} {n.count>1&&<span className="text-xs text-text-muted">×{n.count}</span>}<time className="ml-auto text-xs text-text-faint" dateTime={n.updated_at} title={localDateTime(n.updated_at,locale)}>{isoTimestamp(n.updated_at)}</time></div>
+              {context.length>0&&<p className="line-clamp-2 break-words text-sm text-text-body">{context.map(row=>row.value).join(" · ")}</p>}
+              <div className="flex items-center gap-3 text-xs text-text-muted">{n.actor_name&&<span>{n.actor_name}</span>}{href&&<Link className="text-primary hover:underline" href={href} onClick={()=>{if(!n.read)void mark(n.id);}}>{t("notifications.open")}</Link>}{!n.read&&<button type="button" disabled={busy} className="ml-auto hover:text-primary disabled:opacity-40" onClick={()=>void mark(n.id)}>{t("notifications.markRead")}</button>}</div>
             </div>
-          </div>
-        )}
-
-        {loading && !data && !failed && (
-          <div className="rounded-xl border border-line bg-surfaceSubtle p-8 flex items-center justify-center gap-2 text-text-muted">
-            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            <span className="font-mono text-xs">{t("notifications.loading")}</span>
-          </div>
-        )}
-
-        {/* 空态：仅在"服务端明确回了空列表"时出现（failed / 首次加载中都不进这里）。 */}
-        {!failed && !loading && items.length === 0 && (
-          <div className="rounded-xl border border-line bg-surfaceSubtle p-8 flex flex-col items-center gap-2 text-center">
-            <Inbox className="w-8 h-8 text-text-faint" strokeWidth={1.5} />
-            <p className="text-sm font-medium text-text-body">{t("notifications.empty")}</p>
-            <p className="text-xs text-text-muted">{t("notifications.emptyHint")}</p>
-          </div>
-        )}
-
-        {items.length > 0 && (
-          <ul className={"space-y-2 transition-opacity duration-fast ease-soft " + (loading ? "opacity-60" : "")}>
-            {items.map((n) => {
-              const isRead = n.read || readIds.has(n.id);
-              const Icon = TYPE_ICON[n.type] || Bell;
-              const labelKey = TYPE_LABEL_KEY[n.type];
-              const label = t(labelKey || "notifications.type.unknown");
-              const rows = notificationRows(n, t);
-              const excerpt = n.type === "comment.replied" ? payloadText(n.payload, "excerpt") : "";
-              const href = notificationHref(n);
-              const busy = busyId === n.id;
-              return (
-                <li
-                  key={n.id}
-                  className={
-                    "rounded-xl border p-3.5 sm:p-4 transition-colors duration-fast ease-soft " +
-                    (isRead ? "border-line bg-surface" : "border-primary/25 bg-primary/[0.04]")
-                  }
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      aria-hidden
-                      className={"mt-1.5 w-2 h-2 rounded-full shrink-0 " + (isRead ? "bg-transparent" : "bg-primary")}
-                    />
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Icon
-                          className={"w-4 h-4 shrink-0 " + (isRead ? "text-text-faint" : "text-primary")}
-                          strokeWidth={1.8}
-                        />
-                        <span
-                          className={
-                            "text-sm break-words " + (isRead ? "font-medium text-text-body" : "font-semibold text-emphasis")
-                          }
-                        >
-                          {label}
-                        </span>
-                        {n.count > 1 && (
-                          <span className="rounded-full border border-line bg-surfaceSubtle px-2 py-0.5 font-mono text-[10px] text-text-muted">
-                            {t("notifications.aggregated", { count: n.count })}
-                          </span>
-                        )}
-                      </div>
-
-                      {rows.length > 0 && (
-                        <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                          {rows.map((row, index) => (
-                            <div key={row.label + "-" + index} className="flex items-baseline gap-1.5 min-w-0">
-                              <dt className="text-text-faint shrink-0">{row.label}</dt>
-                              <dd className="text-text-body break-words min-w-0">{row.value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      )}
-
-                      {excerpt && (
-                        <p className="border-l-2 border-line pl-2 text-xs text-text-muted break-words">{excerpt}</p>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <time
-                          dateTime={n.created_at}
-                          title={localDateTime(n.created_at, locale)}
-                          className="font-mono text-[10px] text-text-faint"
-                        >
-                          {isoTimestamp(n.created_at)}
-                        </time>
-                        {href && (
-                          <Link
-                            href={href}
-                            className="rounded-md px-2 h-6 inline-flex items-center font-mono text-[10px] text-primary hover:bg-primary/10 transition-colors duration-fast ease-soft"
-                          >
-                            {t("notifications.open")}
-                          </Link>
-                        )}
-                        {!isRead && (
-                          <button
-                            type="button"
-                            onClick={() => handleMarkRead(n)}
-                            disabled={busyId !== null || markingAll}
-                            className="rounded-md border border-line px-2 h-6 inline-flex items-center gap-1 font-mono text-[10px] text-text-muted hover:text-emphasis hover:bg-surfaceHover transition-colors duration-fast ease-soft disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                            <span>{busy ? t("notifications.processing") : t("notifications.markRead")}</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {!failed && total > 0 && (
-          <nav
-            aria-label={t("notifications.pagination")}
-            className="flex flex-col sm:flex-row items-center justify-between gap-2"
-          >
-            <span className="font-mono text-[11px] text-text-faint">
-              {t("notifications.pageStatus", { page, pages: pageCount })}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => load(Math.max(0, offset - NOTIFICATION_PAGE_SIZE_DEFAULT))}
-                disabled={loading || offset <= 0}
-                className="inline-flex items-center gap-1 px-3 h-8 rounded-lg border border-line bg-emphasis/[0.04] hover:bg-emphasis/[0.08] text-xs font-medium text-text-strong transition-colors duration-fast ease-soft disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.8} />
-                <span>{t("notifications.prev")}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => load(offset + NOTIFICATION_PAGE_SIZE_DEFAULT)}
-                disabled={loading || offset + NOTIFICATION_PAGE_SIZE_DEFAULT >= total}
-                className="inline-flex items-center gap-1 px-3 h-8 rounded-lg border border-line bg-emphasis/[0.04] hover:bg-emphasis/[0.08] text-xs font-medium text-text-strong transition-colors duration-fast ease-soft disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <span>{t("notifications.next")}</span>
-                <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
-              </button>
-            </div>
-          </nav>
-        )}
-      </PageShell>
+          </li>;
+        })}
+      </ul>}
+      {data&&data.total>NOTIFICATION_PAGE_SIZE_DEFAULT&&<nav className="flex items-center justify-between text-xs text-text-muted"><span>{t("accountUI.total",{count:data.total})}</span><div className="flex items-center gap-2"><button type="button" disabled={offset===0||loading} onClick={()=>setOffset(n=>Math.max(0,n-NOTIFICATION_PAGE_SIZE_DEFAULT))} aria-label={t("users.profile.prevPage")} className="rounded-control border border-line p-2 disabled:opacity-40"><ChevronLeft className="size-3.5"/></button><span>{Math.floor(offset/NOTIFICATION_PAGE_SIZE_DEFAULT)+1} / {Math.ceil(data.total/NOTIFICATION_PAGE_SIZE_DEFAULT)}</span><button type="button" disabled={offset+NOTIFICATION_PAGE_SIZE_DEFAULT>=data.total||loading} onClick={()=>setOffset(n=>n+NOTIFICATION_PAGE_SIZE_DEFAULT)} aria-label={t("users.profile.nextPage")} className="rounded-control border border-line p-2 disabled:opacity-40"><ChevronRight className="size-3.5"/></button></div></nav>}
     </div>
-  );
+  </div>;
 }

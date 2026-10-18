@@ -79,7 +79,8 @@ BACKTICK = chr(96)
 # /api 下不属于主仓的前缀：文档引用它们不算错，但本脚本没有兄弟服务的路由表，无法判对错，
 # 因此只报告、不失败。逐条对应 docs/architecture/service-split-migration.md §2 表的归属列。
 OTHER_SERVICE_ROUTES = [
-    ("auth", "exact", "/api/users/*"),  # 公开账号资料（网关按 ^/api/users/[^/]+$ 分流）
+    ("auth", "exact", "/api/users/*"),
+    ("auth", "exact", "/api/users/*/avatar"),  # 账号资料与头像由网关精确分流
     ("auth", "prefix", "/api/setup"),
     ("auth", "prefix", "/api/auth/"),
     ("auth", "prefix", "/api/admin/users"),

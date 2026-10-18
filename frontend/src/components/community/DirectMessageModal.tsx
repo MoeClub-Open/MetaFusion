@@ -8,8 +8,7 @@ import { Clock, X } from "lucide-react";
 import MessageThread, { MessageThreadPeer } from "./MessageThread";
 
 interface DirectMessageModalProps {
-  // 对方资料来自账号服务的公开投影（/users/:id）：只有 id / username / role，
-  // created_at 与 avatar_url 在 auth.users 里并不存在，因此是可选项而不是空值。
+  // 对方资料来自公开投影；头像按账号 ID 解析，时间信息仍为可选项。
   peerUser: MessageThreadPeer;
   isOpen: boolean;
   onClose: () => void;

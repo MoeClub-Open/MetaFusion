@@ -56,7 +56,7 @@ $audit_ddl$;
 | `action` | 稳定机器码 `域.动作`，如 `user.role_changed` | 只增不改；改名等于改历史 |
 | `actor_user_id` | 操作者 id | **不建外键**：账号删了审计还得在（与 `auth.oauth_audit.client_id` 同一理由） |
 | `actor_username` | 操作者用户名**快照** | 账号改名/删号后仍可读 |
-| `credential_type` | `session` / `pat` / `oauth` / `anonymous` / `system` | 当前账号审计将登录身份映射为 session，其余服务按 FromPAT 映射为 pat/session，未登录为 anonymous；oauth/system 尚无写入方，不能据 session 断言凭据来源（见 §7） |
+| `credential_type` | `session` / `pat` / `oauth` / `anonymous` / `system` | catalog/auth 按认证身份区分 session/pat/oauth；未登录为 anonymous；其余服务的限制见 §7 |
 | `actor_ip` | 来源 IP（gin `c.ClientIP()`，取网关透传后的值） | |
 | `actor_user_agent` | User-Agent，截断到 512 字符 | |
 | `target_type` / `target_id` | 被动对象类型与 id（`user` / `entity` / `topic` / `asset`…） | id 一律用字符串，跨服务类型不一 |
@@ -96,6 +96,9 @@ $audit_ddl$;
   - `X-Request-Id` 缺省生成并回写响应头。
 - 处理器补充被动对象与变更摘要：`audit.Describe(c, audit.Detail{TargetType, TargetID, Changes})`。
   为拿"变更前"值而多做一次读是允许的（只有写端点会多一次读）。
+
+目录协作操作的成功记录额外捕获副本名称、提交说明、PR 标题、对象/提交数量和是否合入等轻量摘要。
+只使用成功结果填充，不复制完整文档或把失败请求描述为已应用；历史行不回填、不改写。
 
 统一审计旁路写入，不参与业务事务；当前动作没有强一致例外。业务成功而审计失败时记录错误并丢行。
 OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不复制到统一表，两者不能互相替代。
@@ -148,10 +151,13 @@ OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不�
 匿名/系统操作的 `actor_username` 是空串（该列 NOT NULL DEFAULT ''），只有 `credential_type`（`anonymous`）能区分"匿名"与"用户名恰好为空"。
 
 管理台：账号服务 `admin/` 的最小只读页（列表 + 过滤 + 分页），不做导出/图表/详情抽屉。
-本人视角：站点设置页的「我的操作记录」（列表 + 分页，不做过滤/导出），展示 `service`、
-`action`、对象、结果、凭据类型、来源 IP 与 `changes` 摘要；请求不带 `actor_*` 参数。
+本人视角：站点设置页的「我的操作记录」始终显式传当前用户的 `actor_user_id`，包括管理员。
+支持服务、操作、结果、UTC 日期范围、对象 ID、请求编号筛选及每页 20/50/100 条；筛选与分页使用同一查询条件。
+按日期分组显示本地化操作名、对象摘要、结果与凭据类型；详情弹窗展示可读变更，IP、接口、请求编号及原始 JSON 放在折叠详情中。
+标题优先使用操作时捕获的 `target_name`；旧记录打开详情时可按现有对象读取权限补读当前名称，并明确标记为当前名称，不能当成历史快照。
+未知动作保留原始码供详情排查。切换用户立即清空私密列表，过期请求取消；读取失败与空记录分别展示。
 
-读取与界面表述须保留以下完整性边界：
+读取与界面表述须保留以下完整性边界，个人页以折叠说明展示：
 
 - 审计是旁路、最终一致（§3）：队列满或落库失败会丢行，且不补写；
 - `changes` 是脱敏 + 截断后的摘要（§4），实体改动的完整前后值在 `catalog.revisions.snapshot`；
@@ -196,9 +202,9 @@ OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不�
 ## 7. 已知取舍与未覆盖
 
 - **不含读取操作**：审计只记写操作（含登录/登出这类写会话的动作）；GET 不记。
-- **oauth/system 当前无写入方**：审计身份投影未使用 OAuth 判定，种子和迁移也不走 HTTP 审计路径，不能据此判断系统内部动作不存在。
+- **system 当前无写入方**：种子和迁移不走 HTTP 审计路径，不能据此判断系统内部动作不存在。
 - **`auth.oauth_audit` 保留不迁移**：OAuth 子域已有的事务内审计继续写入；新表不复制它的历史行，
   完整 OAuth 史须核对事务审计与统一审计两处。
-- **credential_type 是当前写入映射**：catalog/community/storage 记录 pat/session，不能仅凭该列区分 JWT 用途。
+- **credential_type 是写入时的映射**：catalog/auth 已使用认证身份的 OAuth 判定；community/storage 仍记录 pat/session，旧行不改写，不能仅凭旧值或这两个服务的 session 值区分 JWT 用途。
 - **不做保留策略与分区**：表会持续增长，清理/归档是运维议题（需要时再加）。
 - **审计行对应用角色只可追加**（`deploy/sql/roles-least-privilege.sql` 已 REVOKE UPDATE/DELETE/TRUNCATE），但**不做防篡改的哈希链**：拥有 `mf_audit_owner` 的人仍可改写历史行。清理/归档只能用该 owner 角色。

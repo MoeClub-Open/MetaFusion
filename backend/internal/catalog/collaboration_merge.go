@@ -819,7 +819,7 @@ func notifyPullRequestDecision(ctx context.Context, tx *sql.Tx, p PullRequest, a
 		if recipient == "" || recipient == actor.ID {
 			continue
 		}
-		if err := notify(ctx, tx, NotificationInput{RecipientID: recipient, Type: typ, ActorID: actor.ID, ActorName: actor.Username, SubjectType: "pull_request", SubjectID: p.ID, Payload: map[string]any{"pull_request_id": p.ID}, DedupeKey: typ + ":pull_request:" + p.ID}); err != nil {
+		if err := notify(ctx, tx, NotificationInput{RecipientID: recipient, Type: typ, ActorID: actor.ID, ActorName: actor.Username, SubjectType: "pull_request", SubjectID: p.ID, Payload: map[string]any{"pull_request_id": p.ID, "pull_request_title": p.Title}, DedupeKey: typ + ":pull_request:" + p.ID}); err != nil {
 			return err
 		}
 	}

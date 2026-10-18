@@ -66,7 +66,7 @@ func (f *notifyFixture) saveAs(u User, e Entity) Entity {
 // notifs 读收件箱（断言聚合要看行数与 count，不能只看未读数）。
 func (f *notifyFixture) notifs(recipient User) []Notification {
 	f.t.Helper()
-	items, total, _, err := f.s.ListNotifications(context.Background(), recipient.ID, 50, 0)
+	items, total, _, err := f.s.ListNotifications(context.Background(), recipient.ID, NotificationQuery{Limit: 50, Offset: 0})
 	if err != nil {
 		f.t.Fatalf("list notifications: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestNotificationInboxLifecycleOnPostgres(t *testing.T) {
 	work := f.saveAs(f.owner, Entity{Kind: "work", Title: "通知用例作品"})
 
 	// 收件箱初始为空：不能把"还没查"与"零条"混为一谈。
-	if items, total, unread, err := f.s.ListNotifications(ctx, f.owner.ID, 20, 0); err != nil || total != 0 || unread != 0 || len(items) != 0 {
+	if items, total, unread, err := f.s.ListNotifications(ctx, f.owner.ID, NotificationQuery{Limit: 20, Offset: 0}); err != nil || total != 0 || unread != 0 || len(items) != 0 {
 		t.Fatalf("初始收件箱应为空: %v total=%d unread=%d items=%d", err, total, unread, len(items))
 	}
 
@@ -151,7 +151,7 @@ func TestNotificationInboxLifecycleOnPostgres(t *testing.T) {
 		t.Fatalf("投递响应应回执未读数 1: %s", w.Body.String())
 	}
 
-	items, total, unread, err := f.s.ListNotifications(ctx, f.owner.ID, 20, 0)
+	items, total, unread, err := f.s.ListNotifications(ctx, f.owner.ID, NotificationQuery{Limit: 20, Offset: 0})
 	if err != nil || total != 1 || unread != 1 || len(items) != 1 {
 		t.Fatalf("接收者应有 1 条未读: err=%v total=%d unread=%d items=%d", err, total, unread, len(items))
 	}
@@ -172,7 +172,7 @@ func TestNotificationInboxLifecycleOnPostgres(t *testing.T) {
 		t.Fatalf("他人标记已读应 404 not_found: %d %s", w.Code, w.Body.String())
 	}
 	// 越权：另一个人的收件箱里看不到这条（列表本身不接受 recipient 参数）。
-	if items, total, _, err := f.s.ListNotifications(ctx, f.reviewer.ID, 20, 0); err != nil || total != 0 || len(items) != 0 {
+	if items, total, _, err := f.s.ListNotifications(ctx, f.reviewer.ID, NotificationQuery{Limit: 20, Offset: 0}); err != nil || total != 0 || len(items) != 0 {
 		t.Fatalf("他人收件箱不该看见这条: %v total=%d", err, total)
 	}
 	if unread, err := f.s.NotificationUnreadCount(ctx, f.owner.ID); err != nil || unread != 1 {
@@ -266,11 +266,11 @@ func TestNotificationPaginationOnPostgres(t *testing.T) {
 		f.deliver(t, f.owner.ID, other.ID, fmt.Sprintf("bbbbbbbb-0000-0000-0000-00000000000%d", i+1), "正文 "+tag)
 	}
 
-	page1, total, unread, err := f.s.ListNotifications(ctx, f.owner.ID, 2, 0)
+	page1, total, unread, err := f.s.ListNotifications(ctx, f.owner.ID, NotificationQuery{Limit: 2, Offset: 0})
 	if err != nil || total != 3 || unread != 3 || len(page1) != 2 {
 		t.Fatalf("第一页: err=%v total=%d unread=%d len=%d", err, total, unread, len(page1))
 	}
-	page2, total2, _, err := f.s.ListNotifications(ctx, f.owner.ID, 2, 2)
+	page2, total2, _, err := f.s.ListNotifications(ctx, f.owner.ID, NotificationQuery{Limit: 2, Offset: 2})
 	if err != nil || total2 != 3 || len(page2) != 1 {
 		t.Fatalf("第二页: err=%v total=%d len=%d", err, total2, len(page2))
 	}
@@ -278,7 +278,7 @@ func TestNotificationPaginationOnPostgres(t *testing.T) {
 		t.Fatal("两页不应重叠")
 	}
 	// 越界页宽收敛到缺省值（不 400），钉住"静默收敛"的口径。
-	if items, _, _, err := f.s.ListNotifications(ctx, f.owner.ID, 9999, 0); err != nil || len(items) != 3 {
+	if items, _, _, err := f.s.ListNotifications(ctx, f.owner.ID, NotificationQuery{Limit: 9999, Offset: 0}); err != nil || len(items) != 3 {
 		t.Fatalf("越界 limit 应收敛而不是报错: %v %d", err, len(items))
 	}
 	// HTTP 分页：limit/offset 透传，total 是真实总数而不是本页长度。

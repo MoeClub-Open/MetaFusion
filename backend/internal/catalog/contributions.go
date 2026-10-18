@@ -105,21 +105,40 @@ func contributionCalendar(year int, counts map[string]int64) []ContributionDay {
 
 // The page, totals and heat map share one database snapshot. There is no viewer
 // argument: a profile's public contribution counts never depend on permissions.
-func (s *Store) UserContributions(ctx context.Context, userID string, year, page, pageSize int) (UserContributions, error) {
+type ContributionQuery struct {
+	Year, Page, PageSize int
+	From, To             string
+}
+
+func (s *Store) UserContributions(ctx context.Context, userID string, q ContributionQuery) (UserContributions, error) {
 	id, err := uuid.Parse(userID)
 	if err != nil {
 		return UserContributions{}, sql.ErrNoRows
 	}
 	userID = id.String()
-	year, err = contributionYear(year)
+	year, err := contributionYear(q.Year)
 	if err != nil {
 		return UserContributions{}, err
 	}
-	page, pageSize = contributionPage(page, pageSize)
+	page, pageSize := contributionPage(q.Page, q.PageSize)
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
+	filterStart, filterEnd, err := calendarRange(q.From, q.To)
+	if err != nil {
+		return UserContributions{}, err
+	}
+	end := start.AddDate(1, 0, 0)
+	if filterStart == nil {
+		filterStart = &start
+	}
+	if filterEnd == nil {
+		filterEnd = &end
+	}
+	if filterStart.Before(start) || !filterStart.Before(end) || filterEnd.After(end) || !filterStart.Before(*filterEnd) {
+		return UserContributions{}, fmt.Errorf("invalid_date_range")
+	}
 	var summary, days, items []byte
 	out := UserContributions{Year: year, Timezone: "UTC", Page: page, PageSize: pageSize}
-	err = s.DB.QueryRowContext(ctx, userContributionsQuery, userID, start, start.AddDate(1, 0, 0), pageSize, contributionOffset(page, pageSize)).Scan(&summary, &days, &items, &out.Total)
+	err = s.DB.QueryRowContext(ctx, userContributionsQuery, userID, start, start.AddDate(1, 0, 0), pageSize, contributionOffset(page, pageSize), *filterStart, *filterEnd).Scan(&summary, &days, &items, &out.Total)
 	if err != nil {
 		return UserContributions{}, err
 	}
@@ -260,8 +279,10 @@ WITH candidate_commits AS (
 ), daily AS (
     SELECT to_char(merged_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day,count(*) AS count
     FROM merged_activity GROUP BY day
+), filtered_activity AS (
+    SELECT * FROM activity WHERE merged_at >= $6 AND merged_at < $7
 ), paged AS (
-    SELECT * FROM activity ORDER BY merged_at DESC,id DESC LIMIT $4 OFFSET $5
+    SELECT * FROM filtered_activity ORDER BY merged_at DESC,id DESC LIMIT $4 OFFSET $5
 ), paged_entities AS (
     SELECT e.activity_id,jsonb_agg(jsonb_build_object('id',e.id,'kind',e.kind,'title',e.title) ORDER BY e.kind,e.title,e.id) AS entities
     FROM (SELECT DISTINCT e.activity_id,e.id,e.kind,e.title
@@ -293,5 +314,5 @@ SELECT
         'pull_request_id',a.pull_request_id,'changes_count',a.changes_count,'legacy',a.legacy,
         'entities',COALESCE(e.entities,'[]'::jsonb)
     )) ORDER BY a.merged_at DESC,a.id DESC) FROM paged a LEFT JOIN paged_entities e ON e.activity_id=a.id),'[]'::jsonb),
-    (SELECT count(*) FROM merged_activity)+(SELECT count(*) FROM visible_legacy)
+    (SELECT count(*) FROM filtered_activity)
 `

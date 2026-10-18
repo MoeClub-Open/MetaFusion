@@ -72,8 +72,7 @@ func AuditExempt() map[string]string {
 }
 
 // DirectoryActor 解析操作者：身份由 attachUser / AdminGate 放进 catalog_user。
-// 目录侧只验签、不查账号库，区分不出会话令牌与 OAuth 令牌（契约 §7），能给的只有
-// pat（PAT 内省命中，FromPAT）与 session（其余已登录请求）这两个近似值；未登录为 anonymous。
+// 复用认证层已验证的 FromPAT / IsThirdParty 判定，不额外读取账号库；未登录为 anonymous。
 func DirectoryActor(c *gin.Context) auditlog.Actor {
 	u := user(c)
 	if u == nil {
@@ -82,8 +81,46 @@ func DirectoryActor(c *gin.Context) auditlog.Actor {
 	credential := "session"
 	if u.FromPAT {
 		credential = "pat"
+	} else if u.IsThirdParty {
+		credential = "oauth"
 	}
 	return auditlog.Actor{UserID: u.ID, Username: u.Username, CredentialType: credential}
+}
+
+func workspaceAuditDetail(w Workspace) auditlog.Detail {
+	return auditlog.Detail{TargetType: "workspace", TargetID: w.ID, Changes: map[string]any{
+		"target_name": w.Name, "workspace_id": w.ID, "state": w.State,
+		"object_count": len(w.Objects), "dirty_count": w.DirtyCount, "member_count": len(w.Members),
+	}}
+}
+
+func commitAuditDetail(c CollaborationCommit) auditlog.Detail {
+	return auditlog.Detail{TargetType: "commit", TargetID: c.ID, Changes: map[string]any{
+		"target_name": c.Message, "message": c.Message, "workspace_id": c.WorkspaceID,
+		"object_count": len(c.Changes), "author_count": len(c.Authors), "commit_kind": c.Kind,
+	}}
+}
+
+func pullRequestAuditDetail(p PullRequest) auditlog.Detail {
+	return auditlog.Detail{TargetType: "pull_request", TargetID: p.ID, Changes: map[string]any{
+		"target_name": p.Title, "status": p.Status, "workspace_id": p.WorkspaceID,
+		"source_head_id": p.SourceHeadID, "commit_count": len(p.Commits), "object_count": len(p.Changes),
+	}}
+}
+
+func pushAuditDetail(out WorkspacePushResult, workspaceID string) auditlog.Detail {
+	d := auditlog.Detail{TargetType: "workspace", TargetID: workspaceID, Changes: map[string]any{}}
+	if out.Workspace != nil {
+		d = workspaceAuditDetail(*out.Workspace)
+	}
+	d.Changes["applied"] = out.Applied
+	d.Changes["commit_count"] = len(out.Commits)
+	if out.PullRequest != nil {
+		d.Changes["pull_request_id"] = out.PullRequest.ID
+		d.Changes["pull_request_title"] = out.PullRequest.Title
+		d.Changes["status"] = out.PullRequest.Status
+	}
+	return d
 }
 
 // auditMiddleware 给 /api 组接线：必须在 attachUser 之后（草稿在 c.Next() 之前读身份）、

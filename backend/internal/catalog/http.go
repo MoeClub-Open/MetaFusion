@@ -741,7 +741,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		page, _ := strconv.Atoi(c.Query("page"))
 		pageSize, _ := strconv.Atoi(c.Query("page_size"))
-		v, err := s.UserContributions(c.Request.Context(), c.Param("id"), year, page, pageSize)
+		v, err := s.UserContributions(c.Request.Context(), c.Param("id"), ContributionQuery{Year: year, Page: page, PageSize: pageSize, From: c.Query("from"), To: c.Query("to")})
 		respond(c, v, err)
 	})
 	cat.GET("/compare", func(c *gin.Context) {

@@ -133,7 +133,7 @@ func TestNotificationEventTimeOrderingOnPostgres(t *testing.T) {
 	if w := f.deliverEvent(t, f.owner.ID, oldWork.ID, "eeeeeeee-0000-0000-0000-000000000002", "旧", past); w.Code != 200 {
 		t.Fatalf("旧事件投递应 200: %d %s", w.Code, w.Body.String())
 	}
-	items, total, _, err := f.s.ListNotifications(ctx, f.owner.ID, 20, 0)
+	items, total, _, err := f.s.ListNotifications(ctx, f.owner.ID, NotificationQuery{Limit: 20, Offset: 0})
 	if err != nil || total != 2 {
 		t.Fatalf("应有 2 行：%v total=%d", err, total)
 	}

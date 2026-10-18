@@ -68,7 +68,7 @@ func TestUserContributionsRejectsBadParameters(t *testing.T) {
 			t.Fatalf("%s: %d %s", tc.path, w.Code, w.Body.String())
 		}
 	}
-	if _, err := (&Store{}).UserContributions(context.Background(), "not-a-uuid", 2026, 1, 20); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := (&Store{}).UserContributions(context.Background(), "not-a-uuid", ContributionQuery{Year: 2026, Page: 1, PageSize: 20}); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("invalid user ID should be not found: %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestPostgresUserContributionsMergedActivityAndPrivacy(t *testing.T) {
 	}
 	read := func(userID string, year, page, size int) UserContributions {
 		t.Helper()
-		out, err := f.s.UserContributions(ctx, userID, year, page, size)
+		out, err := f.s.UserContributions(ctx, userID, ContributionQuery{Year: year, Page: page, PageSize: size})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,6 +185,13 @@ func TestPostgresUserContributionsMergedActivityAndPrivacy(t *testing.T) {
 	}
 	if out.Calendar[0].Count != 1 || out.Calendar[1].Count != 1 || out.Calendar[2].Count != 1 {
 		t.Fatalf("calendar must use UTC merge days, one count per commit: %+v", out.Calendar[:3])
+	}
+	filtered, err := f.s.UserContributions(ctx, author.ID, ContributionQuery{Year: 2026, Page: 1, PageSize: 20, From: "2026-01-01", To: "2026-01-01"})
+	if err != nil || filtered.Total != 2 || len(filtered.Items) != 2 || !filtered.Items[0].Legacy || filtered.Items[1].ID != first || filtered.Summary != out.Summary || filtered.Calendar[1] != out.Calendar[1] {
+		t.Fatalf("date filter must include the day's legacy revision and commit while preserving annual statistics: total=%d items=%d summary=%+v error=%v", filtered.Total, len(filtered.Items), filtered.Summary, err)
+	}
+	if _, err := f.s.UserContributions(ctx, author.ID, ContributionQuery{Year: 2026, From: "2025-12-31"}); err == nil {
+		t.Fatal("accepted a range outside selected year")
 	}
 	var foundRelation, foundPartial bool
 	for _, item := range out.Items {
@@ -293,7 +300,7 @@ func TestPostgresUserContributionsLegacyTargetsAndMalformedSnapshots(t *testing.
 			t.Fatal(err)
 		}
 	}
-	out, err := f.s.UserContributions(ctx, author.ID, 2026, 1, 20)
+	out, err := f.s.UserContributions(ctx, author.ID, ContributionQuery{Year: 2026, Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}

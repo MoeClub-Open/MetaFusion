@@ -35,7 +35,7 @@
 | catalog | `/api/notifications*` | 通知收件箱；internal 投递由调用服务凭 INTERNAL_API_TOKEN 授权 |
 | catalog | `/api/version`、`/api/capabilities` | 运行版本身份和[声明式能力](./capabilities.md) |
 | community | `/api/community/*`、`/api/favorites/*`、`/api/messages/*` | 论坛、短评、合集、举报/申诉、收藏和私信 |
-| auth | `GET /api/users/:id` | 公开账号资料，正则精确分流 |
+| auth | `GET /api/users/:id`、`GET /api/users/:id/avatar` | 公开账号资料及头像，正则精确分流；小尺寸头像保存在 `auth.user_avatars`，资料投影只返回版本化 URL |
 | community | `/api/users/:id/favorites`、`/api/users/:id/stats` | 收藏与互动统计，正则分流 |
 | catalog | `/api/users/:id/contributions` | 目录贡献，走目录兜底 |
 | storage | `/api/storage/*` | 上传、资产、绑定、下载和内容 |

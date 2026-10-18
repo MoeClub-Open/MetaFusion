@@ -297,7 +297,7 @@ function MessagesContent() {
                       active ? "bg-emphasis/[0.06]" : "hover:bg-emphasis/[0.03]"
                     }`}
                   >
-                    <UserAvatar user={{ username: peer.name }} size="md" shape="circle" />
+                    <UserAvatar user={{ id:c.peer_id, username: peer.name }} size="md" shape="circle" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span
@@ -369,7 +369,7 @@ function MessagesContent() {
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
-                <UserAvatar user={{ username: peerDisplayOf(selectedPeer).name }} size="sm" shape="circle" />
+                <UserAvatar user={{ id:selectedPeer, username: peerDisplayOf(selectedPeer).name }} size="sm" shape="circle" />
                 <Link
                   href={`/users/${encodeURIComponent(selectedPeer)}`}
                   className="text-sm font-semibold text-emphasis truncate hover:text-primary transition-colors duration-fast ease-soft"

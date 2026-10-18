@@ -222,10 +222,10 @@ export default function UserDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] gap-5 lg:gap-7 items-start">
         <aside className="space-y-4 min-w-0">
         {/* User Card Header */}
-        <div className="rounded-xl border border-line bg-surface p-4 sm:p-5 flex flex-col gap-4 shadow-soft">
+        <div className="flex flex-col gap-4 py-2">
           <div className="flex flex-col gap-3.5 items-start min-w-0">
             {u ? (
-              <UserAvatar user={u} size="3xl" shape="rounded" ring className="shadow-md" />
+              <UserAvatar user={u} size="3xl" shape="rounded" className="h-28 w-28 lg:h-40 lg:w-40 shadow-sm" />
             ) : (
               <div className="w-14 h-14 rounded-md border border-dashed border-line grid place-items-center text-text-muted shrink-0">
                 <AlertCircle className="w-5 h-5" strokeWidth={1.6} />
@@ -233,7 +233,7 @@ export default function UserDetailPage() {
             )}
             <div className="min-w-0 w-full space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg font-bold text-text-strong">{u ? u.display_name || u.username : t("nav.userProfile")}</h1>
+                <h1 className="text-2xl font-semibold text-text-strong">{u ? u.display_name || u.username : t("nav.userProfile")}</h1>
                 {u?.banned && (
                   <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-sm bg-rose-500/10 text-rose-600 dark:text-danger border border-rose-500/30 inline-flex items-center gap-1">
                     <ShieldAlert className="w-3 h-3" />
@@ -241,7 +241,7 @@ export default function UserDetailPage() {
                   </span>
                 )}
               </div>
-              {/* 简介：空串=未设置，整块不渲染。avatar_url / created_at 仍不在库里，保持缺席不渲染。 */}
+              <p className="text-sm text-text-muted">@{u?.username}</p>
               {u?.bio && (
                 <p className="text-sm text-text-body leading-relaxed whitespace-pre-wrap break-words">{u.bio}</p>
               )}
@@ -263,7 +263,7 @@ export default function UserDetailPage() {
                   <span className="break-all">{u.email}</span>
                 </div>
               )}
-              <div className="text-[11px] font-mono text-text-muted flex items-center gap-2 flex-wrap">
+              <details className="text-xs text-text-muted"><summary className="w-fit cursor-pointer">{t("accountUI.accountDetails")}</summary><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                 <span>
                   ID: <span className="text-text-body font-medium break-all">{u?.id || id}</span>
                 </span>
@@ -279,7 +279,7 @@ export default function UserDetailPage() {
                 {copyFailed && (
                   <span className="text-[10px] text-amber-600 dark:text-warn">{t("common.copyFailed")}</span>
                 )}
-              </div>
+              </div></details>
             </div>
           </div>
 
@@ -314,13 +314,13 @@ export default function UserDetailPage() {
         </div>
 
         {/* Stats Grid：缺来源显示未知，未公开的收藏计数不伪装成零。 */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line-subtle pt-4">
           {statTiles.map((it) => {
             const privateStat = it.id === "favorites" && favoritesPrivate;
             const unknown = it.state !== "ok" || typeof it.value !== "number";
             return (
-              <div key={it.id} className="rounded-lg border border-line bg-surface p-2.5 text-center shadow-2xs">
-                <div className="text-[10px] text-text-faint font-mono flex items-center justify-center gap-1">
+              <div key={it.id} className="min-w-0">
+                <div className="flex items-center gap-1 text-xs text-text-muted">
                   <it.icon className="w-3 h-3" />
                   <span className="truncate">{it.label}</span>
                 </div>
@@ -338,7 +338,7 @@ export default function UserDetailPage() {
         </aside>
         <div className="space-y-4 min-w-0">
         {/* Tabs Bar */}
-        <div className="flex gap-1 overflow-x-auto pb-1">
+        <div className="flex gap-5 overflow-x-auto border-b border-line-subtle">
           {tabs.map((tabItem) => (
             <button
               key={tabItem.id}
@@ -346,11 +346,7 @@ export default function UserDetailPage() {
                 setTab(tabItem.id);
                 setPage(1);
               }}
-              className={`px-3 h-7 rounded-md text-xs font-medium border shrink-0 transition-colors duration-fast ease-soft ${
-                tab === tabItem.id
-                  ? "bg-primary text-white keep-white border-primary shadow-xs"
-                  : "bg-black/[0.03] dark:bg-white/[0.04] border-line text-text-body hover:text-gray-900 dark:hover:text-white"
-              }`}
+              className={`shrink-0 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${tab===tabItem.id?"border-primary text-text-strong":"border-transparent text-text-muted hover:text-text-strong"}`}
             >
               {tabItem.label}
             </button>
@@ -369,7 +365,7 @@ export default function UserDetailPage() {
                   setFavFilter(f.id as FavoriteTargetType | "");
                   setPage(1);
                 }}
-                className={`px-2.5 h-6.5 rounded-full text-[11px] font-medium border transition-colors duration-fast ease-soft ${
+                className={`px-2.5 h-6.5 rounded-control text-xs font-medium border transition-colors duration-fast ease-soft ${
                   favFilter === f.id
                     ? "bg-rose-500/10 text-rose-500 border-rose-500/30 font-semibold"
                     : "bg-surfaceSubtle border-line text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"

@@ -22,11 +22,11 @@
 #
 # 当前锚点：各部署输入的已验证 HEAD；刷新时使用各仓远端同步后的提交。
 # 更新时按各仓库 git rev-parse --short HEAD 重写，并在同一次提交里跑一遍 python scripts/check_versions.py。
-.=f107a7e0918388720c6a6bb03a5e46d94df8467e
-../metafusion-auth=3d4716a65afb0a5476775addd709396ce54bca98
+.=56464fe02a869da0aafa8efe0d7552d52b0f5e00
+../metafusion-auth=096bbc56c30d722f09591b61e9a66992828fa11e
 ../metafusion-community=d8cc1ecacef7718a18b80b681300450c5e3a5f21
 ../metafusion-storage=36bf9a066818ba82e247d755be74ae59c27885f0
 ../metafusion-api-gateway=851b7422efe7482cda9be39b8ea9edcf9aa92fd4
-../metafusion-docs=f9b9e4028bd8308c35e0fa812364cd2a913fa0dc
+../metafusion-docs=14a152f361c3de2c03529b2c1062fc894d4a45f4
 ../metafusion-mcp=b4e5d8ed537e40bddf507ff446069797f3d89143
 ../metafusion-skills=e709e6cd2b6a47f51c9dcc0aa3e7e824e683077a

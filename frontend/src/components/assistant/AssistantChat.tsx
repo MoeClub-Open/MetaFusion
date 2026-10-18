@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Activity, KeyRound, Loader2, MessageSquare, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+import { Activity, KeyRound, Loader2, MessageSquare, Plus, Send, Sparkles, Trash2, Search, PanelLeft, ArrowUpRight } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { assistantRequest, type AssistantAccount, type AssistantConversation, type AssistantCredential, type AssistantMessage, type AssistantModel, type AssistantTokenUsage } from "@/lib/assistantApi";
@@ -21,8 +21,16 @@ interface ChatResult {
 }
 
 export function AssistantChat() {
+ const {user}=useAuth();
+ return <AssistantWorkspace key={user?.id||"anonymous"}/>;
+}
+
+function AssistantWorkspace() {
   const { t, locale } = useI18n();
   const { user, loading: authLoading } = useAuth();
+  const [conversationSearch,setConversationSearch]=useState("");
+  const [showConversations,setShowConversations]=useState(false);
+  const [pendingPrompt,setPendingPrompt]=useState("");
   const [tab, setTab] = useState<"chat" | "credentials" | "usage">("chat");
   const [models, setModels] = useState<AssistantModel[]>([]);
   const [credentials, setCredentials] = useState<AssistantCredential[]>([]);
@@ -59,15 +67,22 @@ export function AssistantChat() {
     setModels([]); setCredentials([]); setModelID(""); setCredentialID(""); pendingRequest.current = null;
     if (!user) return;
     setLoading(true);
-    Promise.all([
+    Promise.allSettled([
       assistantAllPages<AssistantModel>("/models"),
       assistantAllPages<AssistantCredential>("/credentials"),
       assistantRequest<AssistantAccountResponse>("/account"),
       assistantAllPages<AssistantConversation>("/conversations"),
-    ]).then(([nextModels, nextCredentials, nextAccount, nextConversations]) => {
+    ]).then(([modelResult, credentialResult, accountResult, conversationResult]) => {
       if (!alive) return;
-      setModels(nextModels); setCredentials(nextCredentials); setAccount(nextAccount); setConversations(nextConversations);
-      setModelID(nextModels.find((model) => model.id === nextAccount.default_model_id)?.id || nextModels[0]?.id || ""); setCredentialID("");
+      const nextModels = modelResult.status === "fulfilled" ? modelResult.value : [];
+      const nextAccount = accountResult.status === "fulfilled" ? accountResult.value : null;
+      setModels(nextModels);
+      if (credentialResult.status === "fulfilled") setCredentials(credentialResult.value);
+      setAccount(nextAccount);
+      if (conversationResult.status === "fulfilled") setConversations(conversationResult.value);
+      setModelID(nextModels.find((model) => model.id === nextAccount?.default_model_id)?.id || nextModels[0]?.id || ""); setCredentialID("");
+      const failed = [modelResult, credentialResult, accountResult, conversationResult].find(item => item.status === "rejected");
+      if (failed?.status === "rejected") setError(describeAssistantError(failed.reason, t));
     }).catch((cause) => { if (alive) setError(describeAssistantError(cause, t)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; ++readSequence.current; };
@@ -95,13 +110,14 @@ export function AssistantChat() {
     const request = { message: prompt, model_id: modelID, credential_id: credentialID, ...(conversationID ? { conversation_id: conversationID } : {}) };
     const fingerprint = JSON.stringify(request);
     if (pendingRequest.current?.fingerprint !== fingerprint) pendingRequest.current = { fingerprint, id: crypto.randomUUID() };
-    setBusy(true); setError(""); setResult(null);
+    setBusy(true); setPendingPrompt(prompt); setError(""); setResult(null);
     try {
       const next = await assistantRequest<ChatResult>("/chat", { method: "POST", body: JSON.stringify({ ...request, client_request_id: pendingRequest.current.id }) });
       if (currentUser.current !== ownerID) return;
       pendingRequest.current = null;
       setConversationID(next.conversation_id); setMessage(""); setResult(next);
       setMessages((previous) => [...previous, { role: "user", content: prompt }, { role: "assistant", content: next.answer }]);
+      setPendingPrompt("");
       if (next.balance.user_id === ownerID) setAccount((previous) => previous ? { ...previous, balance: next.balance } : previous);
       if (next.error) setError(t("assistant.user.error.partial"));
       try {
@@ -115,7 +131,7 @@ export function AssistantChat() {
         }
       } catch { /* The answer is saved; sidebar refresh may be retried by reopening the page. */ }
     } catch (cause) { if (currentUser.current === ownerID) setError(describeAssistantError(cause, t)); }
-    finally { setBusy(false); }
+    finally { setBusy(false);setPendingPrompt(""); }
   };
 
   const removeConversation = async () => {
@@ -135,44 +151,56 @@ export function AssistantChat() {
   const number = new Intl.NumberFormat(locale);
   const receipts = [...new Map([...conversationReceipts(messages), ...(result?.push_receipts || [])].map((receipt) => [pushReceiptKey(receipt), receipt])).values()];
   const tabs = [{ id: "chat", icon: MessageSquare }, { id: "credentials", icon: KeyRound }, { id: "usage", icon: Activity }] as const;
-  return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="h-5 w-5 text-primary mt-0.5" />}>
-    <Card className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button type="button" key={id} role="tab" aria-selected={tab === id} aria-controls={`assistant-panel-${id}`} id={`assistant-tab-${id}`} disabled={busy} onClick={() => setTab(id)} className={`rounded-control px-3 py-2 text-xs flex items-center gap-1.5 ${tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceHover"}`}><Icon className="w-3.5 h-3.5" />{t(`assistant.user.${id}`)}</button>)}</div>
-      {account && <div className="text-right"><p className="text-xs text-text-body">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</p><p className="mt-1 text-[10px] text-text-muted">{t("assistant.user.rewardHint", { registration: number.format(account.registration_credits), edit: number.format(account.accepted_edit_credits) })}</p></div>}
-    </Card>
-    {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-    {tab === "chat" && <div id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="grid lg:grid-cols-[230px_minmax(0,1fr)] gap-4">
-      <Card className="space-y-3 self-start">
-        <button type="button" disabled={busy || loading} onClick={() => { ++readSequence.current; setConversationID(""); setMessages([]); setResult(null); setError(""); pendingRequest.current = null; }} className="w-full inline-flex items-center justify-center gap-1.5 rounded-control border border-line px-3 py-2 text-xs hover:bg-surfaceHover disabled:opacity-40"><Plus className="w-3.5 h-3.5" />{t("assistant.user.newChat")}</button>
-        <div className="max-h-64 lg:max-h-[60vh] overflow-y-auto space-y-1">{conversations.map((item) => <div key={item.id} className={`group flex items-center rounded-control ${conversationID === item.id ? "bg-primary/10" : "hover:bg-surfaceHover"}`}>
-          <button type="button" disabled={busy || loading} onClick={() => void openConversation(item.id)} className="flex-1 min-w-0 p-2 text-left text-xs"><span className="block truncate">{item.title || t("assistant.user.newChat")}</span><time className="block mt-1 text-[10px] text-text-faint">{new Date(item.updated_at).toLocaleDateString(locale)}</time></button>
-          <button type="button" disabled={busy || loading} onClick={() => setDeleting(item)} aria-label={t("assistant.user.deleteChat")} className="p-2 text-text-faint hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
-        </div>)}{!conversations.length && !loading && <p className="text-xs text-text-muted p-2">{t("assistant.user.noConversations")}</p>}</div>
-      </Card>
-      <Card className="min-w-0 space-y-4">
-        <AssistantModelPicker models={models} credentials={credentials} modelID={modelID} credentialID={credentialID} onModel={setModelID} onCredential={setCredentialID} disabled={busy || loading} />
-        <div role="log" aria-live="polite" aria-busy={busy || loading} className="min-h-48 max-h-[65vh] overflow-y-auto space-y-4 border-y border-line-subtle py-4">
-          {loading && <p role="status" className="text-xs text-text-muted">{t("common.loading")}</p>}
-          {!messages.length && !loading && <div className="py-8 text-center space-y-2"><Sparkles className="w-6 h-6 text-primary mx-auto" /><p className="text-sm text-text-body">{t("assistant.user.startHint")}</p></div>}
-          {messages.filter((item) => (item.role === "user" || item.role === "assistant") && item.content).map((item, index) => <div key={index} className={`space-y-1.5 ${item.role === "user" ? "ml-4 sm:ml-12 rounded-card bg-surfaceSubtle p-3" : "mr-2"}`}>
-            <p className="text-[10px] font-medium text-text-muted">{t(item.role === "user" ? "assistant.user.you" : "assistant.user.assistant")}</p>
-            {item.role === "user" ? <p className="text-sm whitespace-pre-wrap break-words">{item.content}</p> : <MarkdownRenderer content={item.content} />}
-          </div>)}
-          {busy && <p role="status" className="flex items-center gap-2 text-xs text-text-muted"><Loader2 className="w-3.5 h-3.5 animate-spin" />{t("assistant.user.thinking")}</p>}
-          <div ref={endRef} />
+  return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle pb-2">
+      <div className="flex gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({id,icon:Icon})=><button key={id} type="button" role="tab" aria-selected={tab===id} aria-controls={`assistant-panel-${id}`} id={`assistant-tab-${id}`} disabled={busy} onClick={()=>setTab(id)} className={`inline-flex items-center gap-2 rounded-control px-3 py-2 text-sm ${tab===id?"bg-primary/10 text-primary":"text-text-muted hover:bg-surfaceSubtle"}`}><Icon className="size-4"/>{t(`assistant.user.${id}`)}</button>)}</div>
+      {account&&<span className="text-xs text-text-muted">{t("assistant.user.balance",{credits:number.format(account.balance.available_credits)})}</span>}
+    </div>
+    {error&&<p role="alert" className="rounded-control border border-danger/20 bg-danger/5 p-3 text-sm text-danger">{error}</p>}
+    {tab==="chat"&&<section id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="overflow-hidden rounded-panel border border-line bg-surface">
+      <button type="button" onClick={()=>setShowConversations(value=>!value)} aria-expanded={showConversations} className="flex w-full items-center gap-2 border-b border-line-subtle px-4 py-3 text-sm text-text-muted lg:hidden"><PanelLeft className="size-4"/>{t("assistantUI.conversations")}</button>
+      <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside className={`${showConversations?"flex":"hidden"} min-w-0 flex-col gap-3 border-b border-line-subtle bg-surfaceSubtle/50 p-3 lg:flex lg:border-b-0 lg:border-r`}>
+          <button type="button" disabled={busy||loading} onClick={()=>{++readSequence.current;setConversationID("");setMessages([]);setResult(null);setError("");setShowConversations(false);pendingRequest.current=null;}} className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-sm font-medium disabled:opacity-40"><Plus className="size-4"/>{t("assistant.user.newChat")}</button>
+          <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5"><Search className="size-3.5 shrink-0 text-text-muted"/><input type="search" aria-label={t("assistantUI.searchChats")} placeholder={t("assistantUI.searchChats")} value={conversationSearch} onChange={event=>setConversationSearch(event.target.value)} className="h-8 min-w-0 w-full bg-transparent text-xs outline-none"/></label>
+          <div className="max-h-52 flex-1 space-y-1 overflow-y-auto lg:max-h-[62vh]">
+            {conversations.filter(item=>(item.title||"").toLocaleLowerCase().includes(conversationSearch.toLocaleLowerCase())).map(item=><div key={item.id} className={`group flex rounded-control ${conversationID===item.id?"bg-primary/10":"hover:bg-surfaceHover"}`}>
+              <button type="button" disabled={busy||loading} onClick={()=>{void openConversation(item.id);setShowConversations(false);}} className="min-w-0 flex-1 p-2.5 text-left"><span className="line-clamp-2 text-sm">{item.title||t("assistant.user.newChat")}</span><time className="mt-1 block text-xs text-text-faint">{new Date(item.updated_at).toLocaleDateString(locale)}</time></button>
+              <button type="button" disabled={busy||loading} onClick={()=>setDeleting(item)} aria-label={t("assistant.user.deleteChat")} className="self-start rounded-control p-2.5 text-text-faint hover:text-danger lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"><Trash2 className="size-3.5"/></button>
+            </div>)}
+            {!conversations.length&&!loading&&<p className="px-2 py-5 text-center text-xs text-text-muted">{t("assistant.user.noConversations")}</p>}
+          </div>
+        </aside>
+        <div className="flex min-w-0 flex-col lg:h-[calc(100dvh-16rem)] lg:min-h-[34rem]">
+          <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle px-4 py-3">
+            <span className="truncate text-sm font-medium text-text-strong">{conversations.find(item=>item.id===conversationID)?.title||t("assistant.user.newChat")}</span>
+            <span className="text-xs text-text-muted">{models.find(item=>item.id===modelID)?.name||t("assistant.user.noModels")}</span>
+          </header>
+          <div role="log" aria-live="polite" aria-busy={!!pendingPrompt||loading} className="min-h-[22rem] flex-1 space-y-6 overflow-y-auto px-4 py-6 sm:px-6">
+            {loading&&<p role="status" className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="size-4 animate-spin"/>{t("common.loading")}</p>}
+            {!messages.length&&!pendingPrompt&&!loading&&<div className="flex h-full flex-col justify-center px-4 py-8 text-center">
+              <span className="mx-auto mb-4 grid size-10 place-items-center rounded-control border border-primary/20 bg-primary/10 text-primary"><Sparkles className="size-5"/></span>
+              <h2 className="text-xl font-semibold text-text-strong">{t("assistantUI.welcome")}</h2><p className="mt-2 text-sm leading-relaxed text-text-muted">{t("assistant.user.startHint")}</p>
+              <div className="mt-6 grid gap-2 sm:grid-cols-3">{["find","relations","edit"].map(key=><button type="button" key={key} onClick={()=>{setMessage(t(`assistantUI.prompt.${key}`));document.getElementById("assistant-message")?.focus();}} className="rounded-control border border-line px-3 py-3 text-left text-xs leading-relaxed text-text-body hover:border-primary/40 hover:bg-primary/5"><ArrowUpRight className="mb-2 size-4 text-primary"/>{t(`assistantUI.example.${key}`)}</button>)}</div>
+              {!models.length&&<p className="mt-5 text-xs text-text-muted">{t("assistantUI.modelsUnavailable")}</p>}
+            </div>}
+            {messages.filter(item=>(item.role==="user"||item.role==="assistant")&&item.content).map((item,index)=><article key={index} className={item.role==="user"?"ml-auto max-w-[90%] rounded-control border border-line-subtle bg-surfaceSubtle px-4 py-3":"min-w-0 space-y-2"}><p className="mb-2 text-xs font-medium text-text-muted">{t(item.role==="user"?"assistant.user.you":"assistant.user.assistant")}</p>{item.role==="user"?<p className="whitespace-pre-wrap break-words text-sm">{item.content}</p>:<MarkdownRenderer content={item.content}/>}</article>)}
+            {pendingPrompt&&<><div className="ml-auto max-w-[90%] rounded-control border border-line-subtle bg-surfaceSubtle px-4 py-3 text-sm whitespace-pre-wrap break-words">{pendingPrompt}</div><p role="status" className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="size-4 animate-spin"/>{t("assistant.user.thinking")}</p></>}
+            {receipts.length>0&&<details className="rounded-control border border-line-subtle p-3 text-xs"><summary className="cursor-pointer text-primary">{t("assistantUI.changes")}</summary><div className="mt-3 space-y-2">{receipts.map(receipt=><div key={pushReceiptKey(receipt)} className="flex flex-wrap items-center justify-between gap-2"><span className={receipt.applied?"text-success":"text-warn"}>{t(receipt.applied?"assistant.user.editApplied":"assistant.user.editPending")}</span><Link className="text-primary hover:underline" href={receipt.pull_request?`/pull-requests/${receipt.pull_request.id}`:receipt.workspace?`/workspaces/${receipt.workspace.id}`:`/commits/${receipt.commits[0]?.id||""}`}>{t("assistantUI.viewChanges")}</Link></div>)}</div></details>}
+            <div ref={endRef}/>
+          </div>
+          <footer className="shrink-0 border-t border-line-subtle bg-surface px-4 pb-3 pt-2 sm:px-6">
+            <form onSubmit={event=>{event.preventDefault();void send();}} className="rounded-control border border-line bg-background p-2 focus-within:border-primary/50">
+              <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label><textarea id="assistant-message" rows={2} maxLength={16000} value={message} disabled={busy||loading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();void send();}}} placeholder={t("assistant.user.placeholder")} className="max-h-48 min-h-16 w-full resize-y bg-transparent px-1 py-1 text-sm outline-none disabled:opacity-50"/>
+              <div className="flex items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} credentials={credentials} modelID={modelID} credentialID={credentialID} onModel={setModelID} onCredential={setCredentialID} disabled={busy||loading}/><button type="submit" disabled={busy||loading||!modelID||!message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control bg-primary px-3 text-xs font-medium text-white disabled:opacity-40"><Send className="size-3.5"/>{t("assistant.user.send")}</button></div>
+            </form>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-faint"><details><summary className="cursor-pointer">{t("assistantUI.editBehavior")}</summary><p className="mt-1 max-w-lg leading-relaxed">{t("assistant.user.editHint")}</p></details>{result&&<span>{t("assistant.user.consumed",{input:number.format(result.usage.input_tokens),output:number.format(result.usage.output_tokens),credits:number.format(result.credits_spent)})}{result.usage_estimated&&` · ${t("assistant.user.estimated")}`}</span>}</div>
+          </footer>
         </div>
-        {(result || receipts.length > 0) && <div className="text-[11px] text-text-muted space-y-2">{result && <p>{t("assistant.user.consumed", { input: number.format(result.usage.input_tokens), output: number.format(result.usage.output_tokens), credits: number.format(result.credits_spent) })}{result.usage_estimated && <span className="ml-2 text-warn">{t("assistant.user.estimated")}</span>}</p>}
-          {receipts.map((receipt) => <div key={pushReceiptKey(receipt)} className="rounded-control border border-line-subtle p-2"><p className={receipt.applied ? "text-success" : "text-warn"}>{t(receipt.applied ? "assistant.user.editApplied" : "assistant.user.editPending")}</p><Link href={receipt.pull_request ? `/pull-requests/${receipt.pull_request.id}` : receipt.workspace ? `/workspaces/${receipt.workspace.id}` : `/commits/${receipt.commits[0]?.id || ""}`} className="font-mono block mt-1 text-[10px] text-primary break-all hover:underline">{receipt.pull_request?.id || receipt.workspace?.id || receipt.commits[0]?.id}</Link><div className="flex flex-wrap gap-2 mt-1">{[...new Set(receipt.commits.flatMap((commit) => commit.changes.filter((item) => item.target === "entity").map((item) => item.id)))].map((id) => <Link key={id} href={`/catalog/${id}#revisions`} className="text-primary hover:underline">{t("assistant.user.recordHistory")}</Link>)}</div></div>)}
-        </div>}
-        <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="space-y-2">
-          <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label>
-          <textarea id="assistant-message" rows={3} maxLength={16000} value={message} disabled={busy || loading} onChange={(event) => setMessage(event.target.value)} placeholder={t("assistant.user.placeholder")} className="w-full resize-y rounded-control border border-line bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50" />
-          <div className="flex items-center justify-between gap-3"><p className="text-[11px] text-text-muted leading-relaxed">{t("assistant.user.editHint")}</p><button type="submit" disabled={busy || loading || !modelID || !message.trim()} className="shrink-0 inline-flex items-center gap-1.5 rounded-control bg-primary text-white px-4 py-2 text-xs font-semibold disabled:opacity-40"><Send className="w-3.5 h-3.5" />{t("assistant.user.send")}</button></div>
-        </form>
-      </Card>
-    </div>}
-    {tab === "credentials" && <div id="assistant-panel-credentials" role="tabpanel" aria-labelledby="assistant-tab-credentials"><AssistantCredentials items={credentials} onChanged={loadCredentials} /></div>}
-    {tab === "usage" && <div id="assistant-panel-usage" role="tabpanel" aria-labelledby="assistant-tab-usage"><AssistantUsagePanel models={models} /></div>}
-    <ConfirmDialog open={!!deleting} title={t("assistant.user.deleteChat")} message={t("assistant.user.deleteChatHint")} confirmLabel={t("assistant.user.delete")} busy={busy} onClose={() => { if (!busy) setDeleting(null); }} onConfirm={() => void removeConversation()} />
+      </div>
+    </section>}
+    {tab==="credentials"&&<div id="assistant-panel-credentials" role="tabpanel" aria-labelledby="assistant-tab-credentials"><AssistantCredentials items={credentials} onChanged={loadCredentials}/></div>}
+    {tab==="usage"&&<div id="assistant-panel-usage" role="tabpanel" aria-labelledby="assistant-tab-usage"><AssistantUsagePanel models={models}/></div>}
+    <ConfirmDialog open={!!deleting} title={t("assistant.user.deleteChat")} message={t("assistant.user.deleteChatHint")} confirmLabel={t("assistant.user.delete")} busy={busy} onClose={()=>{if(!busy)setDeleting(null);}} onConfirm={()=>void removeConversation()}/>
   </PageShell>;
 }

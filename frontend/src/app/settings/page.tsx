@@ -3,11 +3,13 @@
 import React, { useState, useEffect } from "react";
 import { Navbar } from "@/components/Navbar";
 import { UserAvatar } from "@/components/UserAvatar";
+import Link from "next/link";
+import { AvatarEditor } from "@/components/settings/AvatarEditor";
 import { Select } from "@/components/ui/Select";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { UI_LOCALE_CODES, type UiLocale } from "@/lib/languages";
-import { clearAuthTokens, displayNameOf, fetchAuthSettings, PublicAuthSettings, updateOwnProfile } from "@/lib/api";
+import { clearAuthTokens, displayNameOf, updateOwnProfile } from "@/lib/api";
 import { authErrorText, httpStatusOf } from "@/lib/authErrors";
 import { TitleDisplayOrderSetting } from "@/components/settings/TitleDisplayOrderSetting";
 import { OAuthGrantsPanel } from "@/components/settings/OAuthGrantsPanel";
@@ -16,7 +18,7 @@ import { ProfilePrivacyCards } from "@/components/settings/ProfilePrivacyCards";
 import { MyActivityPanel } from "@/components/settings/MyActivityPanel";
 import { ThemeControls } from "@/components/ThemeControls";
 import { ThemeModeControls } from "@/components/ThemeModeControls";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Shield,
   Globe,
@@ -50,6 +52,7 @@ export default function SettingsPage() {
   const { user, refreshProfile } = useAuth();
   const { t, locale, setLocale } = useI18n();
   const searchParams = useSearchParams();
+  const router=useRouter();
   const tabParam = searchParams.get("tab");
   const initialTab: SettingsTab = SETTINGS_TABS.includes(tabParam as SettingsTab) ? (tabParam as SettingsTab) : "profile";
 
@@ -66,7 +69,6 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   // 资料保存：PUT /api/auth/profile（空串=未设置）；成功后刷新会话用户，
@@ -86,13 +88,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 邮箱验证能力：后端 GET /auth/settings 目前如实返回全部关闭。
-  const [authSettings, setAuthSettings] = useState<PublicAuthSettings | null>(null);
-
-  useEffect(() => {
-    fetchAuthSettings().then(setAuthSettings).catch(() => {});
-  }, []);
-
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (SETTINGS_TABS.includes(tab as SettingsTab)) {
@@ -105,7 +100,6 @@ export default function SettingsPage() {
       const u = user as unknown as Record<string, unknown>;
       setDisplayName((u["display_name"] as string) || "");
       setBio((u["bio"] as string) || "");
-      setAvatarUrl((u["avatar_url"] as string) || "");
     }
   }, [user?.id, (user as any)?.avatar_url, (user as any)?.display_name, (user as any)?.bio]);
 
@@ -213,151 +207,33 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
       <Navbar />
-      <PageShell width="narrow">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-line-subtle">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 text-primary grid place-items-center shrink-0">
-              <Settings className="w-4 h-4" strokeWidth={1.8} />
-            </div>
-            <div>
-              <h1 className="font-display text-lg font-bold tracking-tight text-text-strong leading-none">
-                {t("settings.title")}
-              </h1>
-              <p className="text-xs text-text-faint mt-1">{t("settings.subtitle")}</p>
-            </div>
-          </div>
-
-          <div className="flex gap-1 p-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.04] border border-line-subtle w-fit overflow-x-auto">
-            <button
-              onClick={() => {
-                setActiveTab("profile");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`px-3 h-8 rounded-md text-xs font-medium transition-colors duration-fast ease-soft whitespace-nowrap ${
-                activeTab === "profile" ? "bg-white dark:bg-white text-black font-semibold shadow-xs" : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              }`}
-            >
-              {t("settings.tabProfile")}
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("activity");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`px-3 h-8 rounded-md text-xs font-medium transition-colors duration-fast ease-soft flex items-center gap-1.5 whitespace-nowrap ${
-                activeTab === "activity" ? "bg-white dark:bg-white text-black font-semibold shadow-xs" : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-              <span>{t("settings.tabActivity")}</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("authorizations");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`px-3 h-8 rounded-md text-xs font-medium transition-colors duration-fast ease-soft flex items-center gap-1.5 whitespace-nowrap ${
-                activeTab === "authorizations" ? "bg-white dark:bg-white text-black font-semibold shadow-xs" : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>{t("settings.tabAuthorizations")}</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("appearance");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`px-3 h-8 rounded-md text-xs font-medium transition-colors duration-fast ease-soft whitespace-nowrap ${
-                activeTab === "appearance" ? "bg-white dark:bg-white text-black font-semibold shadow-xs" : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              }`}
-            >
-              {t("settings.appearanceTitle")}
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("password");
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`px-3 h-8 rounded-md text-xs font-medium transition-colors duration-fast ease-soft whitespace-nowrap ${
-                activeTab === "password" ? "bg-white dark:bg-white text-black font-semibold shadow-xs" : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              }`}
-            >
-              {t("settings.tabPassword")}
-            </button>
-          </div>
-        </div>
-
-        {/* key 随页签变化：切换时重挂载以重放 .mf-tabpanel 进入动画（与详情页/管理台同一约定）。 */}
-        <TabPanel activeKey={activeTab} spacing="none" className="rounded-xl border border-line bg-surface/80 backdrop-blur-md shadow-soft overflow-hidden">
+      <PageShell>
+        <header className="mb-6"><h1 className="text-xl font-semibold text-text-strong">{t("settings.title")}</h1><p className="mt-1 text-sm text-text-muted">{t("settings.subtitle")}</p></header>
+        <div className="grid items-start gap-6 md:grid-cols-[13rem_minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)]">
+          <aside className="min-w-0 md:sticky md:top-20">
+            <Link href={`/users/${user.id}`} className="mb-4 flex items-center gap-3 border-b border-line-subtle pb-4"><UserAvatar user={user} size="lg"/><span className="min-w-0"><strong className="block truncate text-sm">{displayNameOf(user)}</strong><span className="text-xs text-text-muted">{t("accountUI.publicProfile")}</span></span></Link>
+            <nav aria-label={t("settings.title")} className="flex gap-1 overflow-x-auto md:flex-col">
+              {([{id:"profile",label:"settings.tabProfile",icon:Settings},{id:"activity",label:"settings.tabActivity",icon:History},{id:"authorizations",label:"settings.tabAuthorizations",icon:ShieldCheck},{id:"appearance",label:"settings.appearanceTitle",icon:Globe},{id:"password",label:"settings.tabPassword",icon:Lock}] as const).map(({id,label,icon:Icon})=><button key={id} type="button" aria-current={activeTab===id?"page":undefined} onClick={()=>{setActiveTab(id);setError(null);setSuccess(null);router.replace(`/settings?tab=${id}`,{scroll:false});}} className={`flex shrink-0 items-center gap-2 rounded-control px-3 py-2.5 text-left text-sm ${activeTab===id?"bg-primary/10 font-medium text-primary":"text-text-muted hover:bg-surfaceSubtle"}`}><Icon className="size-4"/>{t(label)}</button>)}
+            </nav>
+          </aside>
+          <div className="min-w-0">
+        <TabPanel activeKey={activeTab} spacing="none" className="rounded-panel border border-line bg-surface overflow-hidden">
           {activeTab === "profile" && (
             <div className="p-4 sm:p-6 space-y-4">
               {error && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-danger-soft font-mono text-xs sm:text-sm flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-danger-soft text-xs sm:text-sm flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" strokeWidth={1.5} />
                   <span>{error}</span>
                 </div>
               )}
               {success && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft font-mono text-xs sm:text-sm flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft text-xs sm:text-sm flex items-center gap-2">
                   <Check className="w-4 h-4 shrink-0" strokeWidth={1.5} />
                   <span>{success}</span>
                 </div>
               )}
 
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-surfaceSubtle border border-line-subtle">
-                <div className="shrink-0">
-                  <UserAvatar
-                    user={{
-                      username: user.username,
-                      display_name: displayName || (user as any).display_name,
-                      avatar_url: avatarUrl,
-                    }}
-                    size="xl"
-                    shape="rounded"
-                    ring
-                  />
-                </div>
-
-                <div className="space-y-1 min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-text-strong text-base truncate">
-                      {displayNameOf(user as unknown as { username: string; display_name?: string })}
-                    </span>
-                    {displayNameOf(user as unknown as { username: string; display_name?: string }) !== user.username && (
-                      <span className="font-mono text-xs text-text-faint">@{user.username}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap font-mono text-xs text-text-faint">
-                    <span className="truncate">{user.email || t("settings.unboundEmail")}</span>
-                    {user.email && (
-                      user.is_email_verified ? (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-emerald-500/10 text-emerald-600 dark:text-success border border-emerald-500/20 text-[10px] font-mono font-medium">
-                          <Check className="w-3 h-3" />
-                          <span>{t("settings.emailVerified")}</span>
-                        </span>
-                      ) : authSettings?.email_verification_enabled === false ? (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-black/[0.04] dark:bg-white/[0.04] text-text-faint border border-line text-[10px] font-mono font-medium">
-                          <span>{t("settings.emailVerificationDisabledTag")}</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-amber-500/10 text-amber-600 dark:text-warn border border-amber-500/20 text-[10px] font-mono font-medium">
-                          <AlertCircle className="w-3 h-3" />
-                          <span>{t("settings.emailUnverified")}</span>
-                        </span>
-                      )
-                    )}
-                  </div>
-                  <div className="font-mono text-[11px] text-text-muted break-all">
-                    UUID: {user.id}
-                  </div>
-                </div>
-              </div>
+              <AvatarEditor key={user.id} />
 
               {/* 资料编辑：PUT /api/auth/profile（本人自助），空串=未设置 */}
               <form
@@ -368,19 +244,21 @@ export default function SettingsPage() {
                 }}
               >
                 <div className="space-y-1">
-                  <label className="font-mono text-xs sm:text-sm text-text-muted">{t("settings.displayName")}</label>
+                  <label htmlFor="settings-display-name" className="text-xs sm:text-sm text-text-muted">{t("settings.displayName")}</label>
                   <input
+                    id="settings-display-name"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     maxLength={32}
                     placeholder={user.username}
                     className="w-full h-10 px-3.5 bg-background border border-line rounded-lg text-text-strong text-sm focus:outline-none focus:border-primary/50"
                   />
-                  <p className="font-mono text-xs text-text-faint">{t("settings.displayNameHint")}</p>
+                  <p className="text-xs text-text-faint">{t("settings.displayNameHint")}</p>
                 </div>
                 <div className="space-y-1">
-                  <label className="font-mono text-xs sm:text-sm text-text-muted">{t("settings.bioLabel")}</label>
+                  <label htmlFor="settings-bio" className="text-xs sm:text-sm text-text-muted">{t("settings.bioLabel")}</label>
                   <textarea
+                    id="settings-bio"
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
                     maxLength={500}
@@ -400,7 +278,7 @@ export default function SettingsPage() {
               </form>
 
               <div className="grid gap-1.5 pt-2 border-t border-line-subtle">
-                <div className="p-2.5 rounded-md bg-background border border-line-subtle flex items-center justify-between text-xs font-mono">
+                <div className="p-2.5 rounded-md bg-background border border-line-subtle flex items-center justify-between text-xs">
                   <span className="text-text-faint flex items-center gap-1.5">
                     <Shield className="w-3.5 h-3.5 text-text-muted" strokeWidth={1.5} />
 					<span>{t("settings.accountGroups")}</span>
@@ -409,7 +287,7 @@ export default function SettingsPage() {
                 </div>
 
                 {!!(user as unknown as { invite_code?: string }).invite_code && (
-                  <div className="p-2.5 rounded-md bg-background border border-line-subtle flex items-center justify-between text-xs font-mono">
+                  <div className="p-2.5 rounded-md bg-background border border-line-subtle flex items-center justify-between text-xs">
                     <span className="text-text-faint flex items-center gap-1.5">
                       <KeyRound className="w-3.5 h-3.5 text-amber-500" strokeWidth={1.5} />
                       <span>{t("settings.inviteCodeLabel")}</span>
@@ -418,27 +296,13 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="p-2.5 rounded-md bg-background border border-line-subtle flex items-center justify-between text-xs font-mono">
-                  <span className="text-text-faint flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-sky-500" strokeWidth={1.5} />
-                    <span>{t("settings.interfaceLanguage")}</span>
-                  </span>
-                  <Select
-                    value={locale}
-                    onChange={(val) => setLocale(val as UiLocale)}
-                    fullWidth={false}
-                    className="min-w-[10.5rem] h-8 px-2 text-xs"
-                    options={UI_LOCALE_CODES.map((code) => ({ value: code, label: t(SETTINGS_LOCALE_LABELS[code as UiLocale]) }))}
-                  />
-                </div>
 
-                <TitleDisplayOrderSetting />
               </div>
 
               <div className="space-y-1.5 pt-2 border-t border-line-subtle">
                 <div className="flex items-center gap-1.5 pb-1">
                   <Eye className="w-3.5 h-3.5 text-text-muted" strokeWidth={1.5} />
-                  <span className="font-mono text-xs font-semibold text-text-body">{t("settings.privacyTitle")}</span>
+                  <span className="text-xs font-semibold text-text-body">{t("settings.privacyTitle")}</span>
                 </div>
 
                 <ProfilePrivacyCards key={`profile:${user.id}`} />
@@ -453,6 +317,23 @@ export default function SettingsPage() {
 
           {activeTab === "appearance" && (
             <div className="space-y-5 p-4 sm:p-5">
+              <section className="space-y-4">
+                <div className="p-2.5 rounded-md bg-background border border-line-subtle flex items-center justify-between text-xs">
+                  <span className="text-text-faint flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-sky-500" strokeWidth={1.5} />
+                    <span>{t("settings.interfaceLanguage")}</span>
+                  </span>
+                  <Select
+                    value={locale}
+                    onChange={(val) => setLocale(val as UiLocale)}
+                    fullWidth={false}
+                    className="min-w-[10.5rem] h-8 px-2 text-xs"
+                    options={UI_LOCALE_CODES.map((code) => ({ value: code, label: t(SETTINGS_LOCALE_LABELS[code as UiLocale]) }))}
+                  />
+                </div>
+
+                <TitleDisplayOrderSetting />
+              </section>
               <section className="space-y-2" aria-labelledby="appearance-mode-heading">
                 <h2 id="appearance-mode-heading" className="text-sm font-semibold text-text-strong">{t("theme.displayMode")}</h2>
                 <ThemeModeControls />
@@ -467,20 +348,20 @@ export default function SettingsPage() {
           {activeTab === "password" && (
             <form onSubmit={handlePasswordChange} className="p-4 sm:p-6 space-y-4">
               {error && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-danger-soft font-mono text-xs sm:text-sm flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-danger-soft text-xs sm:text-sm flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" strokeWidth={1.5} />
                   <span>{error}</span>
                 </div>
               )}
               {success && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft font-mono text-xs sm:text-sm flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-success-soft text-xs sm:text-sm flex items-center gap-2">
                   <Check className="w-4 h-4 shrink-0" strokeWidth={1.5} />
                   <span>{success}</span>
                 </div>
               )}
 
               <div className="space-y-1">
-                <label className="font-mono text-xs sm:text-sm text-text-muted">{t("settings.oldPassword")}</label>
+                <label className="text-xs sm:text-sm text-text-muted">{t("settings.oldPassword")}</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" strokeWidth={1.5} />
                   <input
@@ -495,7 +376,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-mono text-xs sm:text-sm text-text-muted">{t("settings.newPassword")}</label>
+                <label className="text-xs sm:text-sm text-text-muted">{t("settings.newPassword")}</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" strokeWidth={1.5} />
                   <input
@@ -510,11 +391,11 @@ export default function SettingsPage() {
                   />
                 </div>
                 {/* 规则只此一处：与服务端 12–72 位同口径；/login 注册页用同一个键。 */}
-                <p className="text-[11px] text-text-muted font-mono">{t("auth.registerPasswordHint")}</p>
+                <p className="text-[11px] text-text-muted">{t("auth.registerPasswordHint")}</p>
               </div>
 
               <div className="space-y-1">
-                <label className="font-mono text-xs sm:text-sm text-text-muted">{t("settings.confirmPassword")}</label>
+                <label className="text-xs sm:text-sm text-text-muted">{t("settings.confirmPassword")}</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" strokeWidth={1.5} />
                   <input
@@ -544,7 +425,7 @@ export default function SettingsPage() {
               <div className="pt-3 mt-1 border-t border-line-subtle space-y-2">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-text-muted" strokeWidth={1.5} />
-                  <span className="font-mono text-xs font-semibold text-text-body">{t("settings.sessionsTitle")}</span>
+                  <span className="text-xs font-semibold text-text-body">{t("settings.sessionsTitle")}</span>
                 </div>
                 <p className="text-[11px] text-text-faint leading-relaxed">{t("settings.sessionsDesc")}</p>
                 {/* type=button：本按钮在改密表单内，但语义与表单无关，回车提交改密不受影响。 */}
@@ -567,6 +448,8 @@ export default function SettingsPage() {
             </form>
           )}
         </TabPanel>
+          </div>
+        </div>
       </PageShell>
 
       <ConfirmDialog

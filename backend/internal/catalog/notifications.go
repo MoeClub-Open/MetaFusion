@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // 通知类型枚举（对外稳定码，与前端四语字典的键一一对应；只增不改）。
@@ -201,16 +202,57 @@ const notificationColumns = `id::text, type, COALESCE(actor_id::text,''), actor_
 // ListNotifications 是收件箱列表：按事件时间倒序（见 notificationUpsert），返回 (条目, 总数, 未读数)。
 // 未读数与列表在同一次调用里返回是有意的：列表页两个数要一致，分两次请求会出现
 // "角标 3、列表全已读"的中间窗口。
-func (s *Store) ListNotifications(ctx context.Context, recipientID string, limit, offset int) ([]Notification, int, int, error) {
+type NotificationQuery struct {
+	Limit, Offset            int
+	Category, Read, From, To string
+}
+
+func (s *Store) ListNotifications(ctx context.Context, recipientID string, q NotificationQuery) ([]Notification, int, int, error) {
+	limit, offset := q.Limit, q.Offset
 	if limit <= 0 || limit > maxNotificationLimit {
 		limit = defaultNotificationLimit
 	}
 	if offset < 0 {
 		offset = 0
 	}
+	start, end, err := calendarRange(q.From, q.To)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	where := " WHERE recipient_id=$1"
+	args := []any{recipientID}
+	add := func(clause string, value any) { args = append(args, value); where += fmt.Sprintf(clause, len(args)) }
+	switch q.Category {
+	case "":
+	case "discussion":
+		add(" AND type = ANY($%d)", pq.Array([]string{NotificationCommentReplied}))
+	case "catalog":
+		add(" AND type = ANY($%d)", pq.Array([]string{NotificationEntityIncluded}))
+	case "review":
+		add(" AND type = ANY($%d)", pq.Array([]string{NotificationReviewApproved, NotificationReviewRejected}))
+	case "system":
+		add(" AND type = ANY($%d)", pq.Array([]string{"import.completed"}))
+	default:
+		return nil, 0, 0, fmt.Errorf("invalid_notification_category")
+	}
+	switch q.Read {
+	case "":
+	case "unread":
+		where += " AND read_at IS NULL"
+	case "read":
+		where += " AND read_at IS NOT NULL"
+	default:
+		return nil, 0, 0, fmt.Errorf("invalid_notification_read")
+	}
+	if start != nil {
+		add(" AND updated_at >= $%d", *start)
+	}
+	if end != nil {
+		add(" AND updated_at < $%d", *end)
+	}
+	pageArgs := append(append([]any{}, args...), limit, offset)
 	rows, err := s.DB.QueryContext(ctx,
-		"SELECT "+notificationColumns+" FROM catalog.notifications WHERE recipient_id=$1 ORDER BY updated_at DESC, id DESC LIMIT $2 OFFSET $3",
-		recipientID, limit, offset)
+		"SELECT "+notificationColumns+" FROM catalog.notifications"+where+fmt.Sprintf(" ORDER BY updated_at DESC, id DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2), pageArgs...)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -241,7 +283,7 @@ func (s *Store) ListNotifications(ctx context.Context, recipientID string, limit
 		return nil, 0, 0, err
 	}
 	var total int
-	if err := s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.notifications WHERE recipient_id=$1", recipientID).Scan(&total); err != nil {
+	if err := s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.notifications"+where, args...).Scan(&total); err != nil {
 		return nil, 0, 0, err
 	}
 	unread, err := s.NotificationUnreadCount(ctx, recipientID)

@@ -52,7 +52,7 @@ func (h HTTP) registerNotifications(api *gin.RouterGroup) {
 	})
 	api.GET("/notifications", required(""), func(c *gin.Context) {
 		limit, offset := notificationPaging(c)
-		items, total, unread, err := s.ListNotifications(c.Request.Context(), user(c).ID, limit, offset)
+		items, total, unread, err := s.ListNotifications(c.Request.Context(), user(c).ID, NotificationQuery{Limit: limit, Offset: offset, Category: c.Query("category"), Read: c.Query("read"), From: c.Query("from"), To: c.Query("to")})
 		if err != nil {
 			respond(c, nil, err)
 			return

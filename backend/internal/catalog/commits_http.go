@@ -74,7 +74,7 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		out, err := s.CreateWorkspace(c.Request.Context(), in, *user(c))
 		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: out.ID})
+			auditlog.Describe(c, workspaceAuditDetail(out))
 		}
 		respondCollaboration(c, out, err)
 	})
@@ -98,6 +98,9 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: c.Param("id")})
 		out, err := s.EditWorkspace(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			auditlog.Describe(c, workspaceAuditDetail(out))
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.POST("/workspaces/:id/checkout", required(""), func(c *gin.Context) {
@@ -107,6 +110,11 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: c.Param("id")})
 		out, err := s.CheckoutWorkspace(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			d := workspaceAuditDetail(out)
+			d.Changes["entity_count"], d.Changes["relation_count"] = len(in.EntityIDs), len(in.RelationIDs)
+			auditlog.Describe(c, d)
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.PUT("/workspaces/:id/changes", required(""), func(c *gin.Context) {
@@ -116,6 +124,11 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: c.Param("id"), Changes: map[string]any{"operation_count": len(in.Operations)}})
 		out, err := s.SaveWorkspaceChanges(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			d := workspaceAuditDetail(out.Workspace)
+			d.Changes["operation_count"] = len(in.Operations)
+			auditlog.Describe(c, d)
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.PUT("/workspaces/:id/members", required(""), func(c *gin.Context) {
@@ -125,6 +138,9 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: c.Param("id")})
 		out, err := s.SetWorkspaceMembers(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			auditlog.Describe(c, workspaceAuditDetail(out))
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.POST("/workspaces/:id/commits", required(""), func(c *gin.Context) {
@@ -134,6 +150,9 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "commit", TargetID: in.ID})
 		out, err := s.CommitWorkspace(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			auditlog.Describe(c, commitAuditDetail(out))
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.GET("/workspaces/:id/commits", required(""), func(c *gin.Context) {
@@ -147,6 +166,9 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: c.Param("id")})
 		out, err := s.PushWorkspace(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			auditlog.Describe(c, pushAuditDetail(out, c.Param("id")))
+		}
 		if err == nil && !out.Applied {
 			c.Header("Cache-Control", "no-store")
 			c.JSON(202, out)
@@ -161,6 +183,14 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "workspace", TargetID: c.Param("id")})
 		out, err := s.RebaseWorkspace(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			d := workspaceAuditDetail(out.Workspace)
+			d.Changes["resolution_count"] = len(in.Resolutions)
+			if out.Commit != nil {
+				d.Changes["commit_id"] = out.Commit.ID
+			}
+			auditlog.Describe(c, d)
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.POST("/pull-requests", required(""), func(c *gin.Context) {
@@ -170,7 +200,7 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		out, err := s.CreatePullRequest(c.Request.Context(), in, *user(c))
 		if err == nil {
-			auditlog.Describe(c, auditlog.Detail{TargetType: "pull_request", TargetID: out.ID})
+			auditlog.Describe(c, pullRequestAuditDetail(out))
 		}
 		respondCollaboration(c, out, err)
 	})
@@ -194,6 +224,9 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "pull_request", TargetID: c.Param("id")})
 		out, err := s.EditPullRequest(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil {
+			auditlog.Describe(c, pullRequestAuditDetail(out))
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.POST("/pull-requests/:id/merge", required(PermissionReviewManage), func(c *gin.Context) {
@@ -203,6 +236,11 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		}
 		auditlog.Describe(c, auditlog.Detail{TargetType: "pull_request", TargetID: c.Param("id")})
 		out, err := s.MergePullRequest(c.Request.Context(), c.Param("id"), in, *user(c))
+		if err == nil && out.PullRequest != nil {
+			d := pullRequestAuditDetail(*out.PullRequest)
+			d.Changes["applied"] = out.Applied
+			auditlog.Describe(c, d)
+		}
 		respondCollaboration(c, out, err)
 	})
 	cat.GET("/commits/:id", func(c *gin.Context) {
