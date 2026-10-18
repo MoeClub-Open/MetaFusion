@@ -369,12 +369,12 @@ print("业务容器凭据隔离通过：5 个服务仅本域 DSN（键名已核�
 # ENTRYPOINT，少了 --entrypoint 参数会被交给 /app/server，一条迁移都不会执行
 # （backend/Dockerfile 的 server 阶段是 ENTRYPOINT ["/app/server"]）。
 function stop_catalog_writes() {
-    echo "🛑 迁移前停止 backend，避免旧写入端在协议切换后继续写入..."
-    if ! docker compose $COMPOSE_ENV -f docker-compose.yml "$@" stop backend; then
-        echo "❌ 无法确认 backend 已停写：迁移中止，请先停止所有目录写入端" >&2
+    echo "🛑 迁移前停止 backend 与 MCP，避免旧写入端在协议切换后继续写入..."
+    if ! docker compose $COMPOSE_ENV -f docker-compose.yml "$@" stop backend mcp; then
+        echo "❌ 无法确认 backend 与 MCP 均已停写：迁移中止，请先停止所有目录写入端" >&2
         return 1
     fi
-    echo "   backend 已停止；失败不会自动重启，请保持所有目录写入端停写直至迁移与检查通过"
+    echo "   backend 与 MCP 已停止；失败不会自动重启，请保持两者停写直至迁移与检查通过并就绪匹配的应用版本"
 }
 
 function migrate_up_checked() {
@@ -383,7 +383,7 @@ function migrate_up_checked() {
     stop_catalog_writes "$@" || return 1
     echo "🗄️  执行目录库版本化迁移..."
     if ! run_migrate up "$@"; then
-        echo "❌ 迁移失败：保持 backend 停写，核对账本与备份并处理后再部署" >&2
+        echo "❌ 迁移失败：保持 backend 与 MCP 停写，核对账本与备份并处理后再部署" >&2
         return 1
     fi
 
@@ -419,7 +419,7 @@ function seed_checked() {
 function check_refs_report() {
     echo "🔍 悬挂引用体检（调用 mf-migrate check-refs，部署门禁）..."
     if ! run_migrate check-refs "$@"; then
-        echo "❌ 悬挂引用体检未通过：保持 backend 停写，处理上面的问题并重验通过后再部署" >&2
+        echo "❌ 悬挂引用体检未通过：保持 backend 与 MCP 停写，处理上面的问题并重验通过后再部署" >&2
         return 1
     fi
 }

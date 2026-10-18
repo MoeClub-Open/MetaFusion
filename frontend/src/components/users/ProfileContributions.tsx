@@ -164,7 +164,7 @@ export function ProfileContributions({ userId }: { userId: string }) {
             ) : (
               <ol className="rounded-lg border border-line bg-surface divide-y divide-line">
                 {result.items.map((item) => {
-                  const href = item.commit_id ? `/commits/${encodeURIComponent(item.commit_id)}` : item.entities[0] ? `${catalogEntityHref(item.entities[0].id)}#history` : null;
+                  const href = item.commit_id ? `/commits/${encodeURIComponent(item.commit_id)}` : item.entities[0] ? `${catalogEntityHref(item.entities[0].id)}#revisions` : null;
                   const title = item.message || t("users.profile.contributions.untitledCommit");
                   const Icon = item.pull_request_id ? GitPullRequest : GitCommit;
                   return (

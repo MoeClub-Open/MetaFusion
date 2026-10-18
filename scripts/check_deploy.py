@@ -12,12 +12,15 @@ catalog-server 当成 backend 的阶段名，直到 build 才炸）。
 3. 构建上下文在本机时，build.target 必须在对应 Dockerfile 里存在；
    目录不在本机（只检出主仓库、兄弟仓库缺席）只记"未能校验"并照常退出 0，不算失败；
 4. 编排里 "${VAR:?...}" 形式声明的必填变量，必须能在 .env.example 里找到。
+自测还通过模拟 Docker 验证真实部署函数的停写顺序和迁移失败行为，不连接容器。
 
 用法：python scripts/check_deploy.py [仓库根目录]
       python scripts/check_deploy.py --selftest    # 只跑变量展开 / 路径解析的自测
 """
 import os
 import re
+import shutil
+import subprocess
 import sys
 
 import yaml  # 解析编排要用；--selftest 也走这里（CI 的这一步本来就会装 pyyaml）
@@ -183,8 +186,81 @@ SELFTEST_JOIN_CASES = [
 ]
 
 
+def migration_quiesce_selftest():
+    """执行真实 Bash 函数，模拟 Docker 失败，保证停写失败不会继续迁移。"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "deploy", "deploy.sh"), encoding="utf-8") as fh:
+        source = fh.read()
+    functions = []
+    for name in ("run_migrate", "stop_catalog_writes", "migrate_up_checked"):
+        match = re.search(r"^function " + name + r"\(\) \{\n.*?^\}", source, re.M | re.S)
+        if not match:
+            return ["停写自测找不到部署函数 " + name], 0
+        functions.append(match.group(0))
+
+    bash = shutil.which("bash")
+    # Windows 的系统 bash 是 WSL 启动器；优先用 Git 附带的原生 Bash。
+    if os.name == "nt":
+        git_bash = os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Git", "bin", "bash.exe")
+        if os.path.isfile(git_bash):
+            bash = git_bash
+    if not bash:
+        return ["停写自测需要 Bash（不需要 Docker）"], 0
+
+    scenarios = [
+        ("ok", True), ("stop-failed", False), ("up-failed", False),
+        ("status-failed", False), ("PENDING", False), ("DIRTY", False),
+        ("MODIFIED", False), ("UNVERIFIED", False), ("UNKNOWN", False),
+        ("empty-status", False),
+    ]
+    fixture = r'''
+set -e
+COMPOSE_ENV="--env-file fixture.env"
+docker() {
+    printf 'CALL:%s\n' "$*"
+    case "$*" in
+        *" stop backend mcp")
+            [ "$SCENARIO" != stop-failed ] || return 9 ;;
+        *" backend-migrate up")
+            [ "$SCENARIO" != up-failed ] || return 9 ;;
+        *" backend-migrate status")
+            case "$SCENARIO" in
+                status-failed) return 9 ;;
+                empty-status) ;;
+                ok) printf '000035_collaboration APPLIED\n' ;;
+                *) printf '000035_collaboration %s\n' "$SCENARIO" ;;
+            esac ;;
+        *) return 99 ;;
+    esac
+}
+'''
+    expected_stop = "CALL:compose --env-file fixture.env -f docker-compose.yml -f docker-compose.prod.yml -f digest.yml stop backend mcp"
+    expected_up = "CALL:compose --env-file fixture.env -f docker-compose.yml -f docker-compose.prod.yml -f digest.yml run --rm --no-deps backend-migrate up"
+    failures = []
+    for scenario, success in scenarios:
+        script = fixture + "\nSCENARIO=" + scenario + "\n" + "\n".join(functions)
+        script += '\nmigrate_up_checked -f docker-compose.prod.yml -f digest.yml\n'
+        result = subprocess.run([bash, "--noprofile", "--norc", "-s"], input=script,
+                                capture_output=True, text=True, encoding="utf-8", timeout=15)
+        output = result.stdout + result.stderr
+        if (result.returncode == 0) != success:
+            failures.append("停写场景 %s 返回码 %s，期望成功=%s" % (scenario, result.returncode, success))
+        calls = [line for line in result.stdout.splitlines() if line.startswith("CALL:")]
+        if not calls or calls[0] != expected_stop:
+            failures.append("停写场景 %s 未首先停止 backend 与 MCP 或丢失 Compose 覆盖" % scenario)
+        if scenario == "stop-failed" and calls != [expected_stop]:
+            failures.append("停止失败后仍执行了迁移")
+        if scenario != "stop-failed" and (len(calls) < 2 or calls[1] != expected_up):
+            failures.append("停写场景 %s 未在停写成功后执行同源迁移器" % scenario)
+        if scenario == "up-failed" and len(calls) != 2:
+            failures.append("迁移失败后仍执行了后续操作")
+        if " up -d" in output or " start " in output or " restart " in output:
+            failures.append("停写场景 %s 自动恢复了写入端" % scenario)
+    return failures, len(scenarios)
+
+
 def selftest():
-    """离线自测：只验变量展开与路径拼接，不碰文件系统、不改环境。"""
+    """离线自测：变量、路径和真实迁移函数；不调用真实 Docker、不改环境。"""
     failures = []
     for label, text, env, want_value, want_error in SELFTEST_CASES:
         got = expand_value(text, env)
@@ -207,9 +283,11 @@ def selftest():
         if not want_fail and got is not None:
             failures.append("%s: 期望放行，实际被拦：%s" % (label, got))
 
+    quiesce_failures, quiesce_total = migration_quiesce_selftest()
+    failures.extend(quiesce_failures)
     for bad in failures:
         print("FAIL " + bad)
-    total = len(SELFTEST_CASES) + len(SELFTEST_JOIN_CASES) + len(SELFTEST_MIGRATOR_CASES)
+    total = len(SELFTEST_CASES) + len(SELFTEST_JOIN_CASES) + len(SELFTEST_MIGRATOR_CASES) + quiesce_total
     print("check_deploy --selftest: %d 项用例，%d 个问题" % (total, len(failures)))
     return 1 if failures else 0
 

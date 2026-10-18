@@ -142,6 +142,9 @@ func (s *Store) UserContributions(ctx context.Context, userID string, year, page
 // revision is required, so local no-ops cannot manufacture catalog contributions.
 // Partly hidden commits withhold their message and detail links, which may identify a
 // hidden object. Historical direct revisions stay revisions, not invented commits.
+// Legacy candidates deliberately retain no snapshots: this CTE is reused, and a
+// prolific editor's original documents can otherwise spill to disk. Canonical
+// UUID guards preserve the old exact text matches without casting invalid IDs.
 const userContributionsQuery = `
 WITH candidate_commits AS (
     SELECT c.id,c.actor_id,c.author_snapshot,c.message,c.created_at,c.merged_at,c.merged_by,c.pull_request_id
@@ -186,21 +189,31 @@ WITH candidate_commits AS (
     FROM candidate_commits c JOIN visible_commit_objects v ON v.commit_id=c.id
     GROUP BY c.id
 ), legacy_candidates AS (
-    SELECT r.* FROM catalog.revisions r
+    SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,r.version=1 AS entity_created,
+           e.id AS entity_id,e.kind AS entity_kind,e.title AS entity_title,e.state AS entity_state,
+           CASE WHEN e.id IS NULL AND r.snapshot->>'source_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                THEN (r.snapshot->>'source_id')::uuid END AS source_id,
+           CASE WHEN e.id IS NULL AND r.snapshot->>'target_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                THEN (r.snapshot->>'target_id')::uuid END AS relation_target_id
+    FROM catalog.revisions r
+    LEFT JOIN catalog.entities e ON e.id=CASE
+        WHEN r.target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN r.target_id::uuid END
     WHERE r.actor_id=$1::uuid AND r.created_at >= $2 AND r.created_at < $3
       AND r.commit_id IS NULL
       AND NOT EXISTS (SELECT 1 FROM catalog.revision_commits rc WHERE rc.revision_id=r.id)
 ), visible_legacy AS (
-    SELECT r.*,jsonb_build_array(jsonb_build_object('id',e.id,'kind',e.kind,'title',e.title)) AS entities,
-           r.version=1 AS entity_created
-    FROM legacy_candidates r JOIN catalog.entities e ON e.id::text=r.target_id AND e.state='active'
+    SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,
+           jsonb_build_array(jsonb_build_object('id',r.entity_id,'kind',r.entity_kind,'title',r.entity_title)) AS entities,
+           r.entity_created
+    FROM legacy_candidates r WHERE r.entity_state='active'
     UNION ALL
-    SELECT r.*,jsonb_build_array(jsonb_build_object('id',s.id,'kind',s.kind,'title',s.title),
+    SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,
+           jsonb_build_array(jsonb_build_object('id',s.id,'kind',s.kind,'title',s.title),
                                  jsonb_build_object('id',t.id,'kind',t.kind,'title',t.title)),false
     FROM legacy_candidates r
-    JOIN catalog.entities s ON s.id::text=r.snapshot->>'source_id' AND s.state='active'
-    JOIN catalog.entities t ON t.id::text=r.snapshot->>'target_id' AND t.state='active'
-    WHERE NOT EXISTS (SELECT 1 FROM catalog.entities e WHERE e.id::text=r.target_id)
+    JOIN catalog.entities s ON s.id=r.source_id AND s.state='active'
+    JOIN catalog.entities t ON t.id=r.relation_target_id AND t.state='active'
+    WHERE r.entity_id IS NULL
 ), public_pull_requests AS (
     SELECT p.id FROM catalog.pull_requests p
     WHERE p.status='merged' AND p.id IN (SELECT c.pull_request_id FROM candidate_commits c)

@@ -1,0 +1,14 @@
+# 保留默认凭据检查；版本锁中的完整 Git SHA 不是 API Key。
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Exact repository commit pins in the deployment version lock"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^deploy/versions\.lock$''']
+# 8.24.3 在 Git diff 中可能把前一行的换行分隔符附在 finding.Line 开头。
+regexes = ['''^(?:\r?\n)?(?:\.|\.\./metafusion-(?:auth|community|storage|api-gateway|docs|mcp|skills))=[0-9a-f]{40}\r?$''']

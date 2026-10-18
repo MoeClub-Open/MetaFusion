@@ -261,3 +261,55 @@ func TestPostgresUserContributionsMergedActivityAndPrivacy(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresUserContributionsLegacyTargetsAndMalformedSnapshots(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	author := fixtureUser("editor")
+	work := f.save(Entity{Kind: "work", Title: "Historical public work"})
+	agent := f.save(Entity{Kind: "agent", Title: "Historical public participant"})
+	hidden := f.save(Entity{Kind: "work", Title: "Removed historical work"})
+	if _, err := f.s.Lifecycle(ctx, hidden.ID, LifecycleEdit{ExpectedVersion: hidden.Version, EditNote: "remove fixture"}, f.u); err != nil {
+		t.Fatal(err)
+	}
+	endpoints := map[string]any{"source_id": work.ID, "target_id": agent.ID}
+	for _, tc := range []struct {
+		target   string
+		note     string
+		snapshot map[string]any
+	}{
+		{work.ID, "Visible entity with malformed historical endpoints", map[string]any{"source_id": "invalid", "target_id": "invalid"}},
+		{"historical-relation:not-a-uuid", "Historical textual relation ID", endpoints},
+		{uuid.NewString(), "Historical missing relation UUID", endpoints},
+		// An existing hidden entity must not be reinterpreted as a relation,
+		// even when its retained snapshot happens to contain public endpoints.
+		{hidden.ID, "Hidden entity with public endpoints", endpoints},
+		{"malformed-source", "Malformed source ID", map[string]any{"source_id": "not-a-uuid", "target_id": agent.ID}},
+		{"malformed-target", "Malformed target ID", map[string]any{"source_id": work.ID, "target_id": "00000000-0000-0000-0000-00000000000z"}},
+		{"hidden-endpoint", "Hidden relation endpoint", map[string]any{"source_id": work.ID, "target_id": hidden.ID}},
+	} {
+		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.revisions(target_id,version,actor_id,actor_name,edit_note,sources,snapshot,created_at)
+			VALUES($1,1,$2,'Historical author',$3,'[]',$4,'2026-01-01T00:00:00Z')`, tc.target, author.ID, tc.note, encode(tc.snapshot)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := f.s.UserContributions(ctx, author.ID, 2026, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Total != 3 || out.Summary.LegacyRevisions != 3 || out.Summary.MergedCommits != 0 || len(out.Items) != 3 {
+		t.Fatalf("legacy visibility changed: %+v", out)
+	}
+	for _, item := range out.Items {
+		if !item.Legacy || strings.Contains(item.Message, "Hidden") || strings.HasPrefix(item.Message, "Malformed") {
+			t.Fatalf("invalid or hidden revision leaked: %+v", item)
+		}
+		wantEntities := 2
+		if item.Message == "Visible entity with malformed historical endpoints" {
+			wantEntities = 1
+		}
+		if len(item.Entities) != wantEntities {
+			t.Fatalf("historical endpoint projection changed: %+v", item)
+		}
+	}
+}
