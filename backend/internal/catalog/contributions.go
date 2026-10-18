@@ -152,14 +152,19 @@ WITH candidate_commits AS (
     WHERE EXISTS (SELECT 1 FROM catalog.commit_authors a WHERE a.commit_id=c.id AND a.user_id=$1)
       AND c.merged_at >= $2 AND c.merged_at < $3
 ), all_objects AS (
-    SELECT o.*, COALESCE(o.after_document,o.before_document) AS document
+    SELECT o.commit_id,o.target,o.target_id,o.base_version,o.before_document,o.after_document,
+           CASE WHEN d.document->>'source_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                THEN (d.document->>'source_id')::uuid END AS source_id,
+           CASE WHEN d.document->>'target_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                THEN (d.document->>'target_id')::uuid END AS relation_target_id
     FROM catalog.commit_objects o JOIN candidate_commits c ON c.id=o.commit_id
+    CROSS JOIN LATERAL (SELECT COALESCE(o.after_document,o.before_document) AS document) d
 ), object_visibility AS (
     SELECT o.*,CASE WHEN o.target='entity' THEN
         EXISTS (SELECT 1 FROM catalog.entities e WHERE e.id=o.target_id AND e.state='active')
         ELSE EXISTS (SELECT 1 FROM catalog.entities s JOIN catalog.entities t
-                     ON t.id::text=o.document->>'target_id' AND t.state='active'
-                     WHERE s.id::text=o.document->>'source_id' AND s.state='active')
+                     ON t.id=o.relation_target_id AND t.state='active'
+                     WHERE s.id=o.source_id AND s.state='active')
         END AS public
     FROM all_objects o
 ), changed_objects AS (
@@ -180,17 +185,19 @@ WITH candidate_commits AS (
            jsonb_build_array(jsonb_build_object('id',s.id,'kind',s.kind,'title',s.title),
                              jsonb_build_object('id',t.id,'kind',t.kind,'title',t.title))
     FROM changed_objects o
-    JOIN catalog.entities s ON s.id::text=o.document->>'source_id' AND s.state='active'
-    JOIN catalog.entities t ON t.id::text=o.document->>'target_id' AND t.state='active'
+    JOIN catalog.entities s ON s.id=o.source_id AND s.state='active'
+    JOIN catalog.entities t ON t.id=o.relation_target_id AND t.state='active'
     WHERE o.target='relation'
+), commit_visibility AS (
+    SELECT commit_id,bool_and(public) AS all_public FROM object_visibility GROUP BY commit_id
 ), commit_counts AS (
-    SELECT c.id,count(v.target_id) AS visible_count,
-           (SELECT bool_and(o.public) FROM object_visibility o WHERE o.commit_id=c.id) AS all_public
+    SELECT c.id,count(v.target_id) AS visible_count,p.all_public
     FROM candidate_commits c JOIN visible_commit_objects v ON v.commit_id=c.id
-    GROUP BY c.id
+    JOIN commit_visibility p ON p.commit_id=c.id
+    GROUP BY c.id,p.all_public
 ), legacy_candidates AS (
-    SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,r.version=1 AS entity_created,
-           e.id AS entity_id,e.kind AS entity_kind,e.title AS entity_title,e.state AS entity_state,
+    SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,
+           e.id AS entity_id,e.state AS entity_state,
            CASE WHEN e.id IS NULL AND r.snapshot->>'source_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
                 THEN (r.snapshot->>'source_id')::uuid END AS source_id,
            CASE WHEN e.id IS NULL AND r.snapshot->>'target_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -203,13 +210,11 @@ WITH candidate_commits AS (
       AND NOT EXISTS (SELECT 1 FROM catalog.revision_commits rc WHERE rc.revision_id=r.id)
 ), visible_legacy AS (
     SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,
-           jsonb_build_array(jsonb_build_object('id',r.entity_id,'kind',r.entity_kind,'title',r.entity_title)) AS entities,
-           r.entity_created
+           ARRAY[r.entity_id] AS entity_ids
     FROM legacy_candidates r WHERE r.entity_state='active'
     UNION ALL
     SELECT r.id,r.actor_id,r.actor_name,r.edit_note,r.created_at,
-           jsonb_build_array(jsonb_build_object('id',s.id,'kind',s.kind,'title',s.title),
-                                 jsonb_build_object('id',t.id,'kind',t.kind,'title',t.title)),false
+           ARRAY[s.id,t.id]
     FROM legacy_candidates r
     JOIN catalog.entities s ON s.id=r.source_id AND s.state='active'
     JOIN catalog.entities t ON t.id=r.relation_target_id AND t.state='active'
@@ -223,10 +228,12 @@ WITH candidate_commits AS (
               EXISTS (SELECT 1 FROM catalog.entities e WHERE e.id=o.target_id AND e.state='active')
               ELSE EXISTS (
                   SELECT 1 FROM catalog.entities s JOIN catalog.entities t
-                    ON t.id::text=COALESCE(o.after_document,o.before_document)->>'target_id' AND t.state='active'
-                  WHERE s.id::text=COALESCE(o.after_document,o.before_document)->>'source_id' AND s.state='active')
+                    ON t.id=CASE WHEN COALESCE(o.after_document,o.before_document)->>'target_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                        THEN (COALESCE(o.after_document,o.before_document)->>'target_id')::uuid END AND t.state='active'
+                  WHERE s.id=CASE WHEN COALESCE(o.after_document,o.before_document)->>'source_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                        THEN (COALESCE(o.after_document,o.before_document)->>'source_id')::uuid END AND s.state='active')
               END))
-), activity AS (
+), merged_activity AS (
     SELECT c.id::text AS id,CASE WHEN n.all_public THEN c.id::text END AS commit_id,
            CASE WHEN n.all_public THEN c.message ELSE '' END AS message,
            c.created_at AS authored_at,c.merged_at,
@@ -238,6 +245,8 @@ WITH candidate_commits AS (
            n.visible_count AS changes_count,false AS legacy
     FROM candidate_commits c JOIN commit_counts n ON n.id=c.id
     LEFT JOIN public_pull_requests p ON p.id=c.pull_request_id
+), activity AS (
+    SELECT * FROM merged_activity
     UNION ALL
     SELECT 'revision:'||r.id::text,NULL,r.edit_note,r.created_at,r.created_at,
            r.actor_id::text,COALESCE(NULLIF(r.actor_name,''),r.actor_id::text,'system'),
@@ -248,22 +257,32 @@ WITH candidate_commits AS (
     SELECT DISTINCT o.commit_id::text AS activity_id,x->>'id' AS id,x->>'kind' AS kind,x->>'title' AS title,
            o.target='entity' AND o.base_version=0 AND o.before_document IS NULL AS created
     FROM visible_commit_objects o CROSS JOIN LATERAL jsonb_array_elements(o.entities) x
-    UNION ALL
-    SELECT 'revision:'||r.id::text,x->>'id',x->>'kind',x->>'title',r.entity_created
-    FROM visible_legacy r CROSS JOIN LATERAL jsonb_array_elements(r.entities) x
 ), daily AS (
     SELECT to_char(merged_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day,count(*) AS count
-    FROM activity WHERE NOT legacy GROUP BY day
+    FROM merged_activity GROUP BY day
 ), paged AS (
     SELECT * FROM activity ORDER BY merged_at DESC,id DESC LIMIT $4 OFFSET $5
+), paged_entities AS (
+    SELECT e.activity_id,jsonb_agg(jsonb_build_object('id',e.id,'kind',e.kind,'title',e.title) ORDER BY e.kind,e.title,e.id) AS entities
+    FROM (SELECT DISTINCT e.activity_id,e.id,e.kind,e.title
+          FROM (
+              SELECT e.activity_id,e.id,e.kind,e.title
+              FROM activity_entities e JOIN paged p ON p.id=e.activity_id
+              UNION ALL
+              SELECT 'revision:'||r.id::text,e.id::text,e.kind,e.title
+              FROM visible_legacy r JOIN paged p ON p.id='revision:'||r.id::text
+              CROSS JOIN LATERAL unnest(r.entity_ids) x(id)
+              JOIN catalog.entities e ON e.id=x.id
+          ) e) e
+    GROUP BY e.activity_id
 )
 SELECT
     jsonb_build_object(
-        'merged_commits',(SELECT count(*) FROM activity WHERE NOT legacy),
-        'changed_entities',(SELECT count(DISTINCT e.id) FROM activity_entities e JOIN activity a ON a.id=e.activity_id WHERE NOT a.legacy),
-        'created_entities',(SELECT count(DISTINCT e.id) FROM activity_entities e JOIN activity a ON a.id=e.activity_id WHERE NOT a.legacy AND e.created),
-        'merged_pull_requests',(SELECT count(DISTINCT pull_request_id) FROM activity),
-        'legacy_revisions',(SELECT count(*) FROM activity WHERE legacy)),
+        'merged_commits',(SELECT count(*) FROM merged_activity),
+        'changed_entities',(SELECT count(DISTINCT id) FROM activity_entities),
+        'created_entities',(SELECT count(DISTINCT id) FROM activity_entities WHERE created),
+        'merged_pull_requests',(SELECT count(DISTINCT pull_request_id) FROM merged_activity),
+        'legacy_revisions',(SELECT count(*) FROM visible_legacy)),
     COALESCE((SELECT jsonb_object_agg(day,count) FROM daily),'{}'::jsonb),
     COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
         'id',a.id,'commit_id',a.commit_id,'message',a.message,
@@ -272,8 +291,7 @@ SELECT
         'authors',a.authors,
         'merged_by',CASE WHEN a.merged_by IS NOT NULL THEN jsonb_build_object('id',a.merged_by,'name',a.merged_by) END,
         'pull_request_id',a.pull_request_id,'changes_count',a.changes_count,'legacy',a.legacy,
-        'entities',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',e.id,'kind',e.kind,'title',e.title) ORDER BY e.kind,e.title,e.id)
-                             FROM (SELECT DISTINCT id,kind,title FROM activity_entities WHERE activity_id=a.id) e),'[]'::jsonb)
-    )) ORDER BY a.merged_at DESC,a.id DESC) FROM paged a),'[]'::jsonb),
-    (SELECT count(*) FROM activity)
+        'entities',COALESCE(e.entities,'[]'::jsonb)
+    )) ORDER BY a.merged_at DESC,a.id DESC) FROM paged a LEFT JOIN paged_entities e ON e.activity_id=a.id),'[]'::jsonb),
+    (SELECT count(*) FROM merged_activity)+(SELECT count(*) FROM visible_legacy)
 `
