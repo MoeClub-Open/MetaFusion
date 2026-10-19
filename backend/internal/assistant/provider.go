@@ -3,11 +3,11 @@ package assistant
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/metafusion/metafusion-app/internal/publicweb"
@@ -29,14 +29,14 @@ func (s *Store) Complete(ctx context.Context, in CompletionRequest) (CompletionR
 	if len(in.Messages) == 0 || len(in.Messages) > 200 || len(in.Tools) > 32 {
 		return CompletionResponse{}, fmt.Errorf("assistant_invalid_messages")
 	}
-	var baseURL string
+	var baseURL, protocol string
 	var encrypted []byte
 	identity := "provider:" + r.ProviderID
 	if r.BYOCredentialID != "" {
 		identity = "byo:" + r.BYOCredentialID
-		err = s.DB.QueryRowContext(ctx, `SELECT base_url,encrypted_key FROM assistant.byo_credentials WHERE id=$1 AND owner_id=$2 AND enabled`, r.BYOCredentialID, r.UserID).Scan(&baseURL, &encrypted)
+		err = s.DB.QueryRowContext(ctx, `SELECT base_url,protocol,encrypted_key FROM assistant.byo_credentials WHERE id=$1 AND owner_id=$2 AND enabled`, r.BYOCredentialID, r.UserID).Scan(&baseURL, &protocol, &encrypted)
 	} else {
-		err = s.DB.QueryRowContext(ctx, `SELECT base_url,encrypted_key FROM assistant.providers WHERE id=$1 AND enabled`, r.ProviderID).Scan(&baseURL, &encrypted)
+		err = s.DB.QueryRowContext(ctx, `SELECT base_url,protocol,encrypted_key FROM assistant.providers WHERE id=$1 AND enabled`, r.ProviderID).Scan(&baseURL, &protocol, &encrypted)
 	}
 	if err != nil {
 		return CompletionResponse{}, dbError(err)
@@ -50,11 +50,16 @@ func (s *Store) Complete(ctx context.Context, in CompletionRequest) (CompletionR
 	}
 	ctx, cancel := context.WithTimeout(ctx, 55*time.Second)
 	defer cancel()
-	u, err := publicweb.ValidateURL(ctx, strings.TrimRight(baseURL, "/")+"/chat/completions")
+	endpoint, err := completionEndpoint(baseURL, protocol, r.Model.UpstreamModel)
+	if err != nil {
+		return CompletionResponse{}, err
+	}
+	u, err := publicweb.ValidateURL(ctx, endpoint)
 	if err != nil || u.Scheme != "https" {
 		return CompletionResponse{}, fmt.Errorf("assistant_invalid_provider_url")
 	}
-	body, err := completionPayload(r, in)
+	binding := fmt.Sprintf("%x", sha256.Sum256(jsonBytes([]string{identity, baseURL, protocol, r.Model.UpstreamModel, fmt.Sprintf("%x", sha256.Sum256(encrypted))})))
+	body, err := protocolPayload(protocol, binding, r, in)
 	if err != nil {
 		return CompletionResponse{}, err
 	}
@@ -74,7 +79,15 @@ func (s *Store) Complete(ctx context.Context, in CompletionRequest) (CompletionR
 		return CompletionResponse{}, fmt.Errorf("assistant_provider_request_failed")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
+	switch protocol {
+	case "anthropic_messages":
+		req.Header.Set("x-api-key", key)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	case "gemini_generate_content":
+		req.Header.Set("x-goog-api-key", key)
+	default:
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 	client := s.CompletionClient
 	if client == nil {
 		client = publicweb.NewClient(55 * time.Second)
@@ -87,7 +100,7 @@ func (s *Store) Complete(ctx context.Context, in CompletionRequest) (CompletionR
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return CompletionResponse{}, fmt.Errorf("assistant_provider_http_%d", response.StatusCode)
 	}
-	return decodeCompletion(io.LimitReader(response.Body, 8*1024*1024))
+	return decodeProtocolCompletion(io.LimitReader(response.Body, 8*1024*1024), protocol, binding)
 }
 
 func completionPayload(r Reservation, in CompletionRequest) ([]byte, error) {
@@ -98,7 +111,11 @@ func completionPayload(r Reservation, in CompletionRequest) ([]byte, error) {
 	if parameter != "max_tokens" && parameter != "max_completion_tokens" {
 		return nil, fmt.Errorf("assistant_invalid_token_parameter")
 	}
-	payload := map[string]any{"model": r.Model.UpstreamModel, "messages": in.Messages, parameter: r.OutputTokens, "stream": false}
+	messages := append([]Message(nil), in.Messages...)
+	for i := range messages {
+		messages[i].ProviderContext = nil
+	}
+	payload := map[string]any{"model": r.Model.UpstreamModel, "messages": messages, parameter: r.OutputTokens, "stream": false}
 	if len(in.Tools) > 0 {
 		payload["tools"] = in.Tools
 	}
@@ -134,14 +151,20 @@ func decodeCompletion(reader io.Reader) (CompletionResponse, error) {
 		return CompletionResponse{}, fmt.Errorf("assistant_provider_usage_missing")
 	}
 	out := CompletionResponse{ID: raw.ID, Usage: TokenUsage{InputTokens: raw.Usage.PromptTokens, OutputTokens: raw.Usage.CompletionTokens, CachedInputTokens: raw.Usage.PromptDetails.CachedTokens}}
-	if out.Usage.InputTokens < 0 || out.Usage.OutputTokens < 0 || out.Usage.CachedInputTokens < 0 || out.Usage.CachedInputTokens > out.Usage.InputTokens {
-		return CompletionResponse{}, fmt.Errorf("assistant_provider_invalid_usage")
-	}
 	if len(raw.Choices) != 1 {
 		return out, fmt.Errorf("assistant_provider_invalid_choices")
 	}
 	out.Message = raw.Choices[0].Message
 	out.FinishReason = raw.Choices[0].FinishReason
+	// Chat-compatible endpoints cannot inject another protocol's opaque history.
+	out.Message.ProviderContext = nil
+	return validateCompletion(out)
+}
+
+func validateCompletion(out CompletionResponse) (CompletionResponse, error) {
+	if out.Usage.InputTokens < 0 || out.Usage.OutputTokens < 0 || out.Usage.CachedInputTokens < 0 || out.Usage.CachedInputTokens > out.Usage.InputTokens {
+		return CompletionResponse{}, fmt.Errorf("assistant_provider_invalid_usage")
+	}
 	if out.Message.Role != "assistant" {
 		return out, fmt.Errorf("assistant_provider_invalid_role")
 	}

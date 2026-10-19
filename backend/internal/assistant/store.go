@@ -99,7 +99,7 @@ func (s *Store) SaveProvider(ctx context.Context, in ProviderInput) (Provider, e
 	if in.Protocol == "" {
 		in.Protocol = "openai_compatible"
 	}
-	if in.Name == "" || len(in.Name) > 200 || in.Protocol != "openai_compatible" || in.MonthlyBudgetMicroUSD < 0 {
+	if in.Name == "" || len(in.Name) > 200 || !validProtocol(in.Protocol) || in.MonthlyBudgetMicroUSD < 0 {
 		return Provider{}, fmt.Errorf("assistant_invalid_provider")
 	}
 	u, err := publicweb.ValidateURL(ctx, in.BaseURL)
@@ -205,11 +205,11 @@ func (s *Store) SaveSettings(ctx context.Context, v Settings) (Settings, error) 
 	return scanSettings(s.DB.QueryRowContext(ctx, `UPDATE assistant.settings SET enabled=$1,default_model_id=$2,registration_credits=$3,accepted_edit_credits=$4,reward_effective_at=$5,monthly_budget_microusd=$6,max_tool_rounds=$7,updated_at=now() WHERE singleton RETURNING `+settingsColumns, v.Enabled, nullableID(v.DefaultModelID), v.RegistrationCredits, v.AcceptedEditCredits, v.RewardEffectiveAt, v.MonthlyBudgetMicroUSD, v.MaxToolRounds))
 }
 
-const byoColumns = `id,owner_id,name,base_url,upstream_model,enabled,octet_length(encrypted_key)>0,key_hint,created_at,updated_at`
+const byoColumns = `id,owner_id,name,base_url,protocol,upstream_model,enabled,octet_length(encrypted_key)>0,key_hint,created_at,updated_at`
 
 func scanBYO(row scanner) (BYOCredential, error) {
 	var b BYOCredential
-	err := row.Scan(&b.ID, &b.OwnerID, &b.Name, &b.BaseURL, &b.UpstreamModel, &b.Enabled, &b.HasKey, &b.KeyHint, &b.CreatedAt, &b.UpdatedAt)
+	err := row.Scan(&b.ID, &b.OwnerID, &b.Name, &b.BaseURL, &b.Protocol, &b.UpstreamModel, &b.Enabled, &b.HasKey, &b.KeyHint, &b.CreatedAt, &b.UpdatedAt)
 	return b, dbError(err)
 }
 func (s *Store) BYOCredentials(ctx context.Context, ownerID string, admin bool, limit, offset int) (Page[BYOCredential], error) {
@@ -244,7 +244,10 @@ func (s *Store) SaveBYOCredential(ctx context.Context, ownerID string, in BYOCre
 	in.Name = strings.TrimSpace(in.Name)
 	in.UpstreamModel = strings.TrimSpace(in.UpstreamModel)
 	in.BaseURL = strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
-	if in.Name == "" || len(in.Name) > 200 || len(in.UpstreamModel) > 200 {
+	if in.Protocol == "" {
+		in.Protocol = "openai_compatible"
+	}
+	if in.Name == "" || len(in.Name) > 200 || len(in.UpstreamModel) > 200 || !validProtocol(in.Protocol) {
 		return BYOCredential{}, fmt.Errorf("assistant_invalid_credential")
 	}
 	u, err := publicweb.ValidateURL(ctx, in.BaseURL)
@@ -273,7 +276,7 @@ func (s *Store) SaveBYOCredential(ctx context.Context, ownerID string, in BYOCre
 	if !exists && encrypted == nil {
 		return BYOCredential{}, fmt.Errorf("assistant_key_required")
 	}
-	return scanBYO(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_credentials(id,owner_id,name,base_url,enabled,encrypted_key,key_hint,upstream_model) VALUES($1,$2,$3,$4,$5,COALESCE($6::bytea,''::bytea),$7,$9) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,base_url=EXCLUDED.base_url,upstream_model=EXCLUDED.upstream_model,enabled=EXCLUDED.enabled,encrypted_key=COALESCE($6::bytea,assistant.byo_credentials.encrypted_key),key_hint=CASE WHEN $6::bytea IS NULL THEN assistant.byo_credentials.key_hint ELSE $7 END,updated_at=now() WHERE assistant.byo_credentials.owner_id=$2 OR $8 RETURNING `+byoColumns, id, ownerID, in.Name, in.BaseURL, in.Enabled, encrypted, hint, admin, in.UpstreamModel))
+	return scanBYO(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_credentials(id,owner_id,name,base_url,enabled,encrypted_key,key_hint,upstream_model,protocol) VALUES($1,$2,$3,$4,$5,COALESCE($6::bytea,''::bytea),$7,$9,$10) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,base_url=EXCLUDED.base_url,protocol=EXCLUDED.protocol,upstream_model=EXCLUDED.upstream_model,enabled=EXCLUDED.enabled,encrypted_key=COALESCE($6::bytea,assistant.byo_credentials.encrypted_key),key_hint=CASE WHEN $6::bytea IS NULL THEN assistant.byo_credentials.key_hint ELSE $7 END,updated_at=now() WHERE assistant.byo_credentials.owner_id=$2 OR $8 RETURNING `+byoColumns, id, ownerID, in.Name, in.BaseURL, in.Enabled, encrypted, hint, admin, in.UpstreamModel, in.Protocol))
 }
 func (s *Store) DeleteBYOCredential(ctx context.Context, ownerID, id string, admin bool) error {
 	return s.deleteOne(ctx, `DELETE FROM assistant.byo_credentials WHERE id=$1 AND (owner_id=$2 OR $3)`, id, ownerID, admin)

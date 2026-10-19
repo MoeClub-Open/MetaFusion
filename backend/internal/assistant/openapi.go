@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"time"
@@ -64,6 +65,9 @@ func AddOpenAPI(paths, schemas map[string]any) {
 		if t == reflect.TypeOf(time.Time{}) {
 			return map[string]any{"type": "string", "format": "date-time"}
 		}
+		if t == reflect.TypeOf(json.RawMessage{}) {
+			return map[string]any{"description": "Opaque provider JSON retained for signed reasoning and tool-call continuity; never rendered as executable content."}
+		}
 		switch t.Kind() {
 		case reflect.Struct:
 			if t.Name() == "" {
@@ -102,9 +106,11 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	for _, name := range []string{"Provider", "Model", "BYOCredential", "CreditEntry", "UsageRecord", "Conversation", "GeneratedOverview"} {
 		props(name)["id"] = id()
 	}
-	props("Provider")["protocol"] = map[string]any{"type": "string", "enum": []string{"openai_compatible"}}
 	for _, name := range []string{"Provider", "BYOCredential"} {
-		props(name)["base_url"] = map[string]any{"type": "string", "format": "uri", "description": "Public HTTP(S) OpenAI-compatible endpoint. Private, loopback and metadata destinations are rejected."}
+		props(name)["protocol"] = map[string]any{"type": "string", "enum": []string{"openai_compatible", "openai_responses", "anthropic_messages", "gemini_generate_content"}, "default": "openai_compatible", "description": "Explicit upstream wire format. Chat Completions, Responses, Anthropic Messages or Gemini GenerateContent; one request only, no protocol probing or fallback."}
+	}
+	for _, name := range []string{"Provider", "BYOCredential"} {
+		props(name)["base_url"] = map[string]any{"type": "string", "format": "uri", "description": "Public HTTPS API base URL for the selected protocol, including the service's version prefix. Private, loopback and metadata destinations are rejected."}
 		props(name)["key_hint"] = map[string]any{"type": "string", "description": "Redacted hint only. API key plaintext is never returned."}
 	}
 	for _, name := range []string{"input_tokens", "output_tokens", "cached_input_tokens"} {
@@ -114,7 +120,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 		props("Model")[name] = natural()
 	}
 	props("Model")["provider_id"] = id()
-	props("Model")["max_tokens_parameter"] = map[string]any{"type": "string", "enum": []string{"max_tokens", "max_completion_tokens"}, "default": "max_tokens", "description": "Upstream request field used to enforce max_output_tokens; configure it for the provider's model protocol."}
+	props("Model")["max_tokens_parameter"] = map[string]any{"type": "string", "enum": []string{"max_tokens", "max_completion_tokens"}, "default": "max_tokens", "description": "Chat Completions output-limit parameter. Other protocols automatically use their native max_output_tokens, max_tokens or maxOutputTokens field."}
 	props("BYOCredential")["upstream_model"] = map[string]any{"type": "string", "maxLength": 200, "description": "Optional upstream model override for this BYO endpoint. The selected platform model's context and output limits still apply; BYO calls spend zero platform credits."}
 	props("Model")["max_output_tokens"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1}
 	props("Model")["context_window"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1, "maximum": 10000000, "description": "Must be at least max_output_tokens."}
@@ -141,7 +147,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	}
 	input("ProviderInput", "Provider", []string{"name", "base_url", "protocol", "enabled", "monthly_budget_microusd"}, "name", "base_url")
 	input("ModelInput", "Model", []string{"provider_id", "upstream_model", "max_tokens_parameter", "name", "enabled", "input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million", "input_credits_per_million", "output_credits_per_million", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name", "max_output_tokens", "context_window")
-	input("CredentialInput", "BYOCredential", []string{"name", "base_url", "upstream_model", "enabled"}, "name", "base_url")
+	input("CredentialInput", "BYOCredential", []string{"name", "base_url", "protocol", "upstream_model", "enabled"}, "name", "base_url")
 	input("SettingsInput", "Settings", []string{"enabled", "default_model_id", "registration_credits", "accepted_edit_credits", "reward_effective_at", "monthly_budget_microusd", "max_tool_rounds"}, "enabled", "registration_credits", "accepted_edit_credits", "reward_effective_at", "monthly_budget_microusd", "max_tool_rounds")
 	for _, name := range []string{"ProviderInput", "CredentialInput"} {
 		props(name)["api_key"] = map[string]any{"type": "string", "writeOnly": true, "maxLength": 16000, "description": "Omit to keep the existing encrypted key. A new BYO credential requires a nonempty key; an empty provider key clears it. Never returned in any response."}

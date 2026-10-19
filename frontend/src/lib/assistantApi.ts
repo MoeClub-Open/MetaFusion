@@ -12,8 +12,11 @@ export interface AssistantPage<T> {
   offset: number;
 }
 
+export const ASSISTANT_PROTOCOLS = ["openai_compatible", "openai_responses", "anthropic_messages", "gemini_generate_content"] as const;
+export type AssistantProtocol = typeof ASSISTANT_PROTOCOLS[number];
+
 export interface AssistantProvider {
-  id: string; name: string; base_url: string; protocol: string; enabled: boolean;
+  id: string; name: string; base_url: string; protocol: AssistantProtocol; enabled: boolean;
   has_key: boolean; key_hint: string; monthly_budget_microusd: number;
   created_at: string; updated_at: string;
 }
@@ -34,7 +37,7 @@ export interface AssistantSettings {
 }
 
 export interface AssistantCredential {
-  id: string; owner_id: string; name: string; base_url: string; enabled: boolean;
+  id: string; owner_id: string; name: string; base_url: string; protocol: AssistantProtocol; enabled: boolean;
   has_key: boolean; key_hint: string; upstream_model: string; created_at: string; updated_at: string;
 }
 
@@ -63,6 +66,7 @@ export interface AssistantBudgetUsage {
 export interface AssistantMessage {
   role: string; content: string; tool_call_id?: string;
   tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[];
+  provider_context?: { binding: string; output: unknown };
 }
 
 export interface AssistantConversation {

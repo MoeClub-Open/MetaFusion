@@ -9,6 +9,7 @@ import { assistantRequest, type AssistantAccount, type AssistantConversation, ty
 import { assistantAllPages, conversationReceipts, pushReceiptKey, describeAssistantError, type AssistantAccountResponse, type AssistantPushReceipt } from "@/lib/assistantUser";
 import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { AssistantModelPicker } from "./AssistantModelPicker";
@@ -89,6 +90,13 @@ function AssistantWorkspace() {
     return () => { alive = false; ++readSequence.current; };
   }, [user?.id, t]);
 
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => { if (desktop.matches) setShowConversations(false); };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
+
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [messages, busy]);
 
   const openConversation = async (id: string) => {
@@ -147,6 +155,18 @@ function AssistantWorkspace() {
     finally { setBusy(false); }
   };
 
+  const conversationList = <div className="flex h-full min-h-0 flex-col gap-3">
+          <button type="button" disabled={busy||loading} onClick={()=>{++readSequence.current;setConversationID("");setMessages([]);setResult(null);setError("");setShowConversations(false);pendingRequest.current=null;}} className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-sm font-medium disabled:opacity-40"><Plus className="size-4"/>{t("assistant.user.newChat")}</button>
+          <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5"><Search className="size-3.5 shrink-0 text-text-muted"/><input type="search" aria-label={t("assistantUI.searchChats")} placeholder={t("assistantUI.searchChats")} value={conversationSearch} onChange={event=>setConversationSearch(event.target.value)} className="h-8 min-w-0 w-full bg-transparent text-xs outline-none"/></label>
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto lg:max-h-[62vh]">
+            {conversations.filter(item=>(item.title||"").toLocaleLowerCase().includes(conversationSearch.toLocaleLowerCase())).map(item=><div key={item.id} className={`group flex rounded-control ${conversationID===item.id?"bg-primary/10":"hover:bg-surfaceHover"}`}>
+              <button type="button" disabled={busy||loading} onClick={()=>{void openConversation(item.id);setShowConversations(false);}} className="min-w-0 flex-1 p-2.5 text-left"><span className="line-clamp-2 text-sm">{item.title||t("assistant.user.newChat")}</span><time className="mt-1 block text-xs text-text-faint">{new Date(item.updated_at).toLocaleDateString(locale)}</time></button>
+              <button type="button" disabled={busy||loading} onClick={()=>setDeleting(item)} aria-label={t("assistant.user.deleteChat")} className="self-start rounded-control p-2.5 text-text-faint hover:text-danger lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"><Trash2 className="size-3.5"/></button>
+            </div>)}
+            {!conversations.length&&!loading&&<p className="px-2 py-5 text-center text-xs text-text-muted">{t("assistant.user.noConversations")}</p>}
+          </div>
+  </div>;
+
   if (authLoading) return <PageShell title={t("assistant.user.title")}><p role="status" className="text-sm text-text-muted">{t("common.loading")}</p></PageShell>;
   if (!user) return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")}><Card><p className="text-sm text-text-muted">{t("assistant.user.loginRequired")}</p><Link href="/login?redirect=%2Fassistant" className="inline-block mt-3 text-sm text-primary hover:underline">{t("navbar.signIn")}</Link></Card></PageShell>;
   const number = new Intl.NumberFormat(locale);
@@ -161,17 +181,7 @@ function AssistantWorkspace() {
     {tab==="chat"&&<section id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="overflow-hidden rounded-panel border border-line bg-surface">
       <button type="button" onClick={()=>setShowConversations(value=>!value)} aria-expanded={showConversations} className="flex w-full items-center gap-2 border-b border-line-subtle px-4 py-3 text-sm text-text-muted lg:hidden"><PanelLeft className="size-4"/>{t("assistantUI.conversations")}</button>
       <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className={`${showConversations?"flex":"hidden"} min-w-0 flex-col gap-3 border-b border-line-subtle bg-surfaceSubtle p-3 lg:flex lg:border-b-0 lg:border-r`}>
-          <button type="button" disabled={busy||loading} onClick={()=>{++readSequence.current;setConversationID("");setMessages([]);setResult(null);setError("");setShowConversations(false);pendingRequest.current=null;}} className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-sm font-medium disabled:opacity-40"><Plus className="size-4"/>{t("assistant.user.newChat")}</button>
-          <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5"><Search className="size-3.5 shrink-0 text-text-muted"/><input type="search" aria-label={t("assistantUI.searchChats")} placeholder={t("assistantUI.searchChats")} value={conversationSearch} onChange={event=>setConversationSearch(event.target.value)} className="h-8 min-w-0 w-full bg-transparent text-xs outline-none"/></label>
-          <div className="max-h-52 flex-1 space-y-1 overflow-y-auto lg:max-h-[62vh]">
-            {conversations.filter(item=>(item.title||"").toLocaleLowerCase().includes(conversationSearch.toLocaleLowerCase())).map(item=><div key={item.id} className={`group flex rounded-control ${conversationID===item.id?"bg-primary/10":"hover:bg-surfaceHover"}`}>
-              <button type="button" disabled={busy||loading} onClick={()=>{void openConversation(item.id);setShowConversations(false);}} className="min-w-0 flex-1 p-2.5 text-left"><span className="line-clamp-2 text-sm">{item.title||t("assistant.user.newChat")}</span><time className="mt-1 block text-xs text-text-faint">{new Date(item.updated_at).toLocaleDateString(locale)}</time></button>
-              <button type="button" disabled={busy||loading} onClick={()=>setDeleting(item)} aria-label={t("assistant.user.deleteChat")} className="self-start rounded-control p-2.5 text-text-faint hover:text-danger lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"><Trash2 className="size-3.5"/></button>
-            </div>)}
-            {!conversations.length&&!loading&&<p className="px-2 py-5 text-center text-xs text-text-muted">{t("assistant.user.noConversations")}</p>}
-          </div>
-        </aside>
+        <aside className="hidden min-w-0 flex-col border-r border-line-subtle bg-surfaceSubtle p-3 lg:flex">{conversationList}</aside>
         <div className="flex min-w-0 flex-col lg:h-[calc(100dvh-16rem)] lg:min-h-[34rem]">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle px-4 py-3">
             <span className="truncate text-sm font-medium text-text-strong">{conversations.find(item=>item.id===conversationID)?.title||t("assistant.user.newChat")}</span>
@@ -203,6 +213,7 @@ function AssistantWorkspace() {
     </section>}
     {tab==="credentials"&&<div id="assistant-panel-credentials" role="tabpanel" aria-labelledby="assistant-tab-credentials"><AssistantCredentials items={credentials} onChanged={loadCredentials}/></div>}
     {tab==="usage"&&<div id="assistant-panel-usage" role="tabpanel" aria-labelledby="assistant-tab-usage"><AssistantUsagePanel models={models}/></div>}
+    <Modal open={showConversations} onClose={()=>setShowConversations(false)} title={t("assistantUI.conversations")} placement="left" maxWidth="max-w-[min(20rem,calc(100vw-3rem))]" initialFocus="input[type=search]">{conversationList}</Modal>
     <ConfirmDialog open={!!deleting} title={t("assistant.user.deleteChat")} message={t("assistant.user.deleteChatHint")} confirmLabel={t("assistant.user.delete")} busy={busy} onClose={()=>{if(!busy)setDeleting(null);}} onConfirm={()=>void removeConversation()}/>
   </PageShell>;
 }

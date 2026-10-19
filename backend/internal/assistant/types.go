@@ -75,6 +75,7 @@ type BYOCredential struct {
 	OwnerID       string    `json:"owner_id"`
 	Name          string    `json:"name"`
 	BaseURL       string    `json:"base_url"`
+	Protocol      string    `json:"protocol"`
 	UpstreamModel string    `json:"upstream_model"`
 	Enabled       bool      `json:"enabled"`
 	HasKey        bool      `json:"has_key"`
@@ -167,10 +168,18 @@ type ToolCall struct {
 	} `json:"function"`
 }
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Role            string           `json:"role"`
+	Content         string           `json:"content"`
+	ToolCallID      string           `json:"tool_call_id,omitempty"`
+	ToolCalls       []ToolCall       `json:"tool_calls,omitempty"`
+	ProviderContext *ProviderContext `json:"provider_context,omitempty"`
+}
+
+// Opaque provider blocks retain signed reasoning and tool-call continuity.
+// Binding prevents replay to a different endpoint, credential or model.
+type ProviderContext struct {
+	Binding string          `json:"binding"`
+	Output  json.RawMessage `json:"output"`
 }
 type Tool struct {
 	Type     string `json:"type"`

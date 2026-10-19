@@ -8,7 +8,7 @@ import { ASSISTANT_MANAGE, can } from "@/lib/permissions";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import {
-  assistantRequest, type AssistantPage, type AssistantProvider, type AssistantModel,
+  ASSISTANT_PROTOCOLS, assistantRequest, type AssistantPage, type AssistantProvider, type AssistantModel,
   type AssistantSettings, type AssistantCredential, type AssistantAccount,
   type AssistantUsage, type AssistantCreditEntry, type AssistantConversation,
   type AssistantBudgetUsage, type AssistantRequestRecord, type GeneratedContent,
@@ -25,10 +25,10 @@ const PAGE_SIZE = 25;
 const inputClass = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary";
 const buttonClass = "relative inline-flex items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50";
 const columns: Partial<Record<Tab, Column[]>> = {
-  providers: [{ field: "name" }, { field: "base_url" }, { field: "key_hint" }, { field: "monthly_budget_microusd", format: "money" }, { field: "enabled", format: "enabled" }],
+  providers: [{ field: "name" }, { field: "protocol" }, { field: "base_url" }, { field: "key_hint" }, { field: "monthly_budget_microusd", format: "money" }, { field: "enabled", format: "enabled" }],
   models: [{ field: "name" }, { field: "provider_id" }, { field: "upstream_model" }, { field: "input_price_microusd_per_million", format: "money" }, { field: "output_price_microusd_per_million", format: "money" }, { field: "input_credits_per_million" }, { field: "output_credits_per_million" }, { field: "enabled", format: "enabled" }],
   budgets: [{ field: "scope" }, { field: "month", format: "date" }, { field: "spent_microusd", format: "money" }, { field: "reserved_microusd", format: "money" }],
-  credentials: [{ field: "name" }, { field: "owner_id" }, { field: "base_url" }, { field: "key_hint" }, { field: "enabled", format: "enabled" }, { field: "updated_at", format: "date" }],
+  credentials: [{ field: "name" }, { field: "owner_id" }, { field: "protocol" }, { field: "base_url" }, { field: "key_hint" }, { field: "enabled", format: "enabled" }, { field: "updated_at", format: "date" }],
   accounts: [{ field: "user_id" }, { field: "credits" }, { field: "available_credits" }, { field: "reserved_credits" }, { field: "updated_at", format: "date" }],
   ledger: [{ field: "user_id" }, { field: "kind" }, { field: "credits" }, { field: "note" }, { field: "reference_id" }, { field: "created_at", format: "date" }],
   usage: [{ field: "user_id" }, { field: "model_id" }, { field: "purpose" }, { field: "usage", format: "tokens" }, { field: "credits" }, { field: "cost_microusd", format: "money" }, { field: "status" }, { field: "created_at", format: "date" }],
@@ -142,6 +142,7 @@ export function AssistantAdmin() {
 
   function renderCell(row: Row, column: Column): ReactNode {
     const value = field(row, column.field);
+    if (column.field === "protocol") return t(`assistant.protocol.${value}`);
     if (column.format === "enabled") return <span className={value ? "text-primary" : "text-text-muted"}>{t(value ? "assistant.admin.enabled" : "assistant.admin.disabled")}</span>;
     if (column.format === "money") return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", maximumFractionDigits: 6 }).format(Number(value || 0) / 1_000_000);
     if (column.format === "date") return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(locale) : "—";
@@ -226,6 +227,7 @@ function AssistantEditor({ editor, providers, models, onClose, onSaved }: {
     if (value) for (const [key, item] of Object.entries(value)) if (typeof item === "string" || typeof item === "boolean" || typeof item === "number") initial[key] = typeof item === "number" ? String(item) : item;
     initial.enabled = field(value, "enabled") !== false;
     initial.api_key = "";
+    if (editor.kind === "provider" || editor.kind === "credential") initial.protocol = textField(value, "protocol") || "openai_compatible";
     if (editor.kind === "model") initial.max_tokens_parameter = textField(value, "max_tokens_parameter") || "max_tokens";
     for (const key of ["monthly_budget_microusd", "input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million"]) initial[key] = String(Number(field(value, key) || 0) / 1_000_000);
     if (!value && editor.kind === "model") Object.assign(initial, { provider_id: providers[0]?.id || "", max_output_tokens: "4096", context_window: "32768", input_credits_per_million: "1000", output_credits_per_million: "1000" });
@@ -249,7 +251,7 @@ function AssistantEditor({ editor, providers, models, onClose, onSaved }: {
       let payload: Record<string, unknown> = {};
       if (editor.kind === "provider") {
         path = `/admin/providers${id ? `/${encodeURIComponent(id)}` : ""}`; method = id ? "PUT" : "POST";
-        payload = { name: read("name"), base_url: read("base_url"), protocol: "openai_compatible", enabled, monthly_budget_microusd: money("monthly_budget_microusd") };
+        payload = { name: read("name"), base_url: read("base_url"), protocol: read("protocol"), enabled, monthly_budget_microusd: money("monthly_budget_microusd") };
         if (read("api_key")) payload.api_key = read("api_key");
         if (draft.clear_key === true) payload.api_key = "";
       } else if (editor.kind === "model") {
@@ -260,7 +262,7 @@ function AssistantEditor({ editor, providers, models, onClose, onSaved }: {
           output_credits_per_million: number("output_credits_per_million"), max_output_tokens: number("max_output_tokens"), context_window: number("context_window"), max_tokens_parameter: read("max_tokens_parameter") };
       } else if (editor.kind === "credential") {
         path = `/admin/credentials/${encodeURIComponent(id)}`;
-        payload = { name: read("name"), base_url: read("base_url"), upstream_model: read("upstream_model"), enabled };
+        payload = { name: read("name"), base_url: read("base_url"), protocol: read("protocol"), upstream_model: read("upstream_model"), enabled };
       } else if (editor.kind === "settings") {
         path = "/admin/settings";
         payload = { enabled, default_model_id: read("default_model_id"), registration_credits: number("registration_credits"), accepted_edit_credits: number("accepted_edit_credits"),
@@ -285,7 +287,7 @@ function AssistantEditor({ editor, providers, models, onClose, onSaved }: {
     <form id={formId} onSubmit={(event) => void submit(event)} className="space-y-4">
       {error ? <p role="alert" className="break-all text-xs text-danger">{t("assistant.admin.failed")} {error}</p> : null}
       <div className="grid gap-4 sm:grid-cols-2">
-        {editor.kind === "provider" || editor.kind === "credential" ? <>{control("name")}{control("base_url", "url")}{editor.kind === "provider" ? <>{control("api_key", "password", false)}{control("monthly_budget_microusd", "number", true, true)}</> : control("upstream_model", "text", false)}</> : null}
+        {editor.kind === "provider" || editor.kind === "credential" ? <>{control("name")}{select("protocol",ASSISTANT_PROTOCOLS.map(id=>({id,name:t(`assistant.protocol.${id}`)})))}{control("base_url", "url")}{editor.kind === "provider" ? <>{control("api_key", "password", false)}{control("monthly_budget_microusd", "number", true, true)}</> : control("upstream_model", "text", false)}</> : null}
         {editor.kind === "model" ? <>{control("name")}{select("provider_id", providers)}{control("upstream_model")}{select("max_tokens_parameter", [{ id: "max_tokens", name: "max_tokens" }, { id: "max_completion_tokens", name: "max_completion_tokens" }])}{control("context_window", "number")}{control("max_output_tokens", "number")}{control("input_price_microusd_per_million", "number", true, true)}{control("cached_input_price_microusd_per_million", "number", true, true)}{control("output_price_microusd_per_million", "number", true, true)}{control("input_credits_per_million", "number")}{control("output_credits_per_million", "number")}</> : null}
         {editor.kind === "settings" ? <>{select("default_model_id", models, true)}{control("monthly_budget_microusd", "number", true, true)}{control("registration_credits", "number")}{control("accepted_edit_credits", "number")}{control("reward_effective_at")}{control("max_tool_rounds", "number")}</> : null}
         {editor.kind === "adjust" ? <>{control("user_id")}{control("credits", "number")}{control("note")}</> : null}

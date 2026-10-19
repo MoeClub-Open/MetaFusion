@@ -202,7 +202,7 @@ func TestCollaborationMigrationPreservesHistoryAndConvertsProposals(t *testing.T
 	if count(`SELECT count(*) FROM information_schema.columns WHERE table_schema='catalog' AND table_name='commits' AND column_name IN ('review_status','review_decision','reviewed_by','reviewed_at','review_note')`) != 0 {
 		t.Fatal("old live review columns remain")
 	}
-	if count(`SELECT version FROM catalog.schema_contract WHERE singleton`) != 35 {
+	if count(`SELECT version FROM catalog.schema_contract WHERE singleton`) != 36 {
 		t.Fatal("schema contract was not advanced")
 	}
 	if err := upgrade.Up(ctx); err != nil {

@@ -22,6 +22,7 @@ export function Modal({
  maxWidth = "max-w-lg",
  initialFocus,
  footer,
+ placement = "center",
 }: {
  open: boolean;
  onClose: () => void;
@@ -33,6 +34,7 @@ export function Modal({
  initialFocus?: string;
  /** 固定操作区；提供时只让内容区滚动，长表单仍能访问底部操作。 */
  footer?: React.ReactNode;
+ placement?: "center" | "left";
 }) {
  const { t } = useI18n();
  const titleId = useId();
@@ -101,7 +103,7 @@ export function Modal({
  if (!open || !portalTarget) return null;
  // Escape page stacking contexts so sticky navigation cannot cover the dialog.
  return createPortal(
- <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+ <div className={`fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex ${placement === "left" ? "items-stretch justify-start" : "items-center justify-center p-4"}`} onClick={onClose}>
  <div
  ref={panelRef}
  role="dialog"
@@ -109,7 +111,7 @@ export function Modal({
  aria-labelledby={titleId}
  tabIndex={-1}
  onClick={(e) => e.stopPropagation()}
- className={`w-full min-w-0 ${maxWidth} rounded-panel border border-line bg-surface p-5 sm:p-6 space-y-4 shadow-elevated max-h-[90dvh] ${footer ? "flex flex-col overflow-hidden" : "overflow-y-auto"} outline-none`}
+ className={`w-full min-w-0 ${maxWidth} border border-line bg-surface p-5 sm:p-6 space-y-4 shadow-elevated ${placement === "left" ? "h-dvh rounded-r-panel flex flex-col overflow-hidden" : `rounded-panel max-h-[90dvh] ${footer ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`} outline-none`}
  >
  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line-subtle pb-3">
  <h3 id={titleId} className="min-w-0 text-sm font-semibold text-text-strong flex items-center gap-2 break-words">
@@ -120,7 +122,7 @@ export function Modal({
  <X className="w-4 h-4" aria-hidden="true" />
  </button>
  </div>
- {footer ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div> : children}
+ {footer || placement === "left" ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div> : children}
  {footer && <div className="shrink-0 border-t border-line-subtle pt-3">{footer}</div>}
  </div>
  </div>, portalTarget

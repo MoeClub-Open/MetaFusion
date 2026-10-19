@@ -719,11 +719,10 @@ func (h HTTP) overviewExecutionConfig(ctx context.Context, model Model, credenti
 	var endpoint, protocol string
 	var updated time.Time
 	if credentialID != "" {
-		err := h.Store.DB.QueryRowContext(ctx, `SELECT base_url,updated_at FROM assistant.byo_credentials WHERE id=$1 AND owner_id=$2`, credentialID, ownerID).Scan(&endpoint, &updated)
+		err := h.Store.DB.QueryRowContext(ctx, `SELECT base_url,protocol,updated_at FROM assistant.byo_credentials WHERE id=$1 AND owner_id=$2`, credentialID, ownerID).Scan(&endpoint, &protocol, &updated)
 		if err != nil {
 			return "", dbError(err)
 		}
-		protocol = "openai_compatible"
 	} else {
 		err := h.Store.DB.QueryRowContext(ctx, `SELECT base_url,protocol,updated_at FROM assistant.providers WHERE id=$1`, model.ProviderID).Scan(&endpoint, &protocol, &updated)
 		if err != nil {
