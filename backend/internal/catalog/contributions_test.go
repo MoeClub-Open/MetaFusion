@@ -103,16 +103,19 @@ func TestPostgresUserContributionsMergedActivityAndPrivacy(t *testing.T) {
 		}
 		return object{"entity", e.ID, base, before, e, true}
 	}
+	integrationTimes := map[string]string{}
 	commit := func(u User, message, authored, merged string, objects ...object) string {
 		t.Helper()
 		id := uuid.NewString()
-		var mergedAt any
 		if merged != "" {
-			mergedAt = merged
+			integrationTimes[id] = merged
 		}
-		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,message,created_at,merged_at,merged_by)
-            VALUES($1,$2,'fixture','{}','{}',$3,$4,$5,$6,$7)`, id, u.ID,
-			encode(map[string]any{"username": u.Username, "permissions": []string{"private-permission-snapshot"}}), message, authored, mergedAt, f.u.ID); err != nil {
+		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,message,created_at)
+            VALUES($1,$2,'fixture','{}','{}',$3,$4,$5)`, id, u.ID,
+			encode(map[string]any{"username": u.Username, "permissions": []string{"private-permission-snapshot"}}), message, authored); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_operations(commit_id,operation) VALUES($1,'commit')`, id); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,$3)`, id, u.ID, u.Username); err != nil {
@@ -164,8 +167,20 @@ func TestPostgresUserContributionsMergedActivityAndPrivacy(t *testing.T) {
 	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.pull_requests(id,workspace_id,author_id,title,status,source_head_id,merged_at,merged_by) VALUES($1,$2,$3,'Merged work','merged',$4,'2026-01-02T00:15:00Z',$5)`, prID, workspaceID, author.ID, relationCommit, f.u.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.commits SET pull_request_id=$1 WHERE id IN ($2,$3,$4)`, prID, first, relationCommit, coauthored); err != nil {
-		t.Fatal(err)
+	for position, id := range []string{first, coauthored, relationCommit} {
+		if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO catalog.pull_request_commits(pull_request_id,commit_id,position) VALUES($1,$2,$3)`, prID, id, position+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Finalize each immutable integration receipt once, including its PR link.
+	for id, at := range integrationTimes {
+		var associatedPR any
+		if id == first || id == relationCommit || id == coauthored {
+			associatedPR = prID
+		}
+		if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.commits SET merged_at=$2::timestamptz,merged_by=$3,pull_request_id=$4 WHERE id=$1`, id, at, f.u.ID, associatedPR); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := f.s.Lifecycle(ctx, hidden.ID, LifecycleEdit{ExpectedVersion: hidden.Version, EditNote: "remove fixture"}, f.u); err != nil {
 		t.Fatal(err)

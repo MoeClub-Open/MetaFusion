@@ -418,7 +418,7 @@ func TestPostgresAssistantHTTPWorkspaceUsesCallerPermissionsAndPreservesAuthorsh
 			}
 			f.request(&f.user, "POST", "/chat", req, 200)
 			var commits int
-			if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.commits WHERE actor_id=$1`, f.user.ID).Scan(&commits); err != nil || commits != 1 || *calls != 6 {
+			if err = f.s.DB.QueryRow(`SELECT count(*) FROM catalog.commits WHERE actor_id=$1 AND snapshot_scope<>'catalog'`, f.user.ID).Scan(&commits); err != nil || commits != 1 || *calls != 6 {
 				t.Fatalf("replay duplicated a mutation: commits=%d calls=%d err=%v", commits, *calls, err)
 			}
 			f.assertPlatformCharges(f.user, 6, rewards)

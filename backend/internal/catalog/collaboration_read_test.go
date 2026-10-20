@@ -79,6 +79,13 @@ func (f collaborationReadFixture) commit(workspaceID string, parent *string, mer
 	if _, err := f.s.DB.Exec(`INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,$3)`, id, f.u.ID, f.u.Username); err != nil {
 		f.t.Fatal(err)
 	}
+	if _, err := f.s.DB.Exec(`INSERT INTO catalog.commit_operations(commit_id,operation) VALUES($1,'commit')`, id); err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.s.DB.Exec(`INSERT INTO catalog.workspace_commits(workspace_id,commit_id,position,integrated)
+		SELECT $1::uuid,$2::uuid,COALESCE(max(position),0)+1,$3 FROM catalog.workspace_commits WHERE workspace_id=$1`, workspaceID, id, merged); err != nil {
+		f.t.Fatal(err)
+	}
 	for _, o := range changes {
 		if _, err := f.s.DB.Exec(`INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,base_document,before_document,after_document)
 			VALUES($1,$2,$3,$4,$5,$6,$7)`, id, o.Target, o.ID, o.BaseVersion, nullableJSON(o.Base), nullableJSON(o.Before), nullableJSON(o.After)); err != nil {
@@ -98,10 +105,11 @@ func (f collaborationReadFixture) pullRequest(workspaceID, head string, base *st
 		VALUES($1,$2,$3,'Frozen proposal',$4,$5,$6)`, id, workspaceID, f.u.ID, status, head, base); err != nil {
 		f.t.Fatal(err)
 	}
-	if status == "merged" {
-		if _, err := f.s.DB.Exec(`UPDATE catalog.commits SET pull_request_id=$2 WHERE id=$1`, head, id); err != nil {
-			f.t.Fatal(err)
-		}
+	if _, err := f.s.DB.Exec(`INSERT INTO catalog.pull_request_commits(pull_request_id,commit_id,position)
+		SELECT $1,commit_id,position FROM catalog.workspace_commits WHERE workspace_id=$2
+		AND position<=(SELECT position FROM catalog.workspace_commits WHERE workspace_id=$2 AND commit_id=$3)
+		AND ($4::uuid IS NULL OR position>(SELECT position FROM catalog.workspace_commits WHERE workspace_id=$2 AND commit_id=$4))`, id, workspaceID, head, base); err != nil {
+		f.t.Fatal(err)
 	}
 	return id
 }
@@ -195,8 +203,14 @@ func TestCollaborationPublicReadsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, viewer := range []User{{}, f.u, {ID: uuid.NewString(), Permissions: []string{PermissionReviewManage}}} {
-		if _, err := f.s.GetCollaborationCommit(ctx, commitID, viewer); !errors.Is(err, sql.ErrNoRows) {
-			t.Fatalf("hidden expression leaked through historical commit: %v", err)
+		// The owner retains their private branch. Review permission alone must
+		// not expose an integrated commit after its targets become hidden.
+		_, readErr := f.s.GetCollaborationCommit(ctx, commitID, viewer)
+		if viewer.ID == f.u.ID && readErr != nil {
+			t.Fatalf("owner lost retained private branch: %v", readErr)
+		}
+		if viewer.ID != f.u.ID && !errors.Is(readErr, sql.ErrNoRows) {
+			t.Fatalf("hidden expression leaked through historical commit: %v", readErr)
 		}
 		if _, err := f.s.GetPullRequest(ctx, prID, viewer); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("hidden expression leaked through merged PR: %v", err)

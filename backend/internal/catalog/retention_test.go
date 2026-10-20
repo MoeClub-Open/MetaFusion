@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/metafusion/metafusion-app/internal/migrator"
 	"github.com/metafusion/metafusion-app/internal/testutil"
 	"github.com/metafusion/metafusion-app/migrations"
@@ -156,7 +157,12 @@ func TestPostgresRetentionPreservesWorkingCopyAndCommitHistory(t *testing.T) {
 		t.Fatalf("merged commit: %+v %v", merged, err)
 	}
 	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.commits SET created_at=now()-interval '100 days' WHERE id=$1`, commit.ID); err != nil {
-		t.Fatal(err)
+		var immutable *pq.Error
+		if !errors.As(err, &immutable) || immutable.Code != "23514" {
+			t.Fatal(err)
+		}
+	} else {
+		t.Fatal("immutable commit timestamp was rewritten")
 	}
 	if _, err := f.s.DB.ExecContext(ctx, `UPDATE catalog.workspaces SET created_at=now()-interval '100 days',updated_at=now()-interval '100 days' WHERE id=$1`, w.ID); err != nil {
 		t.Fatal(err)

@@ -38,7 +38,7 @@ func versionCommitReadable(ctx context.Context, q queryer, id string, u User) (b
 	}
 	var allowed bool
 	if collaborationUser(u) == nil {
-		err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.workspace_commits wc JOIN catalog.workspaces w ON w.id=wc.workspace_id WHERE wc.commit_id=$1 AND (w.owner_id=$2 OR EXISTS(SELECT 1 FROM catalog.workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2))) OR EXISTS(SELECT 1 FROM catalog.pull_request_commits pc WHERE pc.commit_id=$1 AND $3::boolean)`, id, u.ID, u.Can(PermissionReviewManage)).Scan(&allowed)
+		err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.workspace_commits wc JOIN catalog.workspaces w ON w.id=wc.workspace_id WHERE wc.commit_id=$1 AND (w.owner_id=$2 OR EXISTS(SELECT 1 FROM catalog.workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2))) OR EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.pull_requests p ON p.id=pc.pull_request_id WHERE pc.commit_id=$1 AND p.status<>'merged' AND $3::boolean)`, id, u.ID, u.Can(PermissionReviewManage)).Scan(&allowed)
 		if err != nil || allowed {
 			return allowed, err
 		}
@@ -121,7 +121,7 @@ func readableVersionSnapshot(ctx context.Context, q queryer, id string, u User) 
 	}
 	private := false
 	if collaborationUser(u) == nil {
-		err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.workspace_commits wc JOIN catalog.workspaces w ON w.id=wc.workspace_id WHERE wc.commit_id=$1 AND (w.owner_id=$2 OR EXISTS(SELECT 1 FROM catalog.workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2))) OR ($3::boolean AND EXISTS(SELECT 1 FROM catalog.pull_request_commits WHERE commit_id=$1))`, id, u.ID, u.Can(PermissionReviewManage)).Scan(&private)
+		err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.workspace_commits wc JOIN catalog.workspaces w ON w.id=wc.workspace_id WHERE wc.commit_id=$1 AND (w.owner_id=$2 OR EXISTS(SELECT 1 FROM catalog.workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2))) OR ($3::boolean AND EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.pull_requests p ON p.id=pc.pull_request_id WHERE pc.commit_id=$1 AND p.status<>'merged'))`, id, u.ID, u.Can(PermissionReviewManage)).Scan(&private)
 		if err != nil {
 			return nil, "", err
 		}

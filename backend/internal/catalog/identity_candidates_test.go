@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -148,13 +150,24 @@ func TestPostgresIdentityCandidatesSnapshotAndConcurrentWriters(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
+	writeCtx, cancelWrites := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelWrites()
 	failures := make(chan error, 12)
 	for worker := 0; worker < 12; worker++ {
 		wg.Add(1)
 		go func(worker int) {
 			defer wg.Done()
 			for turn := 0; turn < 8; turn++ {
-				_, err := f.s.Save(ctx, Edit{Entity: Entity{Kind: "work", Title: fmt.Sprintf("Unrelated %d %d", worker, turn), State: "active"}, EditNote: "concurrent fixture", Sources: fixtureSources()}, f.u)
+				var err error
+				for attempt := 0; attempt < 4; attempt++ {
+					_, err = f.s.Save(writeCtx, Edit{Entity: Entity{Kind: "work", Title: fmt.Sprintf("Unrelated %d %d", worker, turn), State: "active"}, EditNote: "concurrent fixture", Sources: fixtureSources()}, f.u)
+					// transaction_busy confirms every attempt rolled back. Recoverable
+					// contention is distinct from an uncertain write result.
+					if !errors.Is(err, errTransactionBusy) {
+						break
+					}
+					time.Sleep(time.Duration(worker+1) * 5 * time.Millisecond)
+				}
 				if err != nil {
 					failures <- err
 					return
@@ -171,6 +184,10 @@ func TestPostgresIdentityCandidatesSnapshotAndConcurrentWriters(t *testing.T) {
 	close(failures)
 	for err := range failures {
 		t.Error(err)
+	}
+	var written int
+	if err := f.s.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.entities WHERE title LIKE 'Unrelated %'`).Scan(&written); err != nil || written != 12*8 {
+		t.Fatalf("confirmed-abort retries lost or duplicated writes: %d %v", written, err)
 	}
 	// The query uses the synchronous GIN index rather than a kind-wide scan.
 	explainTx, err := f.s.DB.BeginTx(ctx, nil)
