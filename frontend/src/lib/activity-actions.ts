@@ -119,8 +119,12 @@ export const ACTIVITY_ACTIONS: ReadonlyArray<{ code: string; service: string }> 
   { code: "workspace.checked_out", service: "catalog" },
   { code: "workspace.committed", service: "catalog" },
   { code: "workspace.created", service: "catalog" },
+  { code: "workspace.forked", service: "catalog" },
   { code: "workspace.members_updated", service: "catalog" },
   { code: "workspace.pushed", service: "catalog" },
   { code: "workspace.rebased", service: "catalog" },
+  { code: "workspace.stash_changed", service: "catalog" },
+  { code: "workspace.tag_changed", service: "catalog" },
+  { code: "workspace.version_changed", service: "catalog" },
   { code: "workspace.updated", service: "catalog" },
 ];
