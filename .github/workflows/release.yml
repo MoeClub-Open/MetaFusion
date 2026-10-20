@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # GHCR 要求镜像仓库路径全小写；此处为唯一来源，需与 deploy/docker-compose.prod.yml 一致
-      IMAGE_PREFIX: ghcr.io/moeclubm/metafusion
+      IMAGE_PREFIX: ghcr.io/moeclub-open/metafusion
     strategy:
       fail-fast: false
       matrix:
@@ -303,7 +303,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # 与 docker-publish 的 IMAGE_PREFIX 同一来源，清单里各服务 repository 由它生成
-      IMAGE_PREFIX: ghcr.io/moeclubm/metafusion
+      IMAGE_PREFIX: ghcr.io/moeclub-open/metafusion
     steps:
       - uses: actions/checkout@v7
         with:
