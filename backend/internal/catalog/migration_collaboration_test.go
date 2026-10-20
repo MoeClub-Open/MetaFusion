@@ -86,7 +86,7 @@ func TestCollaborationMigrationPreservesHistoryAndConvertsProposals(t *testing.T
 	immutableDigest := func() string {
 		t.Helper()
 		var value string
-		if err := db.QueryRow(`SELECT md5(string_agg(jsonb_build_array(id,actor_id,request_hash,request,result,author_snapshot,created_at)::text,'' ORDER BY id)) FROM catalog.commits`).Scan(&value); err != nil {
+		if err := db.QueryRow(`SELECT md5(string_agg(jsonb_build_array(id,actor_id,request_hash,request,result,author_snapshot,created_at)::text,'' ORDER BY id)) FROM catalog.commits WHERE id<>'f3c10000-0037-7000-8000-000000000000'`).Scan(&value); err != nil {
 			t.Fatal(err)
 		}
 		return value
@@ -202,7 +202,7 @@ func TestCollaborationMigrationPreservesHistoryAndConvertsProposals(t *testing.T
 	if count(`SELECT count(*) FROM information_schema.columns WHERE table_schema='catalog' AND table_name='commits' AND column_name IN ('review_status','review_decision','reviewed_by','reviewed_at','review_note')`) != 0 {
 		t.Fatal("old live review columns remain")
 	}
-	if count(`SELECT version FROM catalog.schema_contract WHERE singleton`) != 36 {
+	if count(`SELECT version FROM catalog.schema_contract WHERE singleton`) != 37 {
 		t.Fatal("schema contract was not advanced")
 	}
 	if err := upgrade.Up(ctx); err != nil {

@@ -7,6 +7,7 @@ import {
 
 const currentWorkspace = new Map<string, string>();
 const openingWorkspace = new Map<string, { promise: Promise<Workspace>; signal?: AbortSignal }>();
+const creationWorkspaceID=new Map<string,string>();
 
 /** Explicit links never fall back to another copy when access fails. */
 export async function ensureEditingWorkspace(userId: string, requestedId?: string | null, signal?: AbortSignal): Promise<Workspace> {
@@ -28,10 +29,12 @@ export async function ensureEditingWorkspace(userId: string, requestedId?: strin
     }
     const { items } = await listWorkspaces({}, signal);
     signal?.throwIfAborted();
+    if(!creationWorkspaceID.has(userId))creationWorkspaceID.set(userId,crypto.randomUUID());
     const selected = items.find((item) => item.owner_id === userId && item.state === "active")
-      ?? await createWorkspace({}, signal);
+      ?? await createWorkspace({id:creationWorkspaceID.get(userId)!}, signal);
     if (selected.owner_id !== userId) throw new Error("workspace_owner_changed");
     currentWorkspace.set(userId, selected.id);
+    creationWorkspaceID.delete(userId);
     return selected;
   })();
   openingWorkspace.set(userId, { promise: opening, signal });

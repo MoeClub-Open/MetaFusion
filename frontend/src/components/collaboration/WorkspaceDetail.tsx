@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/authContext";
 import { ApiError } from "@/lib/api/client";
 import {
   createWorkspaceCommit, getWorkspace, listWorkspaceCommits, pushWorkspace, rebaseWorkspace,
-  updateWorkspace, updateWorkspaceMembers,
+  updateWorkspace, updateWorkspaceMembers, getCatalogHead,
   type CatalogObject, type ConflictResolution, type PushResult, type Workspace,
   type WorkspaceChange, type WorkspaceCommit, type WorkspaceConflict, type WorkspaceObject,
 } from "@/lib/api/collaboration";
@@ -18,6 +18,9 @@ import { workspaceConflictResolution, type WorkspaceResolutionChoice } from "@/l
 import { RevisionDiffInspector, type DiffSnapshot } from "@/components/catalog/RevisionDiffInspector";
 import { Modal } from "@/components/ui/Modal";
 import { PageHeader } from "@/components/ui/PageShell";
+
+import { ConflictValue } from "./ConflictValue";
+import { WorkspaceVersionTools } from "./WorkspaceVersionTools";
 
 const panel = "rounded-panel border border-line bg-surface p-4 sm:p-5";
 const button = "inline-flex items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-text-body hover:bg-surfaceSubtle disabled:cursor-default disabled:opacity-50";
@@ -62,25 +65,14 @@ function version(document: CatalogObject | null, fallback: number): number {
 
 type OpenDiff = { base: DiffSnapshot | null; current: DiffSnapshot };
 type ResolutionChoice = WorkspaceResolutionChoice;
-type ConflictSession = { conflicts: WorkspaceConflict[]; version: number; head: string; choices: Record<number, ResolutionChoice> };
-
-// 结构化冲突逐字段展示；只有主动选择自定义时才编辑 JSON。
-function ConflictValue({ value, present = true, depth = 0 }: { value: unknown; present?: boolean; depth?: number }) {
-  const { t } = useI18n();
-  if (!present) return <span className="text-text-muted">{t("collaboration.missingField")}</span>;
-  if (value === null || value === undefined) return <span className="text-text-muted">{t("collaboration.noValue")}</span>;
-  if (typeof value !== "object") return <span className="whitespace-pre-wrap break-words">{typeof value === "boolean" ? t(value ? "collaboration.valueTrue" : "collaboration.valueFalse") : String(value)}</span>;
-  if (Array.isArray(value)) return !value.length ? <span className="text-text-muted">{t("collaboration.emptyList")}</span> : <ol className="space-y-2 border-l border-line pl-3">{value.map((item, index) => <li key={index}><ConflictValue value={item} depth={depth + 1} /></li>)}</ol>;
-  const entries = Object.entries(value);
-  if (!entries.length) return <span className="text-text-muted">{t("collaboration.noValue")}</span>;
-  return <dl className={`space-y-2 ${depth ? "border-l border-line pl-3" : ""}`}>{entries.map(([key, item]) => <div key={key} className="min-w-0"><dt className="break-words text-xs font-medium text-text-muted">{key}</dt><dd className="mt-1 min-w-0"><ConflictValue value={item} depth={depth + 1} /></dd></div>)}</dl>;
-}
+type ConflictSession = { conflicts: WorkspaceConflict[]; version: number; head: string; onto: string; resolutions: ConflictResolution[]; choices: Record<number, ResolutionChoice> };
 
 export function WorkspaceDetail({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { user, loading: authLoading } = useAuth();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [commits, setCommits] = useState<WorkspaceCommit[]>([]);
+  const [historyTotal,setHistoryTotal]=useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -121,7 +113,7 @@ export function WorkspaceDetail({ id }: { id: string }) {
       const [nextWorkspace, history] = await Promise.all([getWorkspace(id, signal), listWorkspaceCommits(id, signal)]);
       if (signal.aborted || session.current.epoch !== epoch || reloadSequence.current !== requestSequence) return;
       setWorkspace(nextWorkspace);
-      setCommits(history.items);
+      setCommits(history.items.slice().reverse());setHistoryTotal(history.total);
       setName(nextWorkspace.name);
       setLoadedEpoch(epoch);
     } catch (cause) {
@@ -188,12 +180,14 @@ export function WorkspaceDetail({ id }: { id: string }) {
     if (!workspace?.head_commit_id) return;
     const expectedVersion = resolutions && conflict ? conflict.version : workspace.version;
     const expectedHead = resolutions && conflict ? conflict.head : workspace.head_commit_id;
-    const key = JSON.stringify({ expectedVersion, expectedHead, resolutions });
-    if (rebaseAttempt.current?.key !== key) rebaseAttempt.current = { key, id: crypto.randomUUID() };
-    const rebaseId = rebaseAttempt.current.id;
     void run("rebase", async signal => {
+      const onto = resolutions && conflict ? conflict.onto : (await getCatalogHead(signal)).commit_id;
+      const accumulated = [...(resolutions && conflict ? conflict.resolutions : []), ...(resolutions ?? [])];
+      const key = JSON.stringify({ expectedVersion, expectedHead, onto, resolutions: accumulated });
+      if (rebaseAttempt.current?.key !== key) rebaseAttempt.current = { key, id: crypto.randomUUID() };
+      const rebaseId = rebaseAttempt.current.id;
       try {
-        const next = await rebaseWorkspace(id, { id: rebaseId, expected_version: expectedVersion, expected_head: expectedHead, resolutions }, signal);
+        const next = await rebaseWorkspace(id, { id: rebaseId, expected_version: expectedVersion, expected_head: expectedHead, onto_commit_id: onto, resolutions: accumulated }, signal);
         if (signal.aborted || session.current.epoch !== epoch) return;
         setConflict(null); setReceipt(null); setWorkspace(next.workspace); rebaseAttempt.current = null;
         await reload(signal);
@@ -201,7 +195,7 @@ export function WorkspaceDetail({ id }: { id: string }) {
         if (signal.aborted || session.current.epoch !== epoch) return;
         const details = cause instanceof ApiError && cause.status === 409 ? cause.details as { conflicts?: WorkspaceConflict[] } | undefined : undefined;
         if (details?.conflicts?.length) {
-          setConflict({ conflicts: details.conflicts, version: expectedVersion, head: expectedHead, choices: {} });
+          setConflict({ conflicts: details.conflicts, version: expectedVersion, head: expectedHead, onto, resolutions: accumulated, choices: {} });
           return;
         }
         throw cause;
@@ -233,7 +227,7 @@ export function WorkspaceDetail({ id }: { id: string }) {
   const status = (state: Workspace["state"]) => t(`collaboration.state.${state}`);
   const date = (value: string) => new Date(value).toLocaleString(locale);
   const dirty = workspace?.objects.filter(object => object.dirty) ?? [];
-  const hasUnmerged = commits.some(item => item.merged_at === null);
+  const hasUnmerged = (workspace?.pending_commits ?? 0)>0;
 
   if (authLoading || loading) return <p role="status" className="py-8 text-sm text-text-muted">{t("common.loading")}</p>;
   if (!user) return <section className={panel}><p>{t("collaboration.signInRequired")}</p><Link href="/login" className="mt-3 inline-block text-primary underline">{t("collaboration.signIn")}</Link></section>;
@@ -286,10 +280,12 @@ export function WorkspaceDetail({ id }: { id: string }) {
                 <ul className="mt-3 space-y-2">{item.changes.map(change => <li key={`${change.target}:${change.id}`} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-line p-3"><span className="min-w-0 break-words text-sm text-text-body">{objectTitle(change.after ?? change.before, change.id)}</span><button type="button" className={button} onClick={() => openDiff(change, t("collaboration.parentCommit"), item.message, item.authors.map(author => author.name || author.id).join(", "))}>{t("collaboration.viewDiff")}</button></li>)}</ul>
               </details>
             </li>)}</ol>}
+            {commits.length<historyTotal&&<button type="button" className={`${button} mt-4`} disabled={!!busy} onClick={()=>void run("history",async signal=>{const page=await listWorkspaceCommits(id,signal,{offset:commits.length});if(!signal.aborted&&session.current.epoch===epoch){setCommits(current=>{const known=new Set(current.map(item=>item.id));return [...page.items.filter(item=>!known.has(item.id)).reverse(),...current]});setHistoryTotal(page.total)}})}>{t("versioning.olderHistory")}</button>}
           </section>
         </div>
 
         <aside className="min-w-0 space-y-5">
+          <WorkspaceVersionTools workspace={workspace} commits={commits} owner={isOwner} disabled={!!busy || !isMember} onChanged={reload} />
           <section className={panel}>
             <h2 className="flex items-center gap-2 font-semibold text-text-strong"><Upload className="h-4 w-4 text-text-muted" aria-hidden="true" />{t("collaboration.push")}</h2>
             <p className="mt-2 text-sm text-text-muted">{t(directPush ? "collaboration.directPushHint" : "collaboration.pullRequestPushHint")}</p>
@@ -324,8 +320,8 @@ export function WorkspaceDetail({ id }: { id: string }) {
         return <section key={`${item.target}:${item.id}:${item.pointer}`} className="overflow-hidden rounded-panel border border-line">
           <header className="border-b border-line bg-surfaceSubtle p-3"><h3 className="break-words text-sm font-semibold text-text-strong">{t(`collaboration.${item.target}`)} · {item.id}</h3><p className="mt-1 break-all font-mono text-xs text-text-muted">{item.pointer || t("collaboration.wholeObject")}</p></header>
           <div className="grid min-w-0 divide-y divide-line lg:grid-cols-3 lg:divide-x lg:divide-y-0">{([['base', item.base, item.base_present], ['current', item.current, item.current_present], ['proposed', item.proposed, item.proposed_present]] as const).map(([key, value, present]) => <section key={key} className="min-w-0 p-3"><h4 className="mb-3 text-xs font-semibold text-text-muted">{t(`collaboration.conflictColumn.${key}`)}</h4><div className="max-h-80 overflow-y-auto text-sm text-text-body"><ConflictValue value={value} present={present} /></div></section>)}</div>
-          <fieldset className="space-y-3 border-t border-line p-3" disabled={!!busy}><legend className="sr-only">{t("collaboration.chooseResolution")}</legend><div className="flex flex-wrap gap-2">{(["proposed", "current", "custom", "remove"] as const).map(value => <button type="button" key={value} className={`${button} aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary`} aria-pressed={choice?.choice === value} onClick={() => setConflict(current => current && ({ ...current, choices: { ...current.choices, [index]: { choice: value, custom: current.choices[index]?.custom ?? JSON.stringify(item.proposed ?? null, null, 2) } } }))}>{t(`collaboration.resolution.${value}`)}</button>)}</div>
-            {choice?.choice === "custom" && <label className="block space-y-1.5 text-xs text-text-muted"><span>{t("collaboration.customJson")}</span><textarea className={`${input} font-mono`} rows={6} spellCheck={false} value={choice.custom} onChange={event => { const value = event.target.value; setConflict(current => current && ({ ...current, choices: { ...current.choices, [index]: { choice: "custom", custom: value } } })); }} /></label>}
+          <fieldset className="space-y-3 border-t border-line p-3" disabled={!!busy}><legend className="sr-only">{t("collaboration.chooseResolution")}</legend><div className="flex flex-wrap gap-2">{(["proposed", "current", "custom", "remove"] as const).map(value => <button type="button" key={value} className={`${button} aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary`} aria-pressed={choice?.choice === value} onClick={() => setConflict(current => current && ({ ...current, choices: { ...current.choices, [index]: { choice: value, custom: current.choices[index]?.custom ?? (typeof item.proposed === "string" ? item.proposed : JSON.stringify(item.proposed ?? null, null, 2)) } } }))}>{t(`collaboration.resolution.${value}`)}</button>)}</div>
+            {choice?.choice === "custom" && <label className="block space-y-1.5 text-xs text-text-muted"><span>{t(typeof item.proposed === "string" ? "versioning.mergedText" : "collaboration.customJson")}</span><textarea className={`${input} font-mono`} rows={6} spellCheck={false} value={choice.custom} onChange={event => { const value = event.target.value; setConflict(current => current && ({ ...current, choices: { ...current.choices, [index]: { choice: "custom", custom: value } } })); }} /></label>}
           </fieldset>
         </section>;
       })}</div>

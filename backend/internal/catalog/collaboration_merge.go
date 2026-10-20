@@ -68,6 +68,14 @@ func workspaceSameFact(a, b json.RawMessage, target string) bool {
 	if rawNull(a) || rawNull(b) {
 		return rawNull(a) && rawNull(b)
 	}
+	if target == "entity" {
+		var left, right Entity
+		_ = json.Unmarshal(a, &left)
+		_ = json.Unmarshal(b, &right)
+		if (left.State == "deleted") != (right.State == "deleted") {
+			return false
+		}
+	}
 	return encode(workspaceEditableMap(a, target)) == encode(workspaceEditableMap(b, target))
 }
 func mergeWorkspaceObject(o WorkspaceObject, current json.RawMessage, version int64) (json.RawMessage, []WorkspaceConflict, error) {
@@ -105,6 +113,14 @@ func mergeWorkspaceObject(o WorkspaceObject, current json.RawMessage, version in
 	if err != nil {
 		return nil, nil, err
 	}
+	if o.Target == "entity" {
+		var old, next Entity
+		_ = json.Unmarshal(current, &old)
+		_ = json.Unmarshal(o.Committed, &next)
+		if old.State == "deleted" && next.State == "active" {
+			merged["state"] = json.RawMessage(`"active"`)
+		}
+	}
 	out := []WorkspaceConflict{}
 	for _, c := range conflicts {
 		parts, _ := pointerParts(c.Pointer)
@@ -130,6 +146,19 @@ func workspaceMergePlan(ctx context.Context, tx *sql.Tx, w Workspace, u User, re
 		current, version, err := workspaceMainObject(ctx, tx, o.Target, o.ID, u)
 		if err != nil {
 			return nil, err
+		}
+		if o.Target == "entity" && rawNull(current) && version > 0 && !rawNull(o.Committed) && u.Can(PermissionLifecycleManage) {
+			var base Entity
+			_ = json.Unmarshal(o.Base, &base)
+			if base.State == "deleted" {
+				e, err := get(ctx, tx, o.ID)
+				if err != nil {
+					return nil, err
+				}
+				if e.State == "deleted" {
+					current = json.RawMessage(encode(e))
+				}
+			}
 		}
 		merged, conflicts, err := mergeWorkspaceObject(o, current, version)
 		if err != nil {
@@ -214,6 +243,9 @@ func commitContributesToObject(c CollaborationCommit, p workspaceMergeObject) bo
 			value, ok, err := pointerValue(final, parts)
 			old, oldOK, oldErr := pointerValue(current, parts)
 			if err == nil && oldErr == nil && !equalCommitValue(old, oldOK, value, ok) && equalCommitValue(value, ok, patch.Value, !patch.Remove) {
+				return true
+			}
+			if err == nil && oldErr == nil && ok && !patch.Remove && versionTextContribution(co.Before, co.After, p.Current, p.Merged, parts) {
 				return true
 			}
 		}
@@ -427,25 +459,33 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 		}
 		if p.Object.Target == "entity" {
 			if rawNull(p.Merged) {
-				return fmt.Errorf("use_lifecycle_endpoint")
-			}
-			var e Entity
-			if err = json.Unmarshal(p.Merged, &e); err != nil {
-				return err
-			}
-			input := Edit{Entity: e, ExpectedVersion: p.CurrentVersion, EditNote: origin.Message, definitions: &defs, identityLocksHeld: true}
-			if rawNull(p.Current) {
-				input.Entity.ID = ""
-				input.Entity.Version = 0
-				input.Entity.State = ""
-				input.Entity.ReviewStatus = ""
-				input.Entity.CreatedBy = ""
-				input.Entity.RedirectID = ""
-				input.createID = p.Object.ID
-				input.ExpectedVersion = 0
-			}
-			if _, err = s.saveEntityTx(writeCtx, tx, input, actor); err != nil {
-				return err
+				if _, err = s.lifecycleTx(writeCtx, tx, p.Object.ID, LifecycleEdit{ExpectedVersion: p.CurrentVersion, EditNote: origin.Message}, u); err != nil {
+					return err
+				}
+			} else {
+				var previous Entity
+				_ = json.Unmarshal(p.Current, &previous)
+				if previous.State == "deleted" {
+					writeCtx = context.WithValue(writeCtx, versionRestoreKey{}, true)
+				}
+				var e Entity
+				if err = json.Unmarshal(p.Merged, &e); err != nil {
+					return err
+				}
+				input := Edit{Entity: e, ExpectedVersion: p.CurrentVersion, EditNote: origin.Message, definitions: &defs, identityLocksHeld: true}
+				if rawNull(p.Current) {
+					input.Entity.ID = ""
+					input.Entity.Version = 0
+					input.Entity.State = ""
+					input.Entity.ReviewStatus = ""
+					input.Entity.CreatedBy = ""
+					input.Entity.RedirectID = ""
+					input.createID = p.Object.ID
+					input.ExpectedVersion = 0
+				}
+				if _, err = s.saveEntityTx(writeCtx, tx, input, actor); err != nil {
+					return err
+				}
 			}
 		} else if rawNull(p.Merged) {
 			if err = s.deleteRelationTx(writeCtx, tx, p.Object.ID, p.CurrentVersion, origin.Message, nil, actor); err != nil {
@@ -481,6 +521,9 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 }
 
 func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, pr *PullRequest, u User) (WorkspacePushResult, error) {
+	if err := setCatalogVersionActor(ctx, tx, u, w.HeadCommitID, w.Name); err != nil {
+		return WorkspacePushResult{}, err
+	}
 	out := WorkspacePushResult{Applied: true, Commits: []CollaborationCommit{}, PullRequest: pr}
 	if w.DirtyCount > 0 {
 		return out, fmt.Errorf("uncommitted_changes")
@@ -507,7 +550,10 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 		prid = pr.ID
 	}
 	now := time.Now().UTC()
-	if _, err = tx.ExecContext(ctx, `UPDATE catalog.commits SET merged_at=$2,merged_by=$3,pull_request_id=$4 WHERE workspace_id=$1 AND merged_at IS NULL`, w.ID, now, u.ID, prid); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE catalog.commits SET merged_at=$2,merged_by=$3,pull_request_id=$4 WHERE id IN (SELECT commit_id FROM catalog.workspace_commits WHERE workspace_id=$1 AND active AND NOT integrated) AND merged_at IS NULL`, w.ID, now, u.ID, prid); err != nil {
+		return out, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_commits SET integrated=true WHERE workspace_id=$1 AND active`, w.ID); err != nil {
 		return out, err
 	}
 	for _, p := range plan {
@@ -522,6 +568,9 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 	if err = bumpWorkspace(ctx, tx, w.ID); err != nil {
 		return out, err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.workspace_events(workspace_id,request_id,request_hash,actor_id,action,old_head,new_head) VALUES($1,$2,'',$3,'push',$4,$4)`, w.ID, newID(), u.ID, w.HeadCommitID); err != nil {
+		return out, err
+	}
 	if pr != nil {
 		if _, err = tx.ExecContext(ctx, `UPDATE catalog.pull_requests SET status='merged',merged_at=$2,merged_by=$3,version=version+1,updated_at=now() WHERE id=$1`, pr.ID, now, u.ID); err != nil {
 			return out, err
@@ -531,6 +580,21 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 			return out, err
 		}
 		out.PullRequest = &p
+		if err = notifyPullRequestDecision(ctx, tx, p, u, true); err != nil {
+			return out, err
+		}
+	}
+	absorbed, err := collaborationIDs(ctx, tx, `UPDATE catalog.pull_requests p SET status='merged',merged_at=$2,merged_by=$3,version=version+1,updated_at=now() WHERE p.status='open' AND p.source_head_id IN(SELECT commit_id FROM catalog.workspace_commits WHERE workspace_id=$1 AND active) AND EXISTS(SELECT 1 FROM catalog.pull_request_commits pc WHERE pc.pull_request_id=p.id) AND NOT EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.commits c ON c.id=pc.commit_id WHERE pc.pull_request_id=p.id AND c.merged_at IS NULL) RETURNING p.id::text`, w.ID, now, u.ID)
+	if err != nil {
+		return out, err
+	}
+	for _, id := range absorbed {
+		p:=PullRequest{ID:id}
+		err=tx.QueryRowContext(ctx,`SELECT author_id,title FROM catalog.pull_requests WHERE id=$1`,id).Scan(&p.AuthorID,&p.Title)
+		if err != nil {
+			return out, err
+		}
+		p.Commits,err=pullRequestCommitsFrom(ctx,tx,p);if err!=nil{return out,err}
 		if err = notifyPullRequestDecision(ctx, tx, p, u, true); err != nil {
 			return out, err
 		}
@@ -566,12 +630,41 @@ func workspacePushReplay(ctx context.Context, tx *sql.Tx, w Workspace, head stri
 	if err != nil {
 		return WorkspacePushResult{}, false, err
 	}
-	if c.WorkspaceID == nil || *c.WorkspaceID != w.ID || c.MergedAt == nil {
-		return WorkspacePushResult{}, false, nil
+	var integrated bool
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.workspace_commits WHERE workspace_id=$1 AND commit_id=$2 AND integrated)`, w.ID, head).Scan(&integrated); err != nil {
+		return WorkspacePushResult{}, false, err
+	}
+	if !integrated {
+		var member bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.workspace_commits WHERE workspace_id=$1 AND commit_id=$2 AND active)`, w.ID, head).Scan(&member); err != nil {
+			return WorkspacePushResult{}, false, err
+		}
+		if !member || c.MergedAt == nil {
+			return WorkspacePushResult{}, false, nil
+		}
+		if w.HeadCommitID != nil && *w.HeadCommitID == head {
+			if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_commits wc SET integrated=true FROM catalog.commits c WHERE wc.workspace_id=$1 AND wc.commit_id=c.id AND wc.active AND c.merged_at IS NOT NULL`, w.ID); err != nil {
+				return WorkspacePushResult{}, false, err
+			}
+			if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_objects SET base_document=head_document WHERE workspace_id=$1`, w.ID); err != nil {
+				return WorkspacePushResult{}, false, err
+			}
+			if err = bumpWorkspace(ctx, tx, w.ID); err != nil {
+				return WorkspacePushResult{}, false, err
+			}
+			w, err = workspaceFrom(ctx, tx, w.ID, u, false, false)
+			if err != nil {
+				return WorkspacePushResult{}, false, err
+			}
+		}
 	}
 	out := WorkspacePushResult{Applied: true, Workspace: &w, Commits: []CollaborationCommit{c}}
-	if c.PullRequestID != nil {
-		p, e := pullRequestFrom(ctx, tx, *c.PullRequestID, u, false)
+	var prid *string
+	if err = tx.QueryRowContext(ctx, `SELECT (SELECT id::text FROM catalog.pull_requests WHERE workspace_id=$1 AND source_head_id=$2 AND status='merged' ORDER BY merged_at DESC LIMIT 1)`, w.ID, head).Scan(&prid); err != nil {
+		return out, false, err
+	}
+	if prid != nil {
+		p, e := pullRequestFrom(ctx, tx, *prid, u, false)
 		if e != nil {
 			return out, false, e
 		}
@@ -648,6 +741,9 @@ func (s *Store) PushWorkspace(ctx context.Context, id string, in WorkspacePush, 
 				p.SourceHeadID = in.ExpectedHead
 			}
 			pr = &p
+			if err = freezePullRequestCommits(ctx, tx, p.ID, w.ID); err != nil {
+				return err
+			}
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -705,102 +801,7 @@ func (s *Store) MergePullRequest(ctx context.Context, id string, in PullRequestM
 	return out, err
 }
 func (s *Store) RebaseWorkspace(ctx context.Context, id string, in WorkspaceRebase, u User) (WorkspaceRebaseResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	var out WorkspaceRebaseResult
-	if !collaborationID(in.ID) {
-		return out, fmt.Errorf("invalid_commit_id")
-	}
-	message := strings.TrimSpace(in.Message)
-	if message == "" {
-		message = "Rebase"
-	}
-	if len([]rune(message)) > 2000 {
-		return out, fmt.Errorf("invalid_commit_message")
-	}
-	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
-		w, err := workspaceFrom(ctx, tx, id, u, true, true)
-		if err != nil {
-			return err
-		}
-		var hash, actor, wid string
-		err = tx.QueryRowContext(ctx, `SELECT request_hash,actor_id,workspace_id::text FROM catalog.commits WHERE id=$1`, in.ID).Scan(&hash, &actor, &wid)
-		if err == nil {
-			if hash != requestHash(in) || actor != u.ID || wid != id {
-				return errIdempotencyConflict
-			}
-			c, err := collaborationCommitFrom(ctx, tx, in.ID)
-			if err != nil {
-				return err
-			}
-			out = WorkspaceRebaseResult{w, &c}
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err = checkWorkspace(w, in.ExpectedVersion, in.ExpectedHead); err != nil {
-			return err
-		}
-		if w.DirtyCount > 0 {
-			return fmt.Errorf("uncommitted_changes")
-		}
-		if w.HeadCommitID == nil || in.ExpectedHead == "" {
-			return fmt.Errorf("workspace_head_conflict")
-		}
-		if u.FromPAT && !u.Can(PermissionEntityEdit) && !u.Can(PermissionRelationEdit) {
-			return errForbidden
-		}
-		for _, resolution := range in.Resolutions {
-			found := false
-			for _, o := range w.Objects {
-				if o.Target == resolution.Target && o.ID == resolution.ID {
-					raw := o.Committed
-					if rawNull(raw) {
-						raw = o.Base
-					}
-					if err = workspaceAuthorizeObject(ctx, tx, id, o.Target, raw, u); err != nil {
-						return err
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("invalid_resolution")
-			}
-		}
-		plan, err := workspaceMergePlan(ctx, tx, w, u, in.Resolutions)
-		if err != nil {
-			return err
-		}
-		for _, p := range plan {
-			if p.Object.Target == "entity" {
-				if err = s.reserveWorkspaceCoverAssets(ctx, id, p.Object.Committed, p.Merged, u); err != nil {
-					return err
-				}
-			}
-			if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_objects SET base_version=$4,base_document=$5,document=$6,updated_at=now() WHERE workspace_id=$1 AND target=$2 AND target_id=$3`, id, p.Object.Target, p.Object.ID, p.CurrentVersion, nullableJSON(p.Current), nullableJSON(p.Merged)); err != nil {
-				return err
-			}
-		}
-		w, err = workspaceFrom(ctx, tx, id, u, false, false)
-		if err != nil {
-			return err
-		}
-		kind := "rebase"
-		if len(in.Resolutions) > 0 {
-			kind = "edit"
-		}
-		c, err := insertWorkspaceCommit(ctx, tx, w, in.ID, message, kind, in, u)
-		if err != nil {
-			return err
-		}
-		out.Commit = &c
-		out.Workspace, err = workspaceFrom(ctx, tx, id, u, false, false)
-		return err
-	})
-	return out, err
+    return s.replayWorkspaceHistory(ctx,id,in,u)
 }
 
 func notifyPullRequestDecision(ctx context.Context, tx *sql.Tx, p PullRequest, actor User, approved bool) error {

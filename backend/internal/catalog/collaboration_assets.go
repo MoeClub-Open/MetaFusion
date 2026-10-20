@@ -14,10 +14,11 @@ import (
 )
 
 type storageAssetReference struct {
-	EntityID        string   `json:"entity_id"`
-	AssetID         string   `json:"asset_id"`
-	ActorIDs        []string `json:"actor_ids"`
-	ModerateActorID string   `json:"moderate_actor_id,omitempty"`
+	SourceWorkspaceID string   `json:"source_workspace_id,omitempty"`
+	EntityID          string   `json:"entity_id"`
+	AssetID           string   `json:"asset_id"`
+	ActorIDs          []string `json:"actor_ids"`
+	ModerateActorID   string   `json:"moderate_actor_id,omitempty"`
 }
 type storageAssetReferences struct {
 	WorkspaceID string                  `json:"workspace_id"`
@@ -157,8 +158,13 @@ func (s *Store) reserveWorkspaceCoverAssets(ctx context.Context, workspaceID str
 		return err
 	}
 	in := storageAssetReferences{WorkspaceID: workspaceID, References: []storageAssetReference{}}
+	source, _ := ctx.Value(versionAssetSourceKey{}).(string)
+	sources, _ := ctx.Value(versionAssetSourcesKey{}).(map[string]string)
 	for _, id := range sortedMapKeys(next) {
-		ref := storageAssetReference{EntityID: e.ID, AssetID: id, ActorIDs: []string{u.ID}}
+		ref := storageAssetReference{EntityID: e.ID, AssetID: id, ActorIDs: []string{u.ID}, SourceWorkspaceID: source}
+		if sources[id] != "" {
+			ref.SourceWorkspaceID = sources[id]
+		}
 		if u.Can("storage.asset.moderate") {
 			ref.ModerateActorID = u.ID
 		}

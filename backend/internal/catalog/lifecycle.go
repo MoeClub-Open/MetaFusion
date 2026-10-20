@@ -22,8 +22,21 @@ type LifecycleEdit struct {
 // 终态仍由权限与身份解析控制读取；恢复事实使用新提交，不改历史快照。
 func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u User) (Entity, error) {
 	var e Entity
-	// SSI includes concurrent references and relation changes in lifecycle checks.
 	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
+		if err := setCatalogVersionActor(ctx, tx, u, nil, input.EditNote); err != nil {
+			return err
+		}
+		var err error
+		e, err = s.lifecycleTx(ctx, tx, id, input, u)
+		return err
+	})
+	return e, err
+}
+
+func (s *Store) lifecycleTx(ctx context.Context, tx *sql.Tx, id string, input LifecycleEdit, u User) (Entity, error) {
+	var e Entity
+	// SSI includes concurrent references and relation changes in lifecycle checks.
+	err := func() error {
 		if !u.Can(PermissionLifecycleManage) {
 			return errForbidden
 		}
@@ -90,7 +103,7 @@ func (s *Store) Lifecycle(ctx context.Context, id string, input LifecycleEdit, u
 			return errVersionConflict
 		}
 		return audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity."+e.State)
-	})
+	}()
 	return e, err
 }
 

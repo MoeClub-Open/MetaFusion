@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 func collaborationUser(u User) error {
@@ -52,11 +53,11 @@ func workspaceFrom(ctx context.Context, q queryer, id string, u User, lock bool,
 	if !collaborationID(id) {
 		return w, sql.ErrNoRows
 	}
-	query := `SELECT id::text,owner_id,name,version,head_commit_id::text,state,created_at,updated_at FROM catalog.workspaces WHERE id=$1`
+	query := `SELECT id::text,owner_id,name,version,head_commit_id::text,state,created_at,updated_at,base_commit_id::text FROM catalog.workspaces WHERE id=$1`
 	if lock {
 		query += " FOR UPDATE"
 	}
-	if err := q.QueryRowContext(ctx, query, id).Scan(&w.ID, &w.OwnerID, &w.Name, &w.Version, &w.HeadCommitID, &w.State, &w.CreatedAt, &w.UpdatedAt); err != nil {
+	if err := q.QueryRowContext(ctx, query, id).Scan(&w.ID, &w.OwnerID, &w.Name, &w.Version, &w.HeadCommitID, &w.State, &w.CreatedAt, &w.UpdatedAt, &w.BaseCommitID); err != nil {
 		return w, err
 	}
 	w.Members = []string{}
@@ -86,13 +87,18 @@ func workspaceFrom(ctx context.Context, q queryer, id string, u User, lock bool,
 		return w, fmt.Errorf("workspace_archived")
 	}
 	w.Objects = []WorkspaceObject{}
-	rows, err = q.QueryContext(ctx, `SELECT target,target_id::text,base_version,COALESCE(base_document,'null'::jsonb),COALESCE(head_document,'null'::jsonb),COALESCE(document,'null'::jsonb) FROM catalog.workspace_objects WHERE workspace_id=$1 ORDER BY target,target_id`, id)
+	rows, err = q.QueryContext(ctx, `SELECT target,target_id::text,base_version,COALESCE(base_document,'null'::jsonb),COALESCE(head_document,'null'::jsonb),COALESCE(document,'null'::jsonb),staged_authors FROM catalog.workspace_objects WHERE workspace_id=$1 ORDER BY target,target_id`, id)
 	if err != nil {
 		return w, err
 	}
 	for rows.Next() {
 		var o WorkspaceObject
-		if err = rows.Scan(&o.Target, &o.ID, &o.BaseVersion, &o.Base, &o.Committed, &o.Document); err != nil {
+		var authors []byte
+		if err = rows.Scan(&o.Target, &o.ID, &o.BaseVersion, &o.Base, &o.Committed, &o.Document, &authors); err != nil {
+			rows.Close()
+			return w, err
+		}
+		if err = json.Unmarshal(authors, &o.Contributors); err != nil {
 			rows.Close()
 			return w, err
 		}
@@ -104,6 +110,9 @@ func workspaceFrom(ctx context.Context, q queryer, id string, u User, lock bool,
 	}
 	err = rows.Err()
 	rows.Close()
+	if err == nil {
+		err = q.QueryRowContext(ctx, `SELECT count(*) FROM catalog.workspace_commits WHERE workspace_id=$1 AND active AND NOT integrated`, id).Scan(&w.PendingCommits)
+	}
 	return w, err
 }
 func checkWorkspace(w Workspace, version int64, head string) error {
@@ -128,15 +137,32 @@ func (s *Store) CreateWorkspace(ctx context.Context, in WorkspaceCreate, u User)
 		return Workspace{}, err
 	}
 	id := newID()
+	if in.ID != "" {
+		if !collaborationID(in.ID) {
+			return Workspace{}, fmt.Errorf("invalid_workspace_id")
+		}
+		id = in.ID
+	}
 	var out Workspace
 	err = s.writeCatalog(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.workspaces(id,owner_id,name) VALUES($1,$2,$3)`, id, u.ID, name); err != nil {
+		var owner, hash string
+		err := tx.QueryRowContext(ctx, `SELECT owner_id,creation_hash FROM catalog.workspaces WHERE id=$1`, id).Scan(&owner, &hash)
+		if err == nil {
+			if owner != u.ID || hash != requestHash(in) {
+				return errIdempotencyConflict
+			}
+			out, err = workspaceFrom(ctx, tx, id, u, false, false)
+			return err
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.workspaces(id,owner_id,name,creation_hash,base_commit_id) SELECT $1,$2,$3,$4,commit_id FROM catalog.catalog_head WHERE singleton`, id, u.ID, name, requestHash(in)); err != nil {
 			return err
 		}
 		if err := s.checkoutWorkspaceObjects(ctx, tx, id, in.EntityIDs, in.RelationIDs, u); err != nil {
 			return err
 		}
-		var err error
 		out, err = workspaceFrom(ctx, tx, id, u, false, false)
 		return err
 	})
@@ -333,7 +359,20 @@ func workspaceEditableMap(raw json.RawMessage, target string) map[string]json.Ra
 	}
 	out := map[string]json.RawMessage{}
 	for _, k := range allowed {
-		if v, ok := all[k]; ok {
+		v, ok := all[k]
+		if k == "attributes" || target == "entity" && k == "translations" {
+			if !ok || rawNull(v) {
+				v = json.RawMessage(`{}`)
+				ok = true
+			}
+		}
+		if target == "entity" && contains([]string{"external_links", "pictures", "contents", "subjects"}, k) {
+			if !ok || rawNull(v) {
+				v = json.RawMessage(`[]`)
+				ok = true
+			}
+		}
+		if ok {
 			out[k] = v
 		}
 	}
@@ -728,28 +767,70 @@ func (s *Store) SaveWorkspaceChanges(ctx context.Context, id string, in Workspac
 }
 
 func insertWorkspaceCommit(ctx context.Context, tx *sql.Tx, w Workspace, id, message, kind string, request any, u User) (CollaborationCommit, error) {
-	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,workspace_id,parent_id,message,kind) VALUES($1,$2,$3,$4,'{}',$5,$6,$7,$8,$9)`, id, u.ID, requestHash(request), encode(request), encode(commitAuthor{ID: u.ID, Username: u.Username}), w.ID, w.HeadCommitID, message, kind); err != nil {
+	meta, _ := ctx.Value(versionCommitMetaKey{}).(versionCommitMeta)
+	parent := w.HeadCommitID
+	if parent == nil {
+		parent = w.BaseCommitID
+	}
+	if meta.Sources == nil {
+		meta.Sources = []string{}
+	}
+	if meta.Operation == "" {
+		meta.Operation = "commit"
+		if kind == "rebase" {
+			meta.Operation = "rebase"
+		}
+	}
+	author := CollaborationAuthor{ID: u.ID, Name: u.Username}
+	if meta.PrimaryAuthor != nil {
+		author = *meta.PrimaryAuthor
+	}
+	snapshot := map[string]any{"id": author.ID, "username": author.Name, "committer_name": u.Username}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,workspace_id,parent_id,merge_parent_id,message,kind,snapshot_scope,created_at) VALUES($1,$2,$3,$4,'{}',$5,$6,$7,$10,$8,$9,'tracked_records',clock_timestamp())`, id, u.ID, requestHash(request), encode(request), encode(snapshot), w.ID, parent, message, kind, meta.MergeParent); err != nil {
 		return CollaborationCommit{}, err
 	}
-	_, rebasing := request.(WorkspaceRebase)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_operations(commit_id,operation,source_ids) VALUES($1,$2,$3::uuid[])`, id, meta.Operation, pq.Array(meta.Sources)); err != nil {
+		return CollaborationCommit{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.workspace_commits(workspace_id,commit_id,position) SELECT $1::uuid,$2::uuid,COALESCE(max(position),0)+1 FROM catalog.workspace_commits WHERE workspace_id=$1`, w.ID, id); err != nil {
+		return CollaborationCommit{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_snapshots(commit_id,target,target_id,base_version,base_document,document) SELECT $2,target,target_id,base_version,base_document,document FROM catalog.workspace_objects WHERE workspace_id=$1`, w.ID, id); err != nil {
+		return CollaborationCommit{}, err
+	}
 	for _, o := range w.Objects {
-		if !o.Dirty && !rebasing {
+		if !o.Dirty {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,base_document,before_document,after_document) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, o.Target, o.ID, o.BaseVersion, nullableJSON(o.Base), nullableJSON(o.Committed), nullableJSON(o.Document)); err != nil {
 			return CollaborationCommit{}, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) SELECT $2,key,value FROM catalog.workspace_objects o CROSS JOIN LATERAL jsonb_each_text(o.staged_authors) WHERE o.workspace_id=$1 AND o.head_document IS DISTINCT FROM o.document ON CONFLICT DO NOTHING`, w.ID, id); err != nil {
-		return CollaborationCommit{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, id, u.ID, u.Username); err != nil {
-		return CollaborationCommit{}, err
+	if !meta.PreserveAuthors {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) SELECT $2,key,value FROM catalog.workspace_objects o CROSS JOIN LATERAL jsonb_each_text(o.staged_authors) WHERE o.workspace_id=$1 AND o.head_document IS DISTINCT FROM o.document ON CONFLICT DO NOTHING`, w.ID, id); err != nil {
+			return CollaborationCommit{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, id, u.ID, u.Username); err != nil {
+			return CollaborationCommit{}, err
+		}
+	} else {
+		for _, author := range meta.Authors {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, id, author.ID, author.Name); err != nil {
+				return CollaborationCommit{}, err
+			}
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE catalog.workspace_objects SET head_document=document,staged_authors='{}',updated_at=now() WHERE workspace_id=$1`, w.ID); err != nil {
 		return CollaborationCommit{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE catalog.workspaces SET head_commit_id=$2,version=version+1,updated_at=now() WHERE id=$1`, w.ID, id); err != nil {
+		return CollaborationCommit{}, err
+	}
+	oldHead := w.HeadCommitID
+	if meta.Rewriting {
+		oldHead = meta.PreviousHead
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.workspace_events(workspace_id,request_id,request_hash,actor_id,action,old_head,new_head) VALUES($1,$2,$3,$4,$5,$6,$2)`, w.ID, id, requestHash(request), u.ID, meta.Operation, oldHead); err != nil {
 		return CollaborationCommit{}, err
 	}
 	return collaborationCommitFrom(ctx, tx, id)
@@ -817,26 +898,24 @@ func createPullRequestTx(ctx context.Context, tx *sql.Tx, w Workspace, in Worksp
 		return PullRequest{}, fmt.Errorf("uncommitted_changes")
 	}
 	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM catalog.commits WHERE workspace_id=$1 AND merged_at IS NULL`, w.ID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM catalog.workspace_commits WHERE workspace_id=$1 AND active AND NOT integrated`, w.ID).Scan(&count); err != nil {
 		return PullRequest{}, err
 	}
 	if count == 0 {
 		return PullRequest{}, fmt.Errorf("no_changes")
 	}
 	var headMessage string
-	err := tx.QueryRowContext(ctx, `SELECT message FROM catalog.commits WHERE id=$1 AND workspace_id=$2`, in.ExpectedHead, w.ID).Scan(&headMessage)
+	err := tx.QueryRowContext(ctx, `SELECT c.message FROM catalog.commits c JOIN catalog.workspace_commits wc ON wc.commit_id=c.id WHERE c.id=$1 AND wc.workspace_id=$2 AND wc.active`, in.ExpectedHead, w.ID).Scan(&headMessage)
 	if err != nil {
 		return PullRequest{}, err
 	}
 	title := strings.TrimSpace(in.Title)
 	var sourceBase *string
-	if err = tx.QueryRowContext(ctx, `WITH RECURSIVE chain AS (
-		SELECT id,parent_id,merged_at,0 AS depth,ARRAY[id] AS path FROM catalog.commits WHERE id=$1 AND workspace_id=$2
-		UNION ALL SELECT c.id,c.parent_id,c.merged_at,chain.depth+1,chain.path||c.id
-		FROM catalog.commits c JOIN chain ON c.id=chain.parent_id
-		WHERE c.workspace_id=$2 AND NOT c.id=ANY(chain.path)
-	) SELECT (SELECT id::text FROM chain WHERE merged_at IS NOT NULL ORDER BY depth LIMIT 1)`, in.ExpectedHead, w.ID).Scan(&sourceBase); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT (SELECT commit_id::text FROM catalog.workspace_commits WHERE workspace_id=$1 AND active AND integrated ORDER BY position DESC LIMIT 1)`, w.ID).Scan(&sourceBase); err != nil {
 		return PullRequest{}, err
+	}
+	if sourceBase == nil {
+		sourceBase = w.BaseCommitID
 	}
 	var id, oldTitle, oldHead string
 	var oldBase *string
@@ -867,6 +946,9 @@ func createPullRequestTx(ctx context.Context, tx *sql.Tx, w Workspace, in Worksp
 		_, err = tx.ExecContext(ctx, `UPDATE catalog.pull_requests SET title=$2,source_head_id=$3,source_base_id=$4,version=version+1,updated_at=now() WHERE id=$1`, id, title, in.ExpectedHead, sourceBase)
 	}
 	if err != nil {
+		return PullRequest{}, err
+	}
+	if err = freezePullRequestCommits(ctx, tx, id, w.ID); err != nil {
 		return PullRequest{}, err
 	}
 	return pullRequestFrom(ctx, tx, id, u, false)

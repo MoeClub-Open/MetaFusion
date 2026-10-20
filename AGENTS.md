@@ -49,11 +49,13 @@ MetaFusion 是类似 MusicBrainz / Bangumi 的开放元数据目录与受控资�
 
 涉及 API 或数据行为时，以目标实例响应 + 实际处理器 + 已执行迁移为准；有矛盾记差异、停掉依赖写入，不改文案掩盖。接口或外部行为变化时，只同步直接受影响的 OpenAPI、用户和开发者文档及主仓内部契约说明。
 
-- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000036_assistant_protocols`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
+- 加迁移时的固定耦合：`.github/workflows/ci.yml` 里 `mf-migrate down` 那一步的判据是"**最新一条迁移必须不可逆**"，并 grep 它的版本名。因此每新增一条 `NNNNNN_*.up.sql` 都要同步把该步骤的 grep 改成新的最新版本（当前锚点是 `000037_record_versioning`），否则 CI 会在 down 步骤红——而本机没有 PostgreSQL 时不会发现。
 
 ## 3.1 副本协作与可选来源
 
 目录编辑统一经过服务器工作副本：checkout → 保存变更 → commit → push / PR → merge。保存与提交都不改变正式目录；多次操作可一起提交，同一副本可保留多次不可变提交。版本 CAS、不可变提交 ID 与 source head 防止多人覆盖；冲突使用基线、副本与当前事实三方比较，解决后生成新提交。不存在绕过副本的单对象事实写接口，也不保留旧提交审核协议。
+
+037 提供正式目录 head 与稀疏事务快照、两父提交图、派生与分支合并、逐提交变基（可选顺序/丢弃）、cherry-pick/revert/restore、amend/squash/reset、标签、stash 和不可变 reflog。改写只移动分支引用并记录替代关系，不改原提交；机械重放保留原作者，操作人与合并人分开。旧历史仅呈现真实保留范围，新全库快照从明确迁移基线开始。API 历史/快照/对比均分页，MCP 与技能只转发同一协议。
 
 来源及查证记录均为可选，不是保存、提交或合入的前置条件；不自动造出处或要求候选身份确认。已有来源照常保留，提供时只检查合理的结构与 URL 安全。提交说明与来源分别处理。技能与公开文档在 `metafusion-skills` / `metafusion-docs`，接口变更须同步。
 

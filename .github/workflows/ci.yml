@@ -85,7 +85,7 @@ jobs:
             echo "irreversible migration unexpectedly rolled back" >&2
             exit 1
           fi
-          grep -q '000036_assistant_protocols is irreversible' /tmp/mf-down.log
+          grep -q '000037_record_versioning is irreversible' /tmp/mf-down.log
           /tmp/mf-migrate up
           /tmp/mf-migrate status
       - name: 悬挂引用体检（check-refs 冒烟）

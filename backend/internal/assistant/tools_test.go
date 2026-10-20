@@ -22,7 +22,7 @@ func TestAssistantToolsRefuseCallerImpersonation(t *testing.T) {
 
 func TestAssistantWorkspaceWritesDoNotElevateOAuthOrAnonymous(t *testing.T) {
 	for _, user := range []catalog.User{{}, {ID: "oauth", Permissions: []string{"*"}, IsThirdParty: true}} {
-		for _, name := range []string{"catalog_workspace_create", "catalog_workspace_stage", "catalog_workspace_commit", "catalog_workspace_push", "catalog_workspace_rebase", "catalog_pull_request_create", "catalog_pull_request_merge"} {
+		for _, name := range []string{"catalog_version_fork", "catalog_version_apply", "catalog_version_tag", "catalog_version_stash", "catalog_workspace_create", "catalog_workspace_stage", "catalog_workspace_commit", "catalog_workspace_push", "catalog_workspace_rebase", "catalog_pull_request_create", "catalog_pull_request_merge"} {
 			_, err := runCatalogTool(context.Background(), &catalog.Store{}, user, name, json.RawMessage(`{}`))
 			if err == nil || err.Error() != "forbidden" {
 				t.Fatalf("%s elevated %+v: %v", name, user, err)

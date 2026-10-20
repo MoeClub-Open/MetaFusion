@@ -22,6 +22,7 @@ export function WorkspaceList() {
   const [total, setTotal] = useState(0);
   const [loadedUser, setLoadedUser] = useState("");
   const request = useRef(0);
+  const creation=useRef<{key:string;id:string}|null>(null);
   const actor = user ? JSON.stringify([user.id, [...(user.permissions || [])].sort()]) : "anonymous";
   const controller = useRef<AbortController | null>(null);
   const activeActor = useRef(actor);
@@ -44,7 +45,8 @@ export function WorkspaceList() {
     setBusy(true);
     setError("");
     try {
-      const workspace = await createWorkspace(name.trim() ? { name: name.trim() } : {}, signal);
+      const key=JSON.stringify([actor,name.trim()]);if(creation.current?.key!==key)creation.current={key,id:crypto.randomUUID()};
+      const workspace = await createWorkspace({id:creation.current.id,...(name.trim()?{name:name.trim()}:{})}, signal);
       if (activeActor.current !== actor || signal?.aborted) return;
       router.push(`/workspaces/${workspace.id}`);
     } catch (e) { if (activeActor.current === actor && !signal?.aborted) { setError(localizeCatalogError((e as Error).message, t)); setBusy(false); } }
@@ -55,7 +57,7 @@ export function WorkspaceList() {
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div className="space-y-2"><h1 className="flex items-center gap-2 text-2xl font-semibold"><GitBranch aria-hidden="true" className="h-5 w-5"/>{t("collaboration.workspaces")}</h1>
         <p className="max-w-3xl text-sm text-text-muted">{t("collaboration.workspaceIntro")}</p></div>
-      <Link href="/pull-requests" className="inline-flex items-center gap-2 text-sm text-primary underline"><GitPullRequest className="h-4 w-4" aria-hidden="true"/>{t("collaboration.pullRequests")}</Link>
+      <div className="flex flex-wrap gap-4 text-sm"><Link href="/history" className="text-primary underline">{t("versioning.catalogHistory")}</Link><Link href="/pull-requests" className="inline-flex items-center gap-2 text-primary underline"><GitPullRequest className="h-4 w-4" aria-hidden="true"/>{t("collaboration.pullRequests")}</Link></div>
     </header>
     <form className="flex flex-wrap items-end gap-3 rounded-panel border border-line bg-surface p-4" onSubmit={e => { e.preventDefault(); void create(); }}>
       <label className="min-w-48 flex-1 space-y-1 text-sm"><span>{t("collaboration.workspaceName")}</span><input maxLength={200} value={name} onChange={e => setName(e.target.value)} placeholder={t("collaboration.optionalName")} disabled={busy}/></label>

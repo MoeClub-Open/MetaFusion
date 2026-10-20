@@ -185,3 +185,21 @@ func TestPostgresCatalogAssetPreviewKeepsFrozenReviewAndMemberBoundaries(t *test
 		t.Fatalf("preview changed official cover: %+v %v", official.Pictures, err)
 	}
 }
+
+func TestPostgresCatalogVersionPreviewUsesExactBaselineRecord(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asset := uuid.NewString()
+	e := f.save(Entity{Kind: "work", Title: "Existing cover", Pictures: []Picture{{AssetID: asset, URL: "/api/storage/assets/" + asset + "/content"}}})
+	head, err := f.s.CatalogVersionHead(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := f.s.commitAssetPreview(ctx, head.CommitID, asset, User{})
+	if err != nil || ref.EntityID != e.ID || ref.AssetID != asset || ref.WorkspaceID != head.CommitID {
+		t.Fatalf("baseline preview context: %+v %v", ref, err)
+	}
+	if _, err = f.s.commitAssetPreview(ctx, head.CommitID, uuid.NewString(), User{}); err == nil {
+		t.Fatal("unreferenced asset was accepted")
+	}
+}

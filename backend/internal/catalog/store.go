@@ -514,7 +514,8 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			if err != nil {
 				return err
 			}
-			if !visible(old, &u) || old.State == "deleted" || old.State == "merged" {
+			restore, _ := ctx.Value(versionRestoreKey{}).(bool)
+			if !visible(old, &u) || old.State == "deleted" && !(restore && u.Can(PermissionLifecycleManage)) || old.State == "merged" {
 				return errForbidden
 			}
 			if old.Version != input.ExpectedVersion {
@@ -535,7 +536,13 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			e.CreatedBy = old.CreatedBy
 			e.Version = old.Version + 1
 		}
-		if err = prepareEntityWriteState(old, &e, u); err != nil {
+		permissionBase := old
+		if restore, _ := ctx.Value(versionRestoreKey{}).(bool); restore && old.State == "deleted" && u.Can(PermissionLifecycleManage) {
+			permissionBase.State = "active"
+			e.State = "active"
+			e.RedirectID = ""
+		}
+		if err = prepareEntityWriteState(permissionBase, &e, u); err != nil {
 			return err
 		}
 		if err = preserveHiddenTrackContents(ctx, tx, old, e, u); err != nil {

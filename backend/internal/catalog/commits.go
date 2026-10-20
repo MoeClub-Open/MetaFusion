@@ -245,6 +245,15 @@ func mergeCommitPatch(base, current map[string]json.RawMessage, patch []CommitPa
 			continue
 		}
 		if !equalCommitValue(b, bok, c, cok) {
+			if versionTextPointer(parts) && bok && cok && proposedOK {
+				if merged, ok := mergeVersionTextValue(b, c, p.Value); ok {
+					if err := putPointer(out, parts, merged, false); err != nil {
+						return nil, nil, false, err
+					}
+					changed = true
+					continue
+				}
+			}
 			kind := "concurrent_edit"
 			if equalCommitValue(b, bok, p.Value, proposedOK) {
 				kind = "stale_base"

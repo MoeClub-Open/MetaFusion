@@ -6,26 +6,29 @@ import (
 )
 
 type WorkspaceObject struct {
-	Target      string          `json:"target"`
-	ID          string          `json:"id"`
-	BaseVersion int64           `json:"base_version"`
-	Base        json.RawMessage `json:"base"`
-	Committed   json.RawMessage `json:"committed"`
-	Document    json.RawMessage `json:"document"`
-	Dirty       bool            `json:"dirty"`
+	Target       string            `json:"target"`
+	ID           string            `json:"id"`
+	BaseVersion  int64             `json:"base_version"`
+	Base         json.RawMessage   `json:"base"`
+	Committed    json.RawMessage   `json:"committed"`
+	Document     json.RawMessage   `json:"document"`
+	Dirty        bool              `json:"dirty"`
+	Contributors map[string]string `json:"contributors,omitempty"`
 }
 type Workspace struct {
-	ID           string            `json:"id"`
-	OwnerID      string            `json:"owner_id"`
-	Name         string            `json:"name"`
-	Version      int64             `json:"version"`
-	HeadCommitID *string           `json:"head_commit_id"`
-	State        string            `json:"state"`
-	Members      []string          `json:"members"`
-	Objects      []WorkspaceObject `json:"objects"`
-	DirtyCount   int               `json:"dirty_count"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	BaseCommitID   *string           `json:"base_commit_id"`
+	ID             string            `json:"id"`
+	OwnerID        string            `json:"owner_id"`
+	Name           string            `json:"name"`
+	Version        int64             `json:"version"`
+	HeadCommitID   *string           `json:"head_commit_id"`
+	State          string            `json:"state"`
+	Members        []string          `json:"members"`
+	Objects        []WorkspaceObject `json:"objects"`
+	DirtyCount     int               `json:"dirty_count"`
+	PendingCommits int64             `json:"pending_commits"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 type WorkspacePage struct {
 	Items  []Workspace `json:"items"`
@@ -34,6 +37,7 @@ type WorkspacePage struct {
 	Offset int         `json:"offset"`
 }
 type WorkspaceCreate struct {
+	ID          string   `json:"id,omitempty"`
 	Name        string   `json:"name"`
 	EntityIDs   []string `json:"entity_ids"`
 	RelationIDs []string `json:"relation_ids"`
@@ -90,7 +94,13 @@ type CollaborationCommit struct {
 	ID            string                `json:"id"`
 	WorkspaceID   *string               `json:"workspace_id"`
 	ParentID      *string               `json:"parent_id"`
+	MergeParentID *string               `json:"merge_parent_id"`
+	Operation     string                `json:"operation"`
+	SourceIDs     []string              `json:"source_ids"`
+	ReplacedBy    []string              `json:"replaced_by"`
+	SnapshotScope string                `json:"snapshot_scope"`
 	Author        CollaborationAuthor   `json:"author"`
+	Committer     CollaborationAuthor   `json:"committer"`
 	Authors       []CollaborationAuthor `json:"authors"`
 	Message       string                `json:"message"`
 	Kind          string                `json:"kind"`
@@ -147,6 +157,7 @@ type WorkspacePushResult struct {
 	PullRequest *PullRequest          `json:"pull_request"`
 }
 type WorkspaceConflict struct {
+	SourceCommitID  string `json:"source_commit_id,omitempty"`
 	Target          string `json:"target"`
 	ID              string `json:"id"`
 	BaseVersion     int64  `json:"base_version"`
@@ -166,6 +177,7 @@ type workspaceConflictError struct{ Conflicts []WorkspaceConflict }
 func (e *workspaceConflictError) Error() string { return "workspace_conflict" }
 
 type WorkspaceResolution struct {
+	CommitID       string          `json:"commit_id,omitempty"`
 	Target         string          `json:"target"`
 	ID             string          `json:"id"`
 	Pointer        string          `json:"pointer"`
@@ -174,6 +186,8 @@ type WorkspaceResolution struct {
 	Remove         bool            `json:"remove,omitempty"`
 }
 type WorkspaceRebase struct {
+	OntoCommitID    string                `json:"onto_commit_id,omitempty"`
+	Order           *[]string             `json:"order,omitempty"`
 	ExpectedVersion int64                 `json:"expected_version"`
 	ExpectedHead    string                `json:"expected_head"`
 	ID              string                `json:"id"`

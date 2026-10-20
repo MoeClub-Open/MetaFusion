@@ -66,9 +66,9 @@ func assistantToolDefinitions() []map[string]any {
 	workspaceID := uuid("Working copy ID, accessible to the signed-in user.")
 	head := uuid("Exact head_commit_id returned by the working copy. Refresh on conflict.")
 	workspaceTools := func() []map[string]any {
-		resolution := object(map[string]any{"target": map[string]any{"type": "string", "enum": []string{"entity", "relation"}}, "id": uuid("Conflicted object ID."), "pointer": str("Conflicting JSON Pointer from the error."), "current_version": map[string]any{"type": "integer", "minimum": 0}, "value": map[string]any{}, "remove": map[string]any{"type": "boolean"}}, "target", "id", "pointer", "current_version")
+		resolution := object(map[string]any{"commit_id": uuid("Copy source_commit_id from the conflict to identify the replay step."), "target": map[string]any{"type": "string", "enum": []string{"entity", "relation"}}, "id": uuid("Conflicted object ID."), "pointer": str("Conflicting JSON Pointer from the error."), "current_version": map[string]any{"type": "integer", "minimum": 0}, "value": map[string]any{}, "remove": map[string]any{"type": "boolean"}}, "target", "id", "pointer", "current_version")
 		return []map[string]any{
-			tool("catalog_workspace_create", "Fork records into a private working copy. All editing is isolated until push or PR merge.", object(map[string]any{"name": str("Working copy name."), "entity_ids": list(uuid("Record to copy."), 25), "relation_ids": list(uuid("Relation to copy."), 25)})),
+			tool("catalog_workspace_create", "Fork records into a private working copy. All editing is isolated until push or PR merge.", object(map[string]any{"id": uuid("Stable client-selected creation ID. Keep it across unknown outcomes."), "name": str("Working copy name."), "entity_ids": list(uuid("Record to copy."), 25), "relation_ids": list(uuid("Relation to copy."), 25)})),
 			tool("catalog_workspace_list", "List the caller's working copies and shared copies.", object(map[string]any{"limit": integer(1, 100), "offset": integer(0, 1000000)})),
 			tool("catalog_workspace_get", "Read a working copy, its staged documents, stable IDs and current CAS version.", object(map[string]any{"workspace_id": workspaceID}, "workspace_id")),
 			tool("catalog_workspace_edit", "Rename or archive a working copy with its current version.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "name": str("New name."), "state": map[string]any{"type": "string", "enum": []string{"active", "archived"}}}, "workspace_id", "expected_version")),
@@ -76,9 +76,9 @@ func assistantToolDefinitions() []map[string]any {
 			tool("catalog_workspace_stage", "Save one or more operations to the working copy; this does not change public records. Repeat staging across records before committing. Sources and candidate review are optional, never a prerequisite.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "operations": list(operation, 25)}, "workspace_id", "expected_version", "operations")),
 			tool("catalog_workspace_members", "Set the working copy's collaborators using actual user IDs. Only the owner may change membership.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "user_ids": list(str("User ID."), 25)}, "workspace_id", "expected_version", "user_ids")),
 			tool("catalog_workspace_commit", "Commit all staged changes as an immutable authored commit. The main catalog is unchanged. Keep the UUID for recovery; on an unknown result read catalog_commit_get instead of resubmitting.", object(map[string]any{"workspace_id": workspaceID, "id": uuid("Fresh immutable commit ID."), "expected_version": version, "message": str("Describe the changes.")}, "workspace_id", "id", "expected_version", "message")),
-			tool("catalog_workspace_commits", "Read the immutable commits in a working copy.", object(map[string]any{"workspace_id": workspaceID}, "workspace_id")),
+			tool("catalog_workspace_commits", "Read active branch commits newest first. Follow total/limit/offset.", object(map[string]any{"workspace_id": workspaceID, "limit": integer(1, 100), "offset": integer(0, 1000000)}, "workspace_id")),
 			tool("catalog_workspace_push", "Push committed changes without another user confirmation. A caller with bypass permission merges; other callers create or update a PR. Only applied=true changes the main catalog. Inspect all returned commits and pull_request.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "title": str("Pull request title.")}, "workspace_id", "expected_version", "expected_head")),
-			tool("catalog_workspace_rebase", "Merge current main facts into a working copy. For conflicts inspect base/current/proposed, then provide explicit resolutions and the current versions. Produces a new immutable commit without rewriting earlier authorship.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "id": uuid("Fresh rebase commit ID."), "message": str("Describe resolution."), "resolutions": list(resolution, 100)}, "workspace_id", "expected_version", "expected_head", "id")),
+			tool("catalog_workspace_rebase", "Replay pending edits onto a frozen commit or current catalog head. Optional order selects and reorders edits; [] drops all. Preserve earlier resolutions with commit_id when a later step conflicts. Originals, authors and replacement links are retained; no facts are published.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "id": uuid("Fresh rebase commit ID."), "message": str("Describe resolution."), "onto_commit_id": uuid("Frozen replay base; omit for current catalog head."), "order": list(uuid("Pending edit commit ID in replay order. An empty list drops all pending edits."), 1000), "resolutions": list(resolution, 100)}, "workspace_id", "expected_version", "expected_head", "id")),
 			tool("catalog_pull_request_create", "Open or update a PR for the current committed working-copy head.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "title": str("Pull request title.")}, "workspace_id", "expected_version", "expected_head")),
 			tool("catalog_pull_request_list", "List pull requests visible to the caller, following total and offset.", object(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"open", "merged", "closed"}}, "workspace_id": workspaceID, "limit": integer(1, 100), "offset": integer(0, 1000000)})),
 			tool("catalog_pull_request_get", "Read a visible PR, commits and proposed changes.", object(map[string]any{"pull_request_id": uuid("Pull request ID.")}, "pull_request_id")),
@@ -118,7 +118,7 @@ func assistantToolDefinitions() []map[string]any {
 			"text_offset": integer(0, 2097152), "max_chars": integer(1, 60000),
 		}, "site")),
 	}
-	return append(definitions, workspaceTools()...)
+	return append(append(definitions, workspaceTools()...), assistantVersionToolDefinitions()...)
 }
 
 func decodeAssistantToolArgs(raw json.RawMessage, out any) error {
@@ -183,6 +183,14 @@ func boundedAssistantToolOutput(value any) (any, error) {
 				out.Commit = &commit
 			}
 			return map[string]any{"workspace": out.Workspace, "commit": out.Commit, "details_omitted": true, "editable_snapshot": false}, nil
+		case catalog.WorkspaceVersionResult:
+			out.Workspace.Objects = nil
+			if out.Commit != nil {
+				copy := *out.Commit
+				copy.Changes = nil
+				out.Commit = &copy
+			}
+			return map[string]any{"workspace": out.Workspace, "commit": out.Commit, "details_omitted": true, "editable_snapshot": false}, nil
 		case catalog.PullRequest:
 			out.Changes = nil
 			out.Commits = nil
@@ -207,6 +215,9 @@ func runCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, name 
 func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, name string, args json.RawMessage) (any, error) {
 	if s == nil {
 		return nil, errors.New("catalog_unavailable")
+	}
+	if strings.HasPrefix(name, "catalog_version_") {
+		return executeVersionTool(ctx, s, u, name, args)
 	}
 	switch name {
 	case "catalog_search":
@@ -451,11 +462,17 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 	case "catalog_workspace_commits":
 		var in struct {
 			WorkspaceID string `json:"workspace_id"`
+			Limit       *int   `json:"limit"`
+			Offset      int    `json:"offset"`
 		}
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.WorkspaceCommits(ctx, in.WorkspaceID, u)
+		limit, err := assistantCollaborationPageLimit(in.Limit, in.Offset)
+		if err != nil {
+			return nil, err
+		}
+		return s.VersionHistory(ctx, in.WorkspaceID, limit, in.Offset, u)
 	case "catalog_pull_request_create":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")

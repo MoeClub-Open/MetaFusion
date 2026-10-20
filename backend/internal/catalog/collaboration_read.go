@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/lib/pq"
 )
 
 func collaborationPage(limit, offset int) (int, int) {
@@ -129,11 +130,24 @@ func collaborationIDs(ctx context.Context, q queryer, query string, args ...any)
 
 func collaborationCommitFrom(ctx context.Context, q queryer, id string) (CollaborationCommit, error) {
 	var c CollaborationCommit
-	err := q.QueryRowContext(ctx, `SELECT id::text,workspace_id::text,parent_id::text,actor_id,
+	err := q.QueryRowContext(ctx, `SELECT id::text,workspace_id::text,parent_id::text,COALESCE(NULLIF(author_snapshot->>'id',''),actor_id),
 		COALESCE(NULLIF(author_snapshot->>'username',''),actor_id),message,kind,created_at,
-		merged_at,merged_by,pull_request_id::text FROM catalog.commits WHERE id=$1`, id).
+		merged_at,merged_by,pull_request_id::text,merge_parent_id::text,snapshot_scope FROM catalog.commits WHERE id=$1`, id).
 		Scan(&c.ID, &c.WorkspaceID, &c.ParentID, &c.Author.ID, &c.Author.Name, &c.Message,
-			&c.Kind, &c.CreatedAt, &c.MergedAt, &c.MergedBy, &c.PullRequestID)
+			&c.Kind, &c.CreatedAt, &c.MergedAt, &c.MergedBy, &c.PullRequestID, &c.MergeParentID, &c.SnapshotScope)
+	if err != nil {
+		return c, err
+	}
+	if err = q.QueryRowContext(ctx, `SELECT actor_id,COALESCE(NULLIF(author_snapshot->>'committer_name',''),NULLIF(author_snapshot->>'username',''),actor_id) FROM catalog.commits WHERE id=$1`, id).Scan(&c.Committer.ID, &c.Committer.Name); err != nil {
+		return c, err
+	}
+	if err = q.QueryRowContext(ctx, `SELECT operation,source_ids FROM catalog.commit_operations WHERE commit_id=$1`, id).Scan(&c.Operation, pq.Array(&c.SourceIDs)); err != nil {
+		return c, err
+	}
+	if c.SourceIDs == nil {
+		c.SourceIDs = []string{}
+	}
+	c.ReplacedBy, err = collaborationIDs(ctx, q, `SELECT replacement_id::text FROM catalog.commit_replacements WHERE original_id=$1 ORDER BY replacement_id`, id)
 	if err != nil {
 		return c, err
 	}
@@ -177,11 +191,11 @@ func collaborationCommitFrom(ctx context.Context, q queryer, id string) (Collabo
 }
 
 func workspaceCommitsFrom(ctx context.Context, q queryer, id string, pendingOnly bool) ([]CollaborationCommit, error) {
-	query := `SELECT id::text FROM catalog.commits WHERE workspace_id=$1`
+	query := `SELECT commit_id::text FROM catalog.workspace_commits WHERE workspace_id=$1 AND active`
 	if pendingOnly {
-		query += ` AND merged_at IS NULL`
+		query += ` AND NOT integrated`
 	}
-	ids, err := collaborationIDs(ctx, q, query+` ORDER BY created_at,id`, id)
+	ids, err := collaborationIDs(ctx, q, query+` ORDER BY position`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -235,8 +249,8 @@ const collaborationCommitPublicPredicate = `c.merged_at IS NOT NULL AND COALESCE
 ),false)`
 
 const collaborationPullRequestPublicPredicate = `p.status='merged'
-	AND EXISTS(SELECT 1 FROM catalog.commits c WHERE c.pull_request_id=p.id)
-	AND NOT EXISTS(SELECT 1 FROM catalog.commits c WHERE c.pull_request_id=p.id AND NOT (` + collaborationCommitPublicPredicate + `))`
+	AND EXISTS(SELECT 1 FROM catalog.pull_request_commits pc WHERE pc.pull_request_id=p.id)
+	AND NOT EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.commits c ON c.id=pc.commit_id WHERE pc.pull_request_id=p.id AND NOT (` + collaborationCommitPublicPredicate + `))`
 
 func collaborationCommitPublic(ctx context.Context, q queryer, id string) (bool, error) {
 	var public bool
@@ -249,17 +263,7 @@ func reviewerCanReadCommit(ctx context.Context, q queryer, id, workspaceID strin
 		return false, nil
 	}
 	var allowed bool
-	err := q.QueryRowContext(ctx, `WITH RECURSIVE submitted AS (
-		SELECT p.id AS pr_id,p.source_base_id,c.id,c.parent_id,ARRAY[c.id] AS path
-		FROM catalog.pull_requests p JOIN catalog.commits c ON c.id=p.source_head_id
-		WHERE p.workspace_id=$2 AND c.workspace_id=p.workspace_id
-			AND (p.source_base_id IS NULL OR c.id<>p.source_base_id)
-		UNION ALL
-		SELECT submitted.pr_id,submitted.source_base_id,c.id,c.parent_id,submitted.path||c.id
-		FROM submitted JOIN catalog.commits c ON c.id=submitted.parent_id
-		WHERE c.workspace_id=$2 AND (submitted.source_base_id IS NULL OR c.id<>submitted.source_base_id)
-			AND NOT c.id=ANY(submitted.path)
-	) SELECT EXISTS(SELECT 1 FROM submitted WHERE id=$1)`, id, workspaceID).Scan(&allowed)
+	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.pull_requests p ON p.id=pc.pull_request_id WHERE pc.commit_id=$1 AND p.workspace_id=$2)`, id, workspaceID).Scan(&allowed)
 	return allowed, err
 }
 
@@ -276,22 +280,15 @@ func (s *Store) GetCollaborationCommit(ctx context.Context, id string, u User) (
 	if err != nil {
 		return CollaborationCommit{}, err
 	}
-	allowed := false
-	if c.MergedAt != nil {
-		allowed, err = collaborationCommitPublic(ctx, tx, id)
-	} else if c.WorkspaceID != nil {
-		allowed, err = workspaceReadable(ctx, tx, *c.WorkspaceID, u, false)
-		if err == nil && !allowed {
-			allowed, err = reviewerCanReadCommit(ctx, tx, id, *c.WorkspaceID, u)
-		}
-	} else {
-		allowed = collaborationUser(u) == nil && c.Author.ID == u.ID
-	}
+	allowed, err := versionCommitReadable(ctx, tx, id, u)
 	if err != nil {
 		return CollaborationCommit{}, err
 	}
 	if !allowed {
 		return CollaborationCommit{}, sql.ErrNoRows
+	}
+	if err = visibleVersionLinks(ctx, tx, &c, u); err != nil {
+		return CollaborationCommit{}, err
 	}
 	return c, tx.Commit()
 }
@@ -319,17 +316,7 @@ func (s *Store) WorkspaceCommits(ctx context.Context, id string, u User) ([]Coll
 func pullRequestCommitsFrom(ctx context.Context, q queryer, p PullRequest) ([]CollaborationCommit, error) {
 	// The base is exclusive. Only immutable ancestors of the submitted head can
 	// enter a review; later commits and uncommitted workspace changes are absent.
-	ids, err := collaborationIDs(ctx, q, `WITH RECURSIVE chain AS (
-		SELECT id,parent_id,workspace_id,0 AS depth,ARRAY[id] AS path FROM catalog.commits
-		WHERE id=$1 AND workspace_id=$2 AND ($3::uuid IS NULL OR id<>$3)
-		UNION ALL
-		SELECT c.id,c.parent_id,c.workspace_id,chain.depth+1,chain.path||c.id
-		FROM catalog.commits c JOIN chain ON c.id=chain.parent_id
-		WHERE c.workspace_id=$2 AND ($3::uuid IS NULL OR c.id<>$3) AND NOT c.id=ANY(chain.path)
-	)
-	SELECT chain.id::text FROM chain JOIN catalog.commits c ON c.id=chain.id
-	WHERE $4::text<>'merged' OR c.pull_request_id=$5::uuid ORDER BY chain.depth DESC`,
-		p.SourceHeadID, p.WorkspaceID, p.SourceBaseID, p.Status, p.ID)
+	ids, err := collaborationIDs(ctx, q, `SELECT commit_id::text FROM catalog.pull_request_commits WHERE pull_request_id=$1 ORDER BY position`, p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -395,6 +382,11 @@ func pullRequestFrom(ctx context.Context, q queryer, id string, u User, lock boo
 	p.Commits, err = pullRequestCommitsFrom(ctx, q, p)
 	if err != nil {
 		return PullRequest{}, err
+	}
+	for i := range p.Commits {
+		if err = visibleVersionLinks(ctx, q, &p.Commits[i], u); err != nil {
+			return PullRequest{}, err
+		}
 	}
 	p.Changes = pullRequestChanges(p.Commits)
 	return p, nil

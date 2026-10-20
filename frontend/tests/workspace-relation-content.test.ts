@@ -9,7 +9,7 @@ const relation = (id: string, position = 0) => ({
 });
 const workspace = (objects: WorkspaceObject[]): Workspace => ({
   id: "copy", owner_id: "owner", name: "Working copy", version: 6, head_commit_id: null, state: "active",
-  members: [], objects, dirty_count: objects.length, created_at: "", updated_at: "",
+  members: [], objects, base_commit_id: null, pending_commits: 0, dirty_count: objects.length, created_at: "", updated_at: "",
 });
 const object = (id: string, document: WorkspaceObject["document"], base: WorkspaceObject["base"] = null): WorkspaceObject => ({
   target: "relation", id, base_version: base ? 3 : 0, base, committed: base, document, dirty: true,

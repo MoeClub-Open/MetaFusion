@@ -80,9 +80,14 @@ func addCollaborationOpenAPI(paths, schemas map[string]any, schema func(reflect.
 	props("PullRequestEdit")["status"] = map[string]any{"type": "string", "enum": []string{"open", "closed"}}
 	props("WorkspaceCommitCreate")["id"] = uuid
 	props("WorkspaceRebase")["id"] = uuid
+	props("WorkspaceRebase")["onto_commit_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Frozen replay base. Omit to use the current catalog head."}
+	props("WorkspaceRebase")["order"] = map[string]any{"type": "array", "items": uuid, "uniqueItems": true, "description": "Selected pending edit commits in replay order. Omit to replay all; [] drops all pending edits. Originals and replacement links are retained."}
+	props("WorkspaceConflict")["source_commit_id"] = uuid
+	props("WorkspaceResolution")["commit_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Copy source_commit_id from the conflict to identify the replay step. Retain earlier resolutions when a later step conflicts."}
 	props("PullRequestCreate")["workspace_id"] = uuid
 	props("CollaborationCommit")["kind"] = map[string]any{"type": "string", "enum": []string{"edit", "rebase"}}
-	props("CollaborationCommit")["author"].(map[string]any)["description"] = "Authenticated caller who created this commit."
+	props("CollaborationCommit")["author"].(map[string]any)["description"] = "Primary content author, preserved through mechanical replay."
+	props("CollaborationCommit")["committer"].(map[string]any)["description"] = "Authenticated caller who created this immutable commit. Separate from original authors and merger."
 	props("CollaborationCommit")["authors"].(map[string]any)["description"] = "Frozen contributors to the staged edits; retained through merge independently of the commit caller and merger."
 	props("WorkspaceConflict")["pointer"] = map[string]any{"type": "string", "description": "Conflicting JSON Pointer; an empty pointer denotes the whole object."}
 	for _, field := range []string{"base_present", "current_present", "proposed_present"} {
@@ -122,9 +127,7 @@ func addCollaborationOpenAPI(paths, schemas map[string]any, schema func(reflect.
 		sort.Strings(keys)
 		required(name, keys...)
 	}
-	for name, item := range map[string]string{"WorkspaceCommitList": "CollaborationCommit"} {
-		schemas[name] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"items"}, "properties": map[string]any{"items": map[string]any{"type": "array", "items": ref(item)}}}
-	}
+
 	schemas["WorkspaceConflictResponse"] = map[string]any{
 		"type": "object", "additionalProperties": false, "required": []string{"error", "applied", "conflicts"},
 		"properties": map[string]any{
@@ -144,10 +147,10 @@ func addCollaborationOpenAPI(paths, schemas map[string]any, schema func(reflect.
 		{"/catalog/workspaces/{id}/checkout", "post", "Add current visible entity and relation snapshots to the private workspace; existing edited objects are preserved.", "WorkspaceCheckout", "Workspace"},
 		{"/catalog/workspaces/{id}/changes", "put", "Stage up to 100 ordered edits atomically in the private workspace. Repeated saves may be committed together. Stable create IDs remain usable by later commits. No catalog facts are changed; source evidence and identity verification are not prerequisites.", "WorkspaceChanges", "WorkspaceChangesResult"},
 		{"/catalog/workspaces/{id}/members", "put", "Replace workspace collaborators by user UUID; only its owner may change membership. Members edit the same private copy with version checks.", "WorkspaceMembersEdit", "Workspace"},
-		{"/catalog/workspaces/{id}/commits", "get", "Owner/member-only read of the complete immutable workspace commit history, ordered by creation time and UUID ascending. Reviewers access only the frozen submitted chain through the pull request.", "", "WorkspaceCommitList"},
+		{"/catalog/workspaces/{id}/commits", "get", "List active branch history newest first, with total/limit/offset pagination. Retained rewritten commits remain available through operation history and replacement links.", "", "CommitPage"},
 		{"/catalog/workspaces/{id}/commits", "post", "Commit all staged changes as one immutable snapshot. Freeze all staged contributors separately from the authenticated commit caller. The client UUID provides durable retry identity. Further workspace edits become a later commit; catalog facts remain unchanged.", "WorkspaceCommitCreate", "CollaborationCommit"},
 		{"/catalog/workspaces/{id}/push", "post", "Push the exact committed workspace head. Account review exemption applies its net changes atomically; otherwise creates or updates a pull request with 202 and applied=false. Uncommitted changes block push. Both paths use the same three-way merger and preserve original commit authors.", "WorkspacePush", "WorkspacePushResult"},
-		{"/catalog/workspaces/{id}/rebase", "post", "Rebase committed net changes onto current catalog facts. Disjoint changes merge automatically; explicit resolutions carry current_version and create a new immutable commit. A rebase never applies catalog facts.", "WorkspaceRebase", "WorkspaceRebaseResult"},
+		{"/catalog/workspaces/{id}/rebase", "post", "Replay selected pending edits onto a frozen commit or current catalog head, preserving original authors and replacement links. Optional order reorders or drops commits. Disjoint body lines merge automatically; conflicts roll back the entire replay. A rebase never applies catalog facts.", "WorkspaceRebase", "WorkspaceRebaseResult"},
 		{"/catalog/pull-requests", "get", "List accessible pull requests with status and workspace filters, total and limit/offset pagination. Anonymous callers see merged requests only when every target remains public. Signed-in workspace owners, members and reviewers also see their accessible unmerged requests. Newest updated first and then UUID descending.", "", "PullRequestPage"},
 		{"/catalog/pull-requests", "post", "Open or update a pull request for an exact committed workspace head. Creating a request never applies catalog facts.", "PullRequestCreate", "PullRequest"},
 		{"/catalog/pull-requests/{id}", "get", "Read an accessible pull request, original authored commits and frozen proposed net changes. source_base_id is the exclusive frozen ancestry boundary and source_head_id is included. A merged request is anonymously readable only while every target remains public; otherwise anonymous callers receive 404. Unmerged requests require workspace owner, membership or catalog.review.manage.", "", "PullRequest"},
@@ -193,6 +196,9 @@ func addCollaborationOpenAPI(paths, schemas map[string]any, schema func(reflect.
 				params = append(params, map[string]any{"name": name, "in": "path", "required": true, "schema": uuid})
 			}
 			op["parameters"] = params
+		}
+		if path == "/catalog/workspaces/{id}/commits" && method == "get" {
+			op["parameters"] = append(op["parameters"].([]any), versionPageParameters()...)
 		}
 		if path == "/catalog/workspaces/{id}/push" {
 			op["responses"].(map[string]any)["202"] = response("WorkspacePushResult", "Accepted as a pull request; applied=false and current catalog facts unchanged.")

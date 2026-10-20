@@ -61,9 +61,10 @@ func (s *Store) workspaceAssetPreview(ctx context.Context, workspaceID, assetID 
 		SELECT target_id,base_document AS document FROM catalog.workspace_objects WHERE workspace_id=$1 AND target='entity'
 		UNION ALL SELECT target_id,head_document FROM catalog.workspace_objects WHERE workspace_id=$1 AND target='entity'
 		UNION ALL SELECT target_id,document FROM catalog.workspace_objects WHERE workspace_id=$1 AND target='entity'
-		UNION ALL SELECT o.target_id,v.document FROM catalog.commit_objects o JOIN catalog.commits c ON c.id=o.commit_id
+		UNION ALL SELECT o.target_id,v.document FROM catalog.commit_objects o JOIN catalog.workspace_commits c ON c.commit_id=o.commit_id
 		CROSS JOIN LATERAL (VALUES(o.base_document),(o.before_document),(o.after_document)) v(document)
 		WHERE c.workspace_id=$1 AND o.target='entity'
+		UNION ALL SELECT o.target_id,v.document FROM catalog.commit_snapshots o JOIN catalog.workspace_commits c ON c.commit_id=o.commit_id CROSS JOIN LATERAL(VALUES(o.base_document),(o.document)) v(document) WHERE c.workspace_id=$1 AND o.target='entity'
 	) refs WHERE COALESCE(document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',$2::text))
 	ORDER BY target_id LIMIT 1`, workspaceID, assetID).Scan(&entityID)
 	if err != nil {
@@ -104,7 +105,7 @@ func (s *Store) commitAssetPreview(ctx context.Context, id, assetID string, u Us
 		return catalogAssetPreviewReference{}, err
 	}
 	if commit.WorkspaceID == nil {
-		return catalogAssetPreviewReference{}, sql.ErrNoRows
+		return s.catalogVersionAssetPreview(ctx, id, assetID, commit, u)
 	}
 	for _, change := range commit.Changes {
 		if change.Target != "entity" {
@@ -112,6 +113,22 @@ func (s *Store) commitAssetPreview(ctx context.Context, id, assetID string, u Us
 		}
 		if ref, ok := previewReferenceInDocuments(*commit.WorkspaceID, change.ID, assetID, change.Base, change.Before, change.After); ok {
 			return ref, nil
+		}
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		return catalogAssetPreviewReference{}, err
+	}
+	defer tx.Rollback()
+	objects, _, err := readableVersionSnapshot(ctx, tx, id, u)
+	if err != nil {
+		return catalogAssetPreviewReference{}, err
+	}
+	for _, o := range objects {
+		if o.Target == "entity" {
+			if ref, ok := previewReferenceInDocuments(*commit.WorkspaceID, o.ID, assetID, o.Base, o.Document); ok {
+				return ref, tx.Commit()
+			}
 		}
 	}
 	return catalogAssetPreviewReference{}, sql.ErrNoRows

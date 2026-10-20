@@ -90,6 +90,10 @@ func TestEveryWriteRouteIsRegisteredOrReasonedExempt(t *testing.T) {
 // 改任何一个已有码都会让本用例失败——那是要契约层面批准的变更，不是顺手重命名。
 func TestAuditActionCodesAreStable(t *testing.T) {
 	want := map[string]string{
+		"POST /api/catalog/workspaces/fork":          "workspace.forked",
+		"POST /api/catalog/workspaces/:id/version":   "workspace.version_changed",
+		"POST /api/catalog/workspaces/:id/tags":      "workspace.tag_changed",
+		"POST /api/catalog/workspaces/:id/stashes":   "workspace.stash_changed",
 		"POST /api/catalog/workspaces":               "workspace.created",
 		"PATCH /api/catalog/workspaces/:id":          "workspace.updated",
 		"POST /api/catalog/workspaces/:id/checkout":  "workspace.checked_out",

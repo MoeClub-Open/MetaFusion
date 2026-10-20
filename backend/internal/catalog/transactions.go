@@ -43,6 +43,9 @@ func (s *Store) writeCatalog(ctx context.Context, fn func(*sql.Tx) error) error 
 			if err = fn(tx); err != nil {
 				return err
 			}
+			if err = finalizeCatalogVersion(ctx, tx); err != nil {
+				return err
+			}
 			return tx.Commit()
 		}()
 		if !retryableCatalogTransaction(err) {

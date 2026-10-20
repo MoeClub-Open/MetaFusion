@@ -7,6 +7,7 @@ import { languageLabel } from "@/lib/languages";
 import { safeExternalAuthorityURL } from "@/lib/externalAuthorityURL";
 import { CatalogArticle } from "./CatalogArticle";
 import { FieldValue } from "./TemplateAttributeSections";
+import { catalogPicturePreviewUrl, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
 
 function record(value: unknown): Record<string, any> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : undefined;
@@ -24,8 +25,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 // 只读取传入的历史文档。定义只负责字段名称/取值格式，不补取当前条目、关系或 AI 正文。
-export function RevisionSnapshotContent({ snapshot, definitions, kinds = {} }: {
+export function RevisionSnapshotContent({ snapshot, definitions, kinds = {}, assetContext }: {
   snapshot: unknown;
+  assetContext?: CatalogAssetContext;
   definitions?: DynamicDefinitions | null;
   kinds?: KindMap;
 }) {
@@ -118,7 +120,7 @@ export function RevisionSnapshotContent({ snapshot, definitions, kinds = {} }: {
 
     {pictures.length > 0 && <Section title={t("revisions.fieldPictures")}>
       <div className="flex flex-wrap items-start gap-4">{pictures.map((picture, index) => {
-        const url = typeof picture.url === "string" ? picture.url : "";
+        const url = catalogPicturePreviewUrl(picture, assetContext);
         const src = safeExternalAuthorityURL(url) || (/^\/(?!\/)/.test(url) ? url : "");
         return <figure key={index} className="max-w-full space-y-2">
           {src && <a href={src} target="_blank" rel="noopener noreferrer"><img src={src} alt={resolveLocalizedName(picture.caption, locale, "")} loading="lazy" className="h-auto max-h-64 w-auto max-w-full rounded-lg" /></a>}
@@ -148,7 +150,7 @@ export function RevisionSnapshotContent({ snapshot, definitions, kinds = {} }: {
   </div>;
 }
 
-export function RevisionSnapshotView({ snapshot }: { snapshot: unknown }) {
+export function RevisionSnapshotView({ snapshot, assetContext }: { snapshot: unknown; assetContext?: CatalogAssetContext }) {
   const { definitions, kinds } = useDefinitions();
-  return <RevisionSnapshotContent snapshot={snapshot} definitions={definitions} kinds={kinds} />;
+  return <RevisionSnapshotContent snapshot={snapshot} definitions={definitions} kinds={kinds} assetContext={assetContext} />;
 }

@@ -3,6 +3,16 @@
 // 后端返回的是稳定错误码（translation_required / parent_required …）。直接把码丢给用户等于没解释，
 // 所以这里统一映射成人话；未知码才回退原文，避免把没覆盖的码伪装成已解释。
 const CODE_KEYS: Record<string, string> = {
+  published_history: "versioning.error.published",
+  invalid_commit_range: "versioning.error.range",
+  invalid_version_operation: "versioning.error.operation",
+  invalid_version_request: "versioning.error.operation",
+  invalid_rebase_target: "versioning.error.operation",
+  invalid_version_target: "versioning.error.operation",
+  invalid_reset_mode: "versioning.error.operation",
+  invalid_version_tag: "versioning.error.tag",
+  invalid_stash_operation: "versioning.error.stash",
+  invalid_stash_id: "versioning.error.stash",
   relation_scope_mismatch: "catalog.error.relationScope",
   relation_reference_scope_mismatch: "catalog.error.relationReferenceScope",
   duplicate_relation_position: "catalog.error.relationPosition",

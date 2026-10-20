@@ -256,7 +256,7 @@ WITH candidate_commits AS (
     SELECT c.id::text AS id,CASE WHEN n.all_public THEN c.id::text END AS commit_id,
            CASE WHEN n.all_public THEN c.message ELSE '' END AS message,
            c.created_at AS authored_at,c.merged_at,
-           c.actor_id AS author_id,COALESCE(NULLIF(c.author_snapshot->>'username',''),c.actor_id) AS author_name,
+           COALESCE(NULLIF(c.author_snapshot->>'id',''),c.actor_id) AS author_id,COALESCE(NULLIF(c.author_snapshot->>'username',''),c.actor_id) AS author_name,
            (SELECT jsonb_agg(jsonb_build_object('id',a.user_id,'name',COALESCE(NULLIF(a.name,''),a.user_id)) ORDER BY a.user_id)
             FROM catalog.commit_authors a WHERE a.commit_id=c.id) AS authors,
            NULLIF(c.merged_by,'') AS merged_by,

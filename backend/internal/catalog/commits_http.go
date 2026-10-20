@@ -45,7 +45,7 @@ func respondCollaboration(c *gin.Context, value any, err error) {
 	}
 	if err != nil {
 		code := err.Error()
-		if strings.HasSuffix(code, "_version_conflict") || strings.HasSuffix(code, "_head_conflict") || contains([]string{"uncommitted_changes", "pull_request_merged", "pull_request_closed", "workspace_archived", "no_changes", "workspace_head_required", "resolution_stale"}, code) {
+		if strings.HasSuffix(code, "_version_conflict") || strings.HasSuffix(code, "_head_conflict") || contains([]string{"uncommitted_changes", "pull_request_merged", "pull_request_closed", "workspace_archived", "no_changes", "workspace_head_required", "resolution_stale", "published_history"}, code) {
 			auditlog.Fail(c, code)
 			c.JSON(409, gin.H{"error": code, "applied": false})
 			return
@@ -67,6 +67,7 @@ func collaborationPagination(c *gin.Context) (int, int, error) {
 
 func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 	s := h.Store
+	h.registerVersioning(cat)
 	cat.POST("/workspaces", required(""), func(c *gin.Context) {
 		var in WorkspaceCreate
 		if !body(c, &in) {
@@ -156,8 +157,13 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		respondCollaboration(c, out, err)
 	})
 	cat.GET("/workspaces/:id/commits", required(""), func(c *gin.Context) {
-		out, err := s.WorkspaceCommits(c.Request.Context(), c.Param("id"), *user(c))
-		respondCollaboration(c, gin.H{"items": out}, err)
+		limit, offset, err := collaborationPagination(c)
+		if err != nil {
+			respond(c, nil, err)
+			return
+		}
+		out, err := s.VersionHistory(c.Request.Context(), c.Param("id"), limit, offset, *user(c))
+		respondCollaboration(c, out, err)
 	})
 	cat.POST("/workspaces/:id/push", required(""), func(c *gin.Context) {
 		var in WorkspacePush

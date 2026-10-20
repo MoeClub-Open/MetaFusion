@@ -423,6 +423,7 @@ func OpenAPI() map[string]any {
 		map[string]any{"name": "page_size", "in": "query", "description": "Items per page; missing or values outside 1..100 fall back to 20.", "schema": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
 	}
 	addCollaborationOpenAPI(paths, schemas, schema)
+	addVersioningOpenAPI(paths, schemas, schema)
 
 	for path, item := range publicSourcePaths() {
 		paths[path] = item

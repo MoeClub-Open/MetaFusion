@@ -8,7 +8,7 @@ import type { Workspace } from "../src/lib/api/collaboration";
 function copy(id = "workspace", owner = "author"): Workspace {
   return { id, owner_id: owner, name: "", version: 3, head_commit_id: null, state: "active", members: [],
     objects: [{ target: "entity", id: "entity", base_version: 1, base: { title: "old" }, committed: { title: "old" }, document: { title: "old" }, dirty: false }],
-    dirty_count: 0, created_at: "2026-10-18T00:00:00Z", updated_at: "2026-10-18T00:00:00Z" };
+    base_commit_id: null, pending_commits: 0, dirty_count: 0, created_at: "2026-10-18T00:00:00Z", updated_at: "2026-10-18T00:00:00Z" };
 }
 
 test("editor excludes server fields and patches locales independently", () => {

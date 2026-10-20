@@ -22,6 +22,10 @@ import (
 // 覆盖守卫测试（audit_routes_test.go）遍历真实路由树，保证新增写端点不会漏登记。
 func AuditActions() map[string]string {
 	return map[string]string{
+		"POST /api/catalog/workspaces/fork":          "workspace.forked",
+		"POST /api/catalog/workspaces/:id/version":   "workspace.version_changed",
+		"POST /api/catalog/workspaces/:id/tags":      "workspace.tag_changed",
+		"POST /api/catalog/workspaces/:id/stashes":   "workspace.stash_changed",
 		"POST /api/catalog/workspaces":               "workspace.created",
 		"PATCH /api/catalog/workspaces/:id":          "workspace.updated",
 		"POST /api/catalog/workspaces/:id/checkout":  "workspace.checked_out",
