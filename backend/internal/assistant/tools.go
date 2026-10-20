@@ -76,7 +76,7 @@ func assistantToolDefinitions() []map[string]any {
 			tool("catalog_workspace_stage", "Save one or more operations to the working copy; this does not change public records. Repeat staging across records before committing. Sources and candidate review are optional, never a prerequisite.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "operations": list(operation, 25)}, "workspace_id", "expected_version", "operations")),
 			tool("catalog_workspace_members", "Set the working copy's collaborators using actual user IDs. Only the owner may change membership.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "user_ids": list(str("User ID."), 25)}, "workspace_id", "expected_version", "user_ids")),
 			tool("catalog_workspace_commit", "Commit all staged changes as an immutable authored commit. The main catalog is unchanged. Keep the UUID for recovery; on an unknown result read catalog_commit_get instead of resubmitting.", object(map[string]any{"workspace_id": workspaceID, "id": uuid("Fresh immutable commit ID."), "expected_version": version, "message": str("Describe the changes.")}, "workspace_id", "id", "expected_version", "message")),
-			tool("catalog_workspace_commits", "Read active branch commits newest first. Follow total/limit/offset.", object(map[string]any{"workspace_id": workspaceID, "limit": integer(1, 100), "offset": integer(0, 1000000)}, "workspace_id")),
+			tool("catalog_workspace_commits", "Read branch commits newest first, with record, author and time filters. state=active (default), pending, integrated, replaced or all. Follow total/limit/offset.", object(map[string]any{"workspace_id": workspaceID, "limit": integer(1, 100), "offset": integer(0, 1000000), "target": map[string]any{"type": "string", "enum": []string{"entity", "relation"}}, "record_id": uuid("Record ID."), "author_id": uuid("Original participant ID."), "since": str("Inclusive RFC3339 creation time."), "until": str("Exclusive RFC3339 creation time."), "state": map[string]any{"type": "string", "enum": []string{"active", "pending", "integrated", "replaced", "all"}}}, "workspace_id")),
 			tool("catalog_workspace_push", "Push committed changes without another user confirmation. A caller with bypass permission merges; other callers create or update a PR. Only applied=true changes the main catalog. Inspect all returned commits and pull_request.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "title": str("Pull request title.")}, "workspace_id", "expected_version", "expected_head")),
 			tool("catalog_workspace_rebase", "Replay pending edits onto a frozen commit or current catalog head. Optional order selects and reorders edits; [] drops all. Preserve earlier resolutions with commit_id when a later step conflicts. Originals, authors and replacement links are retained; no facts are published.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "id": uuid("Fresh rebase commit ID."), "message": str("Describe resolution."), "onto_commit_id": uuid("Frozen replay base; omit for current catalog head."), "order": list(uuid("Pending edit commit ID in replay order. An empty list drops all pending edits."), 1000), "resolutions": list(resolution, 100)}, "workspace_id", "expected_version", "expected_head", "id")),
 			tool("catalog_pull_request_create", "Open or update a PR for the current committed working-copy head.", object(map[string]any{"workspace_id": workspaceID, "expected_version": version, "expected_head": head, "title": str("Pull request title.")}, "workspace_id", "expected_version", "expected_head")),
@@ -463,7 +463,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		var in struct {
 			WorkspaceID string `json:"workspace_id"`
 			Limit       *int   `json:"limit"`
-			Offset      int    `json:"offset"`
+			catalog.VersionHistoryQuery
 		}
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
@@ -472,7 +472,8 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err != nil {
 			return nil, err
 		}
-		return s.VersionHistory(ctx, in.WorkspaceID, limit, in.Offset, u)
+		in.VersionHistoryQuery.Limit = limit
+		return s.VersionHistory(ctx, in.WorkspaceID, in.VersionHistoryQuery, u)
 	case "catalog_pull_request_create":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")

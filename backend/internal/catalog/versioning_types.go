@@ -5,6 +5,22 @@ import (
 	"time"
 )
 
+type RevisionQuery struct {
+	Limit    int    `json:"limit,omitempty"`
+	Offset   int    `json:"offset,omitempty"`
+	Version  int64  `json:"version,omitempty"`
+	AuthorID string `json:"author_id,omitempty"`
+	Since    string `json:"since,omitempty"`
+	Until    string `json:"until,omitempty"`
+}
+
+type RevisionPage struct {
+	Items  []map[string]any `json:"items"`
+	Total  int64            `json:"total"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
+}
+
 type WorkspaceFork struct {
 	EntityIDs   []string `json:"entity_ids,omitempty"`
 	RelationIDs []string `json:"relation_ids,omitempty"`

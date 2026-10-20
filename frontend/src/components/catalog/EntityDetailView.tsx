@@ -153,6 +153,11 @@ export function EntityDetailView({ id }: { id: string }) {
   const [loadedChildren, setChildren] = useState<Entity[]>([]);
   const children = isCurrentRead ? loadedChildren : [];
   const [revisions, setRevisions] = useState<any[]>([]);
+  const [revisionTotal, setRevisionTotal] = useState(0);
+  const [revisionOffset, setRevisionOffset] = useState(0);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [revisionsError, setRevisionsError] = useState(false);
+  const revisionsBusyRef = useRef(false);
   const [loadedSectionFailures, setSectionFailures] = useState<Record<string, boolean>>({});
   const sectionFailures = isCurrentRead ? loadedSectionFailures : {};
   const [subjectWorks, setSubjectWorks] = useState<Entity[]>([]);
@@ -193,6 +198,30 @@ export function EntityDetailView({ id }: { id: string }) {
   // Modal 的副作用依赖 onClose 的身份：给它稳定引用，否则每次翻图都会重挂副作用并抢焦点。
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
 
+  const loadOlderRevisions = async () => {
+    if (!entity?.id || revisionsBusyRef.current || revisionOffset >= revisionTotal) return;
+    const key = readKey;
+    const sequence = loadSequenceRef.current;
+    const current = () => currentReadKeyRef.current === key && loadSequenceRef.current === sequence;
+    revisionsBusyRef.current = true;
+    setRevisionsLoading(true);
+    setRevisionsError(false);
+    try {
+      const page = await api<{ items: any[]; total: number; offset: number }>(`/catalog/entities/${entity.id}/revisions?offset=${revisionOffset}`);
+      if (!current()) return;
+      setRevisions((items) => [...items, ...page.items.filter((item) => !items.some((previous) => previous.id === item.id))]);
+      setRevisionTotal(page.total);
+      setRevisionOffset(page.offset + page.items.length);
+    } catch {
+      if (current()) setRevisionsError(true);
+    } finally {
+      if (current()) {
+        revisionsBusyRef.current = false;
+        setRevisionsLoading(false);
+      }
+    }
+  };
+
   const load = async () => {
     const key = readKey;
     const sequence = ++loadSequenceRef.current;
@@ -213,6 +242,11 @@ export function EntityDetailView({ id }: { id: string }) {
     setRelatedEntities({});
     setRelationSubjectId("");
     setRevisions([]);
+    setRevisionTotal(0);
+    setRevisionOffset(0);
+    setRevisionsLoading(false);
+    setRevisionsError(false);
+    revisionsBusyRef.current = false;
     setCommunityPosts([]);
     setCommunityCollections([]);
     setCommunityPostsFailed(false);
@@ -233,7 +267,7 @@ export function EntityDetailView({ id }: { id: string }) {
       const [occResult, relResult, revResult, posts, collections] = await Promise.all([
         loadCatalogSection(api<{ items: any[] }>(`/catalog/entities/${e.id}/occurrences`), { items: [] }),
         loadCatalogSection(fetchEntityRelationships(e.id!), { items: [] as RelationshipRecord[], entities: {} as Record<string, Entity>, subject_id: e.id || "" }),
-        loadCatalogSection(api<{ items: any[] }>(`/catalog/entities/${e.id}/revisions`), { items: [] }),
+        loadCatalogSection(api<{ items: any[]; total: number; offset: number }>(`/catalog/entities/${e.id}/revisions`), { items: [], total: 0, offset: 0 }),
         // 互动服务没接入（或这两条端点不可用）时整块留空，不阻断条目详情渲染；
         // 端点与请求体由 lib/api/community.ts 的包装负责，本组件不再自己拼 URL。
         fetchEntityPosts(communityId).catch(() => { postsFailed = true; return [] as EntityComment[]; }),
@@ -256,6 +290,8 @@ export function EntityDetailView({ id }: { id: string }) {
       setOccurrences(occItems);
       setRelations(relItems);
       setRevisions(revItems);
+      setRevisionTotal(revRes.total);
+      setRevisionOffset(revRes.offset + revItems.length);
       setCommunityPosts(posts);
       // 空数组 = 服务端确认没有；到这里仍是空且标记了失败 = 取不到——界面上不能混。
       setCommunityPostsFailed(postsFailed);
@@ -636,7 +672,7 @@ export function EntityDetailView({ id }: { id: string }) {
     { id: "resources", label: t("entity.detail.resourcesTitle"), visible: defs?.structure?.[String(entity?.kind || "")]?.resources === true, icon: <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
     { id: "community", label: t("entity.page.communityTitle"), badge: communityPosts.length, visible: communityEnabled, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisions.length, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisionTotal, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ].map((tab) => ({...tab,visible:tab.visible !== false && (!tabBlocks[tab.id] || templateBlocks.includes(tabBlocks[tab.id]))}))
     .sort((a,b) => {
       const rank = (id: string) => id === "overview" ? -1 : id === "revisions" ? templateBlocks.length+1 : id === "community" ? templateBlocks.length : templateBlocks.indexOf(tabBlocks[id]);
@@ -1472,11 +1508,17 @@ export function EntityDetailView({ id }: { id: string }) {
               <SectionTitle icon={<History className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                 {t("entity.page.revisionsHistory")}
                 <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                  {revisions.length}
+                  {revisionTotal}
                 </span>
               </SectionTitle>
 
-<EntityRevisions revisions={revisions} currentEntity={entity} />
+              <EntityRevisions revisions={revisions} currentEntity={entity} />
+              {revisionsError && <p role="alert" className="text-sm text-rose-500">{t("catalog.loadFailed")}</p>}
+              {revisionOffset < revisionTotal && (
+                <button type="button" onClick={loadOlderRevisions} disabled={revisionsLoading} className="inline-flex items-center justify-center rounded-md border border-line px-3 py-2 text-sm text-text-body hover:bg-surfaceSubtle disabled:cursor-default disabled:opacity-50" aria-busy={revisionsLoading}>
+                  {t(revisionsError ? "common.retry" : "versioning.olderHistory")}
+                </button>
+              )}
             </Card>
             )}
 

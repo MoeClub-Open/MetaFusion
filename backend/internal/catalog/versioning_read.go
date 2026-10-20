@@ -165,8 +165,12 @@ func readableVersionSnapshot(ctx context.Context, q queryer, id string, u User) 
 	return objects, scope, nil
 }
 
-func (s *Store) GetCommitSnapshot(ctx context.Context, id string, limit, offset int, u User) (CommitSnapshot, error) {
-	limit, offset = collaborationPage(limit, offset)
+func (s *Store) GetCommitSnapshot(ctx context.Context, id string, query VersionReadQuery, u User) (CommitSnapshot, error) {
+	query, queryErr := query.normalized()
+	if queryErr != nil {
+		return CommitSnapshot{}, queryErr
+	}
+	limit, offset := query.Limit, query.Offset
 	out := CommitSnapshot{CommitID: id, Limit: limit, Offset: offset, Objects: []WorkspaceObject{}}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
@@ -181,7 +185,7 @@ func (s *Store) GetCommitSnapshot(ctx context.Context, id string, limit, offset 
 		return out, err
 	}
 	if scope == "catalog" {
-		out, err = catalogVersionSnapshotPage(ctx, tx, id, limit, offset, u)
+		out, err = catalogVersionSnapshotPage(ctx, tx, id, query, u)
 		if err != nil {
 			return out, err
 		}
@@ -191,6 +195,13 @@ func (s *Store) GetCommitSnapshot(ctx context.Context, id string, limit, offset 
 	if err != nil {
 		return out, err
 	}
+	filtered := []WorkspaceObject{}
+	for _, o := range objects {
+		if query.matches(o.Target, o.ID) {
+			filtered = append(filtered, o)
+		}
+	}
+	objects = filtered
 	out.Scope = scope
 	out.Total = int64(len(objects))
 	if offset < len(objects) {
@@ -199,8 +210,12 @@ func (s *Store) GetCommitSnapshot(ctx context.Context, id string, limit, offset 
 	return out, tx.Commit()
 }
 
-func (s *Store) CompareVersions(ctx context.Context, base, head string, limit, offset int, u User) (VersionComparison, error) {
-	limit, offset = collaborationPage(limit, offset)
+func (s *Store) CompareVersions(ctx context.Context, base, head string, query VersionReadQuery, u User) (VersionComparison, error) {
+	query, queryErr := query.normalized()
+	if queryErr != nil {
+		return VersionComparison{}, queryErr
+	}
+	limit, offset := query.Limit, query.Offset
 	out := VersionComparison{BaseID: base, HeadID: head, Changes: []CommitObject{}, Limit: limit, Offset: offset}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
@@ -215,7 +230,7 @@ func (s *Store) CompareVersions(ctx context.Context, base, head string, limit, o
 		return out, err
 	}
 	if leftScope == "catalog" && rightScope == "catalog" {
-		out, err = compareCatalogVersions(ctx, tx, base, head, limit, offset, u)
+		out, err = compareCatalogVersions(ctx, tx, base, head, query, u)
 		if err != nil {
 			return out, err
 		}
@@ -268,7 +283,7 @@ func (s *Store) CompareVersions(ctx context.Context, base, head string, limit, o
 			r = l
 			r.Document = nil
 		}
-		if !equalDocument(l.Document, r.Document) {
+		if query.matches(r.Target, r.ID) && !equalDocument(l.Document, r.Document) {
 			out.Changes = append(out.Changes, CommitObject{Target: r.Target, ID: r.ID, BaseVersion: l.BaseVersion, Base: l.Base, Before: l.Document, After: r.Document})
 		}
 	}
@@ -281,8 +296,12 @@ func (s *Store) CompareVersions(ctx context.Context, base, head string, limit, o
 	return out, tx.Commit()
 }
 
-func (s *Store) VersionHistory(ctx context.Context, wid string, limit, offset int, u User) (CommitPage, error) {
-	limit, offset = collaborationPage(limit, offset)
+func (s *Store) VersionHistory(ctx context.Context, wid string, query VersionHistoryQuery, u User) (CommitPage, error) {
+	query, queryErr := query.normalized(true)
+	if queryErr != nil {
+		return CommitPage{}, queryErr
+	}
+	limit, offset := query.Limit, query.Offset
 	out := CommitPage{Items: []CollaborationCommit{}, Limit: limit, Offset: offset}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
@@ -296,10 +315,24 @@ func (s *Store) VersionHistory(ctx context.Context, wid string, limit, offset in
 	if !allowed {
 		return out, sql.ErrNoRows
 	}
-	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM catalog.workspace_commits WHERE workspace_id=$1 AND active`, wid).Scan(&out.Total); err != nil {
+	args := []any{wid}
+	state := "wc.active"
+	switch query.State {
+	case "pending":
+		state = "wc.active AND NOT wc.integrated AND c.merged_at IS NULL"
+	case "integrated":
+		state = "wc.active AND (wc.integrated OR c.merged_at IS NOT NULL)"
+	case "replaced":
+		state = "NOT wc.active"
+	case "all":
+		state = "true"
+	}
+	where := ` FROM catalog.workspace_commits wc JOIN catalog.commits c ON c.id=wc.commit_id WHERE wc.workspace_id=$1 AND (` + state + `)` + query.sqlFilters(&args, "c.created_at")
+	if err = tx.QueryRowContext(ctx, `SELECT count(*)`+where, args...).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	ids, err := collaborationIDs(ctx, tx, `SELECT commit_id::text FROM catalog.workspace_commits WHERE workspace_id=$1 AND active ORDER BY position DESC LIMIT $2 OFFSET $3`, wid, limit, offset)
+	args = append(args, limit, offset)
+	ids, err := collaborationIDs(ctx, tx, `SELECT c.id::text`+where+fmt.Sprintf(` ORDER BY wc.position DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
 		return out, err
 	}

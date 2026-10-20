@@ -1130,46 +1130,83 @@ func (s *Store) List(ctx context.Context, o ListOptions, u *User) ([]Entity, err
 // Revisions 返回某目标的修订历史。目标可以是实体，也可以是关系：
 // 关系修订的 target_id 就是关系 ID 本身（见 audit / SaveRelation），
 // 关系在 entities 表没有对应行，因此不能沿用实体的可见性判定。
-func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string]any, error) {
-	if _, err := uuid.Parse(id); err != nil {
-		return nil, fmt.Errorf("invalid_id")
+func (s *Store) Revisions(ctx context.Context, id string, query RevisionQuery, u *User) (RevisionPage, error) {
+	if !collaborationID(id) {
+		return RevisionPage{}, fmt.Errorf("invalid_id")
 	}
-	// 实体修订逐行按实体可见性过滤；关系修订的可见性改由其两端实体验证，
-	// 所以需要区分本次查询的目标类型。
+	normalized, err := (VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: query.Limit, Offset: query.Offset}, AuthorID: query.AuthorID, Since: query.Since, Until: query.Until}).normalized(false)
+	if err != nil {
+		return RevisionPage{}, err
+	}
+	if query.Version < 0 {
+		return RevisionPage{}, fmt.Errorf("invalid_version")
+	}
+	query.Limit, query.Offset = normalized.Limit, normalized.Offset
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		return RevisionPage{}, err
+	}
+	defer tx.Rollback()
 	entityScoped := true
-	if _, err := s.Get(ctx, id, u); err != nil {
+	current, err := get(ctx, tx, id)
+	if err == nil {
+		if !visible(current, u) {
+			return RevisionPage{}, sql.ErrNoRows
+		}
+	} else {
 		if !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
+			return RevisionPage{}, err
 		}
-		r, rerr := relationByID(ctx, s.DB, id)
-		if rerr != nil {
-			return nil, rerr
+		relation, rerr := relationByID(ctx, tx, id)
+		if errors.Is(rerr, sql.ErrNoRows) {
+			var raw json.RawMessage
+			if rerr = tx.QueryRowContext(ctx, `SELECT snapshot FROM catalog.revisions WHERE target_id=$1 ORDER BY version DESC,id DESC LIMIT 1`, id).Scan(&raw); rerr != nil {
+				return RevisionPage{}, rerr
+			}
+			if rerr = json.Unmarshal(raw, &relation); rerr != nil {
+				return RevisionPage{}, rerr
+			}
+		} else if rerr != nil {
+			return RevisionPage{}, rerr
 		}
-		src, serr := get(ctx, s.DB, r.SourceID)
-		if serr != nil {
-			return nil, serr
+		if !collaborationID(relation.SourceID) || !collaborationID(relation.TargetID) {
+			return RevisionPage{}, sql.ErrNoRows
 		}
-		tgt, terr := get(ctx, s.DB, r.TargetID)
-		if terr != nil {
-			return nil, terr
-		}
-		if !visible(src, u) || !visible(tgt, u) ||
-			src.State == "deleted" || src.State == "merged" || tgt.State == "deleted" || tgt.State == "merged" {
-			return nil, sql.ErrNoRows
+		for _, endpoint := range []string{relation.SourceID, relation.TargetID} {
+			e, eerr := get(ctx, tx, endpoint)
+			if eerr != nil {
+				return RevisionPage{}, eerr
+			}
+			if e.State != "active" || !visible(e, u) {
+				return RevisionPage{}, sql.ErrNoRows
+			}
 		}
 		entityScoped = false
 	}
-	// 身份取自修订行里的快照列，**不 JOIN auth.users**：账号表归账号服务，目录侧读它
-	// 就等于把两个系统的数据层重新绑在一起（也挡住了将来换库/换实例的可能）。
-	// 老库迁移过来的存量行可能没有快照，回退为 system/editor，只影响显示名。
-	rows, err := s.DB.QueryContext(ctx, `
-		SELECT r.id, r.version, COALESCE(r.actor_id::text, ''), COALESCE(NULLIF(r.actor_name, ''), 'system'), r.edit_note, r.sources, r.snapshot, r.created_at, COALESCE(r.commit_id::text,'')
-		FROM catalog.revisions r
-		WHERE r.target_id = $1
-		ORDER BY r.version DESC, r.id DESC
-		LIMIT 100`, id)
+	actor := ""
+	privileged := false
+	if u != nil {
+		actor = u.ID
+		privileged = u.Can(PermissionLifecycleManage)
+	}
+	args := []any{id, query.Version, query.AuthorID, query.Since, query.Until}
+	where := ` FROM catalog.revisions r WHERE r.target_id=$1 AND ($2::bigint=0 OR r.version=$2) AND ($3::text='' OR r.actor_id::text=$3)
+ AND ($4::text='' OR r.created_at>=NULLIF($4,'')::timestamptz) AND ($5::text='' OR r.created_at<NULLIF($5,'')::timestamptz)`
+	if entityScoped {
+		args = append(args, actor, privileged)
+		where += ` AND (r.snapshot->>'state'='active' OR $7::boolean OR ($6::text<>'' AND r.snapshot->>'created_by'=$6))`
+	} else {
+		where += ` AND EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id=CASE WHEN r.snapshot->>'source_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r.snapshot->>'source_id')::uuid END AND e.state='active')
+  AND EXISTS(SELECT 1 FROM catalog.entities e WHERE e.id=CASE WHEN r.snapshot->>'target_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r.snapshot->>'target_id')::uuid END AND e.state='active')`
+	}
+	page := RevisionPage{Items: []map[string]any{}, Limit: query.Limit, Offset: query.Offset}
+	if err = tx.QueryRowContext(ctx, `SELECT count(*)`+where, args...).Scan(&page.Total); err != nil {
+		return RevisionPage{}, err
+	}
+	args = append(args, query.Limit, query.Offset)
+	rows, err := tx.QueryContext(ctx, `SELECT r.id,r.version,COALESCE(r.actor_id::text,''),COALESCE(NULLIF(r.actor_name,''),'system'),r.edit_note,r.sources,r.snapshot,r.created_at,COALESCE(r.commit_id::text,'')`+where+fmt.Sprintf(` ORDER BY r.version DESC,r.id DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
-		return nil, err
+		return RevisionPage{}, err
 	}
 	defer rows.Close()
 	out := []map[string]any{}
@@ -1180,14 +1217,14 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 		var sources, snapshot json.RawMessage
 		var at time.Time
 		if err = rows.Scan(&revID, &version, &actorID, &actorName, &note, &sources, &snapshot, &at, &commitID); err != nil {
-			return nil, err
+			return RevisionPage{}, err
 		}
 		// 实体修订的 snapshot 是 Entity，逐行按实体可见性过滤；
 		// 关系修订的 snapshot 是 Relation，授权已在查询前按两端实体完成，不再套实体判定。
 		if entityScoped {
 			var historical Entity
 			if err = json.Unmarshal(snapshot, &historical); err != nil {
-				return nil, err
+				return RevisionPage{}, err
 			}
 
 			if !visible(historical, u) {
@@ -1214,13 +1251,13 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 		}
 	}
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return RevisionPage{}, err
 	}
 	rows.Close()
 	// Current expression visibility also governs historical read projections.
 	// One batch query handles all visible revisions; stored snapshots are untouched.
-	if err = filterVisibleTrackContents(ctx, s.DB, historicalTracks, u); err != nil {
-		return nil, err
+	if err = filterVisibleTrackContents(ctx, tx, historicalTracks, u); err != nil {
+		return RevisionPage{}, err
 	}
 	for i, revision := range out {
 		historical, ok := historicalTracks[fmt.Sprint(i)]
@@ -1231,18 +1268,19 @@ func (s *Store) Revisions(ctx context.Context, id string, u *User) ([]map[string
 		// only the structural contents projection is replaced.
 		var document map[string]json.RawMessage
 		if err = json.Unmarshal(revision["snapshot"].(json.RawMessage), &document); err != nil {
-			return nil, err
+			return RevisionPage{}, err
 		}
 		if document["contents"], err = json.Marshal(historical.Contents); err != nil {
-			return nil, err
+			return RevisionPage{}, err
 		}
 		filtered, marshalErr := json.Marshal(document)
 		if marshalErr != nil {
-			return nil, marshalErr
+			return RevisionPage{}, marshalErr
 		}
 		revision["snapshot"] = json.RawMessage(filtered)
 	}
-	return out, nil
+	page.Items = out
+	return page, tx.Commit()
 }
 
 // ListAll is used for bounded entity directories, which must not silently truncate at 100.

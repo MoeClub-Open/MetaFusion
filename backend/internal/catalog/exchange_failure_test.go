@@ -120,8 +120,8 @@ func TestPostgresRelationRevisionEndpointReadFailuresAreNotMissing(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if revisions, err := f.s.Revisions(ctx, relation.ID, nil); err != nil || len(revisions) != 1 {
-				t.Fatalf("visible relation history: %d revisions, %v", len(revisions), err)
+			if revisions, err := f.s.Revisions(ctx, relation.ID, RevisionQuery{}, nil); err != nil || len(revisions.Items) != 1 {
+				t.Fatalf("visible relation history: %d revisions, %v", len(revisions.Items), err)
 			}
 			brokenID := source.ID
 			if endpoint == "target" {

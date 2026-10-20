@@ -70,8 +70,8 @@ func TestPostgresMergeReferences(t *testing.T) {
 	if err != nil || resolved.ID != target.ID {
 		t.Fatal("old identity is not resolvable")
 	}
-	revisions, err := f.s.Revisions(ctx, track.ID, &f.u)
-	if err != nil || len(revisions) != 2 {
+	revisions, err := f.s.Revisions(ctx, track.ID, RevisionQuery{}, &f.u)
+	if err != nil || len(revisions.Items) != 2 {
 		t.Fatal("missing reference revision")
 	}
 }

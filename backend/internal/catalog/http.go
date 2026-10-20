@@ -577,8 +577,29 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	})
 
 	cat.GET("/entities/:id/revisions", func(c *gin.Context) {
-		v, err := s.Revisions(c.Request.Context(), c.Param("id"), user(c))
-		respond(c, gin.H{"items": v}, err)
+		if err := versionTextQuery(c, "version"); err != nil {
+			respond(c, nil, err)
+			return
+		}
+		q, err := versionHistoryQuery(c, false)
+		if err != nil {
+			respond(c, nil, err)
+			return
+		}
+		if q.Target != "" || q.RecordID != "" {
+			respond(c, nil, fmt.Errorf("invalid_version_target"))
+			return
+		}
+		var version int64
+		if raw := c.Query("version"); raw != "" {
+			version, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil || version < 1 {
+				respond(c, nil, fmt.Errorf("invalid_version"))
+				return
+			}
+		}
+		v, err := s.Revisions(c.Request.Context(), c.Param("id"), RevisionQuery{Limit: q.Limit, Offset: q.Offset, Version: version, AuthorID: q.AuthorID, Since: q.Since, Until: q.Until}, user(c))
+		respond(c, v, err)
 	})
 	cat.GET("/entities/:id/links", func(c *gin.Context) {
 		limit, offset, err := listPagination(c)

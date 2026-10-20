@@ -73,16 +73,16 @@ func TestPostgresArticleCommitRevisionsAndConflicts(t *testing.T) {
 	if err != nil || current.Version != 3 || current.Translations["en"].Body != newBody || current.Attributes["language"] != "en" || current.Translations["en"].Summary != "Short introduction" || current.Translations["ja"].Body != initial.Translations["ja"].Body {
 		t.Fatalf("article round-trip lost data: %+v %v", current, err)
 	}
-	history, err := f.s.Revisions(ctx, initial.ID, nil)
-	if err != nil || len(history) != 3 {
-		t.Fatalf("history: %d %v", len(history), err)
+	history, err := f.s.Revisions(ctx, initial.ID, RevisionQuery{}, nil)
+	if err != nil || len(history.Items) != 3 {
+		t.Fatalf("history: %d %v", len(history.Items), err)
 	}
 	var snapshot Entity
-	if err := json.Unmarshal([]byte(encode(history[0]["snapshot"])), &snapshot); err != nil {
+	if err := json.Unmarshal([]byte(encode(history.Items[0]["snapshot"])), &snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Translations["en"].Body != newBody || history[0]["commit_id"] != articleCommit.ID {
-		t.Fatalf("article snapshot/provenance: %+v", history[0])
+	if snapshot.Translations["en"].Body != newBody || history.Items[0]["commit_id"] != articleCommit.ID {
+		t.Fatalf("article snapshot/provenance: %+v", history.Items[0])
 	}
 	_, err = f.s.PushWorkspace(ctx, conflicting.ID, WorkspacePush{ExpectedVersion: conflicting.Version, ExpectedHead: *conflicting.HeadCommitID}, f.u)
 	var conflict *workspaceConflictError
@@ -94,7 +94,7 @@ func TestPostgresArticleCommitRevisionsAndConflicts(t *testing.T) {
 	if _, err := f.s.Get(ctx, draft.ID, nil); err == nil {
 		t.Fatal("draft article leaked to anonymous reader")
 	}
-	if _, err := f.s.Revisions(ctx, draft.ID, nil); err == nil {
+	if _, err := f.s.Revisions(ctx, draft.ID, RevisionQuery{}, nil); err == nil {
 		t.Fatal("draft article revision leaked to anonymous reader")
 	}
 }

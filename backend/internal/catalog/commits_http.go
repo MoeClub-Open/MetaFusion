@@ -157,12 +157,12 @@ func (h HTTP) registerCollaboration(cat *gin.RouterGroup) {
 		respondCollaboration(c, out, err)
 	})
 	cat.GET("/workspaces/:id/commits", required(""), func(c *gin.Context) {
-		limit, offset, err := collaborationPagination(c)
+		query, err := versionHistoryQuery(c, true)
 		if err != nil {
 			respond(c, nil, err)
 			return
 		}
-		out, err := s.VersionHistory(c.Request.Context(), c.Param("id"), limit, offset, *user(c))
+		out, err := s.VersionHistory(c.Request.Context(), c.Param("id"), query, *user(c))
 		respondCollaboration(c, out, err)
 	})
 	cat.POST("/workspaces/:id/push", required(""), func(c *gin.Context) {

@@ -83,11 +83,11 @@ func TestPostgresUnpublishedExpressionInclusionVisibility(t *testing.T) {
 				t.Fatal(err)
 			}
 			check("Exchange", export)
-			revisions, err := f.s.Revisions(ctx, track.ID, tc.user)
-			if err != nil || len(revisions) != 2 {
-				t.Fatalf("Revisions: %d rows, %v", len(revisions), err)
+			revisions, err := f.s.Revisions(ctx, track.ID, RevisionQuery{}, tc.user)
+			if err != nil || len(revisions.Items) != 2 {
+				t.Fatalf("Revisions: %d rows, %v", len(revisions.Items), err)
 			}
-			for i, revision := range revisions {
+			for i, revision := range revisions.Items {
 				var snapshot Entity
 				if err := json.Unmarshal(revision["snapshot"].(json.RawMessage), &snapshot); err != nil {
 					t.Fatal(err)

@@ -3,11 +3,29 @@ package catalog
 import "reflect"
 
 func addVersioningOpenAPI(paths, schemas map[string]any, schema func(reflect.Type) map[string]any) {
-	for _, value := range []any{CatalogVersionHead{}, WorkspaceFork{}, WorkspaceVersionAction{}, WorkspaceVersionResult{}, WorkspaceStatus{}, CommitSnapshot{}, CommitPage{}, VersionComparison{}, WorkspaceEvent{}, WorkspaceEventPage{}, WorkspaceTag{}, WorkspaceTagEdit{}, WorkspaceTagPage{}, WorkspaceStash{}, WorkspaceStashAction{}, WorkspaceStashPage{}} {
+	for _, value := range []any{CatalogVersionHead{}, WorkspaceFork{}, WorkspaceVersionAction{}, WorkspaceVersionResult{}, WorkspaceStatus{}, CommitSnapshot{}, CommitPage{}, VersionComparison{}, WorkspaceEvent{}, WorkspaceEventPage{}, WorkspaceTag{}, WorkspaceTagEdit{}, WorkspaceTagPage{}, WorkspaceStash{}, WorkspaceStashAction{}, WorkspaceStashPage{}, WorkspaceDiff{}, CommitDiff{}, PullRequestDiff{}, PullRequestCommitPage{}, RevisionPage{}} {
 		schema(reflect.TypeOf(value))
 	}
 	ref := func(name string) map[string]any { return map[string]any{"$ref": "#/components/schemas/" + name} }
 	props := func(name string) map[string]any { return schemas[name].(map[string]any)["properties"].(map[string]any) }
+	for _, row := range [][2]string{{"WorkspaceDiff", "head_id"}, {"CommitDiff", "parent_id"}, {"PullRequestDiff", "source_base_id"}, {"PullRequestCommitPage", "source_base_id"}} {
+		props(row[0])[row[1]] = map[string]any{"type": "string", "format": "uuid", "nullable": true}
+	}
+	for _, name := range []string{"WorkspaceDiff", "CommitDiff", "PullRequestDiff", "PullRequestCommitPage"} {
+		fields := []string{}
+		for _, key := range sortedMapKeys(props(name)) {
+			fields = append(fields, key)
+		}
+		schemas[name].(map[string]any)["required"] = fields
+	}
+	schemas["Revision"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "version", "actor_id", "actor_name", "edit_note", "sources", "snapshot", "created_at"}, "properties": map[string]any{
+		"id": map[string]any{"type": "integer", "format": "int64"}, "version": map[string]any{"type": "integer", "minimum": 1},
+		"actor_id": map[string]any{"type": "string", "description": "Original actor UUID, or empty for historical system revisions."}, "actor_name": map[string]any{"type": "string"}, "edit_note": map[string]any{"type": "string"},
+		"sources":  map[string]any{"type": "array", "items": ref("Source"), "nullable": true},
+		"snapshot": map[string]any{"oneOf": []any{ref("Entity"), ref("Relation")}}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "commit_id": map[string]any{"type": "string", "format": "uuid", "description": "Present only when the revision has a retained commit association."},
+	}}
+	props("RevisionPage")["items"] = map[string]any{"type": "array", "items": ref("Revision")}
+	schemas["RevisionPage"].(map[string]any)["required"] = []string{"items", "total", "limit", "offset"}
 	for _, name := range []string{"WorkspaceVersionAction", "WorkspaceTagEdit", "WorkspaceStashAction"} {
 		schemas[name].(map[string]any)["required"] = []string{"id", "expected_version", "expected_head"}
 		props(name)["id"] = map[string]any{"type": "string", "format": "uuid", "description": "Durable request ID; retries must retain ID and exact payload."}
@@ -25,6 +43,10 @@ func addVersioningOpenAPI(paths, schemas map[string]any, schema func(reflect.Typ
 	props("WorkspaceVersionAction")["mode"] = map[string]any{"type": "string", "enum": []string{"soft", "hard"}, "description": "Reset only. Soft retains the working changes; hard replaces them with the chosen committed tree."}
 	props("WorkspaceStashAction")["operation"] = map[string]any{"type": "string", "enum": []string{"save", "apply", "pop", "drop"}}
 	for _, row := range [][5]string{
+		{"/catalog/workspaces/{id}/diff", "get", "Read private working changes relative to the committed head (basis=head, default) or checkout base (basis=base). Includes version/head for detecting concurrent changes; no writes occur.", "", "WorkspaceDiff"},
+		{"/catalog/commits/{id}/diff", "get", "Read the original changes retained in one accessible immutable commit, with record filtering and pagination. This is distinct from comparing two record-set snapshots.", "", "CommitDiff"},
+		{"/catalog/pull-requests/{id}/diff", "get", "Read the net changes frozen in the selected PR version, filtered and paginated. Later working-copy edits are excluded; version/source_head_id identify the reviewed proposal.", "", "PullRequestDiff"},
+		{"/catalog/pull-requests/{id}/commits", "get", "Read the frozen PR commit set, newest position first, with author/time/record filters before pagination. Never follows a mutable workspace head.", "", "PullRequestCommitPage"},
 		{"/catalog/head", "get", "Read the official catalog head and transactional sequence. A head ID does not bypass record visibility.", "", "CatalogVersionHead"},
 		{"/catalog/history", "get", "List visible official integration checkpoints, newest first. Migration 37 creates an explicit baseline, not fabricated snapshots of earlier history.", "", "CommitPage"},
 		{"/catalog/workspaces/fork", "post", "Create an independent private branch from an accessible frozen commit and retain readable original ancestry/authors. Never copy a live unsubmitted working tree.", "WorkspaceFork", "Workspace"},
@@ -45,8 +67,17 @@ func addVersioningOpenAPI(paths, schemas map[string]any, schema func(reflect.Typ
 		for _, name := range pathTemplateParams(path) {
 			params = append(params, map[string]any{"name": name, "in": "path", "required": true, "schema": map[string]any{"type": "string", "format": "uuid"}})
 		}
-		if method == "get" && (row[4] == "CommitSnapshot" || row[4] == "CommitPage" || row[4] == "VersionComparison" || row[4] == "WorkspaceEventPage" || row[4] == "WorkspaceTagPage" || row[4] == "WorkspaceStashPage") {
+		if method == "get" && row[4] != "CatalogVersionHead" && row[4] != "WorkspaceStatus" && row[4] != "CollaborationCommit" {
 			params = append(params, versionPageParameters()...)
+		}
+		if row[4] == "CommitSnapshot" || row[4] == "VersionComparison" || row[4] == "WorkspaceDiff" || row[4] == "CommitDiff" || row[4] == "PullRequestDiff" || row[4] == "CommitPage" || row[4] == "PullRequestCommitPage" {
+			params = append(params, versionRecordParameters()...)
+		}
+		if row[4] == "CommitPage" || row[4] == "PullRequestCommitPage" {
+			params = append(params, versionHistoryParameters()...)
+		}
+		if row[4] == "WorkspaceDiff" {
+			params = append(params, map[string]any{"name": "basis", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"head", "base"}, "default": "head"}})
 		}
 		if row[4] == "VersionComparison" {
 			params = append(params, map[string]any{"name": "base", "in": "query", "required": true, "schema": map[string]any{"type": "string", "format": "uuid"}})
@@ -64,11 +95,33 @@ func addVersioningOpenAPI(paths, schemas map[string]any, schema func(reflect.Typ
 		}
 		if len(path) >= 19 && path[:19] == "/catalog/workspaces" {
 			op["security"] = []any{map[string]any{"session": []string{}}, map[string]any{"bearer": []string{}}}
+			op["responses"].(map[string]any)["401"] = map[string]any{"description": "Authentication required."}
 		}
 		if paths[path] == nil {
 			paths[path] = map[string]any{}
 		}
 		paths[path].(map[string]any)[method] = op
+	}
+	branch := paths["/catalog/workspaces/{id}/commits"].(map[string]any)["get"].(map[string]any)
+	branch["parameters"] = append(branch["parameters"].([]any), append(versionRecordParameters(), versionHistoryParameters()...)...)
+	branch["parameters"] = append(branch["parameters"].([]any), map[string]any{"name": "state", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"active", "pending", "integrated", "replaced", "all"}, "default": "active"}, "description": "Branch membership filter. pending excludes integrated commits; replaced retains inactive originals after rewriting."})
+	revisions := paths["/catalog/entities/{id}/revisions"].(map[string]any)["get"].(map[string]any)
+	revisions["parameters"] = append(revisions["parameters"].([]any), append(versionPageParameters(), versionHistoryParameters()...)...)
+	revisions["parameters"] = append(revisions["parameters"].([]any), map[string]any{"name": "version", "in": "query", "schema": map[string]any{"type": "integer", "minimum": 1}, "description": "Exact stored revision version. Path ID can identify an entity or relation, including deleted relations with active endpoints. Visibility is applied before counting and pagination."})
+}
+
+func versionRecordParameters() []any {
+	return []any{
+		map[string]any{"name": "target", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"entity", "relation"}}},
+		map[string]any{"name": "record_id", "in": "query", "schema": map[string]any{"type": "string", "format": "uuid"}},
+	}
+}
+
+func versionHistoryParameters() []any {
+	return []any{
+		map[string]any{"name": "author_id", "in": "query", "description": "Original revision actor or retained commit participant, not the merger.", "schema": map[string]any{"type": "string", "format": "uuid"}},
+		map[string]any{"name": "since", "in": "query", "description": "Inclusive RFC3339 timestamp. Official history uses merge time; branch and PR history use commit creation time; revisions use revision creation time.", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		map[string]any{"name": "until", "in": "query", "description": "Exclusive RFC3339 timestamp; must be later than since.", "schema": map[string]any{"type": "string", "format": "date-time"}},
 	}
 }
 

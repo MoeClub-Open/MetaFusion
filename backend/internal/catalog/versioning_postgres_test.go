@@ -60,7 +60,7 @@ func TestPostgresRecordVersioningRebaseReplay(t *testing.T) {
 	if factCounts(t, f.s) != before {
 		t.Fatal("rebase changed public facts")
 	}
-	page, err := f.s.VersionHistory(ctx, w.ID, 100, 0, f.u)
+	page, err := f.s.VersionHistory(ctx, w.ID, VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: 100, Offset: 0}}, f.u)
 	if err != nil || len(page.Items) != 2 {
 		t.Fatalf("replayed history: %+v %v", page, err)
 	}
@@ -267,7 +267,7 @@ func TestPostgresRecordVersioningBranchMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	copyHistory, err := f.s.VersionHistory(ctx, copyFromMerge.ID, 100, 0, f.u)
+	copyHistory, err := f.s.VersionHistory(ctx, copyFromMerge.ID, VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: 100, Offset: 0}}, f.u)
 	if err != nil || copyHistory.Total != 4 {
 		t.Fatalf("fork lost second-parent ancestry: %+v %v", copyHistory, err)
 	}
@@ -276,7 +276,7 @@ func TestPostgresRecordVersioningBranchMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	thirdMerge := versionAction(t, f, third, "merge", merged.Commit.ID)
-	thirdHistory, err := f.s.VersionHistory(ctx, third.ID, 100, 0, f.u)
+	thirdHistory, err := f.s.VersionHistory(ctx, third.ID, VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: 100, Offset: 0}}, f.u)
 	if err != nil || thirdHistory.Total != 5 {
 		t.Fatalf("nested merge lost ancestry: %+v %v", thirdHistory, err)
 	}
@@ -303,7 +303,7 @@ func TestPostgresRecordVersioningBranchMerge(t *testing.T) {
 	if err != nil || headAfter.CommitID == headBefore.CommitID {
 		t.Fatal("official head did not move", err)
 	}
-	old, err := f.s.GetCommitSnapshot(ctx, headBefore.CommitID, 100, 0, f.u)
+	old, err := f.s.GetCommitSnapshot(ctx, headBefore.CommitID, VersionReadQuery{Limit: 100, Offset: 0}, f.u)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestPostgresRecordVersioningBranchMerge(t *testing.T) {
 			}
 		}
 	}
-	diff, err := f.s.CompareVersions(ctx, headBefore.CommitID, headAfter.CommitID, 100, 0, f.u)
+	diff, err := f.s.CompareVersions(ctx, headBefore.CommitID, headAfter.CommitID, VersionReadQuery{Limit: 100, Offset: 0}, f.u)
 	if err != nil || diff.Total != 1 {
 		t.Fatalf("official checkpoint diff: %v %+v", err, diff)
 	}
@@ -336,7 +336,7 @@ func TestPostgresRecordVersioningRewriteTagsStash(t *testing.T) {
 	if err != nil || len(original.ReplacedBy) != 1 || original.ReplacedBy[0] != squashed.Commit.ID {
 		t.Fatal("rewrite lost original linkage", err)
 	}
-	page, err := f.s.VersionHistory(ctx, w.ID, 100, 0, f.u)
+	page, err := f.s.VersionHistory(ctx, w.ID, VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: 100, Offset: 0}}, f.u)
 	if err != nil || page.Total != 1 {
 		t.Fatal("inactive replacements remained active", err)
 	}

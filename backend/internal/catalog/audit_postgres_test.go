@@ -229,8 +229,8 @@ func TestPostgresAuditTrailPerAction(t *testing.T) {
 	if err != nil || created.Title != "审计用例 改过" || created.Version != 2 {
 		t.Fatalf("committed fact: %+v %v", created, err)
 	}
-	history, err := f.s.Revisions(ctx, created.ID, f.user)
-	if err != nil || len(history) != 2 || history[0]["commit_id"] != update.ID {
+	history, err := f.s.Revisions(ctx, created.ID, RevisionQuery{}, f.user)
+	if err != nil || len(history.Items) != 2 || history.Items[0]["commit_id"] != update.ID {
 		t.Fatalf("materialized history provenance: %+v %v", history, err)
 	}
 	for _, row := range f.queryRows("") {

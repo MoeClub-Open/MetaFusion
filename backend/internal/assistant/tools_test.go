@@ -6,8 +6,62 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/catalog"
 )
+
+func TestPostgresAssistantVersionReadFilters(t *testing.T) {
+	f := assistantE2EFixture(t)
+	e := f.seedWork()
+	ctx := context.Background()
+	w, err := f.cat.CreateWorkspace(ctx, catalog.WorkspaceCreate{Name: "Tool history", EntityIDs: []string{e.ID}}, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := f.cat.SaveWorkspaceChanges(ctx, w.ID, catalog.WorkspaceChanges{ExpectedVersion: w.Version, Operations: []catalog.WorkspaceOperation{{Target: "entity", Action: "update", ID: e.ID, Patch: []catalog.CommitPatch{{Path: "/title", Value: json.RawMessage(`"Edited"`)}}}}}, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := f.cat.CommitWorkspace(ctx, w.ID, catalog.WorkspaceCommitCreate{ID: uuid.NewString(), ExpectedVersion: saved.Workspace.Version, Message: "Tool edit"}, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err = f.cat.GetWorkspace(ctx, w.ID, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushed, err := f.cat.PushWorkspace(ctx, w.ID, catalog.WorkspacePush{ExpectedVersion: w.Version, ExpectedHead: c.ID}, f.user)
+	if err != nil || pushed.PullRequest == nil {
+		t.Fatalf("PR: %+v %v", pushed, err)
+	}
+	for _, op := range []string{"commit_diff", "pull_request_diff", "pull_request_commits", "snapshot", "revisions"} {
+		args, _ := json.Marshal(map[string]any{"op": op, "commit_id": c.ID, "pull_request_id": pushed.PullRequest.ID, "record_id": e.ID, "target": "entity", "author_id": f.admin.ID, "limit": 1, "offset": 1})
+		value, err := runCatalogTool(ctx, f.cat, f.user, "catalog_version_read", args)
+		if err != nil {
+			t.Fatalf("%s: %v", op, err)
+		}
+		raw, _ := json.Marshal(value)
+		var result map[string]any
+		if err := json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result["limit"] != float64(1) || result["offset"] != float64(1) {
+			t.Fatalf("%s ignored pagination: %s", op, raw)
+		}
+		if (op == "pull_request_commits") && result["total"] != float64(0) {
+			t.Fatalf("author filter ignored: %s", raw)
+		}
+	}
+	args, _ := json.Marshal(map[string]any{"workspace_id": w.ID, "author_id": f.user.ID, "record_id": e.ID, "state": "pending", "limit": 1, "offset": 1})
+	value, err := runCatalogTool(ctx, f.cat, f.user, "catalog_workspace_commits", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, ok := value.(catalog.CommitPage)
+	if !ok || page.Total != 1 || page.Limit != 1 || page.Offset != 1 || len(page.Items) != 0 {
+		t.Fatalf("branch filters or embedded pagination lost: %+v", value)
+	}
+}
 
 func TestAssistantToolsRefuseCallerImpersonation(t *testing.T) {
 	for _, name := range []string{"catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_workspace_create", "catalog_workspace_list", "catalog_workspace_get", "catalog_workspace_edit", "catalog_workspace_checkout", "catalog_workspace_stage", "catalog_workspace_members", "catalog_workspace_commit", "catalog_workspace_commits", "catalog_workspace_push", "catalog_workspace_rebase", "catalog_pull_request_create", "catalog_pull_request_list", "catalog_pull_request_get", "catalog_pull_request_edit", "catalog_pull_request_merge", "catalog_commit_get", "catalog_definitions", "external_sources", "external_source_query", "public_fetch", "public_wiki"} {

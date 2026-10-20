@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/lib/pq"
 )
@@ -219,19 +220,25 @@ func versionTreeForTargets(ctx context.Context, q queryer, id string, targets []
 	return objects, scope, err
 }
 
-func (s *Store) CatalogVersionHistory(ctx context.Context, limit, offset int, u User) (CommitPage, error) {
-	limit, offset = collaborationPage(limit, offset)
+func (s *Store) CatalogVersionHistory(ctx context.Context, query VersionHistoryQuery, u User) (CommitPage, error) {
+	query, queryErr := query.normalized(false)
+	if queryErr != nil {
+		return CommitPage{}, queryErr
+	}
+	limit, offset := query.Limit, query.Offset
 	out := CommitPage{Items: []CollaborationCommit{}, Limit: limit, Offset: offset}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return out, err
 	}
 	defer tx.Rollback()
-	where := ` FROM catalog.catalog_versions v JOIN catalog.commits c ON c.id=v.commit_id WHERE (` + collaborationCommitPublicPredicate + `) OR $1::boolean OR EXISTS(SELECT 1 FROM catalog.commit_operations op WHERE op.commit_id=c.id AND op.operation='baseline')`
-	if err = tx.QueryRowContext(ctx, `SELECT count(*)`+where, u.Can(PermissionLifecycleManage)).Scan(&out.Total); err != nil {
+	args := []any{u.Can(PermissionLifecycleManage)}
+	where := ` FROM catalog.catalog_versions v JOIN catalog.commits c ON c.id=v.commit_id WHERE ((` + collaborationCommitPublicPredicate + `) OR $1::boolean OR EXISTS(SELECT 1 FROM catalog.commit_operations op WHERE op.commit_id=c.id AND op.operation='baseline'))` + query.sqlFilters(&args, "c.merged_at")
+	if err = tx.QueryRowContext(ctx, `SELECT count(*)`+where, args...).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	ids, err := collaborationIDs(ctx, tx, `SELECT c.id::text`+where+` ORDER BY v.sequence DESC LIMIT $2 OFFSET $3`, u.Can(PermissionLifecycleManage), limit, offset)
+	args = append(args, limit, offset)
+	ids, err := collaborationIDs(ctx, tx, `SELECT c.id::text`+where+fmt.Sprintf(` ORDER BY v.sequence DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
 		return out, err
 	}
@@ -248,13 +255,14 @@ func (s *Store) CatalogVersionHistory(ctx context.Context, limit, offset int, u 
 	return out, tx.Commit()
 }
 
-func catalogVersionSnapshotPage(ctx context.Context, tx *sql.Tx, id string, limit, offset int, u User) (CommitSnapshot, error) {
+func catalogVersionSnapshotPage(ctx context.Context, tx *sql.Tx, id string, queryFilter VersionReadQuery, u User) (CommitSnapshot, error) {
+	limit, offset := queryFilter.Limit, queryFilter.Offset
 	out := CommitSnapshot{CommitID: id, Scope: "catalog", Objects: []WorkspaceObject{}, Limit: limit, Offset: offset}
-	query := catalogSnapshotQuery(false)
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (`+query+`) visible`, id, u.ID, u.Can(PermissionLifecycleManage)).Scan(&out.Total); err != nil {
+	query := `SELECT * FROM (` + catalogSnapshotQuery(false) + `) scoped WHERE ($4::text='' OR target=$4) AND ($5::text='' OR target_id=$5)`
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (`+query+`) visible`, id, u.ID, u.Can(PermissionLifecycleManage), queryFilter.Target, queryFilter.RecordID).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := tx.QueryContext(ctx, query+` LIMIT $4 OFFSET $5`, id, u.ID, u.Can(PermissionLifecycleManage), limit, offset)
+	rows, err := tx.QueryContext(ctx, query+` ORDER BY target,target_id LIMIT $6 OFFSET $7`, id, u.ID, u.Can(PermissionLifecycleManage), queryFilter.Target, queryFilter.RecordID, limit, offset)
 	if err != nil {
 		return out, err
 	}
@@ -282,13 +290,15 @@ func catalogVersionSnapshotPage(ctx context.Context, tx *sql.Tx, id string, limi
 	return out, nil
 }
 
-func compareCatalogVersions(ctx context.Context, tx *sql.Tx, base, head string, limit, offset int, u User) (VersionComparison, error) {
+func compareCatalogVersions(ctx context.Context, tx *sql.Tx, base, head string, queryFilter VersionReadQuery, u User) (VersionComparison, error) {
+	limit, offset := queryFilter.Limit, queryFilter.Offset
 	out := VersionComparison{BaseID: base, HeadID: head, Changes: []CommitObject{}, Limit: limit, Offset: offset}
 	query := `WITH old AS(SELECT DISTINCT ON(target,target_id) target,target_id,document FROM catalog.catalog_record_versions WHERE sequence<=(SELECT sequence FROM catalog.catalog_versions WHERE commit_id=$1) ORDER BY target,target_id,sequence DESC), next AS(SELECT DISTINCT ON(target,target_id) target,target_id,document FROM catalog.catalog_record_versions WHERE sequence<=(SELECT sequence FROM catalog.catalog_versions WHERE commit_id=$4) ORDER BY target,target_id,sequence DESC), changes AS(SELECT COALESCE(a.target,b.target) AS target,COALESCE(a.target_id,b.target_id) AS target_id,a.document AS before,b.document AS after,COALESCE(b.document,a.document) AS document FROM old a FULL JOIN next b USING(target,target_id) WHERE a.document IS DISTINCT FROM b.document) SELECT v.target,v.target_id::text,COALESCE(v.before,'null'::jsonb) AS before,COALESCE(v.after,'null'::jsonb) AS after FROM changes v WHERE (` + catalogSnapshotVisibleSQL + `) ORDER BY v.target,v.target_id`
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (`+query+`) d`, base, u.ID, u.Can(PermissionLifecycleManage), head).Scan(&out.Total); err != nil {
+	query = `SELECT * FROM (` + query + `) scoped WHERE ($5::text='' OR target=$5) AND ($6::text='' OR target_id=$6)`
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (`+query+`) d`, base, u.ID, u.Can(PermissionLifecycleManage), head, queryFilter.Target, queryFilter.RecordID).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := tx.QueryContext(ctx, query+` LIMIT $5 OFFSET $6`, base, u.ID, u.Can(PermissionLifecycleManage), head, limit, offset)
+	rows, err := tx.QueryContext(ctx, query+` ORDER BY target,target_id LIMIT $7 OFFSET $8`, base, u.ID, u.Can(PermissionLifecycleManage), head, queryFilter.Target, queryFilter.RecordID, limit, offset)
 	if err != nil {
 		return out, err
 	}
