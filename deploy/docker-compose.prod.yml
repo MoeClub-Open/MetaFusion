@@ -44,7 +44,7 @@ services:
     build: !reset null
     # R3：去固定名，扩容副本由 compose 按服务名编排（单副本时名字变为 <工程>-frontend-1）
     container_name: !reset null
-    image: ${IMAGE_PREFIX:-ghcr.io/moeclubm/metafusion}/frontend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/moeclub-open/metafusion}/frontend:${IMAGE_TAG:-latest}
     restart: always
 
   # 文档站镜像目前没有任何仓库发布（metafusion-docs 的 CI 只跑 VitePress 构建与死链自查），
@@ -54,7 +54,7 @@ services:
     logging: *default-logging
     # R3：同 frontend，去固定名（静态站无状态，可多副本）
     container_name: !reset null
-    image: ${IMAGE_PREFIX:-ghcr.io/moeclubm/metafusion}/docs-site:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/moeclub-open/metafusion}/docs-site:${IMAGE_TAG:-latest}
     restart: always
 
   backend:
@@ -62,7 +62,7 @@ services:
     build: !reset null
     # R3：去固定名；扩容前先按头注释核算连接池总量预算
     container_name: !reset null
-    image: ${IMAGE_PREFIX:-ghcr.io/moeclubm/metafusion}/backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/moeclub-open/metafusion}/backend:${IMAGE_TAG:-latest}
     restart: always
 
   # R3：账号/互动/存储及各管理台由 deploy.sh pull 显式构建；
@@ -108,4 +108,4 @@ services:
   backend-migrate:
     logging: *default-logging
     build: !reset null
-    image: ${IMAGE_PREFIX:-ghcr.io/moeclubm/metafusion}/migrator:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/moeclub-open/metafusion}/migrator:${IMAGE_TAG:-latest}

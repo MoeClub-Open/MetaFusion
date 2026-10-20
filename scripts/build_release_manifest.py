@@ -60,7 +60,7 @@ def read_versions_lock(path):
 
 
 def build_manifest(digests_dir, lock_path, migrations_dir, env):
-    prefix = env.get("IMAGE_PREFIX", "ghcr.io/moeclubm/metafusion")
+    prefix = env.get("IMAGE_PREFIX", "ghcr.io/moeclub-open/metafusion")
     sha = env.get("GITHUB_SHA", "")
     ref = env.get("GITHUB_REF", "")
     lock = read_versions_lock(lock_path)
