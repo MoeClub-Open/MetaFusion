@@ -10,6 +10,7 @@
   归档变量与归档卷由存储服务持有。
 - 对象存储端口**不发布到宿主机**，只在 compose 网络内可达；浏览器直传需要让对象存储经反代对外可达，
   再设 `STORAGE_S3_PUBLIC_ENDPOINT` 指向该地址（见 `.env.example`）。
+  该变量留空时不签发内部地址，S3 仍保存对象，上传与下载由存储服务流式中转。
 - **桶由存储服务启动时自己创建**（`internal/objects` 的 `ensureBucket`：先探测再建、并发下按已存在容忍）。
 - 未配置 S3 端点时存储服务走**本地对象模式**：文件落在 `storage_data` 卷里，直传改由服务端流式接收。
 - 目录侧与存储侧各用自有 schema（`catalog` / `storage`），**不跨 schema 建外键、不互相 JOIN**；
@@ -24,12 +25,12 @@
   `DELETE /api/storage/bindings/{id}` 解绑纠错；收录位置（页码、时间码）留在目录侧的 `locator`，两处不重复。
 - 读取可见性只有一条口径：**上传者本人或管理员直通，其余人只要任一绑定目标实体可见即可读**；
   下载、元数据读取与哈希校验共用该判定（`GET /api/storage/download/{asset_id}`、`GET /api/storage/entities/{id}/files`）。
-- 下载在 S3 模式下返回预签名地址，本地模式由服务端流式下发；`/storage/preview/` 仍返回 404，不直代私有桶。
+- 下载仅在显式配置 S3 公开端点时返回预签名地址，否则由服务端流式下发；`/storage/preview/` 仍返回 404，不直代私有桶。
 - **稳定引用**：目录数据里需要长期指向某份文件的地址（如实体 `pictures[].url`）用
   `GET /api/storage/assets/{id}/content`：按请求重新鉴权后把对象**原样**内联发出（不转码、不裁剪），
   与 `download` 共用同一读取判定与 404 口径，响应只进私有缓存（可见性按请求判定），
   并带 `ETag`（资产 sha256）与 `If-None-Match` → 304，避免每次加载都整份回源对象存储。
-  预签名地址会过期、签名 Host 又是对象存储端点（未配 `STORAGE_S3_PUBLIC_ENDPOINT` 时浏览器不可达），
+  预签名地址会过期、签名 Host 又是显式配置的 `STORAGE_S3_PUBLIC_ENDPOINT`，
   只能当一次性取件用，不能当稳定地址。
   自托管封面走这条：一张图一条 `binding_role=cover_image` 的绑定，目录侧在该 `Picture` 上写
   `asset_id`（同一个资产 UUID）+ `url`（该 `content` 地址）。**顺序与用途都在目录侧**——
