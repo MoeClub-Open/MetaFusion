@@ -34,8 +34,8 @@ export function httpStatusOf(err: unknown): number | undefined {
  * （例如账号服务尚未部署这些端点时返回的 404 纯文本）。
  *
  * 限流要分辨两层（见 metafusion-auth/internal/handler/login_guard.go 的注释）：
- *   · 请求速率层只回 rate_limited，没有"账号被锁多久"的语义；
- *   · 失败凭据层回 login_blocked，服务端带 Retry-After，但这条链路上的 ApiError
+ *   · 请求速率层只回 rate_limited；
+ *   · 来源 IP 失败预算耗尽时回 login_blocked，服务端带 Retry-After，但这条链路上的 ApiError
  *     并不携带它，因此文案不承诺具体分钟数（也不显示未替换的 {minutes} 占位符）。
  */
 export function authErrorText(

@@ -986,7 +986,7 @@
   "auth.error.invalid_password_length": "パスワードは 12〜72 文字で入力してください。",
   "auth.error.invalid_email": "メールアドレスの形式が正しくありません",
   "auth.error.account_disabled": "このアカウントは停止されています。運営にお問い合わせください",
-  "auth.error.login_blocked": "失敗回数が多すぎます。このアカウントは一時的にロックされています",
+  "auth.error.login_blocked": "このネットワークからのログイン失敗が多すぎます。しばらくしてから再試行してください",
   "auth.error.user_not_found": "ユーザーが存在しません。",
   "auth.error.user_already_exists": "ユーザー名またはメールアドレスは既に使用されています。",
   "auth.error.invalid_invite_code": "招待コードが無効か、有効期限が切れています。",

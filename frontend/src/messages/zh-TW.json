@@ -986,7 +986,7 @@
   "auth.error.invalid_password_length": "密碼長度需為 12 至 72 位",
   "auth.error.invalid_email": "電子郵件格式不合法",
   "auth.error.account_disabled": "此帳號已被停用，請聯繫站務",
-  "auth.error.login_blocked": "失敗次數過多，帳號已暫時鎖定，請稍後再試",
+  "auth.error.login_blocked": "目前網路來源的登入失敗次數過多，請稍後再試",
   "auth.error.user_not_found": "找不到此使用者",
   "auth.error.user_already_exists": "使用者名稱或電子郵件已被使用",
   "auth.error.invalid_invite_code": "邀請碼無效或已失效",

@@ -986,7 +986,7 @@
   "auth.error.invalid_password_length": "Password must be 12 to 72 characters.",
   "auth.error.invalid_email": "Invalid email address",
   "auth.error.account_disabled": "This account has been disabled; contact the site operators",
-  "auth.error.login_blocked": "Too many failed attempts: this account is temporarily locked",
+  "auth.error.login_blocked": "Too many failed login attempts from this network. Please try again later",
   "auth.error.user_not_found": "User not found.",
   "auth.error.user_already_exists": "Username or email is already in use.",
   "auth.error.invalid_invite_code": "Invalid or expired invitation code.",
