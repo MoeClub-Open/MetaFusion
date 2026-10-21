@@ -14,7 +14,8 @@ import { kindIcon } from "@/lib/kindIcons";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions, getKindName, getTagName, getTagNames } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
-import { coverUrl, type CoverBearing } from "@/lib/cover";
+import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover";
+import { CoverOriginNote } from "@/components/common/CoverOriginNote";
 import { PageShell, PageHeader } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
@@ -238,7 +239,7 @@ function ExploreInner() {
       })
       .then((data) => {
         if (!alive) return;
-        setItems(Array.isArray(data.items) ? data.items : []);
+        setItems(Array.isArray(data.items) ? withDisplayCovers(data.items, data.covers) : []);
         setTotal(safeCount(data.total, 0));
         setHasMore(data.has_more === true);
         setNextCursor(typeof data.next_cursor === "string" ? data.next_cursor : "");
@@ -796,7 +797,7 @@ function ExploreInner() {
                     // 角标 = 实体类型（kind）；业务类型留在正文的类型标签里，不做成"分类"角标。
                     const badgeLabel = kindLabel(item.kind);
                     // 列表/网格只展示封面（首张图）：多图画廊在详情页。
-                    const cover = coverUrl(item);
+                    const cover = displayCover(item);
 
                     return (
                       <EntityCard
@@ -807,7 +808,8 @@ function ExploreInner() {
                         title={displayTitle}
                         baseTitle={item.title}
                         tags={getTagNames(definitions, item.attributes?.tags, locale)}
-                        pictureUrl={cover}
+                        pictureUrl={cover.url}
+                        cover={cover}
                         qualityStatus={qualityById[item.id]}
                       />
                     );
@@ -822,7 +824,7 @@ function ExploreInner() {
                   // 角标 = 实体类型（kind）；业务类型留在正文的类型标签里，不做成"分类"角标。
                   const badgeLabel = kindLabel(item.kind);
                   // 列表视图同样是"只看封面"：取值走 lib/cover，多图只在详情页成廊展示。
-                  const cover = coverUrl(item);
+                  const cover = displayCover(item);
 
                   return (
                     <Link
@@ -832,8 +834,8 @@ function ExploreInner() {
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-11 h-11 rounded-lg bg-black/[0.03] dark:bg-black/40 border border-line shrink-0 overflow-hidden flex items-center justify-center">
-                          {cover ? (
-                            <img src={cover} alt={displayTitle} width={44} height={44} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                          {cover.url ? (
+                            <img src={cover.url} alt={displayTitle} width={44} height={44} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                           ) : (
                             <KindIcon className="w-5 h-5 text-text-muted" />
                           )}
@@ -856,6 +858,7 @@ function ExploreInner() {
                             )}
 
                           </div>
+                          <CoverOriginNote origin={cover.origin} from={cover.from} />
                           <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
                             {/* 列表行标签同样是本地化展示名；筛选值仍在 URL 的 tags 参数里。 */}
                             <span className="line-clamp-1">{getTagNames(definitions, item.attributes?.tags, locale).slice(0, 3).join(" · ")}</span>

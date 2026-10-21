@@ -264,11 +264,12 @@ type searchHitPage struct {
 }
 
 type EntitySearchPage struct {
-	Items         []Entity `json:"items"`
-	Total         int      `json:"total"`
-	TotalRelation string   `json:"total_relation"`
-	HasMore       bool     `json:"has_more"`
-	NextCursor    string   `json:"next_cursor,omitempty"`
+	Covers        map[string]DisplayCover `json:"covers,omitempty"`
+	Items         []Entity                `json:"items"`
+	Total         int                     `json:"total"`
+	TotalRelation string                  `json:"total_relation"`
+	HasMore       bool                    `json:"has_more"`
+	NextCursor    string                  `json:"next_cursor,omitempty"`
 }
 
 // Search keeps a PIT for one minute between pages. Counts describe that index

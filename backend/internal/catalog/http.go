@@ -449,6 +449,9 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 			defer cancel()
 			v, err := s.Search(ctx, o, requestUser, c.Query("cursor"))
+			if err == nil {
+				v.Covers, err = s.DisplayCovers(ctx, v.Items, requestUser)
+			}
 			respond(c, v, err)
 			return
 		}
@@ -462,7 +465,12 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			return
 		}
 		total, err := s.Count(c.Request.Context(), o, requestUser)
-		respond(c, gin.H{"items": items, "total": total, "total_relation": "eq", "has_more": int64(offset+len(items)) < total}, err)
+		if err != nil {
+			respond(c, nil, err)
+			return
+		}
+		covers, err := s.DisplayCovers(c.Request.Context(), items, requestUser)
+		respond(c, gin.H{"items": items, "covers": covers, "total": total, "total_relation": "eq", "has_more": int64(offset+len(items)) < total}, err)
 	})
 	// 状态计数：概览卡片的待审/已发布/墓碑三个数只从这一条 GROUP BY 拿（列表端点给不出墓碑数）。
 	// 闸门是 catalog.lifecycle.manage——只有它的持有者能在 /entities 列表里看全量状态，
@@ -704,6 +712,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		shelves = applyHomePreferences(shelves, prefs)
 		out := make([]gin.H, 0, len(shelves))
+		coverItems := []Entity{}
 		for _, sh := range shelves {
 			items, ierr := s.ListShelfItems(c.Request.Context(), sh, perShelf, user(c))
 			if ierr != nil {
@@ -718,8 +727,10 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 				return
 			}
 			out = append(out, gin.H{"shelf": sh, "items": items, "total": total})
+			coverItems = append(coverItems, items...)
 		}
-		c.JSON(200, gin.H{"items": out})
+		covers, err := s.DisplayCovers(c.Request.Context(), coverItems, user(c))
+		respond(c, gin.H{"items": out, "covers": covers}, err)
 	})
 	// 个人首页偏好读：需登录，未登录返回 401（与 required("") 语义一致，
 	// 不再用匿名 404 误导前端走“未找到”分支）。sections 为"覆盖 + 自建"列表，

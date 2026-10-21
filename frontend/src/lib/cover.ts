@@ -92,7 +92,7 @@ export function clampCoverRatio(ratio: number): number {
  * 这里只认结构，不 import Entity：列表与详情用的是同一个 DTO，
  * 关联实体只有 id 时传 `undefined` 即可，不会误判成"有封面"。
  */
-export type CoverOrigin = "self" | "release" | "work" | "subject_work" | "mother_work" | "none";
+export type CoverOrigin = "self" | "release" | "medium" | "work" | "subject_work" | "mother_work" | "none";
 
 /**
  * 一张图的展示侧最小结构（与 `components/catalog/api.ts` 里 `Entity.pictures` 的元素兼容）。
@@ -122,6 +122,19 @@ export interface CoverBearing {
   id?: string;
   title?: string;
   pictures?: Array<CoverPicture | null> | null;
+  original_language?: string;
+  translations?: Record<string, { title?: string; summary?: string; aliases?: string[] }>;
+  display_cover?: ResolvedCover;
+}
+
+/** 列表响应的封面投影只用于显示，不合并到实体自身的 pictures。 */
+export function withDisplayCovers<T extends CoverBearing>(items: T[], covers?: Record<string, ResolvedCover>): T[] {
+  return items.map((item) => ({ ...item, display_cover: item.id ? covers?.[item.id] : undefined }));
+}
+
+export function displayCover(entity?: CoverBearing | null): ResolvedCover {
+  const own = resolveCover(entity);
+  return own.url ? own : entity?.display_cover || own;
 }
 
 /**

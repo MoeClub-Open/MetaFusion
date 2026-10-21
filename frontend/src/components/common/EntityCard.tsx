@@ -5,6 +5,8 @@ import Link from "next/link";
 import { AdaptiveCardCover } from "./AdaptiveCardCover";
 import { ProceduralCover } from "./ProceduralCover";
 import { GRID_COVER_ASPECT } from "@/lib/cover";
+import type { ResolvedCover } from "@/lib/cover";
+import { CoverOriginNote } from "./CoverOriginNote";
 
 export interface EntityCardProps {
   id: string;
@@ -21,6 +23,7 @@ export interface EntityCardProps {
   /** 无封面占位层的副行（如首个标签） */
   fallbackSubtitle?: string;
   pictureUrl?: string;
+  cover?: ResolvedCover;
   /** 探索页质量提示：仅 partial 显示小圆点。 */
   qualityStatus?: string;
 }
@@ -37,6 +40,7 @@ export function EntityCard({
   tags,
   fallbackSubtitle,
   pictureUrl,
+  cover,
   qualityStatus,
 }: EntityCardProps) {
   // 题名下第二行只放有区分度的事实：原文题名优先，否则退到标签。
@@ -73,6 +77,7 @@ export function EntityCard({
       />
 
       <div className="px-0.5 pt-2.5 pb-1">
+        {cover?.url && <CoverOriginNote origin={cover.origin} from={cover.from} className="mb-1" />}
         <h3 className="font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 leading-snug mb-1">
           <span className="inline">{title}</span>
           {qualityStatus === "partial" && (

@@ -341,6 +341,10 @@ func OpenAPI() map[string]any {
 		}
 	}
 	querySchema := schemas["RelationshipQueryRequest"].(map[string]any)
+	for _, path := range []string{"/catalog/entities", "/catalog/shelves/feed"} {
+		op := paths[path].(map[string]any)["get"].(map[string]any)
+		op["description"] = "Also returns covers, keyed by item ID: read-only inherited artwork with url, origin and from (source id and localized titles). Own pictures always take precedence; invisible or inactive sources are excluded. The projection never changes items[].pictures."
+	}
 	querySchema["required"] = []string{"ids"}
 	queryProps := querySchema["properties"].(map[string]any)
 	queryProps["ids"] = map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "format": "uuid"}, "description": "Canonicalized and deduplicated in request order"}

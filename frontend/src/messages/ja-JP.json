@@ -1549,6 +1549,7 @@
   "catalog.pictureAssetInvalid": "有効なUUIDではありません：自己ホスト型カバーのオブジェクトidは assets のUUIDが必要です。",
   "catalog.pictureUseAssetUrl": "自己ホスト型URLを記入",
   "catalog.coverSourceRelease": "所属するリリース",
+  "catalog.coverSourceMedium": "所属するメディア",
   "catalog.coverSourceWork": "関連する作品",
   "catalog.coverSourceSubjectWork": "収録作品",
   "catalog.coverSourceMotherWork": "親作品",

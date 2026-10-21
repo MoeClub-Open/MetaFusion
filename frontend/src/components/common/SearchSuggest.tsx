@@ -7,7 +7,8 @@ import { Search } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions, getKindName } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
-import { coverUrl, type CoverBearing } from "@/lib/cover";
+import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover";
+import { CoverOriginNote } from "./CoverOriginNote";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { searchKeyAction } from "@/lib/searchKeyboard";
 import { kindIcon } from "@/lib/kindIcons";
@@ -79,7 +80,7 @@ export function SearchSuggest({
       )
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
         .then((data) => {
-          if (alive) setItems(Array.isArray(data.items) ? data.items.slice(0, 8) : []);
+          if (alive) setItems(Array.isArray(data.items) ? withDisplayCovers(data.items.slice(0, 8), data.covers) : []);
         })
         .catch(() => {
           // 联想失败不打断输入：静默收起下拉，整词搜索仍可用。
@@ -196,7 +197,7 @@ export function SearchSuggest({
           {items.map((item, i) => {
             const KindIcon = kindIcon(item.kind);
             // 缩略图即该条目的封面：取值走 lib/cover（首张图=封面只有一处定义）。
-            const cover = coverUrl(item);
+            const cover = displayCover(item);
             return (
               <li key={item.id} id={`${listId}-${i}`} role="option" aria-selected={i === active}>
                 <button
@@ -212,9 +213,9 @@ export function SearchSuggest({
                   }
                 >
                   <span className="w-7 h-9 rounded-md bg-black/[0.04] dark:bg-black/40 border border-line-subtle shrink-0 overflow-hidden flex items-center justify-center">
-                    {cover ? (
+                    {cover.url ? (
                       <img
-                        src={cover}
+                        src={cover.url}
                         alt=""
                         className="w-full h-full object-contain"
                         loading="lazy"
@@ -223,9 +224,10 @@ export function SearchSuggest({
                       <KindIcon className="w-4 h-4 text-text-muted" />
                     )}
                   </span>
-                  <span className="min-w-0 flex-1 text-sm text-text-strong truncate">
+                  <div className="min-w-0 flex-1 text-sm text-text-strong truncate">
                     {displayTitle(item)}
-                  </span>
+                    <CoverOriginNote origin={cover.origin} from={cover.from} />
+                  </div>
                   <span className="shrink-0 text-[10px] font-mono text-text-faint">
                     {getKindName(kinds, item.kind, locale, tr("catalog.kind." + item.kind, item.kind))}
                   </span>

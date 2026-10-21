@@ -1549,6 +1549,7 @@
   "catalog.pictureAssetInvalid": "Not a valid UUID: the self-hosted cover asset id must be an assets UUID.",
   "catalog.pictureUseAssetUrl": "Use self-hosted URL",
   "catalog.coverSourceRelease": "the release it belongs to",
+  "catalog.coverSourceMedium": "the medium it belongs to",
   "catalog.coverSourceWork": "the related work",
   "catalog.coverSourceSubjectWork": "a work included in this release",
   "catalog.coverSourceMotherWork": "the parent work",

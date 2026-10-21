@@ -1,10 +1,13 @@
 "use client";
 
 import { useI18n } from "@/i18n/I18nProvider";
-import type { CoverOrigin } from "@/lib/cover";
+import type { CoverOrigin, CoverBearing } from "@/lib/cover";
+import { pickRecordTitle } from "@/lib/titles";
+import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 
 const ORIGIN_KEYS: Partial<Record<CoverOrigin, string>> = {
   release: "catalog.coverSourceRelease",
+  medium: "catalog.coverSourceMedium",
   work: "catalog.coverSourceWork",
   subject_work: "catalog.coverSourceSubjectWork",
   mother_work: "catalog.coverSourceMotherWork",
@@ -20,17 +23,20 @@ const ORIGIN_KEYS: Partial<Record<CoverOrigin, string>> = {
 export function CoverOriginNote({
   origin,
   name,
+  from,
   className = "",
 }: {
   origin: CoverOrigin;
   name?: string;
+  from?: CoverBearing;
   className?: string;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const order = useTitleDisplayOrder();
   const key = ORIGIN_KEYS[origin];
   if (!key) return null;
   const source = t(key);
-  const trimmed = String(name || "").trim();
+  const trimmed = String(name || (from ? pickRecordTitle(locale, from.translations, from.title || "", { order, originalLanguage: from.original_language }) : "")).trim();
   return (
     <p className={`font-mono text-[10px] leading-snug text-text-faint ${className}`}>
       {trimmed ? t("catalog.coverDerivedNamed", { source, name: trimmed }) : t("catalog.coverDerived", { source })}

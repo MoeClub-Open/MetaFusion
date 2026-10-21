@@ -6,7 +6,7 @@ import { Navbar } from "@/components/Navbar";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions, getKindName, getTagNames, type KindMap } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
-import { coverUrl, type CoverBearing } from "@/lib/cover";
+import { displayCover, withDisplayCovers, type CoverBearing, type ResolvedCover } from "@/lib/cover";
 import { PageContainer, PageShell } from "@/components/ui/PageShell";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { useAuth } from "@/lib/authContext";
@@ -62,8 +62,8 @@ export default function HomePage() {
     try {
       // 统一走 fetchApi：同域 Cookie、语言头与错误处理保持一致。
       // 用 components/catalog 的 api() 只会发 cookie，带身份的偏好不会被识别。
-      const r = await fetchApi<{ items: FeedSection[] }>("/catalog/shelves/feed?per_shelf=14");
-      setSections(Array.isArray(r.items) ? r.items : []);
+      const r = await fetchApi<{ items: FeedSection[]; covers?: Record<string, ResolvedCover> }>("/catalog/shelves/feed?per_shelf=14");
+      setSections(Array.isArray(r.items) ? r.items.map((section) => ({ ...section, items: withDisplayCovers(section.items, r.covers) })) : []);
     } catch {
       setSections([]);
       setFailed(true);
@@ -236,7 +236,7 @@ export default function HomePage() {
                     // 分类由货架（catalog.shelves）承担，业务类型在卡片正文里另行展示。
                     const badge = badgeFor(item.kind, kinds, locale, tr);
                     // 首页分区只看封面（首张图）：多图画廊在详情页。
-                    const cover = coverUrl(item);
+                    const cover = displayCover(item);
                     return (
                       <EntityCard
                         key={item.id}
@@ -246,7 +246,8 @@ export default function HomePage() {
                         title={displayTitle}
                         baseTitle={item.title}
                         tags={getTagNames(definitions, item.attributes?.tags, locale)}
-                        pictureUrl={cover}
+                        pictureUrl={cover.url}
+                        cover={cover}
                       />
                     );
                   })}

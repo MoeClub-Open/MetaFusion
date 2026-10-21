@@ -1549,6 +1549,7 @@
   "catalog.pictureAssetInvalid": "这不是合法的 UUID：自托管封面对象 id 需要是 assets 的 UUID。",
   "catalog.pictureUseAssetUrl": "填入自托管直链",
   "catalog.coverSourceRelease": "所属发行版",
+  "catalog.coverSourceMedium": "所属载体",
   "catalog.coverSourceWork": "关联作品",
   "catalog.coverSourceSubjectWork": "收录作品",
   "catalog.coverSourceMotherWork": "上级作品",
