@@ -282,10 +282,11 @@ export interface DownloadResult {
 }
 
 /**
- * 下载入口：本地对象模式由服务端流式下发，对象存储模式返回预签名地址。
+ * 下载入口：仅配置公开 S3 端点时返回预签名地址，否则由服务端流式下发。
  * 下载接口要判身份（上传者/审核者直通，其余按绑定实体可见性），
  * 因此这里用带同域 Cookie 的 fetch 请求：
- * JSON 响应＝对象存储模式的预签名地址（直接跳转）；其余按流处理，落成临时 Blob 保存。
+ * 文件响应带 Content-Disposition，即使 MIME 为 JSON 也必须原样保存，不能把文件内容当作跳转指令。
+ * 不带该头的 JSON 才是预签名地址响应；其余按流处理，落成临时 Blob 保存。
  */
 export async function downloadAssetFile(assetId: string, fileName: string): Promise<DownloadResult> {
   const res = await fetch(`${STORAGE_API_BASE}/download/${encodeURIComponent(assetId)}`, {
@@ -293,14 +294,23 @@ export async function downloadAssetFile(assetId: string, fileName: string): Prom
     credentials: "same-origin",
   });
   if (!res.ok) throw new StorageRequestError(await errorCodeOf(res), res.status);
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.indexOf("application/json") >= 0) {
-    const data = await res.json();
-    if (typeof data.download_url === "string" && data.download_url) {
-      window.open(data.download_url, "_blank", "noopener,noreferrer");
-      return { mode: "presigned" };
+  const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!res.headers.has("content-disposition") && contentType === "application/json") {
+    const data = await res.json() as { download_url?: unknown } | null;
+    if (typeof data?.download_url !== "string" || !data.download_url) {
+      throw new StorageRequestError("download_url_missing", res.status);
     }
-    throw new StorageRequestError("download_url_missing", res.status);
+    let target: URL;
+    try {
+      target = new URL(data.download_url);
+    } catch {
+      throw new StorageRequestError("invalid_download_url", res.status);
+    }
+    if (target.protocol !== "https:" && target.protocol !== "http:") {
+      throw new StorageRequestError("invalid_download_url", res.status);
+    }
+    window.open(target.href, "_blank", "noopener,noreferrer");
+    return { mode: "presigned" };
   }
   const blob = await res.blob();
   const objectUrl = URL.createObjectURL(blob);
