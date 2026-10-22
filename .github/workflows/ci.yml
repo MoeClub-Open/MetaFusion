@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16.15-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: test-only-password
@@ -32,7 +32,7 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
       opensearch:
-        image: opensearchproject/opensearch:2.14.0
+        image: opensearchproject/opensearch:2.19.7
         env:
           discovery.type: single-node
           OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
@@ -182,9 +182,9 @@ jobs:
           STORAGE_DATABASE_URL: postgres://postgres:test-only-password@postgres:5432/metafusion_db?sslmode=disable
         run: docker compose -f deploy/docker-compose.metadata.yml config --quiet
       - name: nginx syntax check
-        run: docker run --rm -v $PWD/deploy/nginx.conf:/etc/nginx/nginx.conf:ro nginx:1.25-alpine nginx -t
+        run: docker run --rm -v $PWD/deploy/nginx.conf:/etc/nginx/nginx.conf:ro nginx:1.30.6-alpine nginx -t
       - name: metadata nginx syntax check
-        run: docker run --rm -v $PWD/deploy/nginx.metadata.conf:/etc/nginx/nginx.conf:ro nginx:1.25-alpine nginx -t
+        run: docker run --rm -v $PWD/deploy/nginx.metadata.conf:/etc/nginx/nginx.conf:ro nginx:1.30.6-alpine nginx -t
       # dev / prod 覆盖文件是 deploy.sh 的 dev / pull 动作实际用的合并输入：只给
       # docker-compose.yml 做 config 检查时，覆盖文件里的 YAML/标签错误要到部署当天才暴露。
       - name: dev & prod override config

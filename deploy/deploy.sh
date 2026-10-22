@@ -61,7 +61,7 @@ fi
 # 不再“跳过并返回成功”（跳过等于带着错配置继续部署）。
 function check_gateway_candidate() {
     local nginx_conf="$SCRIPT_DIR/nginx.conf"
-    local candidate_image="nginx:1.25-alpine"
+    local candidate_image="nginx:1.30.6-alpine"
     if [ ! -f "$nginx_conf" ]; then
         echo "❌ 找不到网关候选配置 $nginx_conf：部署中止（候选缺失必须失败，不跳过）" >&2
         return 1
@@ -152,7 +152,7 @@ function tag_release_images() {
     # 的那几个服务），要么是 <compose 项目名>-*（frontend / docs / 三个管理台由 compose 生成
     # deploy-<svc>）。postgres / redis / nginx / rustfs / opensearch 是别人的发布物，给它们贴
     # 本项目的版本号等于把"这个 tag 代表一次发布"说成谎话，也会让保留策略去管别人的镜像；
-    # 网关虽然用 nginx:1.25-alpine，但它的配置是 bind mount，本来就没有镜像可回退。
+    # 网关虽然用 nginx:1.30.6-alpine，但它的配置是 bind mount，本来就没有镜像可回退。
     local project="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}"
     local in_use_ids imgs img config_image image_id repo tagged=0
     # Config.Image 是创建容器时传入的可变标签（例如 deploy-frontend），后续 latest

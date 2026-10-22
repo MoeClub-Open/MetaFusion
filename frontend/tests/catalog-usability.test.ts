@@ -6,7 +6,7 @@ import { entityIdentitySuffix } from "../src/lib/entityIdentity";
 import { searchKeyAction } from "../src/lib/searchKeyboard";
 import { isCompatibleMergeTarget } from "../src/lib/mergeTarget";
 import { loadCatalogSection } from "../src/lib/catalogSection";
-import ts from "typescript";
+import ts from "typescript-api";
 
 test("local release search covers translations, aliases, external IDs and attributes", () => {
   const entity = { title: "First Press", translations: { ja: { title: "初回盤", aliases: ["限定版"], summary: "特典映像" } }, external_links: [{ kind: "musicbrainz", url: "mf://external/musicbrainz/ABC-123", external_id: "ABC-123" }], attributes: { catalog_number: "XYZ-007" } };

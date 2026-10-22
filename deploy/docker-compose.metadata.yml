@@ -21,7 +21,7 @@ x-logging: &default-logging
 services:
   postgres:
     logging: *default-logging
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     shm_size: 256m
     container_name: metafusion-postgres
     restart: unless-stopped
@@ -80,7 +80,7 @@ services:
 
   opensearch:
     logging: *default-logging
-    image: opensearchproject/opensearch:2.14.0
+    image: opensearchproject/opensearch:2.19.7
     restart: unless-stopped
     environment:
       discovery.type: single-node
@@ -132,7 +132,7 @@ services:
 
   gateway:
     logging: *default-logging
-    image: nginx:1.25-alpine
+    image: nginx:1.30.6-alpine
     container_name: metafusion-gateway
     restart: unless-stopped
     ports: ["${HTTP_PORT:-10100}:80"]

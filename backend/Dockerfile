@@ -2,7 +2,7 @@
 # ==============================================================================
 # Stage 1: Build binary with BuildKit module & compiler cache
 # ==============================================================================
-FROM golang:1.27.2-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 # Stage 2: Database Migrator Runtime
 # ==============================================================================
-FROM alpine:3.19 AS migrator
+FROM alpine:3.24.3 AS migrator
 
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata curl
@@ -47,7 +47,7 @@ CMD ["up"]
 # ==============================================================================
 # Stage 3: Server Runtime (API Server)
 # ==============================================================================
-FROM alpine:3.19 AS server
+FROM alpine:3.24.3 AS server
 
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata curl

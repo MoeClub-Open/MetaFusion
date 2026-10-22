@@ -27,7 +27,7 @@ services:
   # --------------------------------------------------------------------------
   gateway:
     logging: *default-logging
-    image: nginx:1.25-alpine
+    image: nginx:1.30.6-alpine
     container_name: metafusion-gateway
     restart: unless-stopped
     ports:
@@ -605,7 +605,7 @@ services:
   # --------------------------------------------------------------------------
   postgres:
     logging: *default-logging
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     # 并行 VACUUM/查询使用动态共享内存；Docker 默认 64m 在维护时可能耗尽。
     shm_size: 256m
     command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-512}"]
@@ -626,13 +626,13 @@ services:
       - metafusion-net
 
   # --------------------------------------------------------------------------
-  # 8. 全文与多维聚合搜索引擎 (OpenSearch 2.14)
+  # 8. 全文与多维聚合搜索引擎 (OpenSearch 2.19)
   #    正式文本查询服务；PostgreSQL outbox 补建/增量更新。默认随本栈启动。
   #    存量 opensearch_data 卷保留。
   # --------------------------------------------------------------------------
   opensearch:
     logging: *default-logging
-    image: opensearchproject/opensearch:2.14.0
+    image: opensearchproject/opensearch:2.19.7
     container_name: metafusion-opensearch
     restart: unless-stopped
     environment:

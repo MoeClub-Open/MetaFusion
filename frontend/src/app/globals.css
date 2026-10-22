@@ -1,9 +1,8 @@
 /* 配色与表面色调的变量块由 scripts/gen-theme.mjs 生成（唯一来源见 scripts/theme-palette.mjs） */
 @import "./theme.generated.css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 /* 全站圆角的唯一数值来源；配色与深浅模式不改变形状。 */
 :root {
