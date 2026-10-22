@@ -5,7 +5,6 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { AdaptiveCover } from "@/components/common/AdaptiveCover";
-import { CoverOriginNote } from "@/components/common/CoverOriginNote";
 import { COVER_PICTURE_INDEX, coverUrl, PICTURE_ROLE_VOCABULARY, resolveCover } from "@/lib/cover";
 import { EntityCover } from "@/components/common/EntityCover";
 import { PictureLightbox, type LightboxPicture } from "@/components/catalog/PictureLightbox";
@@ -394,8 +393,6 @@ export function EntityDetailView({ id }: { id: string }) {
 
   // 封面派生链：本实体 → 母作品 → 发行对象作品 → 所属发行。比例一律留给 AdaptiveCover
   // （自然比例优先），这里不做按 kind 的硬编码；服务端也没有 cover_aspect 字段。
-  // 派生出的封面必须由 CoverOriginNote 写明借自哪一条——把借来的图当本实体自己的封面
-  // 展示，正是目录里出过的标注事故（所属发行美术被写成"该曲官方封面"）。
   const resolvedCover = useMemo(
     () =>
       resolveCover(entity, [
@@ -956,11 +953,6 @@ export function EntityDetailView({ id }: { id: string }) {
                 minHeight={96}
                 maxHeight="min(45vh, 320px)"
                 className="w-full h-auto"
-              />
-              <CoverOriginNote
-                origin={resolvedCover.origin}
-                name={resolvedCover.from && resolvedCover.from.id !== entity.id ? title(resolvedCover.from, locale, titleOrder) : ""}
-                className="px-3 pb-2"
               />
             </Card>
 

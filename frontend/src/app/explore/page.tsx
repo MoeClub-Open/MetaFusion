@@ -15,7 +15,6 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions, getKindName, getTagName, getTagNames } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
 import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover";
-import { CoverOriginNote } from "@/components/common/CoverOriginNote";
 import { PageShell, PageHeader } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
@@ -809,7 +808,6 @@ function ExploreInner() {
                         baseTitle={item.title}
                         tags={getTagNames(definitions, item.attributes?.tags, locale)}
                         pictureUrl={cover.url}
-                        cover={cover}
                         qualityStatus={qualityById[item.id]}
                       />
                     );
@@ -858,7 +856,6 @@ function ExploreInner() {
                             )}
 
                           </div>
-                          <CoverOriginNote origin={cover.origin} from={cover.from} />
                           <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
                             {/* 列表行标签同样是本地化展示名；筛选值仍在 URL 的 tags 参数里。 */}
                             <span className="line-clamp-1">{getTagNames(definitions, item.attributes?.tags, locale).slice(0, 3).join(" · ")}</span>

@@ -24,7 +24,6 @@ import { RecordList, GroupAttributeInline, LocatorInline } from "@/components/ca
 import { EntityLink } from "@/components/catalog/Fields";
 import { formatDuration as formatDurationShared } from "@/lib/duration";
 import { AdaptiveCardCover } from "@/components/common/AdaptiveCardCover";
-import { CoverOriginNote } from "@/components/common/CoverOriginNote";
 import { resolveCover } from "@/lib/cover";
 import { EntityArticle } from "@/components/catalog/EntityArticle";
 import { ARTICLE_ANCHOR_TABS } from "@/lib/catalogArticle";
@@ -480,8 +479,7 @@ export default function ReleaseDetailLayout() {
 
   const primaryWorkId = release.subjects?.find((s) => s.role === "primary")?.work_id || release.subjects?.[0]?.work_id;
   const primaryWork = (primaryWorkId && works[primaryWorkId]) || null;
-  // 发行版自己没有图时借用主要收录作品的封面（反过来把作品图写进发行版 pictures 是错的：
-  // 那是另一张商品的美术）。借用一律由 CoverOriginNote 写明来源。
+  // 发行版自己没有图时借用主要收录作品的封面，仅用于展示。
   const cover = resolveCover(release, [{ origin: "subject_work", entity: primaryWork }]);
   // 载体与篇目的用词一律取自服务端 definitions 的骨架名称：
   // 旧的 mediaLabels 按遗留媒体类型（movie/anime/novel…）硬编码一套标签，
@@ -795,11 +793,6 @@ export default function ReleaseDetailLayout() {
                   <div className="w-full aspect-[3/4] rounded-md overflow-hidden border border-line">
                     <AdaptiveCardCover src={cover.url} alt={releaseTitle} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} aspectClassName="w-full h-full" />
                   </div>
-                  <CoverOriginNote
-                    origin={cover.origin}
-                    name={cover.from && cover.from.id !== release.id ? entityTitle(cover.from, locale) : ""}
-                    className="mt-1"
-                  />
                 </div>
               )}
             </div>

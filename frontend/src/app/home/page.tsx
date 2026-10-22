@@ -247,7 +247,6 @@ export default function HomePage() {
                         baseTitle={item.title}
                         tags={getTagNames(definitions, item.attributes?.tags, locale)}
                         pictureUrl={cover.url}
-                        cover={cover}
                       />
                     );
                   })}

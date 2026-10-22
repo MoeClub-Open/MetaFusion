@@ -84,10 +84,7 @@ export function clampCoverRatio(ratio: number): number {
 /**
  * 封面派生：实体自己没有 `pictures` 时，按"直接关联实体"顺序借用一张。
  *
- * 为什么必须把 `origin` 一路带到界面上：目录里曾出现过把整张借来的图当成本实体自己的
- * 封面来标注的情况（把所属发行的通用美术写成"该曲官方封面"、把官网首页横幅写成
- * "官方主视觉"）。展示侧借用是合理的兜底，**不写明借自哪里**才是问题，
- * 所以 `origin !== "self"` 时调用方必须渲染 `CoverOriginNote`。
+ * 派生封面仅用于展示，不合并到实体自身的 `pictures`。
  *
  * 这里只认结构，不 import Entity：列表与详情用的是同一个 DTO，
  * 关联实体只有 id 时传 `undefined` 即可，不会误判成"有封面"。

@@ -8,7 +8,6 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions, getKindName } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
 import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover";
-import { CoverOriginNote } from "./CoverOriginNote";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { searchKeyAction } from "@/lib/searchKeyboard";
 import { kindIcon } from "@/lib/kindIcons";
@@ -226,7 +225,6 @@ export function SearchSuggest({
                   </span>
                   <div className="min-w-0 flex-1 text-sm text-text-strong truncate">
                     {displayTitle(item)}
-                    <CoverOriginNote origin={cover.origin} from={cover.from} />
                   </div>
                   <span className="shrink-0 text-[10px] font-mono text-text-faint">
                     {getKindName(kinds, item.kind, locale, tr("catalog.kind." + item.kind, item.kind))}
