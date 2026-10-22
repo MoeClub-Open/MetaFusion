@@ -265,14 +265,14 @@ body::before {
   mask-repeat: repeat;
 }
 
-/* Ensure app content above texture */
-body > * {
-  position: relative;
-  z-index: 1;
-}
-
 /* --- Form controls & Button baseline --- */
 @layer base {
+  /* 底纹上方的默认层级；组件的定位与层级工具类仍可覆盖。 */
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
+
   input[type="checkbox"], input[type="radio"] {
     appearance: none;
     display: inline-grid;
