@@ -71,3 +71,5 @@ Next 默认使用 3000 端口。只连接目录后端时可联调目录读取，
 生成物从来源重建，不手工改：权限码/kind 用 `bun run contracts:build`，语言表用 `bun run langs:build`，主题令牌用 `bun run theme:build`（均在 `frontend/`）。对应 `contracts:check`、`langs:check` 和设计令牌检查守住漂移；改契约时应让实际兄弟仓到位，避免缺仓沿用旧生成值。
 
 新增迁移须同步 CI 的不可逆 down 守卫版本，已发布迁移不可改写。只暂存本任务路径并检查 staged diff，再按内聚变更提交；本地检查不能替代目标实例迁移、回读或部署验收。
+
+本地临时文件和构建缓存可用 `pwsh -File scripts/clean-local.ps1` 预览；加 `-Apply` 执行删除。`-IncludeGitArtifacts` 额外纳入脚本中明确列出的旧运维文件，不扫描其他 Git 内部文件。脚本在删除前核对全部路径均在仓库内、不包含受版本控制的文件或链接；环境审批仍适用于删除操作。
