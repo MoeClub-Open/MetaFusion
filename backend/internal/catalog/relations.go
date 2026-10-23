@@ -38,6 +38,27 @@ func (s *Store) getMany(ctx context.Context, ids []string, u *User) (map[string]
 }
 
 func getManyFrom(ctx context.Context, q queryer, ids []string, u *User) (map[string]Entity, error) {
+	out, err := entityDocuments(ctx, q, ids)
+	if err != nil {
+		return nil, err
+	}
+	for id, e := range out {
+		if !visible(e, u) {
+			delete(out, id)
+		}
+	}
+	if out, err = fillStructural(ctx, q, out); err != nil {
+		return nil, err
+	}
+	if err = filterVisibleTrackContents(ctx, q, out, u); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// entityDocuments loads facts without applying a public read projection.
+// Callers add structural fields and, for API reads, visibility filtering.
+func entityDocuments(ctx context.Context, q queryer, ids []string) (map[string]Entity, error) {
 	out := map[string]Entity{}
 	uniq := []string{}
 	seen := map[string]bool{}
@@ -68,9 +89,6 @@ func getManyFrom(ctx context.Context, q queryer, ids []string, u *User) (map[str
 			return nil, err
 		}
 		e.ID, e.State, e.CreatedBy = id, state, createdBy
-		if !visible(e, u) {
-			continue
-		}
 		out[id] = e
 	}
 	if err = rows.Err(); err != nil {
@@ -78,12 +96,6 @@ func getManyFrom(ctx context.Context, q queryer, ids []string, u *User) (map[str
 		return nil, err
 	}
 	rows.Close()
-	if out, err = fillStructural(ctx, q, out); err != nil {
-		return nil, err
-	}
-	if err = filterVisibleTrackContents(ctx, q, out, u); err != nil {
-		return nil, err
-	}
 	return out, nil
 }
 

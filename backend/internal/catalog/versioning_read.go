@@ -127,15 +127,10 @@ func readableVersionSnapshot(ctx context.Context, q queryer, id string, u User) 
 		}
 	}
 	if !private {
+		ids := []string{}
 		for _, o := range objects {
 			if o.Target == "entity" {
-				e, eerr := get(ctx, q, o.ID)
-				if eerr != nil || !visible(e, &u) {
-					if eerr != nil && eerr != sql.ErrNoRows {
-						return nil, "", eerr
-					}
-					return nil, "", sql.ErrNoRows
-				}
+				ids = append(ids, o.ID)
 			} else {
 				raw := o.Document
 				if rawNull(raw) {
@@ -145,21 +140,20 @@ func readableVersionSnapshot(ctx context.Context, q queryer, id string, u User) 
 				if json.Unmarshal(raw, &r) != nil {
 					return nil, "", sql.ErrNoRows
 				}
-				for _, eid := range []string{r.SourceID, r.TargetID} {
-					e, eerr := get(ctx, q, eid)
-					if eerr != nil || !visible(e, &u) {
-						if eerr != nil && eerr != sql.ErrNoRows {
-							return nil, "", eerr
-						}
-						return nil, "", sql.ErrNoRows
-					}
-				}
+				ids = append(ids, r.SourceID, r.TargetID)
 			}
 		}
-		for i := range objects {
-			if err = visibleVersionObject(ctx, q, &objects[i], u); err != nil {
-				return nil, "", err
+		entities, err := entityDocuments(ctx, q, ids)
+		if err != nil {
+			return nil, "", err
+		}
+		for _, id := range ids {
+			if e, ok := entities[id]; !ok || !visible(e, &u) {
+				return nil, "", sql.ErrNoRows
 			}
+		}
+		if err = visibleVersionObjects(ctx, q, objects, u); err != nil {
+			return nil, "", err
 		}
 	}
 	return objects, scope, nil

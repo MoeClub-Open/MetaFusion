@@ -3,56 +3,64 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 )
 
-func visibleVersionDocument(ctx context.Context, q queryer, target string, raw json.RawMessage, u User) (json.RawMessage, error) {
-	if target != "entity" || rawNull(raw) {
-		return raw, nil
-	}
-	var e Entity
-	if err := json.Unmarshal(raw, &e); err != nil {
-		return nil, err
-	}
-	if e.Kind != "track" {
-		return raw, nil
-	}
-	visible, err := visibleEntityContents(ctx, q, e, &u)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(encode(visible)), nil
+type versionDocument struct {
+	target string
+	raw    *json.RawMessage
 }
 
-func visibleVersionObject(ctx context.Context, q queryer, o *WorkspaceObject, u User) error {
-	var err error
-	o.Base, err = visibleVersionDocument(ctx, q, o.Target, o.Base, u)
-	if err != nil {
+// Different versions of the same track must remain separate, while sharing
+// one lookup of the current visibility of all referenced expressions.
+func visibleVersionDocuments(ctx context.Context, q queryer, documents []versionDocument, u User) error {
+	tracks := map[string]Entity{}
+	for i, doc := range documents {
+		if doc.target != "entity" || rawNull(*doc.raw) {
+			continue
+		}
+		var e Entity
+		if err := json.Unmarshal(*doc.raw, &e); err != nil {
+			return err
+		}
+		if e.Kind == "track" {
+			if len(e.Contents) == 0 {
+				*doc.raw = json.RawMessage(encode(e))
+			} else {
+				tracks[strconv.Itoa(i)] = e
+			}
+		}
+	}
+	if err := filterVisibleTrackContents(ctx, q, tracks, &u); err != nil {
 		return err
 	}
-	o.Document, err = visibleVersionDocument(ctx, q, o.Target, o.Document, u)
-	if err != nil {
+	for key, e := range tracks {
+		i, _ := strconv.Atoi(key)
+		*documents[i].raw = json.RawMessage(encode(e))
+	}
+	return nil
+}
+
+func visibleVersionObjects(ctx context.Context, q queryer, objects []WorkspaceObject, u User) error {
+	documents := make([]versionDocument, 0, 2*len(objects))
+	for i := range objects {
+		o := &objects[i]
+		documents = append(documents, versionDocument{o.Target, &o.Base}, versionDocument{o.Target, &o.Document})
+	}
+	if err := visibleVersionDocuments(ctx, q, documents, u); err != nil {
 		return err
 	}
-	o.Committed = o.Document
+	for i := range objects {
+		objects[i].Committed = objects[i].Document
+	}
 	return nil
 }
 
 func visibleVersionChanges(ctx context.Context, q queryer, c *CollaborationCommit, u User) error {
+	documents := make([]versionDocument, 0, 3*len(c.Changes))
 	for i := range c.Changes {
 		co := &c.Changes[i]
-		var err error
-		co.Before, err = visibleVersionDocument(ctx, q, co.Target, co.Before, u)
-		if err != nil {
-			return err
-		}
-		co.After, err = visibleVersionDocument(ctx, q, co.Target, co.After, u)
-		if err != nil {
-			return err
-		}
-		co.Base, err = visibleVersionDocument(ctx, q, co.Target, co.Base, u)
-		if err != nil {
-			return err
-		}
+		documents = append(documents, versionDocument{co.Target, &co.Before}, versionDocument{co.Target, &co.After}, versionDocument{co.Target, &co.Base})
 	}
-	return nil
+	return visibleVersionDocuments(ctx, q, documents, u)
 }

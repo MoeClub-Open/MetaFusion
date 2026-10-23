@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -21,112 +20,6 @@ func setCatalogVersionActor(ctx context.Context, tx *sql.Tx, u User, head *strin
 		value = *head
 	}
 	_, err := tx.ExecContext(ctx, `SELECT set_config('metafusion.main_actor',$1,true),set_config('metafusion.main_actor_name',$2,true),set_config('metafusion.main_source',$3,true),set_config('metafusion.main_message',$4,true)`, u.ID, u.Username, value, message)
-	return err
-}
-
-// Finalization runs after all record writes. Only this short metadata step
-// serializes the official head; editing and scoped validation remain parallel.
-func finalizeCatalogVersion(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, `SELECT target,target_id::text FROM catalog.pending_record_versions WHERE transaction_id=txid_current() ORDER BY target,target_id`)
-	if err != nil {
-		return err
-	}
-	type key struct{ target, id string }
-	keys := []key{}
-	for rows.Next() {
-		var k key
-		if err = rows.Scan(&k.target, &k.id); err != nil {
-			rows.Close()
-			return err
-		}
-		keys = append(keys, k)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	if len(keys) == 0 {
-		var source string
-		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(current_setting('metafusion.main_source',true),'')`).Scan(&source); err != nil {
-			return err
-		}
-		if source == "" {
-			return nil
-		}
-	}
-	var parent, actor, name, source, message string
-	if err = tx.QueryRowContext(ctx, `SELECT commit_id::text FROM catalog.catalog_head WHERE singleton FOR UPDATE`).Scan(&parent); err != nil {
-		return err
-	}
-	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(current_setting('metafusion.main_actor',true),''),'system'),COALESCE(current_setting('metafusion.main_actor_name',true),''),COALESCE(current_setting('metafusion.main_source',true),''),COALESCE(NULLIF(current_setting('metafusion.main_message',true),''),'Catalog changes')`).Scan(&actor, &name, &source, &message); err != nil {
-		return err
-	}
-	id := newID()
-	request := map[string]any{"operation": "integrate", "source_head": source}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,parent_id,merge_parent_id,message,kind,snapshot_scope,merged_at,merged_by) VALUES($1,$2,$3,$4,'{}',$5,$6,$7,$8,'rebase','catalog',now(),$2)`, id, actor, requestHash(request), encode(request), encode(commitAuthor{ID: actor, Username: name}), parent, nullable(source), message); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commit_operations VALUES($1,'integrate',$2::uuid[])`, id, pq.Array(func() []string {
-		if source == "" {
-			return []string{}
-		}
-		return []string{source}
-	}())); err != nil {
-		return err
-	}
-	var sequence int64
-	if err = tx.QueryRowContext(ctx, `INSERT INTO catalog.catalog_versions(commit_id) VALUES($1) RETURNING sequence`, id).Scan(&sequence); err != nil {
-		return err
-	}
-	for _, k := range keys {
-		var after json.RawMessage
-		if k.target == "entity" {
-			e, eerr := get(ctx, tx, k.id)
-			if eerr != nil && !errors.Is(eerr, sql.ErrNoRows) {
-				return eerr
-			}
-			if eerr == nil {
-				after = json.RawMessage(encode(e))
-			}
-		} else {
-			r, eerr := relationByID(ctx, tx, k.id)
-			if eerr != nil && !errors.Is(eerr, sql.ErrNoRows) {
-				return eerr
-			}
-			if eerr == nil {
-				after = json.RawMessage(encode(r))
-			}
-		}
-		var before json.RawMessage
-		err = tx.QueryRowContext(ctx, `SELECT COALESCE(document,'null'::jsonb) FROM catalog.catalog_record_versions WHERE target=$1 AND target_id=$2 ORDER BY sequence DESC LIMIT 1`, k.target, k.id).Scan(&before)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if equalDocument(before, after) {
-			continue
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.catalog_record_versions VALUES($1,$2,$3,$4)`, sequence, k.target, k.id, nullableJSON(after)); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,base_document,before_document,after_document) VALUES($1,$2,$3,$4,$5,$5,$6)`, id, k.target, k.id, versionDocumentNumber(before, 0), nullableJSON(before), nullableJSON(after)); err != nil {
-			return err
-		}
-	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name) SELECT DISTINCT $1::uuid,a.user_id,a.name FROM catalog.revisions r JOIN catalog.revision_commits rc ON rc.revision_id=r.id JOIN catalog.commit_authors a ON a.commit_id=rc.commit_id WHERE r.xmin::text::bigint=(txid_current() & 4294967295) ON CONFLICT DO NOTHING`, id)
-	if err != nil {
-		return err
-	}
-	count, _ := result.RowsAffected()
-	if count == 0 && actor != "system" {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors VALUES($1,$2,$3)`, id, actor, name); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE catalog.catalog_head SET commit_id=$1 WHERE singleton`, id); err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, `DELETE FROM catalog.pending_record_versions WHERE transaction_id=txid_current()`)
 	return err
 }
 
@@ -147,6 +40,10 @@ func catalogSnapshotQuery(filter bool) string {
 	if filter {
 		where = " AND target_id=ANY($4::uuid[])"
 	}
+	return catalogSnapshotFilteredQuery(where)
+}
+
+func catalogSnapshotFilteredQuery(where string) string {
 	return `WITH latest AS (SELECT DISTINCT ON(target,target_id) target,target_id,document FROM catalog.catalog_record_versions WHERE sequence<=(SELECT sequence FROM catalog.catalog_versions WHERE commit_id=$1)` + where + ` ORDER BY target,target_id,sequence DESC) SELECT v.target,v.target_id::text,v.document FROM latest v WHERE v.document IS NOT NULL AND (` + catalogSnapshotVisibleSQL + `) ORDER BY v.target,v.target_id`
 }
 
@@ -187,10 +84,8 @@ func catalogVersionObjects(ctx context.Context, q queryer, id string, targets []
 	if err != nil {
 		return out, err
 	}
-	for i := range out {
-		if err = visibleVersionObject(ctx, q, &out[i], u); err != nil {
-			return nil, err
-		}
+	if err = visibleVersionObjects(ctx, q, out, u); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -258,11 +153,11 @@ func (s *Store) CatalogVersionHistory(ctx context.Context, query VersionHistoryQ
 func catalogVersionSnapshotPage(ctx context.Context, tx *sql.Tx, id string, queryFilter VersionReadQuery, u User) (CommitSnapshot, error) {
 	limit, offset := queryFilter.Limit, queryFilter.Offset
 	out := CommitSnapshot{CommitID: id, Scope: "catalog", Objects: []WorkspaceObject{}, Limit: limit, Offset: offset}
-	query := `SELECT * FROM (` + catalogSnapshotQuery(false) + `) scoped WHERE ($4::text='' OR target=$4) AND ($5::text='' OR target_id=$5)`
+	query := catalogSnapshotFilteredQuery(` AND ($4::text='' OR target=$4) AND ($5::text='' OR target_id=NULLIF($5,'')::uuid)`)
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (`+query+`) visible`, id, u.ID, u.Can(PermissionLifecycleManage), queryFilter.Target, queryFilter.RecordID).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := tx.QueryContext(ctx, query+` ORDER BY target,target_id LIMIT $6 OFFSET $7`, id, u.ID, u.Can(PermissionLifecycleManage), queryFilter.Target, queryFilter.RecordID, limit, offset)
+	rows, err := tx.QueryContext(ctx, query+` LIMIT $6 OFFSET $7`, id, u.ID, u.Can(PermissionLifecycleManage), queryFilter.Target, queryFilter.RecordID, limit, offset)
 	if err != nil {
 		return out, err
 	}
@@ -282,10 +177,8 @@ func catalogVersionSnapshotPage(ctx context.Context, tx *sql.Tx, id string, quer
 	if err != nil {
 		return out, err
 	}
-	for i := range out.Objects {
-		if err = visibleVersionObject(ctx, tx, &out.Objects[i], u); err != nil {
-			return out, err
-		}
+	if err = visibleVersionObjects(ctx, tx, out.Objects, u); err != nil {
+		return out, err
 	}
 	return out, nil
 }
@@ -293,32 +186,41 @@ func catalogVersionSnapshotPage(ctx context.Context, tx *sql.Tx, id string, quer
 func compareCatalogVersions(ctx context.Context, tx *sql.Tx, base, head string, queryFilter VersionReadQuery, u User) (VersionComparison, error) {
 	limit, offset := queryFilter.Limit, queryFilter.Offset
 	out := VersionComparison{BaseID: base, HeadID: head, Changes: []CommitObject{}, Limit: limit, Offset: offset}
-	query := `WITH old AS(SELECT DISTINCT ON(target,target_id) target,target_id,document FROM catalog.catalog_record_versions WHERE sequence<=(SELECT sequence FROM catalog.catalog_versions WHERE commit_id=$1) ORDER BY target,target_id,sequence DESC), next AS(SELECT DISTINCT ON(target,target_id) target,target_id,document FROM catalog.catalog_record_versions WHERE sequence<=(SELECT sequence FROM catalog.catalog_versions WHERE commit_id=$4) ORDER BY target,target_id,sequence DESC), changes AS(SELECT COALESCE(a.target,b.target) AS target,COALESCE(a.target_id,b.target_id) AS target_id,a.document AS before,b.document AS after,COALESCE(b.document,a.document) AS document FROM old a FULL JOIN next b USING(target,target_id) WHERE a.document IS DISTINCT FROM b.document) SELECT v.target,v.target_id::text,COALESCE(v.before,'null'::jsonb) AS before,COALESCE(v.after,'null'::jsonb) AS after FROM changes v WHERE (` + catalogSnapshotVisibleSQL + `) ORDER BY v.target,v.target_id`
-	query = `SELECT * FROM (` + query + `) scoped WHERE ($5::text='' OR target=$5) AND ($6::text='' OR target_id=$6)`
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (`+query+`) d`, base, u.ID, u.Can(PermissionLifecycleManage), head, queryFilter.Target, queryFilter.RecordID).Scan(&out.Total); err != nil {
+	if base == head {
+		return out, nil
+	}
+	// Only records touched between the two versions can differ. Resolve those
+	// records with the lookup index, including reverse comparisons and deletions.
+	query := `WITH bounds AS (
+		SELECT a.sequence AS base,b.sequence AS head FROM catalog.catalog_versions a,catalog.catalog_versions b WHERE a.commit_id=$1 AND b.commit_id=$4
+	), touched AS (
+		SELECT DISTINCT r.target,r.target_id FROM catalog.catalog_record_versions r,bounds b
+		WHERE r.sequence>LEAST(b.base,b.head) AND r.sequence<=GREATEST(b.base,b.head)
+		AND ($5::text='' OR r.target=$5) AND ($6::text='' OR r.target_id=NULLIF($6,'')::uuid)
+	), changes AS (
+		SELECT k.target,k.target_id,a.document AS before,b.document AS after,COALESCE(b.document,a.document) AS document
+		FROM touched k CROSS JOIN bounds x
+		LEFT JOIN LATERAL (SELECT document FROM catalog.catalog_record_versions WHERE target=k.target AND target_id=k.target_id AND sequence<=x.base ORDER BY sequence DESC LIMIT 1) a ON true
+		LEFT JOIN LATERAL (SELECT document FROM catalog.catalog_record_versions WHERE target=k.target AND target_id=k.target_id AND sequence<=x.head ORDER BY sequence DESC LIMIT 1) b ON true
+		WHERE a.document IS DISTINCT FROM b.document
+	), visible AS MATERIALIZED (
+		SELECT v.target,v.target_id AS id,v.before,v.after FROM changes v WHERE (` + catalogSnapshotVisibleSQL + `)
+	), page AS (SELECT * FROM visible ORDER BY target,id LIMIT $7 OFFSET $8)
+	SELECT (SELECT count(*) FROM visible),COALESCE(jsonb_agg(to_jsonb(page) ORDER BY target,id),'[]'::jsonb) FROM page`
+	var raw []byte
+	if err := tx.QueryRowContext(ctx, query, base, u.ID, u.Can(PermissionLifecycleManage), head, queryFilter.Target, queryFilter.RecordID, limit, offset).Scan(&out.Total, &raw); err != nil {
 		return out, err
 	}
-	rows, err := tx.QueryContext(ctx, query+` ORDER BY target,target_id LIMIT $7 OFFSET $8`, base, u.ID, u.Can(PermissionLifecycleManage), head, queryFilter.Target, queryFilter.RecordID, limit, offset)
-	if err != nil {
+	if err := json.Unmarshal(raw, &out.Changes); err != nil {
 		return out, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var co CommitObject
-		if err = rows.Scan(&co.Target, &co.ID, &co.Before, &co.After); err != nil {
-			return out, err
-		}
+	for i := range out.Changes {
+		co := &out.Changes[i]
 		co.Base = co.Before
 		co.BaseVersion = versionDocumentNumber(co.Before, 0)
-		out.Changes = append(out.Changes, co)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return out, err
 	}
 	tmp := CollaborationCommit{Changes: out.Changes}
-	if err = visibleVersionChanges(ctx, tx, &tmp, u); err != nil {
+	if err := visibleVersionChanges(ctx, tx, &tmp, u); err != nil {
 		return out, err
 	}
 	out.Changes = tmp.Changes
