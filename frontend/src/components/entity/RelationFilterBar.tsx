@@ -130,7 +130,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       title={count === undefined ? label : `${label} (${count})`}
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border text-xs transition-all cursor-pointer ${
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-control border text-xs transition-all cursor-pointer ${
         active
           ? "bg-primary text-white border-primary font-medium shadow-xs"
           : "border-line bg-black/[0.03] dark:bg-white/[0.04] text-gray-600 dark:text-gray-300 hover:border-primary/40 hover:text-gray-900 dark:hover:text-white"

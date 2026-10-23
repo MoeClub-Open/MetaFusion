@@ -345,7 +345,7 @@ export function EntityResourceFiles({ entityId, className }: { entityId: string;
             {t("storage.files.title")}
           </h2>
           {listState === "ready" && files.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+            <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
               {files.length}
             </span>
           )}

@@ -212,7 +212,7 @@ export default function HomePage() {
                     </div>
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <h2 id={`shelf-title-${shelf.slug}`} className="break-words font-bold text-text-strong text-base sm:text-lg tracking-tight">{title}</h2>
-                      <span className="shrink-0 px-2 py-0.5 rounded-full bg-emphasis/[0.06] text-text-muted text-xs font-mono">
+                      <span className="shrink-0 px-2 py-0.5 rounded-chip bg-emphasis/[0.06] text-text-muted text-xs font-mono">
                         {t("home.itemCount", { count: (total ?? items.length).toString() })}
                       </span>
                     </div>

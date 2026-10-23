@@ -3,7 +3,7 @@ import React from "react";
 /**
  * 卡片：统一的边框 / 圆角 / 背景 / 内边距口径。
  * 页面里不要再手写 rounded-* + border + bg-surface + p-* 这套组合（密度口径见组件默认值）。
- * 圆角取 rounded-card（8px），卡片与更大的弹窗面板保持层级。
+ * 圆角取 rounded-card，与控件和弹窗共用统一弧度。
  */
 const TONE: Record<string, string> = {
   surface: "border-line bg-surface",

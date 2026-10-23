@@ -119,7 +119,7 @@ export function EntityRevisions({
               <span className="font-semibold text-text-strong text-sm">
                 {t("revisions.mainLog")}
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-mono font-bold">
+              <span className="px-2 py-0.5 rounded-chip bg-primary/15 text-primary text-[10px] font-mono font-bold">
                 {t("revisions.commitsUnit", { count: sortedRevisions.length })}
               </span>
             </div>

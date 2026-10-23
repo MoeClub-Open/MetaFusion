@@ -28,7 +28,7 @@ export default function Error({
           <BrandMark size={72} withGlow={true} idSuffix="error-boundary" />
         </div>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-danger text-xs font-mono tracking-wider mb-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-chip bg-rose-500/10 border border-rose-500/20 text-danger text-xs font-mono tracking-wider mb-4">
           <AlertTriangle className="w-3.5 h-3.5" />
           <span>APPLICATION ERROR</span>
           {error.digest && <span>• {error.digest.slice(0, 8)}</span>}

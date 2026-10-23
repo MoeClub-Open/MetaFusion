@@ -248,7 +248,7 @@ export function Select({
         onClick={() => !disabled && setOpen((v) => !v)}
         onKeyDown={onButtonKeyDown}
         className={cx(
-          "inline-flex w-full items-center justify-between gap-2 h-10 px-3 rounded-md bg-background border border-line text-sm text-text-strong text-left",
+          "inline-flex w-full items-center justify-between gap-2 h-10 px-3 rounded-control bg-background border border-line text-sm text-text-strong text-left",
           "hover:border-black/20 dark:hover:border-white/20 focus:outline-none focus-visible:border-primary",
           "disabled:opacity-50 disabled:cursor-not-allowed",
           className

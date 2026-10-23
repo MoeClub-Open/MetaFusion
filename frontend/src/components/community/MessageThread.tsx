@@ -232,7 +232,7 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
                   type="button"
                   onClick={handleLoadMore}
                   disabled={loadingMore}
-                  className="px-3 h-7 rounded-full bg-emphasis/5 hover:bg-emphasis/10 border border-line text-[11px] text-text-body font-mono inline-flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-3 h-7 rounded-control bg-emphasis/5 hover:bg-emphasis/10 border border-line text-[11px] text-text-body font-mono inline-flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {loadingMore ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                   <span>

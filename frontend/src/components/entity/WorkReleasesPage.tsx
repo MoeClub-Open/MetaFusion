@@ -128,7 +128,7 @@ export default function WorkReleasesPage() {
             <h1 className="font-display text-xl tracking-tight text-emphasis">{t("work.releases.releaseCount", { count: total })}</h1>
             <form onSubmit={onSearch} className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-faint" strokeWidth={1.5} />
-              <input value={qInput} {...searchInputLimitProps(setQInput)} placeholder={t("work.detail.searchPlaceholder")} className="pl-9 pr-3 h-10 sm:h-9 w-full sm:w-56 bg-emphasis/[0.04] border border-line rounded-full text-xs text-emphasis placeholder:text-text-faint focus:outline-none focus:border-primary/40" />
+              <input value={qInput} {...searchInputLimitProps(setQInput)} placeholder={t("work.detail.searchPlaceholder")} className="pl-9 pr-3 h-10 sm:h-9 w-full sm:w-56 bg-emphasis/[0.04] border border-line rounded-control text-xs text-emphasis placeholder:text-text-faint focus:outline-none focus:border-primary/40" />
             </form>
           </div>
 
@@ -231,8 +231,8 @@ export default function WorkReleasesPage() {
                 <div className="px-4 py-3 border-t border-line-subtle bg-emphasis/[0.02] flex items-center justify-between">
                   <span className="font-mono text-[11px] text-text-faint">{t("common.pagination", { page, total: totalPages })}</span>
                   <div className="flex items-center gap-2">
-                    <button disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="w-8 h-8 grid place-items-center rounded-full bg-emphasis/[0.06] border border-line disabled:opacity-40 hover:bg-emphasis/[0.10]"><ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.6} /></button>
-                    <button disabled={page>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} className="w-8 h-8 grid place-items-center rounded-full bg-emphasis/[0.06] border border-line disabled:opacity-40 hover:bg-emphasis/[0.10]"><ChevronRight className="w-3.5 h-3.5" strokeWidth={1.6} /></button>
+                    <button disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="w-8 h-8 grid place-items-center rounded-control bg-emphasis/[0.06] border border-line disabled:opacity-40 hover:bg-emphasis/[0.10]"><ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.6} /></button>
+                    <button disabled={page>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} className="w-8 h-8 grid place-items-center rounded-control bg-emphasis/[0.06] border border-line disabled:opacity-40 hover:bg-emphasis/[0.10]"><ChevronRight className="w-3.5 h-3.5" strokeWidth={1.6} /></button>
                   </div>
                 </div>
               )}

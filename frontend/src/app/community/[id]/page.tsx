@@ -255,7 +255,7 @@ export default function TopicDetailPage() {
  <Link
  key={tg.id}
  href={`/community?tag=${encodeURIComponent(tg.name)}`}
- className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-success-soft hover:bg-emerald-500/20 text-xs font-mono transition-colors duration-fast ease-soft"
+ className="inline-flex items-center gap-2 px-2.5 py-1 rounded-chip bg-emerald-500/10 border border-emerald-500/25 text-success-soft hover:bg-emerald-500/20 text-xs font-mono transition-colors duration-fast ease-soft"
  >
  <TagIcon className="w-4 h-4" />
  {tg.name}

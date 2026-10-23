@@ -234,7 +234,7 @@ export function StaffCharacterSection({ credits }: StaffCharacterSectionProps) {
           <button
             type="button"
             onClick={() => setActiveTab("all")}
-            className={`px-3 py-1 rounded-sm transition-all ${
+            className={`px-3 py-1 rounded-control transition-all ${
               effectiveTab === "all"
                 ? "bg-primary text-white font-medium shadow-xs"
                 : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"

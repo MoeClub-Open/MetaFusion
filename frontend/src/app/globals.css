@@ -9,7 +9,7 @@
   --radius-chip: 4px;
   --radius-control: 8px;
   --radius-card: var(--radius-control);
-  --radius-panel: 12px;
+  --radius-panel: var(--radius-control);
   --radius-round: 9999px;
 }
 
@@ -650,7 +650,7 @@ img, video { max-width: 100%; }
   gap: 0.2rem;
   padding: 0.1rem 0.3rem 0.1rem 0.5rem;
   border: 1px solid var(--surface-border-color);
-  border-radius: var(--radius-round);
+  border-radius: var(--radius-chip);
   background: rgb(var(--surface-rgb) / 0.85);
   font-size: 0.76rem;
 }
@@ -684,7 +684,7 @@ img, video { max-width: 100%; }
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--surface-border-color);
-  border-radius: var(--radius-round);
+  border-radius: var(--radius-chip);
   overflow: hidden;
   background: rgb(var(--surface-rgb) / 0.85);
 }

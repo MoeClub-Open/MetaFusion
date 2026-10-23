@@ -786,7 +786,7 @@ function CommunityContent() {
  <button
  key={tag.id}
  onClick={() => setFilterTagId(tag.id)}
- className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-success-soft hover:bg-emerald-500/20 text-xs font-mono transition-colors duration-fast ease-soft"
+ className="inline-flex items-center gap-2 px-2.5 py-1 rounded-chip bg-emerald-500/10 border border-emerald-500/25 text-success-soft hover:bg-emerald-500/20 text-xs font-mono transition-colors duration-fast ease-soft"
  title={t("community.filterByTag", {name: tag.name})}
  >
  <TagIcon className="w-2.5 h-2.5" />

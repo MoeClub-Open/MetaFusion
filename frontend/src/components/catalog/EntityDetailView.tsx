@@ -1109,7 +1109,7 @@ export function EntityDetailView({ id }: { id: string }) {
                     <h3 className="font-display text-sm font-bold text-text-strong uppercase tracking-wider font-mono">
                       {t("catalog.pictureGallery")}
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                    <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
                       {entity.pictures!.length}
                     </span>
                   </div>
@@ -1246,7 +1246,7 @@ export function EntityDetailView({ id }: { id: string }) {
                   <Card padding="section" className="space-y-4 shadow-soft">
                     <SectionTitle icon={<Users className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                       {t("entity.page.navStaff")}
-                      <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                      <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
                         {staffRelations.length}
                       </span>
                     </SectionTitle>
@@ -1270,7 +1270,7 @@ export function EntityDetailView({ id }: { id: string }) {
               <Card id="contents" padding="section" className="space-y-4 shadow-soft">
                 <SectionTitle icon={<List className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                   {t("entity.page.contentsTitle")}
-                  <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                  <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
                     {children.length + (entity.contents?.length || 0)}
                   </span>
                 </SectionTitle>
@@ -1351,7 +1351,7 @@ export function EntityDetailView({ id }: { id: string }) {
               <Card id="releases" padding="section" className="space-y-4 shadow-soft">
                 <SectionTitle icon={<Disc className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                   {t("entity.page.releasesTitle")}
-                  <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                  <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
                     {occurrences.length}
                   </span>
                 </SectionTitle>
@@ -1460,7 +1460,7 @@ export function EntityDetailView({ id }: { id: string }) {
                   }
                 >
                   {t("entity.page.relationsTitle")}
-                  <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                  <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
                     {mediaRelations.length}
                   </span>
                 </SectionTitle>
@@ -1499,7 +1499,7 @@ export function EntityDetailView({ id }: { id: string }) {
             <Card id="revisions" padding="section" className="space-y-4 shadow-soft">
               <SectionTitle icon={<History className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                 {t("entity.page.revisionsHistory")}
-                <span className="ml-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
                   {revisionTotal}
                 </span>
               </SectionTitle>

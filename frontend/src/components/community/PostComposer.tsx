@@ -694,7 +694,7 @@ export default function PostComposer({
               {selectedTagsForDisplay.map((entry) => (
                 <span
                   key={`${entry.id ?? entry.name}-${entry.name}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-success-soft text-xs font-medium"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-chip bg-emerald-500/15 border border-emerald-500/30 text-success-soft text-xs font-medium"
                 >
                   #{entry.name}
                   <button
@@ -703,7 +703,7 @@ export default function PostComposer({
                       if (entry.id) removeTagId(entry.id);
                       else removeCustomTag(entry.name);
                     }}
-                    className="ml-0.5 p-0.5 hover:bg-emerald-500/20 rounded-full"
+                    className="ml-0.5 p-0.5 hover:bg-emerald-500/20 rounded-chip"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>

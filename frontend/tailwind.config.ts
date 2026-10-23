@@ -129,7 +129,7 @@ const config: Config = {
           "serif",
         ],
       },
-      // 圆角只来自 globals.css 的语义变量：小标记 4 / 控件与卡片 8 / 浮层 12。
+      // 圆角只来自 globals.css：小标记 4 / 控件、卡片与浮层 8；full 仅用于圆形元素。
       // 常用尺寸类共享同一套弧度，页面不再因选择 md/lg/xl 而出现不同曲率。
       borderRadius: {
         none: "0px",
@@ -141,6 +141,7 @@ const config: Config = {
         xl: "var(--radius-card)",
         "2xl": "var(--radius-panel)",
         "3xl": "var(--radius-panel)",
+        "4xl": "var(--radius-panel)",
         card: "var(--radius-card)",
         panel: "var(--radius-panel)",
         control: "var(--radius-control)",

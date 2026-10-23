@@ -1008,7 +1008,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             <h3 className="text-xs font-semibold text-foreground truncate">
               {title || t("graph.title")}
             </h3>
-            <span className="text-[10px] font-mono font-medium text-muted-foreground px-2 py-0.5 rounded-full bg-secondary border border-border/40 shrink-0">
+            <span className="text-[10px] font-mono font-medium text-muted-foreground px-2 py-0.5 rounded-chip bg-secondary border border-border/40 shrink-0">
               {t("graph.connectedNodes", { count: activeNodes.length })}
             </span>
           </div>
@@ -1597,7 +1597,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         </svg>
 
         {/* 底部交互操作提示浮层 */}
-        <div className="absolute bottom-3 left-4 pointer-events-none text-[11px] text-muted-foreground/90 flex items-center gap-1.5 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-full border border-border/50 shadow-xs">
+        <div className="absolute bottom-3 left-4 pointer-events-none text-[11px] text-muted-foreground/90 flex items-center gap-1.5 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-panel border border-border/50 shadow-xs">
           <Info className="w-3.5 h-3.5 text-primary shrink-0" />
           <span>{t("graph.interactiveHint")}</span>
         </div>
@@ -1610,14 +1610,14 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1">
                 <span
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-chip border ${
                     getEntityTypeTheme(selectedNode.type, kindLabel, isDark).badgeBgClass
                   }`}
                 >
                   {getEntityTypeTheme(selectedNode.type, kindLabel, isDark).label}
                 </span>
                 {selectedNode.id === centerEntityId && (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25">
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-chip bg-primary/15 text-primary border border-primary/25">
                     {t("graph.centerNode")}
                   </span>
                 )}

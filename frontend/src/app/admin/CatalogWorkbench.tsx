@@ -337,7 +337,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                       <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span className="flex-1">{t(item.labelKey)}</span>
                       {item.id === "reviews" && stats.pending != null && stats.pending > 0 ? (
-                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-warn">{stats.pending}</span>
+                        <span className="rounded-chip bg-amber-500/15 px-2 py-0.5 text-[11px] text-warn">{stats.pending}</span>
                       ) : null}
                     </button>
                   );

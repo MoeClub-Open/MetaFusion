@@ -67,7 +67,7 @@ function ContributionCalendar({ year, days, selected, onSelect }: { year: number
                   const label = t("users.profile.contributions.day", { date: day.date, count: day.count });
                   return (
                     <td key={index} className="p-0">
-                      <button type="button" data-day={day.date} title={label} aria-label={label} aria-pressed={selected===day.date} onClick={()=>onSelect(day.date)} className={`block aspect-square w-full rounded-[3px] border focus-visible:outline-primary ${selected===day.date?"ring-2 ring-primary ring-offset-1 ring-offset-surface":""} ${DAY_COLORS[contributionLevel(day.count)]}`}>
+                      <button type="button" data-day={day.date} title={label} aria-label={label} aria-pressed={selected===day.date} onClick={()=>onSelect(day.date)} className={`block aspect-square w-full rounded-chip border focus-visible:outline-primary ${selected===day.date?"ring-2 ring-primary ring-offset-1 ring-offset-surface":""} ${DAY_COLORS[contributionLevel(day.count)]}`}>
                         <span className="sr-only">{label}</span>
                       </button>
                     </td>
@@ -80,7 +80,7 @@ function ContributionCalendar({ year, days, selected, onSelect }: { year: number
       </div>
       <div className="mt-2 flex items-center justify-end gap-1.5 text-[10px] text-text-muted">
         <span>{t("users.profile.contributions.less")}</span>
-        {DAY_COLORS.map((color) => <span key={color} aria-hidden="true" className={`h-2.5 w-2.5 rounded-[3px] border ${color}`} />)}
+        {DAY_COLORS.map((color) => <span key={color} aria-hidden="true" className={`h-2.5 w-2.5 rounded-chip border ${color}`} />)}
         <span>{t("users.profile.contributions.more")}</span>
       </div>
     </div>

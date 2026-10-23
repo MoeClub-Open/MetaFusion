@@ -27,7 +27,7 @@ export default function NotFound() {
           <BrandMark size={72} withGlow={true} idSuffix="not-found" />
         </div>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-mono tracking-wider mb-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-chip bg-primary/10 border border-primary/20 text-primary text-xs font-mono tracking-wider mb-4">
           <span>STATUS 404</span>
           <span>•</span>
           <span>NOT FOUND</span>

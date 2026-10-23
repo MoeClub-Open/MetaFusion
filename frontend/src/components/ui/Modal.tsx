@@ -118,7 +118,7 @@ export function Modal({
  {icon}
  {title}
  </h3>
- <button type="button" onClick={onClose} aria-label={t("revisions.close")} className="shrink-0 text-text-muted hover:text-gray-900 dark:hover:text-white p-2 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-fast ease-soft w-9 h-9 max-sm:min-h-[44px] grid place-items-center cursor-pointer">
+ <button type="button" onClick={onClose} aria-label={t("revisions.close")} className="shrink-0 text-text-muted hover:text-gray-900 dark:hover:text-white p-2 rounded-control hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-fast ease-soft w-9 h-9 max-sm:min-h-[44px] grid place-items-center cursor-pointer">
  <X className="w-4 h-4" aria-hidden="true" />
  </button>
  </div>

@@ -326,7 +326,7 @@ export function HomeCustomizeModal({
                     </div>
                     <div className="col-span-3 flex flex-wrap items-center justify-end gap-1 sm:col-span-1">
                     {typeof count === "number" && (
-                      <span className="px-2 py-0.5 rounded-full bg-emphasis/[0.06] text-text-muted text-[10px] font-mono shrink-0">
+                      <span className="px-2 py-0.5 rounded-chip bg-emphasis/[0.06] text-text-muted text-[10px] font-mono shrink-0">
                         {t("home.itemCount", { count: count.toString() })}
                       </span>
                     )}
