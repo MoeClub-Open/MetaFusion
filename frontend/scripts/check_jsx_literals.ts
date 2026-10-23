@@ -11,11 +11,11 @@
 //   2. 中日韩裸串不报：JSX 里"共 {n} 项"这类混排很多，且中文裸串另有审查口径；
 //   3. ALLOWED 是"不是文案"的标识/品牌，BASELINE 是检查上线时**已存在**的裸文案（欠账清单，
 //      不是许可）——新出现的一条会被拦下，由人决定"进字典"还是"进白名单并写明理由"。
-// 用法：node scripts/check_jsx_literals.mjs [--selftest]
+// 用法：bun scripts/check_jsx_literals.ts [--selftest]
 import { readFileSync, readdirSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import ts from "typescript-api";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 

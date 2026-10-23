@@ -20,32 +20,7 @@ func externalLinkURL(kind, externalID, pattern string) string {
 	return fmt.Sprintf("mf://external/%s/%s", kind, strings.ReplaceAll(url.PathEscape(externalID), "+", "%20"))
 }
 
-// linkFromID is the Entity-side replacement for a former external_ids map entry.
-func linkFromID(kind, value string) ExternalLink {
-	kind = strings.TrimSpace(kind)
-	value = strings.TrimSpace(value)
-	link := ExternalLink{Kind: kind, URL: externalLinkURL(kind, value, "")}
-	if !(strings.HasPrefix(strings.ToLower(value), "http://") || strings.HasPrefix(strings.ToLower(value), "https://")) {
-		link.ExternalID = value
-	}
-	return link
-}
-
-func linksFromIDMap(ids map[string]string) []ExternalLink {
-	if len(ids) == 0 {
-		return nil
-	}
-	out := make([]ExternalLink, 0, len(ids))
-	for k, v := range ids {
-		if strings.TrimSpace(v) == "" {
-			continue
-		}
-		out = append(out, linkFromID(k, v))
-	}
-	return out
-}
-
-// previewLinks converts a legacy importer preview map into external_links objects.
+// previewLinks converts adapter preview identifiers into external_links objects.
 func previewLinks(ids map[string]any) []map[string]any {
 	if len(ids) == 0 {
 		return nil
@@ -63,16 +38,4 @@ func previewLinks(ids map[string]any) []map[string]any {
 		out = append(out, link)
 	}
 	return out
-}
-
-func previewLinkID(links []map[string]any, kind string) any {
-	for _, link := range links {
-		if fmt.Sprint(link["kind"]) == kind {
-			if v, ok := link["external_id"]; ok {
-				return v
-			}
-			return link["url"]
-		}
-	}
-	return nil
 }

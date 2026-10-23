@@ -1,5 +1,6 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   reactStrictMode: true,
   // 默认会带 X-Powered-By: Next.js（线上实测主站与三个管理台都有），是给攻击者免费用指纹的
   // 无谓泄露；关掉它不改变任何客户端行为，网关也不读这个头。
@@ -62,17 +63,6 @@ const nextConfig = {
       );
     }
     return routes;
-  },
-  // 集中维护入口别名；实体内容只在 /catalog/:id 维护一份。
-  async redirects() {
-    return [
-      { source: "/landing", destination: "/", permanent: true },
-      // 资源上传属存储域（独立资源站）：本前端的资源入口是 /downloads——
-      // 资源站已配置时整页跳过去，未配置时显示「资源站未接入」的说明，两种情况都不说谎。
-      { source: "/upload", destination: "/downloads", permanent: true },
-      // /submit 指 /contribute：在这个站里 submit 是"投稿/提交条目"，与编目枢纽同义。
-      { source: "/submit", destination: "/contribute", permanent: true },
-    ];
   },
 };
 

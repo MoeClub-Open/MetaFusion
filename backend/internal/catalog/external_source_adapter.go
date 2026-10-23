@@ -1353,15 +1353,3 @@ func previewBangumiCharacter(ctx context.Context, source string, id int) (Extern
 		Tags: []string{},
 	}, nil
 }
-
-// ---- 落库 ----
-
-var externalSourceDatePattern = regexp.MustCompile(`^\d{4}(-\d{2}(-\d{2})?)?$`)
-
-func cleanExternalSourceDate(v string) string {
-	v = strings.TrimSpace(v)
-	if !externalSourceDatePattern.MatchString(v) {
-		return ""
-	}
-	return v
-}

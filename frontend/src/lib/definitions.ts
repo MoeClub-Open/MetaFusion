@@ -483,7 +483,7 @@ const tagIndexCache = new WeakMap<object, TagIndex>();
  *
  * 反查遍历一律走它，于是"同名被多个词条声明时命中哪个 term"只由 code 字典序决定，
  * 与 definitions JSON 的键序（`Object.entries` 的插入顺序）无关：把等价词表的键反序写入，
- * 解析结果完全一致（回归测试 `frontend/scripts/tag-i18n-order.test.mjs`）。
+ * 解析结果完全一致（回归测试 `frontend/scripts/tag-i18n-order.test.ts`）。
  */
 function tagTermCodes(terms: VocabularyDef["terms"] | undefined): string[] {
   return Object.keys(terms || {}).sort();

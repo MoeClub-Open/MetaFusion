@@ -1,10 +1,10 @@
-// 由 scripts/theme-palette.mjs 生成：
+// 由 scripts/theme-palette.ts 生成：
 //   src/app/theme.generated.css  —— 每套配色在深/浅两种模式下的 CSS 变量块（静态，无 JS 也能生效）
 //   src/lib/theme.generated.ts   —— 前端需要的配色目录（id / 名称键 / 色卡）
 // 生成物一并提交：主题是静态资产，构建期不依赖脚本再次运行。
 import fs from "fs";
 import path from "path";
-import { ACCENTS, TONES, PATTERNS, BASE_DARK, BASE_LIGHT, DEFAULT_ACCENT, DEFAULT_TONE, DEFAULT_PATTERN } from "./theme-palette.mjs";
+import { ACCENTS, TONES, PATTERNS, BASE_DARK, BASE_LIGHT, DEFAULT_ACCENT, DEFAULT_TONE, DEFAULT_PATTERN } from "./theme-palette.ts";
 
 const ROOT = process.cwd();
 const CSS_OUT = path.join(ROOT, "src/app/theme.generated.css");
@@ -104,7 +104,7 @@ function toneVars(tone, base, mode) {
 
 // —— 生成 CSS ——
 const lines = [];
-lines.push("/* 由 scripts/gen-theme.mjs 生成，勿手改：改配色请看 scripts/theme-palette.mjs。 */");
+lines.push("/* 由 scripts/gen-theme.ts 生成，勿手改：改配色请看 scripts/theme-palette.ts。 */");
 lines.push("");
 for (const a of ACCENTS) {
   const v = accentVars(a);
@@ -165,7 +165,7 @@ fs.writeFileSync(CSS_OUT, lines.join("\n"));
 
 // —— 生成前端目录 ——
 const ts = [
-  "// 由 scripts/gen-theme.mjs 生成，勿手改：新增配色请看 scripts/theme-palette.mjs 后重跑 npm run theme:build。",
+  "// 由 scripts/gen-theme.ts 生成，勿手改：新增配色请看 scripts/theme-palette.ts 后重跑 npm run theme:build。",
   "",
   "export interface AccentEntry { id: string; labelKey: string; swatch: string; }",
   "export interface ToneEntry { id: string; labelKey: string; }",
@@ -202,7 +202,7 @@ console.log("  " + path.relative(ROOT, TS_OUT));
 // 为什么生成而不是手写：文件里要用到配色 id 列表与默认值，手写就等于把它们抄了第二遍，
 // 新增配色时容易忘记同步（表现是"选了新配色，首帧又闪回默认"）。
 const BOOT_OUT = path.join(ROOT, "public/theme-boot.js");
-const bootJs = `// 由 scripts/gen-theme.mjs 生成，勿手改：改配色请看 scripts/theme-palette.mjs。
+const bootJs = `// 由 scripts/gen-theme.ts 生成，勿手改：改配色请看 scripts/theme-palette.ts。
 // 首帧同步执行：把 localStorage 里的主题选择写到 <html> 上，避免加载瞬间闪默认配色。
 (function () {
   function read(key) {

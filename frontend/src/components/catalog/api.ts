@@ -3,7 +3,7 @@ import { resolveLocalizedName } from "@/lib/localizedNames";
 import { fetchApi } from "@/lib/api";
 import { ENTITY_KINDS } from "@/lib/kinds.generated";
 
-/** 固定八种骨架：单一来源是目录库基线（见 frontend/scripts/generate-contracts.mjs）。 */
+/** 固定八种骨架：单一来源是目录库基线（见 frontend/scripts/generate-contracts.ts）。 */
 export const kinds: string[] = [...ENTITY_KINDS];
 export type Names = Record<string, string>;
 export type Field = {

@@ -30,7 +30,7 @@ const config: Config = {
           DEFAULT: "rgb(var(--secondary-rgb) / <alpha-value>)",
           foreground: "rgb(var(--foreground-rgb) / <alpha-value>)",
         },
-        // 默认描边色：值是 --line-color 在其所在表面上的不透明等价值（由 gen-theme.mjs 的
+        // 默认描边色：值是 --line-color 在其所在表面上的不透明等价值（由 gen-theme.ts 的
         // blendOver / globals.css 的 --border-rgb 给出），因为 <alpha-value> 要同时支撑
         // border-border 与 border-border/50 两种写法。
         border: "rgb(var(--border-rgb) / <alpha-value>)",

@@ -41,16 +41,6 @@ export function displayNameOf(u: Pick<User, "username" | "display_name">): strin
 
 let refreshPromise: Promise<boolean> | null = null;
 
-export function clearAuthTokens(): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem("metafusion_token");
-    localStorage.removeItem("metafusion_refresh_token");
-  } catch {
-    // 禁用浏览器存储时仍允许使用服务端 Cookie 会话。
-  }
-}
-
 async function requestTokenRefresh(): Promise<boolean> {
   // 浏览器会话只使用 HttpOnly Cookie；刷新成功后账号服务会轮换该 Cookie。
   if (refreshPromise) {
@@ -81,7 +71,6 @@ async function requestTokenRefresh(): Promise<boolean> {
 /**
  * API 错误：保留 HTTP 状态码。
  * 调用方据此区分 403/404/503（提示"权限不足/不存在/上游不可用"），而不是去解析错误文案。
- * 继承 Error 且 message 与旧实现一致，既有 `err.message` 用法不受影响。
  */
 
 export class ApiError extends Error {

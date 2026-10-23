@@ -1,5 +1,5 @@
 // 前端权限判定：码表由 backend/internal/catalog/permission.go 与各子系统仓库声明生成
-// （见 frontend/scripts/generate-contracts.mjs），本文件不再手抄任何码。
+// （见 frontend/scripts/generate-contracts.ts），本文件不再手抄任何码。
 //
 // 权限码由账号服务装进组（auth.groups.permissions），各子系统声明并解释自己的码。
 // 这里只做"能不能看到入口"的判断；真正的写入授权仍在服务端，前端判定只是别把

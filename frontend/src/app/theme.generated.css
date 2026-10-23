@@ -1,4 +1,4 @@
-/* 由 scripts/gen-theme.mjs 生成，勿手改：改配色请看 scripts/theme-palette.mjs。 */
+/* 由 scripts/gen-theme.ts 生成，勿手改：改配色请看 scripts/theme-palette.ts。 */
 
 [data-theme-accent="blue"][data-theme-mode="dark"] {
   --primary-color: #4f8ef7;

@@ -30,12 +30,9 @@ services:
       - ../frontend/src:/app/src:ro
       - ../frontend/public:/app/public:ro
       - ../frontend/package.json:/app/package.json:ro
-      # Next 会读的入口与配置文件：漏挂就等于容器里跑镜像内那份旧配置——Tailwind 的 postcss
-      # 插件不生效、middleware 不跑、tsconfig 的 @/* 路径别名解析不了。
-      - ../frontend/postcss.config.mjs:/app/postcss.config.mjs:ro
+      # PostCSS 插件由 package.json 配置，proxy 与页面源码一同挂载于 src/。
       - ../frontend/tailwind.config.ts:/app/tailwind.config.ts:ro
-      - ../frontend/next.config.mjs:/app/next.config.mjs:ro
-      - ../frontend/middleware.ts:/app/middleware.ts:ro
+      - ../frontend/next.config.ts:/app/next.config.ts:ro
       - ../frontend/tsconfig.json:/app/tsconfig.json:ro
     environment:
       - NODE_ENV=development
@@ -78,7 +75,7 @@ services:
     container_name: metafusion-docs-dev
     command: npm run dev
     # VitePress 项目：内容与配置都在 docs/ 下（docs/.vitepress/config.mts），
-    # 静态资源为 docs/public；无 Next.js 的 src/content/next.config.mjs，故不再挂载。
+    # 静态资源为 docs/public；无 Next.js 的 src/content/next.config.ts，故不再挂载。
     volumes:
       - ${MF_DOCS_DIR:-../../metafusion-docs}/docs:/app/docs:ro
       - ${MF_DOCS_DIR:-../../metafusion-docs}/package.json:/app/package.json:ro

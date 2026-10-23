@@ -2,7 +2,7 @@
 
 // 主题系统：显示模式 × 配色方案 × 表面色调 × 背景图案，四组选择彼此独立。
 //
-// 颜色不在这里计算：配色目录由 scripts/gen-theme.mjs 从 scripts/theme-palette.mjs 生成，
+// 颜色不在这里计算：配色目录由 scripts/gen-theme.ts 从 scripts/theme-palette.ts 生成，
 // CSS 变量块是静态的，因此首帧不会闪错色，也不需要把色板塞进运行时。
 // 这里只负责把四个属性写到 <html> 上并持久化。
 

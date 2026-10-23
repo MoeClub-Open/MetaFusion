@@ -1,4 +1,4 @@
-// 由 scripts/gen-theme.mjs 生成，勿手改：改配色请看 scripts/theme-palette.mjs。
+// 由 scripts/gen-theme.ts 生成，勿手改：改配色请看 scripts/theme-palette.ts。
 // 首帧同步执行：把 localStorage 里的主题选择写到 <html> 上，避免加载瞬间闪默认配色。
 (function () {
   function read(key) {

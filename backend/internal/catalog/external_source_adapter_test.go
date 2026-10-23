@@ -260,3 +260,15 @@ func TestExternalSourcePreviewEpisodes(t *testing.T) {
 		t.Fatalf("OP episode role should not be main: %+v", op)
 	}
 }
+
+func previewLinkID(links []map[string]any, kind string) any {
+	for _, link := range links {
+		if fmt.Sprint(link["kind"]) == kind {
+			if v, ok := link["external_id"]; ok {
+				return v
+			}
+			return link["url"]
+		}
+	}
+	return nil
+}

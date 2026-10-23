@@ -1,4 +1,4 @@
-/* 配色与表面色调的变量块由 scripts/gen-theme.mjs 生成（唯一来源见 scripts/theme-palette.mjs） */
+/* 配色与表面色调的变量块由 scripts/gen-theme.ts 生成（唯一来源见 scripts/theme-palette.ts） */
 @import "./theme.generated.css";
 
 @import "tailwindcss";
@@ -118,7 +118,7 @@
   --surface-subtle-color: rgba(15, 23, 42, 0.035);
   --text-strong-color: #0f172a;
   --text-body-color: #334155;
-  /* 与 theme-palette.mjs 的 BASE_LIGHT 同值：次要文字在最浅的表面（#f1f5f9）上也要 ≥4.5:1 */
+  /* 与 theme-palette.ts 的 BASE_LIGHT 同值：次要文字在最浅的表面（#f1f5f9）上也要 ≥4.5:1 */
   --text-muted-color: #55606f;
   --text-faint-color: #636e80;
   --ring-color: color-mix(in srgb, var(--primary-color) 45%, transparent);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CI 引用的脚本/文件必须存在于版本库（元检查）。
 
-为什么需要它：CI 里写过 run: node scripts/xxx.mjs 而那个脚本根本没入库（或路径写错一层目录），
+为什么需要它：CI 里写过 run: bun scripts/xxx.ts 而那个脚本根本没入库（或路径写错一层目录），
 表现是 job 在 clone 出来的干净检出上红——本地却看不出来，因为本地工作区里文件是有的。
 本脚本把「工作流文本 → 被引用的仓库内路径」解析出来，逐个核对 **git 索引**（不是工作区），
 所以「本地有、没提交」也会被抓到。另外核对 bun run <script> 的目标在 package.json 里存在。
@@ -31,10 +31,10 @@ SKIP_PREFIXES = ("/tmp/", "/etc/", "/usr/", "/bin/", "/var/", "/opt/", "/dev/", 
 # "$" 与 "{{" 分开写：GitHub 表达式在路径检查里一律跳过，连在一起容易看成本模板的插值。
 SKIP_SUBSTRINGS = ("$" + "{{", "://", "node_modules/")
 # 被 CI 直接引用的仓库内文件：脚本，加上工作流里挂载/读取的配置文件与版本锁。
-SCRIPT_SUFFIXES = (".mjs", ".cjs", ".js", ".py", ".sh", ".ps1", ".bash", ".conf", ".lock")
+SCRIPT_SUFFIXES = (".ts", ".mjs", ".cjs", ".js", ".py", ".sh", ".ps1", ".bash", ".conf", ".lock")
 
-# 形如 scripts/check_x.py、./deploy/a.sh、frontend/scripts/gen.mjs 的路径。
-PATH_RE = re.compile(r"(?<![\w./-])((?:\./)?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:mjs|cjs|js|py|sh|ps1|bash|conf|lock))")
+# 形如 scripts/check_x.py、./deploy/a.sh、frontend/scripts/gen.ts 的路径。
+PATH_RE = re.compile(r"(?<![\w./-])((?:\./)?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:ts|mjs|cjs|js|py|sh|ps1|bash|conf|lock))")
 BUN_RUN_RE = re.compile(r"\bbun run ([A-Za-z0-9_:.-]+)")
 INLINE_CODE_RE = re.compile(r"\b(?:bunx?|node|deno|python3?)\s+-(?:e|c)\b")
 
@@ -224,22 +224,22 @@ jobs:
         working-directory: frontend
     steps:
       - name: a
-        run: node scripts/present.mjs
+        run: bun scripts/present.ts
       - name: b
         working-directory: .
-        run: node scripts/root-present.mjs
+        run: bun scripts/root-present.ts
       - name: c
         run: |
           docker run --rm -v $PWD/deploy/nginx.conf:/etc/nginx/nginx.conf:ro nginx:1
           python3 scripts/missing.py
-          node /tmp/built.mjs
+          node /tmp/built.ts
           ./deploy/no_such_script.sh
 """
     steps = parse_workflow(fake)
     got = {(w, p) for w, p, _ in collect(steps)}
     expect = {
-        ("frontend " + ARROW + " frontend", "frontend/scripts/present.mjs"),
-        ("frontend " + ARROW + " .", "scripts/root-present.mjs"),
+        ("frontend " + ARROW + " frontend", "frontend/scripts/present.ts"),
+        ("frontend " + ARROW + " .", "scripts/root-present.ts"),
         ("frontend " + ARROW + " frontend", "frontend/deploy/nginx.conf"),
         ("frontend " + ARROW + " frontend", "frontend/scripts/missing.py"),
         ("frontend " + ARROW + " frontend", "frontend/deploy/no_such_script.sh"),
@@ -255,9 +255,9 @@ jobs:
             print("  FAIL " + label)
 
     want(got == expect, "工作流解析：期望 " + str(sorted(expect)) + " 实际 " + str(sorted(got)))
-    want("tmp/built.mjs" not in {p for _, p in got}, "绝对路径不参与比对")
-    want(normalize("frontend/./scripts/a.mjs") == "frontend/scripts/a.mjs", "normalize 去 ./")
-    want(normalize("frontend/../scripts/a.mjs") == "scripts/a.mjs", "normalize 处理 ..")
+    want("tmp/built.ts" not in {p for _, p in got}, "绝对路径不参与比对")
+    want(normalize("frontend/./scripts/a.ts") == "frontend/scripts/a.ts", "normalize 去 ./")
+    want(normalize("frontend/../scripts/a.ts") == "scripts/a.ts", "normalize 处理 ..")
     want(resolve("/abs/a.py", ".") is None, "绝对路径返回 None")
     want(resolve("../sib/a.py", ".") is None, "仓库外路径返回 None")
     want(resolve("$PWD/deploy/a.sh", ".") == "deploy/a.sh", "$PWD 前缀可归一")

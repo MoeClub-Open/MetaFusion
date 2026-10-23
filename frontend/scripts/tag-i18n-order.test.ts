@@ -1,6 +1,6 @@
 // tag 反查键序确定性回归测试
 //
-//   cd frontend && node scripts/tag-i18n-order.test.mjs
+//   cd frontend && bun scripts/tag-i18n-order.test.ts
 //
 // 锁三件事：
 //   1) 同一 raw tag 的解析只取决于 term code 的**字典序**，与 definitions JSON 的键序无关：
@@ -11,12 +11,8 @@
 // 夹具 tag-i18n-order-baseline.json 来自 live definitions id=29（base_version=28）的
 // tags 词表与线上 112 个真实标签，基线由修复前的 getTagName 生成（见夹具 provenance）。
 
-import { register } from "node:module";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-
-// 前端源码按 bundler 约定写无扩展名的相对导入（"./localizedNames"），Node 的 ESM 解析要求显式扩展名。
-register("./ts-esm-resolve-hook.mjs", import.meta.url);
 
 const { getTagName, getTagNames, resolveTagTermCode, tagCode, resolveLocalizedName } = await import(
   "../src/lib/definitions.ts"

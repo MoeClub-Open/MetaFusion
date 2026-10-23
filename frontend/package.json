@@ -2,16 +2,17 @@
   "name": "metafusion-frontend",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "bun@1.4.3",
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "theme:build": "node scripts/gen-theme.mjs",
-    "contracts:build": "node scripts/generate-contracts.mjs",
-    "contracts:check": "node scripts/generate-contracts.mjs --check",
-    "langs:build": "bun scripts/gen-languages.mjs",
-    "langs:check": "bun scripts/gen-languages.mjs --check",
+    "theme:build": "bun scripts/gen-theme.ts",
+    "contracts:build": "bun scripts/generate-contracts.ts",
+    "contracts:check": "bun scripts/generate-contracts.ts --check",
+    "langs:build": "bun scripts/gen-languages.ts",
+    "langs:check": "bun scripts/gen-languages.ts --check",
     "test": "bun test tests"
   },
   "dependencies": {

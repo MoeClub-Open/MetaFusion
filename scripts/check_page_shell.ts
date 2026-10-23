@@ -13,7 +13,7 @@
 //   R4 手写页签面板 —— .mf-tabpanel 出现在 TabPanel.tsx 之外
 //   R5 页面局部样式 —— app/**/*.module.css 里声明 max-width / padding
 //
-// 用法：node scripts/check_page_shell.mjs   （仓库根目录；CI 与本地同命令）
+// 用法：bun scripts/check_page_shell.ts   （仓库根目录；CI 与本地同命令）
 // 退出码：0 = 无违规；1 = 有违规。
 import fs from "node:fs";
 import path from "node:path";

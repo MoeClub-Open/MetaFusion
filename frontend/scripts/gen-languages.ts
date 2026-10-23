@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // 语言单一来源生成器：把 ISO 639-1 全集 + 常用 BCP-47 变体生成成前端常量表。
 //
-//   node scripts/gen-languages.mjs           写入 src/lib/languages.data.json
-//   node scripts/gen-languages.mjs --check   只校验（不一致或自检失败时非 0 退出）
+//   bun scripts/gen-languages.ts           写入 src/lib/languages.data.json
+//   bun scripts/gen-languages.ts --check   只校验（不一致或自检失败时非 0 退出）
 //
 // 来源：
 //   1) ISO 639-1 代码表——本文件内嵌的 ISO_639_1 常量，取自美国国会图书馆维护的
@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 // 生成物与运行时 ICU 的 CLDR 快照绑定：必须用 bun 生成。node 的 ICU 覆盖更窄，
 // ba / ce / tl 这些语言在 node 下拿不到自称会回落英文名，同一份源码会生成出两份不同的表。
 if (!process.versions.bun) {
-  console.error("请用 bun 运行：bun scripts/gen-languages.mjs（node 的 ICU 覆盖不全，会生成出不一样的自称表）");
+  console.error("请用 bun 运行：bun scripts/gen-languages.ts（node 的 ICU 覆盖不全，会生成出不一样的自称表）");
   process.exit(1);
 }
 
@@ -230,7 +230,7 @@ if (problems.length) {
 
 const doc = {
   $comment:
-    "语言单一来源（生成物，勿手改）。由 frontend/scripts/gen-languages.mjs 生成：" +
+    "语言单一来源（生成物，勿手改）。由 frontend/scripts/gen-languages.ts 生成：" +
     "ISO 639-1 全集 + 常用 BCP-47 变体；名称取 Node/Bun 自带 CLDR（Intl.DisplayNames），" +
     "变体与别名取生成器里的 CURATED 表。重新生成：bun run langs:build。",
   source: "ISO 639-1 code set (Library of Congress) + CLDR language names via Intl.DisplayNames",

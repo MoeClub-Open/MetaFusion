@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // 契约单源生成器：把后端与各子系统里"已经声明的事实"生成成前端常量，避免手抄。
 //
-//   node scripts/generate-contracts.mjs           写入生成物
-//   node scripts/generate-contracts.mjs --check   只校验（不一致或来源缺失时非 0 退出）
-//   node scripts/generate-contracts.mjs --check --allow-missing-sources  主仓单独检出的部分校验
+//   bun scripts/generate-contracts.ts           写入生成物
+//   bun scripts/generate-contracts.ts --check   只校验（不一致或来源缺失时非 0 退出）
+//   bun scripts/generate-contracts.ts --check --allow-missing-sources  主仓单独检出的部分校验
 //
 // 来源：
 //   backend/internal/catalog/permission.go              目录权限码（本仓库，必需）
@@ -178,10 +178,10 @@ for (const app of ADMIN_APPS) {
 
 const header = (title, sources) =>
   [
-    "// 本文件由 frontend/scripts/generate-contracts.mjs 生成，勿手改。",
+    "// 本文件由 frontend/scripts/generate-contracts.ts 生成，勿手改。",
     "// " + title,
     "// 来源：" + sources.join("、"),
-    "// 校验：cd frontend && node scripts/generate-contracts.mjs --check",
+    "// 校验：cd frontend && bun scripts/generate-contracts.ts --check",
     "",
     "",
   ].join("\n");
@@ -242,7 +242,7 @@ const targets = [
 
 if (CHECK) {
   for (const t of targets) {
-    if (!fs.existsSync(t.file)) problems.push(t.label + " 不存在，请先跑 node scripts/generate-contracts.mjs");
+    if (!fs.existsSync(t.file)) problems.push(t.label + " 不存在，请先跑 bun scripts/generate-contracts.ts");
     else if (fs.readFileSync(t.file, "utf8") !== t.content) problems.push(t.label + " 与来源不一致，请重跑生成器");
   }
 } else if (!problems.length) {

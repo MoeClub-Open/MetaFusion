@@ -7,7 +7,7 @@ function rewrites(nodeEnv, backendOrigin) {
   const env = { ...process.env, NODE_ENV: nodeEnv };
   if (backendOrigin) env.BACKEND_ORIGIN = backendOrigin;
   else delete env.BACKEND_ORIGIN;
-  const configURL = new URL("../next.config.mjs", pathToFileURL(__filename));
+  const configURL = new URL("../next.config.ts", pathToFileURL(__filename));
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", `import config from ${JSON.stringify(configURL.href)}; console.log(JSON.stringify(await config.rewrites()));`], { env, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);

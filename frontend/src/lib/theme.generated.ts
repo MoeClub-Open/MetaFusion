@@ -1,4 +1,4 @@
-// 由 scripts/gen-theme.mjs 生成，勿手改：新增配色请看 scripts/theme-palette.mjs 后重跑 npm run theme:build。
+// 由 scripts/gen-theme.ts 生成，勿手改：新增配色请看 scripts/theme-palette.ts 后重跑 npm run theme:build。
 
 export interface AccentEntry { id: string; labelKey: string; swatch: string; }
 export interface ToneEntry { id: string; labelKey: string; }

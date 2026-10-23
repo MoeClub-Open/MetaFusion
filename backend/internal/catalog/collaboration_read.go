@@ -252,21 +252,6 @@ const collaborationPullRequestPublicPredicate = `p.status='merged'
 	AND EXISTS(SELECT 1 FROM catalog.pull_request_commits pc WHERE pc.pull_request_id=p.id)
 	AND NOT EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.commits c ON c.id=pc.commit_id WHERE pc.pull_request_id=p.id AND NOT (` + collaborationCommitPublicPredicate + `))`
 
-func collaborationCommitPublic(ctx context.Context, q queryer, id string) (bool, error) {
-	var public bool
-	err := q.QueryRowContext(ctx, `SELECT `+collaborationCommitPublicPredicate+` FROM catalog.commits c WHERE c.id=$1`, id).Scan(&public)
-	return public, err
-}
-
-func reviewerCanReadCommit(ctx context.Context, q queryer, id, workspaceID string, u User) (bool, error) {
-	if collaborationUser(u) != nil || !u.Can(PermissionReviewManage) {
-		return false, nil
-	}
-	var allowed bool
-	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM catalog.pull_request_commits pc JOIN catalog.pull_requests p ON p.id=pc.pull_request_id WHERE pc.commit_id=$1 AND p.workspace_id=$2)`, id, workspaceID).Scan(&allowed)
-	return allowed, err
-}
-
 func (s *Store) GetCollaborationCommit(ctx context.Context, id string, u User) (CollaborationCommit, error) {
 	if !collaborationID(id) {
 		return CollaborationCommit{}, sql.ErrNoRows

@@ -53,7 +53,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 真实 IP 链为 Cloudflare → 宿主 OpenResty → 回环发布的 gateway。必须验证实际 Docker bridge 网关与 `set_real_ip_from` 的单个宿主地址一致；不同网段时只替换该单点，不扩大到私网。OpenResty 只允许 Cloudflare 来源并覆盖客户端自带的 CF 头，公网入口伪造 `CF-Connecting-IP`/`X-Forwarded-For` 不能换认证桶。gateway 用还原后的 `$remote_addr` 覆盖上游 XFF。回环发布不能证明宿主调用者是 OpenResty，宿主进程属于特权信任边界。`/internal` 与 `/internal/` 在公网网关直接404。
 
-`scripts/check_gateway_matrix.py` 与 `--selftest` 检查认证路径、业务桶禁止、XFF覆写和可信来源范围。CI 设置 `MF_REQUIRE_INTEGRATION_TESTS=1`，缺 PostgreSQL/OpenSearch 测试地址立即失败；主仓独立前端任务明确使用 `generate-contracts.mjs --check --allow-missing-sources` 做部分检查，跨仓任务必须使用纯 `--check`，缺少权限来源失败。
+`scripts/check_gateway_matrix.py` 与 `--selftest` 检查认证路径、业务桶禁止、XFF覆写和可信来源范围。CI 设置 `MF_REQUIRE_INTEGRATION_TESTS=1`，缺 PostgreSQL/OpenSearch 测试地址立即失败；主仓独立前端任务明确使用 `generate-contracts.ts --check --allow-missing-sources` 做部分检查，跨仓任务必须使用纯 `--check`，缺少权限来源失败。
 
 回退先停受影响写入，再使用上一批已验证清单及其兄弟仓组合。当前结构和 JSON 仍兼容上一版时可仅回退镜像；旧写入端会丢字段时须恢复已验证备份，并处理恢复点之后的写入。`down` 拒绝不可逆迁移，`force` 只清 dirty 标记，不等于执行或撤销 SQL。
 
@@ -98,7 +98,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 自托管封面的副本保留、私有预览与合入绑定要求目录配置 `STORAGE_URL`，目录与存储两侧显式填写同值的 `STORAGE_CATALOG_LIFECYCLE_SECRET`；没有自动生成或共享密钥的机制。默认空值仅适用于不使用自托管封面的安装，涉及资产的副本操作会明确返回 `503 storage_unavailable`。主编排提供内部存储 URL，metadata-only 可接外部存储服务；上线前同时执行存储 011 迁移。内部接口和资产回收验收见[存储运行约定](./storage-operations.md)。
 
-CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默认32（0–maxOpen），其他服务与 MCP 默认32/16。PostgreSQL 编排默认 max_connections=512，两份编排均给 `/dev/shm` 256 MiB，CI PostgreSQL 同值。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.mjs。
+CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默认32（0–maxOpen），其他服务与 MCP 默认32/16。PostgreSQL 编排默认 max_connections=512，两份编排均给 `/dev/shm` 256 MiB，CI PostgreSQL 同值。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.ts。
 
 ## 云端 MCP 接线
 
@@ -114,7 +114,7 @@ CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默�
 
 031 引入提交审核；032 将目录实体列与历史实体快照统一为 `state`，仅 active/deleted/merged，删除运行时旧字段回退。历史快照的题名、正文、属性、作者、来源、版本与时间保留，旧发布标记一次性归为正常或对应终态；业务属性中的 status 不改。已结案管理员提交记为 reviewed/exempt，其原始请求及摘要保留作不可变证据，不重新执行。旧 entity.unpublished 事件迁为普通保存事件，消费者只使用当前生命周期协议。存储域010同步将生命周期投影列改为state。
 
-切换前停止旧目录写入，显式应用目录032并检查，再启用同批目录、社区与存储；目录启动要求与发布匹配的精确结构契约，不支持旧列、双写或降级读取。技能工具仅提供TypeScript，要求Node.js24+，不保留.mjs启动器；MCP技能资源与版本锁同步发布。
+切换前停止旧目录写入，显式应用目录032并检查，再启用同批目录、社区与存储；目录启动要求与发布匹配的精确结构契约，不支持旧列、双写或降级读取。技能工具仅提供TypeScript，要求Node.js24+，不保留 JavaScript 启动器；MCP技能资源与版本锁同步发布。
 
 新版全量备份完成校验、隔离恢复及线上事实/历史和服务验收后，可按本次明确授权删除旧发布备份、过期回退配置和旧镜像锚点；保留一份新版完整恢复备份及其受限配置，不使用全局docker prune。
 

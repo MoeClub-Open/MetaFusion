@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/metafusion/metafusion-app/internal/testutil"
@@ -74,4 +75,29 @@ func TestPostgresForgedImportKeyIsRejected(t *testing.T) {
 	if _, err := s.Save(ctx, Edit{Entity: updated, ExpectedVersion: updated.Version, EditNote: "n", Sources: sources}, u); err == nil {
 		t.Fatal("手工改写内部幂等键被放行")
 	}
+}
+
+func linksFromIDMap(ids map[string]string) []ExternalLink {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]ExternalLink, 0, len(ids))
+	for k, v := range ids {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		out = append(out, linkFromID(k, v))
+	}
+	return out
+}
+
+// linkFromID is the Entity-side replacement for a former external_ids map entry.
+func linkFromID(kind, value string) ExternalLink {
+	kind = strings.TrimSpace(kind)
+	value = strings.TrimSpace(value)
+	link := ExternalLink{Kind: kind, URL: externalLinkURL(kind, value, "")}
+	if !(strings.HasPrefix(strings.ToLower(value), "http://") || strings.HasPrefix(strings.ToLower(value), "https://")) {
+		link.ExternalID = value
+	}
+	return link
 }

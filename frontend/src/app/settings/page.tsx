@@ -9,7 +9,8 @@ import { Select } from "@/components/ui/Select";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { UI_LOCALE_CODES, type UiLocale } from "@/lib/languages";
-import { clearAuthTokens, displayNameOf, updateOwnProfile } from "@/lib/api";
+import { displayNameOf, updateOwnProfile } from "@/lib/api";
+import { clearSessionHint } from "@/lib/sessionHint";
 import { authErrorText, httpStatusOf } from "@/lib/authErrors";
 import { TitleDisplayOrderSetting } from "@/components/settings/TitleDisplayOrderSetting";
 import { OAuthGrantsPanel } from "@/components/settings/OAuthGrantsPanel";
@@ -148,7 +149,7 @@ export default function SettingsPage() {
       // 这里刻意用整页跳转，而不是 logout() + router.replace()：受保护页在 user 变成 null 时
       // AuthGate 也会 replace 一次 /login?redirect=/settings，两条客户端重定向会打架、把 ?notice
       // 顶掉（本地实测：URL 变成 /login?redirect=%2Fsettings，提示不出现）。
-      clearAuthTokens();
+      clearSessionHint();
       window.location.assign(`/login?notice=password_changed&redirect=${encodeURIComponent("/settings?tab=password")}`);
     } catch (err: unknown) {
       // 服务端给的是稳定错误码（invalid_old_password / invalid_password_length 等）：
@@ -186,10 +187,8 @@ export default function SettingsPage() {
         failed.status = res.status;
         throw failed;
       }
-      // 当前会话已被服务端删掉：本地令牌必须一起清空，并整页跳到登录页说明原因
-      // （与改密同款：只清令牌不跳转的话，AuthGate 会立刻 replace 一次
-      // /login?redirect=... 把提示顶掉——本文件上面记过这次打架）。
-      clearAuthTokens();
+      // 当前 Cookie 会话已被撤销，清除提示后整页跳转并保留原因。
+      clearSessionHint();
       window.location.assign(
         `/login?notice=sessions_revoked&redirect=${encodeURIComponent("/settings?tab=password")}`
       );

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -498,6 +497,3 @@ func (h HTTP) deleteConversation(admin bool) gin.HandlerFunc {
 		c.Status(204)
 	}
 }
-
-// Prevent whitespace-only account identifiers in administrative adjustments.
-func validOwner(v string) bool { return strings.TrimSpace(v) != "" }

@@ -124,28 +124,28 @@ jobs:
         # 键集合比对只保证四语彼此一致，抓不到反向：代码 t() 了一个字典里根本没有的键，
         # 界面上会把裸 key 显示出来。死键部分是报告项（--strict-dead 才失败）。
         # 判据、动态前缀白名单与 --list-dead / --prune 的用法见脚本头部注释。
-        run: node scripts/check_i18n_usage.mjs
+        run: bun scripts/check_i18n_usage.ts
       - name: 语言表生成物一致性
-        # src/lib/languages.ts 由 scripts/gen-languages.mjs 从消息字典生成；不跑生成器
+        # src/lib/languages.ts 由 scripts/gen-languages.ts 从消息字典生成；不跑生成器
         # 就会和字典/语言数据漂移（langs:build 是本机修法，CI 只校验）。
         run: bun run langs:check
       - name: JSX 裸文案检查
         # 四语键集合比对抓不到写死在 JSX 里的文案；判据与白名单见脚本顶部说明。
-        run: node scripts/check_jsx_literals.mjs
+        run: bun scripts/check_jsx_literals.ts
       - name: page shell check
         # 页面容器不得自写宽度/内边距（外壳只有 PageShell 一处）；纯 node，无需依赖。
         working-directory: .
-        run: node scripts/check_page_shell.mjs
+        run: bun scripts/check_page_shell.ts
       - name: 契约生成物部分一致性（本仓来源 / kinds）
-        # 生成物由 frontend/scripts/generate-contracts.mjs 从后端与各子系统源码提取；
+        # 生成物由 frontend/scripts/generate-contracts.ts 从后端与各子系统源码提取；
         # 这里是主仓独立检出，显式选择部分校验；跨仓 job 检查全部来源且缺源失败。
-        run: node scripts/generate-contracts.mjs --check --allow-missing-sources
+        run: bun scripts/generate-contracts.ts --check --allow-missing-sources
       - name: 设计令牌守门（源码用到的令牌类名必须产出 CSS）
         # 上一轮的事故：37 个语义令牌类名在源码里写了、产出 CSS 里一条都没有——未注册的颜色
         # Tailwind 直接跳过，而 tsc 与 next build 全绿。脚本用项目自己的 tailwind.config.ts
         # 编译一次再逐个查选择器，并守住令牌清单（含 <alpha-value>）、深浅两套模式块里的
         # 变量定义，以及"字面白/调色板色不许写回来"这条迁移成果。
-        run: node scripts/check-design-tokens.mjs
+        run: bun scripts/check-design-tokens.ts
 
       - name: next build (via Bun)
         run: bun run build
@@ -345,7 +345,7 @@ jobs:
         # frontend job 里那一步其实没有兄弟仓库：缺席时生成器沿用生成物里的现有取值，
         # 兄弟侧权限码等于没校验（本地实测：锚点来源与生成物一致时才真能守住）。
         # 这里兄弟仓库已按 versions.lock 锚点就位，加码/改码漏改生成物会真的失败。
-        run: node frontend/scripts/generate-contracts.mjs --check
+        run: bun frontend/scripts/generate-contracts.ts --check
       - name: 文档端点 ↔ 后端路由一致性
         # 文档站写过不存在的端点（例如 change-password 别名）而没人发现：只有"文档有、实现无"
         # 的主仓 /api 端点会非零退出，反向（实现有、文档没写）只报告。兄弟仓库按 versions.lock

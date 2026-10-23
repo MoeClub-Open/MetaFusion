@@ -1,7 +1,7 @@
-// 本文件由 frontend/scripts/generate-contracts.mjs 生成，勿手改。
+// 本文件由 frontend/scripts/generate-contracts.ts 生成，勿手改。
 // 权限码单一来源（各服务自己声明，账号服务持有全量码表）。
 // 来源：backend/internal/assistant/permissions.go、backend/internal/catalog/permission.go、../metafusion-auth/internal/store/access.go、../metafusion-auth/internal/store/access.go、../metafusion-community/internal/auth/permission.go、../metafusion-storage/internal/auth/permission.go
-// 校验：cd frontend && node scripts/generate-contracts.mjs --check
+// 校验：cd frontend && bun scripts/generate-contracts.ts --check
 
 // ── assistant ──
 // LLM 配置、积分、BYO 凭据和生成缓存的后台管理权限。

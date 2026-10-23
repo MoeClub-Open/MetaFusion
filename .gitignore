@@ -126,7 +126,7 @@ minio_data/
 # --- 一次性脚本（补数据 / 调试 / 模拟 / 远程运维）---
 # 这些脚本只在本地对着实例跑一次或几次，接口与数据都会随时变，进版本库只会变成
 # 过时的“可运行承诺”。需要时去本地文件或 docs-local 记录里找，不要提交。
-# 长期存在的质量闸门（scripts/check_*.py|mjs）不在此列，它们由 CI 执行。
+# 长期存在的质量闸门（scripts/check_*.py|ts）不在此列，它们由 CI 执行。
 scripts/data/
 scripts/sim/
 scripts/import_external.py
@@ -147,8 +147,8 @@ deploy/*.sql.bak
 
 # --- 前端本地静态资源（按需）---
 # frontend/public/covers/ 为种子数据，保持入库；如需本地生成大图请用 /tmp
-/.playwright-cli
-/output
+.playwright-cli/
+output/
 
 # 注：一次性脚本的忽略规则见上面同一节，不要重复添加（2026-09-16 曾因两次追加留下重复块）。
 /.agent-teams

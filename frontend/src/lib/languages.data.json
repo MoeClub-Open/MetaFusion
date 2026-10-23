@@ -1,5 +1,5 @@
 {
-  "$comment": "语言单一来源（生成物，勿手改）。由 frontend/scripts/gen-languages.mjs 生成：ISO 639-1 全集 + 常用 BCP-47 变体；名称取 Node/Bun 自带 CLDR（Intl.DisplayNames），变体与别名取生成器里的 CURATED 表。重新生成：bun run langs:build。",
+  "$comment": "语言单一来源（生成物，勿手改）。由 frontend/scripts/gen-languages.ts 生成：ISO 639-1 全集 + 常用 BCP-47 变体；名称取 Node/Bun 自带 CLDR（Intl.DisplayNames），变体与别名取生成器里的 CURATED 表。重新生成：bun run langs:build。",
   "source": "ISO 639-1 code set (Library of Congress) + CLDR language names via Intl.DisplayNames",
   "uiLocales": [
     "zh-CN",

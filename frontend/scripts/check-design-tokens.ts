@@ -17,7 +17,7 @@
  *      （只定义一边 = 另一种模式看不见，属于同一类"改了但不生效"）；
  *   ④ 迁移不回退：无条件（不带 dark: 前缀）的字面白/调色板色不得回到源码里。
  *
- * 运行：node scripts/check-design-tokens.mjs   （工作目录 frontend/，只依赖本地依赖，无网络）
+ * 运行：bun scripts/check-design-tokens.ts   （工作目录 frontend/，只依赖本地依赖，无网络）
  */
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -25,10 +25,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { loadConfig } = require("tailwindcss/lib/lib/load-config.js");
 const postcss = require("postcss");
-const tailwindcss = require("tailwindcss");
-const ts = require("typescript");
+const tailwindcss = require("@tailwindcss/postcss");
+const ts = require("typescript-api");
+const { default: config } = await import("../tailwind.config.ts");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = path.join(root, "src");
@@ -58,10 +58,9 @@ const note = (ok, msg) => console.log((ok ? "ok   " : "FAIL ") + msg);
 const bad = (msg) => { fail.push(msg); console.log("FAIL " + msg); };
 
 // —— ① 编译一次 ——
-const config = loadConfig(path.join(root, "tailwind.config.ts"));
-const content = (config.content || []).map((g) => (path.isAbsolute(g) ? g : path.join(root, g)));
-const css = (await postcss([tailwindcss({ ...config, content })])
-  .process("@tailwind base;\n@tailwind components;\n@tailwind utilities;\n", { from: undefined })).css;
+const cssPath = path.join(srcDir, "app", "globals.css");
+const css = (await postcss([tailwindcss({ base: root, optimize: false })])
+  .process(readFileSync(cssPath, "utf8"), { from: cssPath })).css;
 
 const escapeClass = (cls) => "." + cls.replace(/[^a-zA-Z0-9-]/g, (c) => "\\" + c);
 const selectorParser = require("postcss-selector-parser");

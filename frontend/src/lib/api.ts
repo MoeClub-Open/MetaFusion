@@ -1,7 +1,6 @@
-// 各服务的 API 客户端按域放在 ./api/*；本文件是 barrel，导出名与拆分前完全一致，
-// 既有 import { ... } from "@/lib/api" 的调用点不需要改动。
+// 各服务的 API 客户端按域放在 ./api/*，这里汇总当前公共接口。
 
-export { displayNameOf, clearAuthTokens, ApiError, fetchApi } from "./api/client";
+export { displayNameOf, ApiError, fetchApi } from "./api/client";
 export type { User } from "./api/client";
 export { fetchInviteLedger, createInviteCode, fetchSetupStatus, fetchAuthSettings, normalizeSessionUser } from "./api/auth";
 export { fetchOAuthGrants, revokeOAuthGrant } from "./api/auth";

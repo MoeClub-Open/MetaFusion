@@ -6,9 +6,9 @@
 
 Go 版本取 `backend/go.mod`，Bun 版本取 `frontend/package.json` 的 `packageManager`，依赖按锁文件安装。Python 3 用于根目录契约检查；`check_deploy.py`、`check_env_matrix.py` 另需 PyYAML。Compose 和部署脚本需要 Docker Compose v2 与 Bash；Windows 可在 WSL 中运行 Bash 脚本。
 
-Next 应用使用 TypeScript 6.0 维护线：源码检查和部分测试直接调用其编译器 API，升级到 TypeScript 7 前须迁移这些调用及 Next 的类型检查入口。技能仓不依赖该 API，独立使用 TypeScript 7。Tailwind 保持 3.4 维护线；升级 4.x 时须同时迁移 PostCSS 配置、主题和 `check-design-tokens.mjs` 的配置加载及 CSS 校验，不能只修改版本号。
+Next 应用使用 TypeScript 7，源码分析脚本通过独立的 `typescript-api` 包使用 TypeScript 6 编译器 API。Tailwind 4 的 PostCSS 插件配置在 `frontend/package.json`，主题由 `tailwind.config.ts` 与全局 CSS 提供；`check-design-tokens.ts` 使用同一 PostCSS 入口生成并检查样式。维护脚本直接由 Bun 运行 TypeScript，业务源码及配置的类型检查与脚本分开。
 
-Next 应用将 Tailwind 间接依赖的 `postcss-selector-parser` 统一到修复 CPU 耗尽问题的 7.1.6；主前端也将 Markdown 与编辑器共用的 KaTeX 统一到 0.19，避免旧渲染器残留及样式版本不一致。修改这些 overrides 后必须重跑设计令牌、公式渲染测试和各应用构建。Tailwind 3 仍通过 glob/watch 工具依赖 `braces@3.0.3`，其嵌套模式拒绝服务问题（GHSA-vfj7-8cjw-p6xm）尚无上游修复版本；该路径只在处理仓内构建输入时使用，不得接受用户提交的 glob 模式，迁移 Tailwind 4 时移除这条旧依赖链。
+Next 应用将 Tailwind 间接依赖的 `postcss-selector-parser` 统一到修复 CPU 耗尽问题的 7.1.6；主前端也将 Markdown 与编辑器共用的 KaTeX 统一到 0.19，避免旧渲染器残留及样式版本不一致。修改这些 overrides 后必须重跑设计令牌、公式渲染测试和各应用构建。
 
 仅做编译、前端单元测试或离线契约检查时不必启动完整服务。需要整站联调时，将 auth、community、storage、gateway、docs 与主仓并列检出，发布组合取 `deploy/versions.lock`。开发分支可独立演进，发布前必须核对组合；检查缺仓而 SKIP 不等于兼容性通过。
 
@@ -58,8 +58,8 @@ Next 默认使用 3000 端口。只连接目录后端时可联调目录读取，
 | 后端 | `backend/` | `go test ./...`、`go vet ./...`、`go build ./cmd/server ./cmd/migrate`；并发逻辑加 `go test -race ./internal/catalog/` |
 | 路由 / OpenAPI | `backend/` | `go test ./internal/catalog/ -run TestOpenAPI`（含路由双向覆盖） |
 | 前端 | `frontend/` | `bunx tsc --noEmit`、`bun test tests`、`bun run build`；UI 核四语与实际响应 |
-| 文案 / 页面样式 | `frontend/` | `node scripts/check_i18n_usage.mjs`、`node scripts/check_jsx_literals.mjs`、`node scripts/check-design-tokens.mjs`；四语键集合比对步骤见 CI |
-| 页面外壳 | 根目录 | `node scripts/check_page_shell.mjs` |
+| 文案 / 页面样式 | `frontend/` | `bun scripts/check_i18n_usage.ts`、`bun scripts/check_jsx_literals.ts`、`bun scripts/check-design-tokens.ts`；四语键集合比对步骤见 CI |
+| 页面外壳 | 根目录 | `bun scripts/check_page_shell.ts` |
 | 编排 / 环境配置 | 根目录 | `python scripts/check_deploy.py`、`python scripts/check_env_matrix.py`，以及对应 Compose 的 `config --quiet`；不要打印解析后的真实配置 |
 | 路由 / 跨仓契约文档 | 根目录 | `python scripts/check_gateway_matrix.py`、`python scripts/check_doc_routes.py`；端点检查也读取邻近文档站和技能仓 |
 | 审计 DDL | 根目录 | `python scripts/check_audit_schema.py`；同时保留各服务数据库与写路由覆盖测试 |

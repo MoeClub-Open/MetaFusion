@@ -190,7 +190,7 @@ jobs:
           python3 scripts/check_env_matrix.py
           python3 scripts/check_env_matrix.py --selftest
       - name: 契约生成物 ↔ 锚点来源一致性
-        run: node frontend/scripts/generate-contracts.mjs --check
+        run: bun frontend/scripts/generate-contracts.ts --check
 
   docker-publish:
     name: Build & Publish Container Images

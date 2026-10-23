@@ -5,7 +5,7 @@ import React from "react";
  *
  * 为什么必须集中：页面各自写 px-* 与 max-w-* 时，同一份内容在首页/详情页/管理台会落在
  * 不同的左边界上，切页面与切页签时视觉基线跳动；宽度也只有一处能改。
- * 各页面不得再自写这些类，由 scripts/check_page_shell.mjs 检查。
+ * 各页面不得再自写这些类，由 scripts/check_page_shell.ts 检查。
  * 导航条与管理台内栏复用 PageContainer，顶栏内容与页面内容共用同一条左基线。
  */
 

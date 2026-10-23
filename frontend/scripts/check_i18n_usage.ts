@@ -17,10 +17,10 @@
 //      并用 --prune 按同一判据删除（会拒绝四语键集合不一致的字典）。
 //
 // 用法：
-//   node scripts/check_i18n_usage.mjs            # CI：悬空键失败 + 死键计数报告
-//   node scripts/check_i18n_usage.mjs --list-dead
-//   node scripts/check_i18n_usage.mjs --strict-dead
-//   node scripts/check_i18n_usage.mjs --prune    # 按判据删死键（四语保持一致）
+//   bun scripts/check_i18n_usage.ts            # CI：悬空键失败 + 死键计数报告
+//   bun scripts/check_i18n_usage.ts --list-dead
+//   bun scripts/check_i18n_usage.ts --strict-dead
+//   bun scripts/check_i18n_usage.ts --prune    # 按判据删死键（四语保持一致）
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, extname, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "frontend", "src");
 const LOCALES = ["zh-CN", "en-US", "zh-TW", "ja-JP"];
 const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "docs-local", "undefined", ".venv", "__pycache__"]);
-const SCAN_EXT = new Set([".ts", ".tsx", ".mjs", ".js", ".json", ".py", ".go", ".yml", ".yaml", ".sh", ".sql", ".conf", ".md"]);
+const SCAN_EXT = new Set([".ts", ".tsx", ".js", ".json", ".py", ".go", ".yml", ".yaml", ".sh", ".sql", ".conf", ".md"]);
 
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
@@ -70,7 +70,7 @@ for (const l of LOCALES.slice(1)) {
 const files = walk(ROOT).filter((f) => !f.startsWith(join(SRC, "messages")));
 // 前缀只从界面代码取：仓库里还有 vendored 的第三方 js（backend/internal/catalog/docsassets/），
 // 它的模板字面量会拼出 "The " 这种假前缀，把白名单撑坏。
-const uiFiles = files.filter((f) => (f.startsWith(SRC) || f.includes(join("frontend", "scripts"))) && [".ts", ".tsx", ".mjs", ".js"].includes(extname(f)));
+const uiFiles = files.filter((f) => (f.startsWith(SRC) || f.includes(join("frontend", "scripts"))) && [".ts", ".tsx", ".js"].includes(extname(f)));
 const blob = files.map((f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } }).join("\n");
 
 // 1) t()/tr() 里的字面量键
@@ -147,6 +147,6 @@ if (flag("--prune")) {
 }
 
 console.log(`i18n usage: 字典键 ${baseKeys.size}、代码字面量引用 ${used.size}、${dynamicNote}；悬空键 ${dangling.length}、死键 ${dead.length}（${topNs}）`);
-if (dead.length) console.log("死键是清理候选，不是已证明无引用：node scripts/check_i18n_usage.mjs --list-dead 查看，--prune 按同一判据删除");
+if (dead.length) console.log("死键是清理候选，不是已证明无引用：bun scripts/check_i18n_usage.ts --list-dead 查看，--prune 按同一判据删除");
 if (flag("--strict-dead") && dead.length) { console.error(`失败：存在 ${dead.length} 个死键（--strict-dead）`); process.exit(1); }
 process.exit(dangling.length || prefixWithNoKey.length || parityBroken ? 1 : 0);

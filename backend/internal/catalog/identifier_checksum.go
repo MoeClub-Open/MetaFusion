@@ -1,7 +1,6 @@
 package catalog
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -80,23 +79,4 @@ func externalSourceISBNBarcode(raw string) (string, bool) {
 	}
 	body := "978" + compact[:9]
 	return body + string(gtinCheckDigit(body)), true
-}
-
-func externalSourceBarcodeError(raw string) error {
-	compact, ok := compactBookIdentifier(raw)
-	if !ok {
-		// barcode is a dynamic text field, and a non-GTIN proprietary barcode
-		// may legitimately contain other characters. Do not guess its scheme.
-		return nil
-	}
-	if len(compact) == 10 {
-		if !validISBN(compact) {
-			return fmt.Errorf("invalid_isbn")
-		}
-		return nil
-	}
-	if slices.Contains([]int{8, 12, 13, 14}, len(compact)) && !validGTIN(compact) {
-		return fmt.Errorf("invalid_barcode")
-	}
-	return nil
 }

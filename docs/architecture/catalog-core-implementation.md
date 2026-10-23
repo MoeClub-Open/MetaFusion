@@ -138,7 +138,7 @@ Agent 使用只读 `POST /api/catalog/relationships/query`：
 
 目标按上万在线用户、查询为主、部分编辑；在线数须转换为实际请求速率与批次大小。例如10000人平均10秒一次请求约1000 RPS，只是容量场景假设，页面一次动作可能发多个请求。当前生产共享主机4核、约8GiB、OpenSearch 512MiB heap，不能据功能测试承诺该场景。全目录结构锁已移除，热点行/发行、事务重试成本和真实业务批次仍需容量压测。
 
-验收在独立容量环境按50→100→250→500→1000只读RPS递增，浏览/搜索/关系按真实日志配比，同时加入部分编辑。初始目标可设搜索P95<500ms、P99<1500ms、错误率<1%、搜索滞后<5秒，需真实负载校准。scripts/bench_catalog_reads.mjs 是有限时长的无写入开放速率探针，输出实际速率、客户端丢弃、错误率和P50/P95/P99，不自动改配额，不把一次测试当容量达标。示例：`node scripts/bench_catalog_reads.mjs --base https://staging.example --rps 50 --seconds 60 --concurrency 32 --entity <UUID>`；凭据用 MF_PAT 或已忽略的 --credentials 文件，专用账号预算须覆盖场景。
+验收在独立容量环境按50→100→250→500→1000只读RPS递增，浏览/搜索/关系按真实日志配比，同时加入部分编辑。初始目标可设搜索P95<500ms、P99<1500ms、错误率<1%、搜索滞后<5秒，需真实负载校准。scripts/bench_catalog_reads.ts 是有限时长的无写入开放速率探针，输出实际速率、客户端丢弃、错误率和P50/P95/P99，不自动改配额，不把一次测试当容量达标。示例：`bun scripts/bench_catalog_reads.ts --base https://staging.example --rps 50 --seconds 60 --concurrency 32 --entity <UUID>`；凭据用 MF_PAT 或已忽略的 --credentials 文件，专用账号预算须覆盖场景。
 
 扩容按测量决策：先分离数据库、搜索与业务进程的CPU/IO资源；热公共详情/定义用版本键缓存，私有投影不能共享；大集合浏览避免无界精确COUNT和深OFFSET；搜索按索引/heap及副本布局扩容；高扇出关系改用稳定游标；多后端副本前配置共享限流与总连接预算。数据库连接总量=副本数×每副本上限+其他服务+迁移/运维预留，不能按在线人数开连接。继续调整局部锁或依赖查询须用对抗并发测试验证父子环、关系环、基数与生命周期竞态。
 
