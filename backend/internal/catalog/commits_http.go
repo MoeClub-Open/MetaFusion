@@ -24,6 +24,16 @@ func respondCollaboration(c *gin.Context, value any, err error) {
 		return
 	}
 	var operation *commitOperationError
+	var shape *documentShapeError
+	if errors.As(err, &shape) {
+		auditlog.Fail(c, shape.Error())
+		out := gin.H{"error": shape.Error(), "pointer": shape.Pointer, "applied": false}
+		if errors.As(err, &operation) {
+			out["operation"] = operation.Index
+		}
+		c.JSON(400, out)
+		return
+	}
 	if err != nil && firstCode(err.Error()) == "storage_unavailable" {
 		auditlog.Fail(c, "storage_unavailable")
 		c.Header("Retry-After", "1")

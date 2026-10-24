@@ -88,6 +88,8 @@ func OpenAPI() map[string]any {
 		schema(reflect.TypeOf(v))
 	}
 	entityProps := schemas["Entity"].(map[string]any)["properties"].(map[string]any)
+	schema(reflect.TypeOf(CatalogStats{}))
+	schemas["Picture"].(map[string]any)["properties"].(map[string]any)["caption"].(map[string]any)["example"] = map[string]string{"ja-JP": "キービジュアル"}
 	entityProps["state"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"active", "deleted", "merged"}}
 	entityProps["review_status"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"reviewed"}, "description": "Applied facts are reviewed. Pending collaboration changes belong to a private workspace or pull request and never change the current entity."}
 
@@ -285,6 +287,7 @@ func OpenAPI() map[string]any {
 		"relationship_rules": schema(reflect.TypeOf([]RelationshipRule{})),
 	}}
 	for _, r := range [][6]string{
+		{"/catalog/stats", "get", "Public active-entity counts and picture/tag coverage, globally and by all eight kinds (zero-filled). One PostgreSQL snapshot; total counts entities, with_pictures/with_tags count entities with non-empty arrays. Tombstones and private collaboration activity are excluded. Use this aggregate instead of paging through the catalog to count records. Shares the catalog read rate limit.", "", "CatalogStats", ""},
 		{"/catalog/releases/{id}/editions", "get", "Read explicitly grouped editions in one visible snapshot. Shared release subjects do not imply a group; ungrouped releases return group=null and editions=[].", "", "ReleaseEditions", ""},
 		{"/catalog/expressions/{id}/composition", "get", "Read ordered direct parts and containing expressions from relations declaring expression_composition usage. Hidden or retired peers are omitted.", "", "ExpressionComposition", ""},
 		{"/version", "get", "Build identity of the running catalog process: the version and git SHA injected at build time, the build timestamp, and when this process started (all UTC, RFC 3339). Anonymous and read-only — it exists so that a deploy, a cutover or a rollback can be answered with 'which commit is actually running' instead of guessing from behaviour. Deliberately free of configuration, credentials, host names and database or object-storage details; anything the build did not inject comes back as the literal string unknown (an empty field would be indistinguishable from a broken build)", "", "VersionInfo", ""},

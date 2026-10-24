@@ -584,17 +584,17 @@ func (s *Store) SaveWorkspaceChanges(ctx context.Context, id string, in Workspac
 		}
 	}
 	planned := map[string]Entity{}
-	for _, op := range in.Operations {
+	for index, op := range in.Operations {
 		if op.Target != "entity" || op.Action != "create" {
 			continue
 		}
 		raw, err := resolveCommitRefs(op.Document, out.Refs)
 		if err != nil {
-			return out, err
+			return out, &commitOperationError{index, err}
 		}
 		normalized, err := normalizeWorkspaceDocument(raw, nil, "entity", out.Refs[op.Ref], true)
 		if err != nil {
-			return out, err
+			return out, &commitOperationError{index, err}
 		}
 		var e Entity
 		if err = json.Unmarshal(normalized, &e); err != nil {
@@ -738,6 +738,17 @@ func (s *Store) SaveWorkspaceChanges(ctx context.Context, id string, in Workspac
 			}
 			if err != nil {
 				return fail(err)
+			}
+			// Patches carry raw JSON. Validate the resulting document before it
+			// reaches asset handling or persistent workspace storage.
+			if op.Action == "update" && len(op.Patch) > 0 {
+				var document any = &Entity{}
+				if op.Target == "relation" {
+					document = &Relation{}
+				}
+				if err = strictCommitDocument(next, document); err != nil {
+					return fail(err)
+				}
 			}
 			if op.Target == "relation" {
 				authDoc := next

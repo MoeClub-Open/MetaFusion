@@ -145,7 +145,7 @@ func addCollaborationOpenAPI(paths, schemas map[string]any, schema func(reflect.
 		{"/catalog/workspaces/{id}", "get", "Read one workspace, its working objects and current version; only its owner and members can access the live working copy. Review permission grants access only to frozen submitted commits.", "", "Workspace"},
 		{"/catalog/workspaces/{id}", "patch", "Owner-only rename or archive of a workspace using its current version.", "WorkspaceEdit", "Workspace"},
 		{"/catalog/workspaces/{id}/checkout", "post", "Add current visible entity and relation snapshots to the private workspace; existing edited objects are preserved.", "WorkspaceCheckout", "Workspace"},
-		{"/catalog/workspaces/{id}/changes", "put", "Stage up to 100 ordered edits atomically in the private workspace. Repeated saves may be committed together. Stable create IDs remain usable by later commits. No catalog facts are changed; source evidence and identity verification are not prerequisites.", "WorkspaceChanges", "WorkspaceChangesResult"},
+		{"/catalog/workspaces/{id}/changes", "put", "Stage 1–100 ordered edits atomically in the private workspace, with up to 200 patch paths per update. Repeated saves may be committed together. Stable create IDs remain usable by later commits; refs and the new workspace version are returned. Document type errors return 400 invalid_document with a zero-based operation index and document-relative JSON Pointer (including array indexes). No catalog facts are changed; source evidence and identity verification are not prerequisites.", "WorkspaceChanges", "WorkspaceChangesResult"},
 		{"/catalog/workspaces/{id}/members", "put", "Replace workspace collaborators by user UUID; only its owner may change membership. Members edit the same private copy with version checks.", "WorkspaceMembersEdit", "Workspace"},
 		{"/catalog/workspaces/{id}/commits", "get", "List active branch history newest first, with total/limit/offset pagination. Retained rewritten commits remain available through operation history and replacement links.", "", "CommitPage"},
 		{"/catalog/workspaces/{id}/commits", "post", "Commit all staged changes as one immutable snapshot. Freeze all staged contributors separately from the authenticated commit caller. The client UUID provides durable retry identity. Further workspace edits become a later commit; catalog facts remain unchanged.", "WorkspaceCommitCreate", "CollaborationCommit"},
@@ -174,6 +174,17 @@ func addCollaborationOpenAPI(paths, schemas map[string]any, schema func(reflect.
 		}
 		if row[3] != "" {
 			op["requestBody"] = map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": ref(row[3])}}}
+		}
+		if path == "/catalog/workspaces/{id}/changes" && method == "put" {
+			op["responses"].(map[string]any)["400"] = map[string]any{
+				"description": "Invalid operation or document. Type errors include the zero-based operation and a document-relative JSON Pointer.",
+				"content": map[string]any{"application/json": map[string]any{"schema": map[string]any{
+					"type": "object", "required": []string{"error"}, "properties": map[string]any{
+						"error": map[string]any{"type": "string"}, "applied": map[string]any{"type": "boolean", "const": false},
+						"operation": map[string]any{"type": "integer", "minimum": 0}, "pointer": map[string]any{"type": "string", "example": "/pictures/0/caption"},
+					},
+				}}},
+			}
 		}
 		if method == "get" && (path == "/catalog/commits/{id}" || path == "/catalog/pull-requests/{id}" || path == "/catalog/pull-requests") {
 			delete(op, "security")

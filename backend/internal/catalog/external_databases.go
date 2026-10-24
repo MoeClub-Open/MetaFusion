@@ -277,6 +277,9 @@ func (s *Store) DeleteExternalDatabase(ctx context.Context, code string) error {
 // 官网、Bangumi 单集、Bushiroad 与其它权威库同级存放。
 func externalDatabaseSeeds() []ExternalDatabase {
 	return []ExternalDatabase{
+		{Code: "bilibili_space", Names: names4("哔哩哔哩空间", "嗶哩嗶哩空間", "bilibili プロフィール", "Bilibili Profile"), Category: "agent", URLPattern: "https://space.bilibili.com/{id}", Icon: "AtSign", ValidationRegex: `^[1-9]\d*$`, Description: "主体的哔哩哔哩个人空间（存数字 UID）", SortOrder: 201, IsEnabled: true, IsSystem: true},
+		{Code: "weibo", Names: names4("微博", "微博", "微博", "Weibo"), Category: "agent", URLPattern: "https://weibo.com/u/{id}", Icon: "AtSign", ValidationRegex: `^[1-9]\d*$`, Description: "主体的微博账号（存数字 UID）", SortOrder: 202, IsEnabled: true, IsSystem: true},
+		{Code: "douyin", Names: names4("抖音", "抖音", "抖音", "Douyin"), Category: "agent", URLPattern: "https://www.douyin.com/user/{id}", Icon: "AtSign", ValidationRegex: `^[A-Za-z0-9_-]+$`, Description: "主体的抖音个人页（存 /user/ 后的 sec_uid，不是展示抖音号）", SortOrder: 203, IsEnabled: true, IsSystem: true},
 		{Code: "official_website", Names: map[string]string{"zh-CN": "官方网站", "zh-TW": "官方網站", "ja": "公式サイト", "ja-JP": "公式サイト", "en-US": "Official Website"}, Category: "all", URLPattern: "{id}", Icon: "Globe", Description: "作品 / 创作者 / 发行官方主页（存完整 URL）", SortOrder: 5, IsEnabled: true, IsSystem: true},
 		{Code: "publisher_website", Names: map[string]string{"zh-CN": "出版社 / 厂商官网", "zh-TW": "出版社 / 廠商官網", "ja": "出版社・メーカー公式サイト", "ja-JP": "出版社・メーカー公式サイト", "en-US": "Publisher Website"}, Category: "all", URLPattern: "{id}", Icon: "Building2", Description: "出版社 / 社团 / 厂商官方主页（存完整 URL）", SortOrder: 6, IsEnabled: true, IsSystem: true},
 		{Code: "wikipedia", Names: map[string]string{"zh-CN": "维基百科", "zh-TW": "維基百科", "ja": "ウィキペディア", "ja-JP": "ウィキペディア", "en-US": "Wikipedia"}, Category: "all", URLPattern: "https://zh.wikipedia.org/wiki/{id}", Icon: "Globe", Description: "全球多语言自由百科全书（填词条标题或完整 URL）", SortOrder: 10, IsEnabled: true, IsSystem: true},

@@ -3,9 +3,11 @@ package catalog
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -129,10 +131,59 @@ func resolveCommitRefs(raw json.RawMessage, refs map[string]string) (json.RawMes
 	}
 	return json.Marshal(v)
 }
+
+type documentShapeError struct{ Pointer string }
+
+func (e *documentShapeError) Error() string { return "invalid_document" }
+
+// The decoder offset identifies the offending JSON value, including its array
+// index. Expose the input path without leaking Go types or decoder messages.
+func documentTypePointer(raw []byte, offset int64) string {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var walk func(string) string
+	walk = func(path string) string {
+		token, err := dec.Token()
+		if err != nil || dec.InputOffset() >= offset {
+			return path
+		}
+		switch token {
+		case json.Delim('{'):
+			for dec.More() {
+				key, err := dec.Token()
+				if err != nil {
+					return path
+				}
+				part := strings.ReplaceAll(strings.ReplaceAll(key.(string), "~", "~0"), "/", "~1")
+				child := walk(path + "/" + part)
+				if dec.InputOffset() >= offset {
+					return child
+				}
+			}
+		case json.Delim('['):
+			for i := 0; dec.More(); i++ {
+				child := walk(path + "/" + strconv.Itoa(i))
+				if dec.InputOffset() >= offset {
+					return child
+				}
+			}
+		default:
+			return path
+		}
+		_, _ = dec.Token()
+		return path
+	}
+	return walk("")
+}
+
 func strictCommitDocument(raw []byte, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		var valueType *json.UnmarshalTypeError
+		if errors.As(err, &valueType) {
+			return &documentShapeError{Pointer: documentTypePointer(raw, valueType.Offset)}
+		}
 		return fmt.Errorf("invalid_document")
 	}
 	if dec.Decode(&struct{}{}) != io.EOF {

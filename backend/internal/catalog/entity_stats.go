@@ -2,6 +2,46 @@ package catalog
 
 import "context"
 
+type EntityCoverageCounts struct {
+	Total        int64 `json:"total"`
+	WithPictures int64 `json:"with_pictures"`
+	WithTags     int64 `json:"with_tags"`
+}
+
+type CatalogStats struct {
+	EntityCoverageCounts
+	Kinds map[string]EntityCoverageCounts `json:"kinds"`
+}
+
+// PublicStats aggregates active facts in one database snapshot. It does not
+// expose tombstones, private workspace activity or review queues.
+func (s *Store) PublicStats(ctx context.Context) (CatalogStats, error) {
+	out := CatalogStats{Kinds: make(map[string]EntityCoverageCounts, len(Kinds))}
+	for _, kind := range Kinds {
+		out.Kinds[kind] = EntityCoverageCounts{}
+	}
+	rows, err := s.DB.QueryContext(ctx, `SELECT kind, count(*),
+		count(*) FILTER (WHERE CASE WHEN jsonb_typeof(document->'pictures')='array' THEN jsonb_array_length(document->'pictures')>0 ELSE false END),
+		count(*) FILTER (WHERE CASE WHEN jsonb_typeof(document->'attributes'->'tags')='array' THEN jsonb_array_length(document->'attributes'->'tags')>0 ELSE false END)
+		FROM catalog.entities WHERE state='active' GROUP BY kind`)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind string
+		var counts EntityCoverageCounts
+		if err := rows.Scan(&kind, &counts.Total, &counts.WithPictures, &counts.WithTags); err != nil {
+			return out, err
+		}
+		out.Kinds[kind] = counts
+		out.Total += counts.Total
+		out.WithPictures += counts.WithPictures
+		out.WithTags += counts.WithTags
+	}
+	return out, rows.Err()
+}
+
 // 状态计数（GET /api/catalog/entities/stats）。
 //
 // 存在的理由：列表端点共用的 listFilter 恒带 state NOT IN ('deleted','merged')，
@@ -26,8 +66,8 @@ type stateGroup struct {
 }
 
 // StateCounts 用一条 GROUP BY state 聚合给出全表按状态的计数，口径是全表（含 deleted/merged，
-// 与列表的可见性过滤无关）。路由闸门是 catalog.lifecycle.manage：只有这个码的持有者能在
-// /entities 列表里看全量状态，聚合因此不比列表多露一行。
+// 与列表的可见性过滤无关）。路由闸门是 catalog.lifecycle.manage；
+// 普通读取者使用仅统计 active 的 PublicStats。
 func (s *Store) StateCounts(ctx context.Context) (EntityStateCounts, error) {
 	rows, err := s.DB.QueryContext(ctx, "SELECT state, count(*) FROM catalog.entities GROUP BY state")
 	if err != nil {
