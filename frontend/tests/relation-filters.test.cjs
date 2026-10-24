@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const ts = require('typescript');
+const ts = require('typescript-api');
 
 // relationFilters.ts 不引入运行时依赖（只有类型导入），因此可以直接转译执行。
 const source = fs.readFileSync(path.join(__dirname, '../src/lib/relationFilters.ts'), 'utf8');

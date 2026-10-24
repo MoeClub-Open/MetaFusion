@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
-const ts = require('typescript');
+const ts = require('typescript-api');
 
 // Execute the production hook with render and passive-effect phases kept separate.
 // This makes the interval before a new identity's effect runs observable without a DOM.
