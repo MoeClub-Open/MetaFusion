@@ -22,8 +22,9 @@ func (s *Store) RunOpenSearchIndexer(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		if err := s.syncOpenSearch(ctx); err != nil && ctx.Err() == nil {
-			s.OpenSearch.ready.Store(false)
+		err := s.syncOpenSearch(ctx)
+		s.OpenSearch.indexingDelayed.Store(err != nil)
+		if err != nil && ctx.Err() == nil {
 			s.OpenSearch.logIssue("OpenSearch indexing delayed; PostgreSQL remains authoritative", err)
 		}
 		select {
@@ -46,9 +47,7 @@ func (s *Store) syncOpenSearch(ctx context.Context) error {
 	}
 	if !locked {
 		initialized, err := s.OpenSearch.isInitialized(ctx)
-		if err == nil {
-			s.OpenSearch.ready.Store(initialized)
-		}
+		s.OpenSearch.ready.Store(err == nil && initialized)
 		return err
 	}
 	defer func() {
@@ -59,12 +58,17 @@ func (s *Store) syncOpenSearch(ctx context.Context) error {
 
 	c := s.OpenSearch
 	if err := c.ensureIndex(ctx); err != nil {
+		c.ready.Store(false)
 		return err
 	}
 	initialized, err := c.isInitialized(ctx)
 	if err != nil {
+		c.ready.Store(false)
 		return err
 	}
+	// A completed index remains queryable while its durable update queue is
+	// delayed. A rebuild still stays unavailable until its alias is published.
+	c.ready.Store(initialized)
 	if !initialized {
 		c.ready.Store(false)
 		if err := c.clearEntityDocuments(ctx); err != nil {
@@ -481,7 +485,12 @@ func (c *OpenSearchClient) writeDocuments(ctx context.Context, docs []searchDocu
 			}
 		}
 		if !ok || len(item) != 1 || !accepted {
-			return fmt.Errorf("OpenSearch rejected a bulk item with HTTP %d", response.Status)
+			var detail struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			}
+			_ = json.Unmarshal(response.Error, &detail)
+			return fmt.Errorf("OpenSearch rejected a bulk item with HTTP %d (%s): %s", response.Status, detail.Type, detail.Reason)
 		}
 	}
 	return nil

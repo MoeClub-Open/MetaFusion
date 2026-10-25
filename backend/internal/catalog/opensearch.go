@@ -35,16 +35,19 @@ var errSearchUnavailable = errors.New("search_unavailable")
 // OpenSearch performs text matching and pagination. PostgreSQL supplies current
 // entity content and authorization; a failed index is an explicit service error.
 type OpenSearchClient struct {
-	baseURL  string
-	username string
-	password string
-	http     *http.Client
-	ready    atomic.Bool
-	logMu    sync.Mutex
-	lastLog  time.Time
+	baseURL         string
+	username        string
+	password        string
+	http            *http.Client
+	ready           atomic.Bool
+	indexingDelayed atomic.Bool
+	logMu           sync.Mutex
+	lastLog         time.Time
 }
 
 func (c *OpenSearchClient) Ready() bool { return c != nil && c.ready.Load() }
+
+func (c *OpenSearchClient) IndexingDelayed() bool { return c != nil && c.indexingDelayed.Load() }
 
 func NewOpenSearchClient(rawURL, username, password string) (*OpenSearchClient, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))

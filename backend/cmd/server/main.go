@@ -198,7 +198,7 @@ func main() {
 	// "重启到好为止"的循环，那正是要根除的 CrashLoop。探针判据：definitions.degraded == true。
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "live"}) })
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "live", "service": "metafusion-catalog", "definitions": s.DefinitionStatus(), "search_ready": s.OpenSearch.Ready()})
+		c.JSON(200, gin.H{"status": "live", "service": "metafusion-catalog", "definitions": s.DefinitionStatus(), "search_ready": s.OpenSearch.Ready(), "search_indexing_delayed": s.OpenSearch.IndexingDelayed()})
 	})
 	// 浅探针只探本进程自己的依赖（PG），必须保持毫秒级：编排的 healthcheck 每 10 秒打它一次。
 	// 跨服务依赖另开 deep=1（编排与常规探针都不带这个参数），因此不会把探针拖慢。

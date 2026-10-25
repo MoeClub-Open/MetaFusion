@@ -97,7 +97,7 @@ Agent 使用只读 `POST /api/catalog/relationships/query`：
 
 索引器通过 advisory lock 保证单写入者，全量重建包含结构侧表，完成后原子切换 `metafusion-entities` 别名至 v3。outbox 只作变更通知：消费读取当前数据库事实，同一批次的相同 ID 只处理一次；行存在时使用当前实体版本，行已物理删除时删除索引文档，不从历史 payload 复活实体。bulk 成功后才确认 deliveries，丢失确认可重投；删除不存在文档可幂等成功，缺索引等错误不能冒充成功。
 
-读取副本确认完成标记后可提供搜索。`/health.search_ready` 表示索引就绪，`/ready` 只检查 PostgreSQL；发布验收必须另验搜索，见部署手册。
+读取副本确认完成标记后可提供搜索。`/health.search_ready` 表示索引读取就绪，`search_indexing_delayed` 单独表示最近的增量同步失败；完整索引存在时，增量投递失败不关闭读取，实体可见性仍由 PostgreSQL 回读复核。首次索引未完成或索引检查不可用时仍关闭读取。`/ready` 只检查 PostgreSQL；发布验收必须另验搜索，见部署手册。
 
 ## 并发编目查重
 
