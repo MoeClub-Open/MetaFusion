@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestWorkspaceDeleteIgnoresNestedObjectKeyOrder(t *testing.T) {
+	base := json.RawMessage(`{"type":"voiced_by","source_id":"work","target_id":"actor","attributes":{"language":"ja","character":"role"}}`)
+	current := json.RawMessage(`{"target_id":"actor","source_id":"work","type":"voiced_by","attributes":{"character":"role","language":"ja"}}`)
+	o := WorkspaceObject{Target: "relation", ID: "edge", BaseVersion: 1, Base: base}
+	merged, conflicts, err := mergeWorkspaceObject(o, current, 1)
+	if err != nil || len(conflicts) != 0 || !rawNull(merged) {
+		t.Fatalf("unchanged relation deletion: %s %+v %v", merged, conflicts, err)
+	}
+	changed := json.RawMessage(`{"target_id":"actor","source_id":"work","type":"voiced_by","attributes":{"character":"another","language":"ja"}}`)
+	_, conflicts, err = mergeWorkspaceObject(o, changed, 2)
+	if err != nil || len(conflicts) != 1 || conflicts[0].Kind != "delete_modified" {
+		t.Fatalf("real concurrent edit lost: %+v %v", conflicts, err)
+	}
+}
+
 func TestWorkspaceConflictDistinguishesMissingAndNull(t *testing.T) {
 	base := json.RawMessage(`{"title":"Example","attributes":{"value":1}}`)
 	proposed := json.RawMessage(`{"title":"Example","attributes":{"value":2}}`)

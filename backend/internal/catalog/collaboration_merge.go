@@ -76,7 +76,7 @@ func workspaceSameFact(a, b json.RawMessage, target string) bool {
 			return false
 		}
 	}
-	return encode(workspaceEditableMap(a, target)) == encode(workspaceEditableMap(b, target))
+	return equalDocument(json.RawMessage(encode(workspaceEditableMap(a, target))), json.RawMessage(encode(workspaceEditableMap(b, target))))
 }
 func mergeWorkspaceObject(o WorkspaceObject, current json.RawMessage, version int64) (json.RawMessage, []WorkspaceConflict, error) {
 	conflict := func(kind string) []WorkspaceConflict {
@@ -589,12 +589,15 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 		return out, err
 	}
 	for _, id := range absorbed {
-		p:=PullRequest{ID:id}
-		err=tx.QueryRowContext(ctx,`SELECT author_id,title FROM catalog.pull_requests WHERE id=$1`,id).Scan(&p.AuthorID,&p.Title)
+		p := PullRequest{ID: id}
+		err = tx.QueryRowContext(ctx, `SELECT author_id,title FROM catalog.pull_requests WHERE id=$1`, id).Scan(&p.AuthorID, &p.Title)
 		if err != nil {
 			return out, err
 		}
-		p.Commits,err=pullRequestCommitsFrom(ctx,tx,p);if err!=nil{return out,err}
+		p.Commits, err = pullRequestCommitsFrom(ctx, tx, p)
+		if err != nil {
+			return out, err
+		}
 		if err = notifyPullRequestDecision(ctx, tx, p, u, true); err != nil {
 			return out, err
 		}
@@ -801,7 +804,7 @@ func (s *Store) MergePullRequest(ctx context.Context, id string, in PullRequestM
 	return out, err
 }
 func (s *Store) RebaseWorkspace(ctx context.Context, id string, in WorkspaceRebase, u User) (WorkspaceRebaseResult, error) {
-    return s.replayWorkspaceHistory(ctx,id,in,u)
+	return s.replayWorkspaceHistory(ctx, id, in, u)
 }
 
 func notifyPullRequestDecision(ctx context.Context, tx *sql.Tx, p PullRequest, actor User, approved bool) error {
