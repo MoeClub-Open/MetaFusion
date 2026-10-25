@@ -131,6 +131,7 @@ func (d Definitions) impactOn(ctx context.Context, q queryer, ents []Entity, rel
 		}
 		liveRelations = append(liveRelations, r)
 	}
+	relationCandidates := relationReplayCandidates(d, liveRelations)
 	for _, e := range ents {
 		mediumFormat := ""
 		if e.Kind == "track" {
@@ -157,7 +158,7 @@ func (d Definitions) impactOn(ctx context.Context, q queryer, ents []Entity, rel
 		if _, ok := d.Relations[r.Type]; !ok {
 			continue
 		}
-		if err = validateRelation(d, r, src, tgt, liveRelations, tolerant(r.ID), true, func(id string) (Entity, error) {
+		if err = validateRelation(d, r, src, tgt, relationCandidates(r), tolerant(r.ID), true, func(id string) (Entity, error) {
 			if e, ok := byID[id]; ok {
 				return e, nil
 			}
@@ -167,6 +168,49 @@ func (d Definitions) impactOn(ctx context.Context, q queryer, ents []Entity, rel
 		}
 	}
 	return out, nil
+}
+
+// A replay checks the same dependencies as an individual save. Index endpoint
+// constraints once, and retain the complete rule graph for cycle checks.
+func relationReplayCandidates(d Definitions, relations []Relation) func(Relation) []Relation {
+	bySource, byTarget := map[string][]Relation{}, map[string][]Relation{}
+	byRule := map[string][]Relation{}
+	for _, r := range relations {
+		bySource[r.SourceID] = append(bySource[r.SourceID], r)
+		byTarget[r.TargetID] = append(byTarget[r.TargetID], r)
+	}
+	return func(r Relation) []Relation {
+		rule := d.Relations[r.Type]
+		if rule.Acyclic {
+			if candidates, ok := byRule[r.Type]; ok {
+				return candidates
+			}
+			candidates := []Relation{}
+			for _, other := range relations {
+				if sharesCycleGroup(d, r.Type, other.Type) || rule.Usage != "" && rule.Usage == d.Relations[other.Type].Usage {
+					candidates = append(candidates, other)
+				}
+			}
+			byRule[r.Type] = candidates
+			return candidates
+		}
+		candidates := append([]Relation{}, bySource[r.SourceID]...)
+		if rule.MaxIncoming > 0 {
+			for _, other := range byTarget[r.TargetID] {
+				if other.SourceID != r.SourceID {
+					candidates = append(candidates, other)
+				}
+			}
+		}
+		if rule.Symmetric {
+			for _, other := range bySource[r.TargetID] {
+				if other.TargetID == r.SourceID {
+					candidates = append(candidates, other)
+				}
+			}
+		}
+		return candidates
+	}
 }
 
 // danglingSummary 是给日志用的短摘要：条数按类别分开，并给出可执行的下一步。
