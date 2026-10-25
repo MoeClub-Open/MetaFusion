@@ -73,7 +73,13 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 		changed := false
 		for termCode, seedTerm := range seedVocabulary.Terms {
 			term, exists := terms[termCode]
-			if !exists || term.IsBonus != nil || seedTerm.IsBonus == nil {
+			if !exists {
+				terms[termCode] = seedTerm
+				added = append(added, "vocabularies."+code+".terms."+termCode)
+				changed = true
+				continue
+			}
+			if term.IsBonus != nil || seedTerm.IsBonus == nil {
 				continue
 			}
 			term.IsBonus = seedTerm.IsBonus

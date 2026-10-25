@@ -208,8 +208,9 @@ const DATE_PATTERN = /^\d{4}(-\d{2}(-\d{2})?)?$/;
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /** isValidDateValue 判断字符串是否为合法的年 / 年-月 / 年-月-日。 */
-export function isValidDateValue(v: string): boolean {
-  const s = v.trim();
+export function isValidDateValue(v: string, allowYearless = false): boolean {
+  let s = v.trim();
+  if (allowYearless && /^--\d{2}-\d{2}$/.test(s)) s = "2000" + s.slice(1);
   if (!DATE_PATTERN.test(s)) return false;
   const [y, m, d] = s.split("-").map(Number);
   if (y < 1) return false;
@@ -222,22 +223,22 @@ export function isValidDateValue(v: string): boolean {
   return true;
 }
 
-function DateInput({ value, onChange }: { value: any; onChange: (v: any) => void }) {
+function DateInput({ value, onChange, allowYearless = false }: { value: any; onChange: (v: any) => void; allowYearless?: boolean }) {
   const { t } = useI18n();
   const text = value === null || value === undefined ? "" : String(value);
-  const invalid = text.trim() !== "" && !isValidDateValue(text);
+  const invalid = text.trim() !== "" && !isValidDateValue(text, allowYearless);
   return (
     <>
       <input
         className="cv-date"
         type="text"
         inputMode="numeric"
-        placeholder={t("catalog.datePlaceholder")}
+        placeholder={t(allowYearless ? "catalog.yearlessDatePlaceholder" : "catalog.datePlaceholder")}
         aria-invalid={invalid || undefined}
         value={text}
         onChange={(e) => onChange(e.target.value)}
       />
-      {invalid && <small className="cv-error">{t("catalog.dateInvalid")}</small>}
+      {invalid && <small className="cv-error">{t(allowYearless ? "catalog.yearlessDateInvalid" : "catalog.dateInvalid")}</small>}
     </>
   );
 }
@@ -354,7 +355,7 @@ export function FieldInput({
         </button>
       </div>
     );
-  if (field.type === "date") return <DateInput value={value} onChange={onChange} />;
+  if (field.type === "date") return <DateInput value={value} onChange={onChange} allowYearless={field.allow_yearless} />;
   return (
     <input
       type={

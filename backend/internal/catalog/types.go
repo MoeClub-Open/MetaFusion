@@ -183,6 +183,7 @@ type Field struct {
 	Searchable      bool             `json:"searchable"`
 	Comparable      bool             `json:"comparable"`
 	Vocabulary      string           `json:"vocabulary,omitempty"`
+	AllowYearless   bool             `json:"allow_yearless,omitempty"`
 	Kinds           []string         `json:"kinds,omitempty"`
 	Fields          map[string]Field `json:"fields,omitempty"`
 	Items           *Field           `json:"items,omitempty"`

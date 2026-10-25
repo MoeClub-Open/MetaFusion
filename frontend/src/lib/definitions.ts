@@ -12,6 +12,7 @@ export interface FieldDef {
   type: string;
   unit?: Record<string, string>;
   vocabulary?: string;
+  allow_yearless?: boolean;
   enabled: boolean;
   required?: boolean;
   /** 可作为哪些实体 kind 的属性；与 entity 引用目标的 kinds 不同。 */

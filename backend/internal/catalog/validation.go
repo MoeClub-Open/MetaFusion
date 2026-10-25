@@ -676,6 +676,9 @@ func (d Definitions) validateField(f Field, depth int) error {
 	if f.Min != nil && f.Max != nil && *f.Min > *f.Max {
 		return fmt.Errorf("invalid_range")
 	}
+	if f.AllowYearless && f.Type != "date" {
+		return fmt.Errorf("invalid_field")
+	}
 	// 对比语义是有限声明的闭集：后台只能选择系统真正支持的规则，
 	// 不允许自由填写（避免出现"配置了但没有任何运行时效果"的选项）。
 	if f.Semantics != "" && f.Semantics != "content" && f.Semantics != "locating" {
@@ -788,7 +791,11 @@ func (d Definitions) value(f Field, v any, reference func(string, []string) erro
 			return nil
 		}
 		layout := "2006-01-02"
-		if len(s) == 4 {
+		if f.AllowYearless && strings.HasPrefix(s, "--") {
+			// gMonthDay notation preserves an unknown year; 2000 is only a
+			// leap-year reference for validating month/day, never stored data.
+			s = "2000" + s[1:]
+		} else if len(s) == 4 {
 			layout = "2006"
 		} else if len(s) == 7 {
 			layout = "2006-01"

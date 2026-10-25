@@ -20,6 +20,7 @@ export type Field = {
   semantics?: string;
   unit?: Names;
   vocabulary?: string;
+  allow_yearless?: boolean;
   kinds?: string[];
   fields?: Record<string, Field>;
   items?: Field;

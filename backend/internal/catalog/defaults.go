@@ -700,5 +700,7 @@ func Defaults() Definitions {
 	releaseTemplate := d.Templates["release"]
 	releaseTemplate.Match = &emptyMatch
 	d.Templates["release"] = releaseTemplate
+	addAgentDefinitions(&d)
+	addMusicTagDefinitions(&d)
 	return d
 }

@@ -249,6 +249,10 @@ function FieldDefinition({
           onChange={(applicable_kinds) => patch({ applicable_kinds })}
         />
       )}
+      {value.type === "date" && <label>
+        <input type="checkbox" checked={!!value.allow_yearless} onChange={(event) => patch({ allow_yearless: event.target.checked })} />
+        {t("catalog.allowYearlessDate")}
+      </label>}
       {/* 对比语义：闭集选择，只提供系统真正实现的规则，避免自由填写出不生效的配置。 */}
       <label>
         {t("catalog.semantics")}

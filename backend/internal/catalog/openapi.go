@@ -89,6 +89,8 @@ func OpenAPI() map[string]any {
 	}
 	entityProps := schemas["Entity"].(map[string]any)["properties"].(map[string]any)
 	schema(reflect.TypeOf(CatalogStats{}))
+	fieldProps := schemas["Field"].(map[string]any)["properties"].(map[string]any)
+	fieldProps["allow_yearless"].(map[string]any)["description"] = "Date fields only. When true, also accepts --MM-DD (gMonthDay), preserving an unknown year. Defaults to false; other date fields still require a year."
 	schemas["Picture"].(map[string]any)["properties"].(map[string]any)["caption"].(map[string]any)["example"] = map[string]string{"ja-JP": "キービジュアル"}
 	entityProps["state"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"active", "deleted", "merged"}}
 	entityProps["review_status"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"reviewed"}, "description": "Applied facts are reviewed. Pending collaboration changes belong to a private workspace or pull request and never change the current entity."}
