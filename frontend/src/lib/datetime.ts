@@ -25,8 +25,11 @@ export function isoTimestamp(value?: string | number | Date | null): string {
   return d ? d.toISOString().slice(0, 19) + "Z" : "";
 }
 
-/** 本地化写法，只用于 title（可读性），不作为正文口径；无效值返回空串。 */
+/** 本地化写法；无效值返回空串。zh-* 固定 Asia/Shanghai，避免中文界面仍出 en-US 的 AM/PM。 */
 export function localDateTime(value: string | number | Date | null | undefined, locale: string): string {
   const d = toDate(value);
-  return d ? d.toLocaleString(locale) : "";
+  if (!d) return "";
+  const opts: Intl.DateTimeFormatOptions = {};
+  if (locale.toLowerCase().startsWith("zh")) opts.timeZone = "Asia/Shanghai";
+  return d.toLocaleString(locale, opts);
 }
