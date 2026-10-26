@@ -33,6 +33,9 @@ test("isOpsNote：#73 运维散文关键词与机器码并存", () => {
   assert.equal(isOpsNote("attributes.publisher / AUX-P2"), true);
   assert.equal(isOpsNote("补 attributes.publisher"), true);
   assert.equal(isOpsNote("批 AUX-P2 对齐"), true);
+  // Kimi：散文夹带任一 snake_case 机器码也藏（不能 every）
+  assert.equal(isOpsNote("同步自 netease_music_artist"), true);
+  assert.equal(isOpsNote("对齐 bangumi_subject_id 后发布"), true);
   // 普通散文放行
   assert.equal(isOpsNote("修正曲目标题"), false);
   assert.equal(isOpsNote("修正发行日期"), false);
@@ -45,6 +48,10 @@ test("读者面修订摘要过滤运维与机器码备注", () => {
   );
   assert.equal(
     readerRevisionNote({ edit_note: "批处理导入 iTunes 词表说明" }, "更新"),
+    "更新",
+  );
+  assert.equal(
+    readerRevisionNote({ edit_note: "同步自 netease_music_artist" }, "更新"),
     "更新",
   );
   assert.equal(

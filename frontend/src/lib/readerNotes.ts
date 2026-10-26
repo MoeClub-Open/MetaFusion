@@ -27,7 +27,7 @@ export function isMachineToken(token: string | undefined | null): boolean {
 
 /**
  * 判定一段备注是否像运维/迁移/批处理说明，不该进读者面。
- * 运维散文关键词 OR 整段/夹带机器码 → 隐藏。
+ * 运维散文关键词 OR 任一机器码 token（含散文夹带）→ 隐藏。
  */
 export function isOpsNote(text: string | undefined | null): boolean {
   const value = (text || "").trim();
@@ -42,9 +42,9 @@ export function isOpsNote(text: string | undefined | null): boolean {
   if (/\battributes(?:\.[A-Za-z0-9_]+)+\b/.test(value)) return true;
   if (/\bAUX-[A-Za-z0-9_-]+\b/i.test(value)) return true;
 
-  // 多 token 时若全是机器码也藏
+  // 任一 token 是机器码（含 snake_case）→ 整条藏（Kimi：混写备注不能 every）
   const tokens = value.split(/[\s,;|/]+/).map((s) => s.trim()).filter(Boolean);
-  if (tokens.length > 0 && tokens.every(isMachineToken)) return true;
+  if (tokens.some(isMachineToken)) return true;
 
   return false;
 }
