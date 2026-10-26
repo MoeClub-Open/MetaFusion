@@ -43,7 +43,7 @@ export function EntityArticle({ entity, titleOrder }: { entity: Entity; titleOrd
       </div>
       {summary && <p className="text-sm text-text-strong leading-relaxed whitespace-pre-line">{summary}</p>}
       {article ? <CatalogArticle content={article.body} lang={article.locale} />
-        : <p className="text-xs text-text-muted">{t("catalog.article.empty")}</p>}
+        : !summary ? <p className="text-xs text-text-muted">{t("catalog.article.empty")}</p> : null}
       {entity.id && <GeneratedOverview entityID={entity.id} version={entity.version} />}
     </div>
   );

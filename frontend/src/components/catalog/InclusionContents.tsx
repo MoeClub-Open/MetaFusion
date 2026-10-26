@@ -4,12 +4,26 @@ import Link from "next/link";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions } from "@/lib/definitions";
 import { Entity, type Source, title } from "./api";
+import { readerSourceLabel, readerVisibleSources } from "@/lib/readerNotes";
 
-export function InclusionSources({sources}: {sources: Source[] | undefined}) {
-  return <>{(sources || []).map((source,i) => source.url ?
-    <a key={i} className="block text-[11px] text-text-faint hover:text-primary" href={source.url} target="_blank" rel="noreferrer">{source.citation}</a> :
-    <span key={i} className="block text-[11px] text-text-faint">{source.citation}</span>
-  )}</>;
+/** 读者面收录来源：过滤迁移/批处理词表说明，不靠 CSS 隐藏。 */
+export function InclusionSources({
+  sources,
+  allowOps = false,
+}: {
+  sources: Source[] | undefined;
+  allowOps?: boolean;
+}) {
+  const visible = readerVisibleSources(sources, { allowOps });
+  return <>{visible.map((source, i) => {
+    const label = allowOps ? (source.citation || source.url || "") : readerSourceLabel(source);
+    if (!label && !source.url) return null;
+    return source.url ? (
+      <a key={i} className="block text-[11px] text-text-faint hover:text-primary" href={source.url} target="_blank" rel="noreferrer">{label || source.url}</a>
+    ) : (
+      <span key={i} className="block text-[11px] text-text-faint">{label}</span>
+    );
+  })}</>;
 }
 import { GroupAttributeInline, LocatorInline } from "./TemplateAttributeSections";
 

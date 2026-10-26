@@ -8,6 +8,8 @@ import { canEditRevision, prepareRevisionRestore } from "./revisionData";
 import { RevisionDiffInspector } from "./RevisionDiffInspector";
 import { RevisionSnapshotView } from "./RevisionSnapshotView";
 import { useI18n } from "@/i18n/I18nProvider";
+import { localDateTime } from "@/lib/datetime";
+import { readerRevisionNote } from "@/lib/readerNotes";
 import {
   GitBranch,
   GitCompare,
@@ -39,7 +41,7 @@ export function EntityRevisions({
   revisions: RevisionItem[];
   currentEntity?: any;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const [restore, setRestore] = useState<{ entity: Entity; base: Entity; revision: RevisionItem } | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
@@ -170,7 +172,7 @@ export function EntityRevisions({
                 {t("revisions.snapshotAt", { version: inspectingRev.version })}
               </h3>
               <span className="text-xs font-mono text-text-faint">
-                ({new Date(inspectingRev.created_at).toLocaleString()})
+                ({localDateTime(inspectingRev.created_at, locale)})
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -193,7 +195,9 @@ export function EntityRevisions({
         {sortedRevisions.map((rev, idx) => {
           const revKey = String(rev.id || idx);
           const author = rev.actor_name || anonymousName;
-          const note = rev.edit_note || rev.summary || (idx === sortedRevisions.length - 1 ? t("revisions.initialNote") : t("revisions.updateNote"));
+          const fallback = idx === sortedRevisions.length - 1 ? t("revisions.initialNote") : t("revisions.updateNote");
+          const allowOps = currentEntity ? canEditRevision(currentEntity, user ?? undefined) : Boolean(user);
+          const note = readerRevisionNote(rev, fallback, { allowOps });
           const sources = rev.sources || [];
           const isLatest = idx === 0;
 
@@ -245,7 +249,7 @@ export function EntityRevisions({
 
                   <div className="flex items-center gap-1.5 text-xs font-mono text-text-faint">
                     <Clock className="w-3.5 h-3.5" />
-                    <span>{new Date(rev.created_at).toLocaleString()}</span>
+                    <span>{localDateTime(rev.created_at, locale)}</span>
                   </div>
                 </div>
 
