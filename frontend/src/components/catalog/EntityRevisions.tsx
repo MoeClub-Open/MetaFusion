@@ -9,7 +9,12 @@ import { RevisionDiffInspector } from "./RevisionDiffInspector";
 import { RevisionSnapshotView } from "./RevisionSnapshotView";
 import { useI18n } from "@/i18n/I18nProvider";
 import { localDateTime } from "@/lib/datetime";
-import { readerRevisionNote } from "@/lib/readerNotes";
+import {
+  readerRevisionNote,
+  readerSourceLabel,
+  readerVisiblePointers,
+  readerVisibleSources,
+} from "@/lib/readerNotes";
 import {
   GitBranch,
   GitCompare,
@@ -259,7 +264,10 @@ export function EntityRevisions({
                 </div>
 
                 {/* Commit Evidence / Sources List */}
-                {sources.length > 0 && (
+                {(() => {
+                  const visibleSources = readerVisibleSources(sources, { allowOps });
+                  if (!visibleSources.length) return null;
+                  return (
                   <div className="pt-1">
                     <button
                       type="button"
@@ -267,22 +275,27 @@ export function EntityRevisions({
                       className="inline-flex items-center gap-1.5 text-[11px] font-mono text-primary hover:underline cursor-pointer"
                     >
                       <ExternalLink className="w-3 h-3" />
-                      <span>{t("revisions.evidenceSources", { count: sources.length })}</span>
+                      <span>{t("revisions.evidenceSources", { count: visibleSources.length })}</span>
                       {expandedSources[revKey] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
 
                     {expandedSources[revKey] && (
                       <div className="mt-2 p-2.5 rounded-lg bg-surfaceSubtle border border-line-subtle space-y-1.5 text-xs font-mono animate-fade-in">
-                        {sources.map((s: any, sIdx: number) => (
+                        {visibleSources.map((s: any, sIdx: number) => {
+                          const citation = allowOps
+                            ? (s.citation || t("revisions.officialSource"))
+                            : (readerSourceLabel(s) || t("revisions.officialSource"));
+                          const pointers = readerVisiblePointers(s.pointers, { allowOps });
+                          return (
                           <div key={sIdx} className="flex items-start gap-2 text-gray-600 dark:text-gray-400">
                             <span className="text-primary font-bold">[{s.kind || "url"}]</span>
-                            <span className="text-text-strong font-medium">{s.citation || t("revisions.officialSource")}</span>
+                            <span className="text-text-strong font-medium">{citation}</span>
                             {/* 历史修订：整笔提交的来源池，不代表支撑本条修订的某个字段。 */}
                             {s.scope === "commit" && (
                               <span className="shrink-0 px-1.5 rounded border border-line text-text-muted" title={t("revisions.scopeCommitHint")}>{t("revisions.scopeCommit")}</span>
                             )}
-                            {Array.isArray(s.pointers) && s.pointers.length > 0 && (
-                              <span className="text-text-muted">{s.pointers.join(", ")}</span>
+                            {pointers.length > 0 && (
+                              <span className="text-text-muted">{pointers.join(", ")}</span>
                             )}
                             {s.url && (
                               <a
@@ -295,11 +308,13 @@ export function EntityRevisions({
                               </a>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Revision Action Tools */}
                 <div className="pt-2 border-t border-line-subtle flex items-center justify-between text-xs font-mono">
