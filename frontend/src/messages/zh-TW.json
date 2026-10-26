@@ -1935,6 +1935,7 @@
   "developer.mcp.revokeAll": "撤銷全部授權",
   "developer.apiKeyScope.community.report.review": "處理檢舉",
   "developer.apiKeyScope.auth.audit.read": "查看稽核紀錄",
+  "catalog.quality.complete": "無缺項",
   "catalog.quality.partial": "有缺項",
   "catalog.quality.needsVerification": "待核實",
   "catalog.quality.diagnosticsTitle": "品質診斷",

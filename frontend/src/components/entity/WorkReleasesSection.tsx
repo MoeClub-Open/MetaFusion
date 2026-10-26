@@ -27,9 +27,11 @@ import { matchesEntityQuery } from "@/lib/entitySearch";
 type Props = {
   /** 作品 id：发行版按 work_id 反查，介质格式按 release_id 聚合。 */
   workId: string;
+  /** 把未筛选总数回传给详情页签角标；有 N 版时 tab 显示数字。 */
+  onCountChange?: (count: number) => void;
 };
 
-export function WorkReleasesSection({ workId }: Props) {
+export function WorkReleasesSection({ workId, onCountChange }: Props) {
   const { t, locale } = useI18n();
   const { definitions: defs } = useDefinitions();
 
@@ -140,6 +142,12 @@ export function WorkReleasesSection({ workId }: Props) {
   }, [releaseEntities, q, facetValues, releaseFacets, releaseFormatCounts]);
 
   const total = filteredReleases.length;
+
+  // 页签角标用未筛选总数（releaseEntities），筛选只影响列表本身。
+  useEffect(() => {
+    if (loadingReleases || releasesFailed) return;
+    onCountChange?.(releaseEntities.length);
+  }, [loadingReleases, releasesFailed, releaseEntities.length, onCountChange]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pagedReleases = useMemo(
     () => filteredReleases.slice((page - 1) * pageSize, page * pageSize),
@@ -220,8 +228,8 @@ export function WorkReleasesSection({ workId }: Props) {
  <div className="p-8 text-center text-sm text-text-faint">{t("work.detail.noFilterResult")}</div>
  ) : (
  <>
- {/* 发行版列表的列由模板 columns 声明（后台可改），不再写死字段码 */}
- {releaseColumns.length > 0 && (
+ {/* 桌面表与移动卡片共用同一 pagedReleases 数据源。
+     模板 columns 为空时仍渲染标题列，避免 ≥sm 只剩空白（根因：releaseColumns 门控把整张桌面表藏掉）。 */}
  <div className="hidden sm:block overflow-x-auto">
  <table className="w-full text-left text-sm">
  <thead className="bg-surfaceSubtle border-b border-line-subtle text-xs uppercase tracking-wider text-text-faint">
@@ -256,18 +264,22 @@ export function WorkReleasesSection({ workId }: Props) {
  </tbody>
  </table>
  </div>
- )}
  <div className="sm:hidden divide-y divide-black/5 dark:divide-white/[0.06]">
- {pagedReleases.map((rel) => (
+ {pagedReleases.map((rel) => {
+ const meta = releaseColumns
+ .map((code) => (code === "format" && formatSummaryOf(rel)) || attributeText(defs, code, rel.attributes?.[code], locale))
+ .filter(Boolean)
+ .join(" · ");
+ // 有发行行时不写「暂无版本信息」——没属性就省略副行，别用空态文案冒充缺数据。
+ return (
  <div key={rel.id} className="px-3.5 py-3 flex items-start gap-2.5">
  <Link href={`/catalog/${rel.id}`} className="min-w-0 flex-1 space-y-1">
  <div className="font-semibold text-text-strong text-sm leading-tight line-clamp-2">{entityTitle(rel, locale)}</div>
-                      <div className="text-xs text-text-faint truncate">
- {releaseColumns.map((code) => (code === "format" && formatSummaryOf(rel)) || attributeText(defs, code, rel.attributes?.[code], locale)).filter(Boolean).join(" · ") || t("work.detail.noEditionMeta")}
- </div>
+ {meta ? <div className="text-xs text-text-faint truncate">{meta}</div> : null}
  </Link>
  </div>
- ))}
+ );
+ })}
  </div>
  {totalPages > 1 && (
  <div className="px-3.5 sm:px-4 py-3 border-t border-line-subtle flex items-center justify-end gap-2">
