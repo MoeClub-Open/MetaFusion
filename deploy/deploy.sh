@@ -25,11 +25,6 @@ set -- "${POSITIONAL[@]}"
 ACTION=${1:-"fast"}
 TARGET=${2:-""}
 
-# 版本 tag 的保留个数（每个镜像留几个可回退锚点）。tag 只是镜像的第二个名字，不额外占磁盘；
-# 但名字会无限增长，所以在 tag_release_images 里撤掉更老的（同一份层数据仍在，容器用的
-# :local 滚动标签从不参与清理）。要留更多历史就设 MF_IMAGE_TAG_KEEP。
-IMAGE_TAG_KEEP=${MF_IMAGE_TAG_KEEP:-3}
-
 # 自动定位 .env（项目根目录 ../.env 或当前 deploy/.env）
 ENV_FILE=""
 if [ -f "../.env" ]; then
@@ -158,10 +153,9 @@ function tag_release_images() {
     # 本项目的版本号等于把"这个 tag 代表一次发布"说成谎话，也会让保留策略去管别人的镜像；
     # 网关虽然用 nginx:1.30.6-alpine，但它的配置是 bind mount，本来就没有镜像可回退。
     local project="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}"
-    local in_use_ids imgs img config_image image_id repo tagged=0
+    local imgs img config_image image_id repo tagged=0
     # Config.Image 是创建容器时传入的可变标签（例如 deploy-frontend），后续 latest
-    # 移动后它不再指向容器实际运行的镜像。用 immutable image ID 打锚，也按 ID 保护运行中镜像。
-    in_use_ids="$(docker ps -aq | xargs -r docker inspect -f "{{.Image}}" | sort -u)"
+    # 移动后它不再指向容器实际运行的镜像，用实际 image ID 打锚。
     imgs="$(docker compose $COMPOSE_ENV -f docker-compose.yml ps -q 2>/dev/null | xargs -r docker inspect -f "{{.Config.Image}}|{{.Image}}" 2>/dev/null | sort -u)"
     if [ -z "$imgs" ]; then
         echo "⚠️  没读到本项目容器镜像：跳过镜像版本 tag"
@@ -186,44 +180,9 @@ function tag_release_images() {
                 return 1
             fi
         fi
-        prune_release_tags "$repo" "$in_use_ids" "$repo:$ver"
     done
-    echo "✅ 版本 tag 完成：$tagged 个镜像带 $ver（每个镜像保留最近 $IMAGE_TAG_KEEP 个版本）"
+    echo "✅ 版本 tag 完成：$tagged 个镜像带 $ver；历史镜像由显式 prune 清理"
     echo "   回退：docker tag <repo>:<旧版本> <repo>:local && docker compose up -d --no-deps --force-recreate <svc>"
-}
-
-# 保留策略：每个镜像只留最近 IMAGE_TAG_KEEP 个版本 tag，更老的撤 tag（镜像层数据不动、
-# 容器用的 :local / :latest 滚动标签永不参与）。候选只认「版本形态」的名字：vX.Y.Z 或 12 位短 sha。
-function prune_release_tags() {
-    local repo="$1" in_use_ids="$2" current="$3" i=0 t sorted image_id
-    # 判定用 bash 通配，不用 awk/grep 正则：目标机的 awk 是 mawk 1.3.4，**不支持 {n} 区间**，
-    # 写 /:(v[0-9]|[0-9a-f]{12})$/ 这种正则会静默不匹配（首版就是这么漏掉清理的，实测才发现）。
-    # 历史 tag 按镜像构建时间倒序；当前 tag 必须单独保留，因为未变更服务的新版本 tag
-    # 与旧 tag 指向同一镜像，CreatedAt 相同，排序无法判断哪个才是本次版本。
-    sorted="$(docker images --format "{{.Repository}}:{{.Tag}} {{.CreatedAt}}" "$repo" 2>/dev/null \
-        | while IFS= read -r line; do
-              t="${line%% *}"; created="${line#* }"
-              case "$t" in
-                  *:v[0-9]*|*:[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) printf '%s %s\n' "$created" "$t" ;;
-              esac
-          done | sort -r | while IFS= read -r cline; do printf '%s\n' "${cline##* }"; done)"
-    for t in $sorted; do
-        [ "$t" = "$current" ] && continue
-        i=$((i + 1))
-        # 当前 tag 已占一个保留位，历史 tag 最多留 IMAGE_TAG_KEEP - 1 个。
-        [ "$i" -lt "$IMAGE_TAG_KEEP" ] && continue
-        if ! image_id="$(docker image inspect -f "{{.Id}}" "$t" 2>/dev/null)"; then continue; fi
-        if printf '%s\n' "$in_use_ids" | grep -Fxq "$image_id"; then
-            echo "   ↳ 保留 $t（镜像仍被容器使用）"
-            continue
-        fi
-        if docker rmi "$t" >/dev/null 2>&1; then
-            echo "   ↳ 撤掉更老的版本 tag $t（只留最近 $IMAGE_TAG_KEEP 个）"
-        else
-            echo "❌ 无法撤掉旧版本 tag $t" >&2
-            return 1
-        fi
-    done
 }
 
 function prune_project_images() {
