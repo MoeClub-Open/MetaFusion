@@ -42,6 +42,7 @@ import {
 } from "@/lib/api";
 import type { EntityComment, EntityCollectionRef } from "@/lib/api";
 import { EntityRevisions } from "./EntityRevisions";
+import { QualityBadge } from "./QualityBadge";
 import { EntityRelationDirectory } from "@/components/entity/EntityRelationDirectory";
 import { PageShell, PageContainer } from "@/components/ui/PageShell";
 import { TabPanel } from "@/components/ui/TabPanel";
@@ -145,6 +146,8 @@ export function EntityDetailView({ id }: { id: string }) {
   const [motherRelease, setMotherRelease] = useState<Entity | null>(null);
   const [motherMedium, setMotherMedium] = useState<Entity | null>(null);
   const [occurrences, setOccurrences] = useState<any[]>([]);
+  // 作品发行数单独轻量拉取（不含 Medium 聚合），供页签角标在打开分节前显示。
+  const [workReleaseCount, setWorkReleaseCount] = useState<number | undefined>(undefined);
   const [relations, setRelations] = useState<RelationshipRecord[]>([]);
   const [relatedEntities, setRelatedEntities] = useState<Record<string, Entity>>({});
   // 统一关系投影返回的主体 ID。
@@ -654,6 +657,26 @@ export function EntityDetailView({ id }: { id: string }) {
   const communityEnabled =
     Array.isArray(modules) && modules.some((m) => m.id === "community" && m.enabled);
 
+  // 作品发行页签角标：只数 release 条数，不拉 Medium；与 WorkReleasesSection 列表同源接口。
+  useEffect(() => {
+    if (!entity || entity.kind !== "work") {
+      setWorkReleaseCount(undefined);
+      return;
+    }
+    const workId = entity.id || id;
+    let alive = true;
+    fetchAllPages<Entity>(`/catalog/entities?kind=release&work_id=${encodeURIComponent(workId)}`)
+      .then((items) => {
+        if (alive) setWorkReleaseCount(items.length);
+      })
+      .catch(() => {
+        if (alive) setWorkReleaseCount(undefined);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [entity?.kind, entity?.id, id]);
+
   // 分节标签：与下方的条件渲染一一对应；标签集合随后数据到达再收窄。
   const templateBlocks = blocksForEntity(defs,entity?.kind || "",entity?.attributes);
   const tabBlocks: Record<string,string> = {staff:"credits",contents:entity?.kind === "expression" ? "composition" : "directory",releases:"occurrences",relations:"relations",resources:"resources"};
@@ -663,7 +686,7 @@ export function EntityDetailView({ id }: { id: string }) {
     // 作品的内容目录覆盖篇目/表达/聚合组成项，比"子实体列表"更准（子实体查询会连发行版一起带回），
     // 因此目录在场时以目录计数，且不再重复渲染子实体网格。
     { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : (directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0)) + aggregate.count, visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0 || aggregate.count > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "releases", label: t("entity.page.navReleases"), badge: entity?.kind === "work" || sectionFailures.occurrences ? undefined : occurrences.length, visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "releases", label: t("entity.page.navReleases"), badge: sectionFailures.occurrences ? undefined : (entity?.kind === "work" ? workReleaseCount : occurrences.length), visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : mediaRelations.length, visible: sectionFailures.relations || mediaRelations.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // entity 在数据到达前为 null，这里只能安全取值；分节本身的可见性由 kind 决定。
     { id: "resources", label: t("entity.detail.resourcesTitle"), visible: defs?.structure?.[String(entity?.kind || "")]?.resources === true, icon: <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} /> },
@@ -880,6 +903,15 @@ export function EntityDetailView({ id }: { id: string }) {
                 <span>{b.text}</span>
               </span>
             ))}
+
+            {/* 质量标签：匿名可读；接口失败整颗隐藏。a08da54c 误删后恢复。 */}
+            <QualityBadge
+              entityId={entity.id || id}
+              onNavigate={(tabId) => {
+                const shown = tabs.some((tab) => tab.id === tabId && tab.visible !== false);
+                select(shown ? tabId : "overview");
+              }}
+            />
           </div>
 
           {/* 标题和各语种题名 */}
@@ -1343,7 +1375,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 以及按实际 Medium 聚合的格式汇总——这一套此前只在作品页，合并后按 kind=work 渲染。 */}
             {active === "releases" && entity.kind === "work" && (
               <Card id="releases" padding="none" className="overflow-hidden shadow-soft">
-                <WorkReleasesSection workId={entity.id || id} />
+                <WorkReleasesSection workId={entity.id || id} onCountChange={setWorkReleaseCount} />
               </Card>
             )}
 

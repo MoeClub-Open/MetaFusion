@@ -1935,6 +1935,7 @@
   "developer.mcp.revokeAll": "Revoke all access",
   "developer.apiKeyScope.community.report.review": "Review reports",
   "developer.apiKeyScope.auth.audit.read": "Read audit logs",
+  "catalog.quality.complete": "No gaps",
   "catalog.quality.partial": "Has gaps",
   "catalog.quality.needsVerification": "Needs verification",
   "catalog.quality.diagnosticsTitle": "Quality diagnostics",

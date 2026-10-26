@@ -219,7 +219,9 @@ export default function WorkReleasesPage() {
                   <div key={rel.id} className="px-4 py-3.5 flex items-start gap-2.5">
                     <Link href={`/catalog/${rel.id}`} className="min-w-0 flex-1 space-y-1">
                       <div className="font-semibold text-emphasis text-sm line-clamp-2">{entityTitle(rel, locale)}</div>
-                      <div className="font-mono text-[11px] text-text-muted truncate">{[vocabLabel(definitions, "edition_type", edition, locale), country, vocabLabel(definitions, "packaging", packaging, locale)].filter(Boolean).join(" · ") || t("work.detail.noEditionMeta")}</div>
+                      {([vocabLabel(definitions, "edition_type", edition, locale), country, vocabLabel(definitions, "packaging", packaging, locale)].filter(Boolean).join(" · ")) ? (
+                        <div className="font-mono text-[11px] text-text-muted truncate">{[vocabLabel(definitions, "edition_type", edition, locale), country, vocabLabel(definitions, "packaging", packaging, locale)].filter(Boolean).join(" · ")}</div>
+                      ) : null}
                       <div className="font-mono text-[11px] text-text-faint truncate">{[fmt, catalogNo, editionDate].filter(Boolean).join(" · ") || "—"}</div>
                     </Link>
                   </div>

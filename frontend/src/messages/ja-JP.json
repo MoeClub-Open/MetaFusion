@@ -1935,6 +1935,7 @@
   "developer.mcp.revokeAll": "すべての認可を取り消す",
   "developer.apiKeyScope.community.report.review": "通報の処理",
   "developer.apiKeyScope.auth.audit.read": "監査ログの閲覧",
+  "catalog.quality.complete": "欠落なし",
   "catalog.quality.partial": "欠落あり",
   "catalog.quality.needsVerification": "要確認",
   "catalog.quality.diagnosticsTitle": "品質診断",
