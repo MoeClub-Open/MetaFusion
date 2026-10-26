@@ -6,6 +6,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { fetchExternalDatabases, ExternalDatabaseDefinition, pickLocalizedName } from "@/lib/api";
 import { authorityIcon } from "@/lib/authorityIcons";
 import { safeExternalAuthorityURL } from "@/lib/externalAuthorityURL";
+import { externalLinkSecondary } from "@/lib/externalLinkDisplay";
 import type { ExternalLink as CatalogExternalLink } from "@/components/catalog/api";
 
 interface Props {
@@ -27,6 +28,7 @@ export interface AuthorityLinkItem {
   name: string;
   url: string;
   id: string;
+  externalId?: string;
   icon: string;
   icon_url?: string;
   role?: string;
@@ -119,6 +121,7 @@ export function ExternalAuthorityLinks({
         name,
         url,
         id: link.external_id || link.url,
+        externalId: link.external_id || "",
         icon: def?.icon || (role === "official" ? "Globe" : isBangumi ? "Tv" : "Globe"),
         icon_url: def?.icon_url || "",
         role,
@@ -190,20 +193,22 @@ export function ExternalAuthorityLinks({
               <LinkTag
                 key={item.code}
                 {...(item.url ? { href: item.url, target: "_blank", rel: "noopener noreferrer" } : {})}
-                title={`${item.name}: ${item.id}`}
+                title={`${item.name}: ${externalLinkSecondary(item.externalId, item.url || item.id)}`}
                 className={`inline-flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-xs font-medium group ${badgeClass}`}
               >
-                <span className="flex items-center gap-2 truncate">
+                <span className="flex items-center gap-2 min-w-0 flex-1">
                   {item.icon_url ? (
                     <img src={item.icon_url} alt="" className="w-4 h-4 object-contain shrink-0" />
                   ) : (
                     <IconComp className={`w-4 h-4 shrink-0 ${isOfficial ? "text-emerald-500" : isBangumi ? "text-[#f09199]" : "opacity-70"}`} />
                   )}
-                  <span className="font-sans truncate">{item.name}</span>
+                  <span className="font-sans break-words">{item.name}</span>
                   {roleBadge(item.role)}
                 </span>
-                <span className="flex items-center gap-1 shrink-0 ml-2 font-mono text-[11px] opacity-75">
-                  <span className="truncate max-w-[90px]">{item.id.replace(/^https?:\/\//, "")}</span>
+                <span className="flex items-center gap-1 shrink-0 ml-2 font-mono text-[11px] opacity-75 max-w-[40%]">
+                  <span className="truncate" title={externalLinkSecondary(item.externalId, item.url || item.id)}>
+                    {externalLinkSecondary(item.externalId, item.url || item.id)}
+                  </span>
                   {item.url && <ArrowUpRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-base ease-soft" />}
                 </span>
               </LinkTag>
