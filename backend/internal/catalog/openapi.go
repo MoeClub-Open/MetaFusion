@@ -94,6 +94,8 @@ func OpenAPI() map[string]any {
 	schemas["Picture"].(map[string]any)["properties"].(map[string]any)["caption"].(map[string]any)["example"] = map[string]string{"ja-JP": "キービジュアル"}
 	entityProps["state"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"active", "deleted", "merged"}}
 	entityProps["review_status"] = map[string]any{"type": "string", "readOnly": true, "enum": []string{"reviewed"}, "description": "Applied facts are reviewed. Pending collaboration changes belong to a private workspace or pull request and never change the current entity."}
+	// Runtime validateExternalLinks rejects blank kind/url (invalid_external_link).
+	schemas["ExternalLink"].(map[string]any)["required"] = []string{"kind", "url"}
 
 	translationProps := schemas["Translation"].(map[string]any)["properties"].(map[string]any)
 	translationProps["summary"].(map[string]any)["description"] = "Short plain-text introduction for lists and sharing; distinct from the collaborative article body."
