@@ -486,6 +486,27 @@ func TestOpenAPIReferencesResolve(t *testing.T) {
 	inspect(doc)
 }
 
+func TestOpenAPIExternalLinkRequiresKindAndURL(t *testing.T) {
+	doc := OpenAPI()
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	el, ok := schemas["ExternalLink"].(map[string]any)
+	if !ok {
+		t.Fatal("ExternalLink schema missing")
+	}
+	got := requiredSet(el["required"])
+	for _, want := range []string{"kind", "url"} {
+		if !got[want] {
+			t.Fatalf("ExternalLink.required missing %q: %#v", want, el["required"])
+		}
+	}
+	props, _ := el["properties"].(map[string]any)
+	for _, want := range []string{"kind", "url"} {
+		if props[want] == nil {
+			t.Fatalf("ExternalLink.properties.%s missing", want)
+		}
+	}
+}
+
 func requiredSet(v any) map[string]bool {
 	out := map[string]bool{}
 	switch req := v.(type) {
