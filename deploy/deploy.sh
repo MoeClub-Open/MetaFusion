@@ -61,7 +61,11 @@ function check_gateway_candidate() {
         echo "❌ 找不到网关候选配置 $nginx_conf：部署中止（候选缺失必须失败，不跳过）" >&2
         return 1
     fi
-    if ! candidate_image=$(docker compose $COMPOSE_ENV -f docker-compose.yml "$@" config --images gateway); then
+    if ! candidate_image=$(
+        set -o pipefail
+        docker compose $COMPOSE_ENV -f docker-compose.yml "$@" config --format json |
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["gateway"]["image"])'
+    ); then
         echo "❌ 无法读取当前配置的网关镜像：部署中止" >&2
         return 1
     fi
