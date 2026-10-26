@@ -2,16 +2,17 @@
  * 读者面 vs 运维备注：未登录阅读面（关系行、修订历史）不得露出迁移/批处理
  * edit_note、词表说明、字段路径与机器码。不靠 CSS 隐藏——直接过滤。
  *
- * Claude 定案（规则化，不堆关键词）：
- * 读者默认把「字段路径 / 机器码」当运维备注隐藏：
- * - attributes.*
- * - AUX-*
- * - snake_case 标识符
- * - 无空格的 *_artist / *_id 等
+ * Claude 定案：机器码规则与 #73 运维散文关键词**并存**（OR），不互相替代：
+ * 1) 运维散文：迁移 / 批处理 / 词表说明 / migration / batch import 等
+ * 2) 字段路径 / 机器码：attributes.* / AUX-* / snake_case（含 *_artist / *_id）
  * 只有可读散文摘要放行；有编辑权的编辑者仍看原文。
  */
 
-/** 单段是否像字段路径 / 机器码（无散文）。 */
+/** #73 运维散文关键词（与机器码规则 OR）。 */
+const OPS_PROSE_RE =
+  /迁移|批处理|词表说明|itunes|musicbrainz\s*import|external_ids|origin\s*=\s*migration|migration\b|batch\s*(import|migrate|process)|imported?\s+from/i;
+
+/** 单段是否像字段路径 / 机器码（非散文）。 */
 export function isMachineToken(token: string | undefined | null): boolean {
   const t = (token || "").trim();
   if (!t) return false;
@@ -26,11 +27,14 @@ export function isMachineToken(token: string | undefined | null): boolean {
 
 /**
  * 判定一段备注是否像运维/迁移/批处理说明，不该进读者面。
- * 整段是机器码，或含 attributes.* / AUX-*，或每个 token 都是机器码 → 隐藏。
+ * 运维散文关键词 OR 整段/夹带机器码 → 隐藏。
  */
 export function isOpsNote(text: string | undefined | null): boolean {
   const value = (text || "").trim();
   if (!value) return false;
+
+  // #73 运维散文关键词
+  if (OPS_PROSE_RE.test(value)) return true;
 
   if (isMachineToken(value)) return true;
 
@@ -38,7 +42,7 @@ export function isOpsNote(text: string | undefined | null): boolean {
   if (/\battributes(?:\.[A-Za-z0-9_]+)+\b/.test(value)) return true;
   if (/\bAUX-[A-Za-z0-9_-]+\b/i.test(value)) return true;
 
-  // 无空格、纯机器码串（已由 isMachineToken 覆盖）；多 token 时若全是机器码也藏
+  // 多 token 时若全是机器码也藏
   const tokens = value.split(/[\s,;|/]+/).map((s) => s.trim()).filter(Boolean);
   if (tokens.length > 0 && tokens.every(isMachineToken)) return true;
 
@@ -79,7 +83,7 @@ export type ReaderSource = {
   scope?: string;
 };
 
-/** 读者面 pointers：丢掉字段路径 / 机器码，不直出 attributes.* 等。 */
+/** 读者面 pointers：丢掉字段路径 / 机器码 / 运维散文，不直出 attributes.* 等。 */
 export function readerVisiblePointers(
   pointers: string[] | undefined,
   options?: { allowOps?: boolean },
