@@ -414,6 +414,8 @@ type User struct {
 	// TokenName 是 PAT 令牌名（调用日志 credential_name）。会话身份恒为空；
 	// 会话身份没有令牌名，因此不输出空键。
 	TokenName string `json:"token_name,omitempty"`
+	// TokenVersion 来自 JWT tv；验签后与账号服务 credentials-status 核对。
+	TokenVersion int64 `json:"-"`
 }
 type Event struct {
 	ID        string          `json:"id"`
