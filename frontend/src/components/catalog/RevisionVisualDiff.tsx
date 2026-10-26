@@ -10,6 +10,7 @@ import { FieldValue } from "./TemplateAttributeSections";
 import { revisionChanges } from "./revisionData";
 import { diffText } from "./revisionDiff";
 import { catalogPicturePreviewUrl, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
+import { readerVisibleDiffData } from "@/lib/readerNotes";
 
 const removedPanel = "bg-rose-500/[0.07] dark:bg-rose-500/10";
 const addedPanel = "bg-emerald-500/[0.07] dark:bg-emerald-500/10";
@@ -24,7 +25,7 @@ function InlineChanges({ before, after, side }: { before: string; after: string;
 }
 
 // 所有取值来自两份历史文档；definitions 只解释显示名与类型，不请求当前实体填补旧版本。
-export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definitions, kinds = {}, assetContext }: {
+export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definitions, kinds = {}, assetContext, allowOps = false }: {
   before: unknown;
   after: unknown;
   oldLabel: string;
@@ -32,11 +33,15 @@ export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definiti
   definitions?: DynamicDefinitions | null;
   kinds?: KindMap;
   assetContext?: CatalogAssetContext;
+  /** 有编辑权时直出运维键 / 机器码；读者面走 #74 同一套规则过滤。 */
+  allowOps?: boolean;
 }) {
   const { t, tr, locale } = useI18n();
   const prefix = `revision-diff-${useId().replace(/:/g, "")}`;
-  const changes = Object.entries(revisionChanges(before, after));
-  const entityKind = (after as any)?.kind || (before as any)?.kind || "";
+  const visibleBefore = readerVisibleDiffData(before, { allowOps });
+  const visibleAfter = readerVisibleDiffData(after, { allowOps });
+  const changes = Object.entries(revisionChanges(visibleBefore, visibleAfter));
+  const entityKind = (visibleAfter as any)?.kind || (visibleBefore as any)?.kind || "";
   const kindLabel = (code: string) => getKindName(kinds, code, locale, tr(`catalog.kind.${code}`, code));
   const knownLabels: Record<string, string> = {
     title: t("revisions.fieldTitle"), kind: t("revisions.fieldKind"), state: t("revisions.fieldState"),

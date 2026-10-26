@@ -100,15 +100,19 @@ test("a missing snapshot never becomes a comparison of revision metadata or an i
 });
 
 test("visual diff escapes historical HTML and rejects executable image and reference URLs", () => {
-  const html = render(createElement(RevisionVisualDiff, { before: {}, after: {
+  const after = {
     kind: "work", title: "<script>alert(1)</script>",
     translations: { en: { body: "<script>alert(2)</script>\n\n[unsafe](javascript:alert(3))" } },
     pictures: [{ url: "javascript:alert(4)", caption: { en: "Saved caption" } }],
     external_links: [{ kind: "old", url: "javascript:alert(5)", external_id: "Saved ID" }],
-  }, definitions, oldLabel: "Before", newLabel: "After" }));
+  };
+  const html = render(createElement(RevisionVisualDiff, { before: {}, after, definitions, oldLabel: "Before", newLabel: "After" }));
   assert.doesNotMatch(html, /<script|href="javascript:|src="javascript:/);
-  assert.ok(html.includes("Saved ID"));
+  // 读者面藏 external_id；编辑者仍可见
+  assert.doesNotMatch(html, /Saved ID/);
   assert.ok(html.includes("Saved caption"));
+  const editor = render(createElement(RevisionVisualDiff, { before: {}, after, definitions, oldLabel: "Before", newLabel: "After", allowOps: true }));
+  assert.ok(editor.includes("Saved ID"));
 });
 
 test("visual diff exposes changes in every saved language, including nested multilingual attributes and image captions", () => {
@@ -127,4 +131,67 @@ test("visual diff exposes changes in every saved language, including nested mult
   for (const value of ["変更前の注記", "変更後の注記", "変更前の説明", "変更後の説明", "変更前の版", "変更後の版"]) assert.ok(html.includes(value), value);
   assert.ok(html.includes("Same note"));
   assert.ok(html.includes("Same caption"));
+});
+
+test("reader visual diff hides Mili-style ops keys; editors still see raw", () => {
+  const before = {
+    kind: "person",
+    title: "Mili",
+    version: 2,
+    external_links: [
+      { kind: "netease_music_artist", external_id: "339594", origin: "migration", url: "https://music.163.com/#/artist?id=339594" },
+      { kind: "official_website", origin: "migration", url: "https://projectmili.com" },
+    ],
+  };
+  const after = {
+    ...before,
+    version: 3,
+    external_links: [
+      { kind: "apple_music_artist", external_id: "906934266", origin: "migration", url: "https://music.apple.com/jp/artist/906934266" },
+      { kind: "bandcamp_artist", origin: "migration", url: "https://project-mili.bandcamp.com" },
+      { kind: "official_website", origin: "migration", url: "https://projectmili.com" },
+    ],
+  };
+  const reader = render(createElement(RevisionVisualDiff, {
+    before, after, definitions, oldLabel: "v2", newLabel: "v3", allowOps: false,
+  }));
+  for (const leak of ["netease_music_artist", "apple_music_artist", "bandcamp_artist", "official_website", "external_id", "origin", "migration"]) {
+    assert.doesNotMatch(reader, new RegExp(leak), `reader must not show ${leak}`);
+  }
+  assert.ok(reader.includes("music.163.com") || reader.includes("projectmili.com") || reader.includes("bandcamp.com") || reader.includes("music.apple.com"), "urls remain");
+
+  const editor = render(createElement(RevisionVisualDiff, {
+    before, after, definitions, oldLabel: "v2", newLabel: "v3", allowOps: true,
+  }));
+  for (const token of ["netease_music_artist", "apple_music_artist", "external_id", "origin", "migration"]) {
+    assert.ok(editor.includes(token), `editor still sees ${token}`);
+  }
+});
+
+test("reader RevisionDiffInspector code view also strips ops keys", () => {
+  const current = {
+    version: 4,
+    snapshot: {
+      kind: "person",
+      title: "Artist",
+      external_links: [
+        { kind: "official_website", origin: "migration", url: "https://www.kodansha.co.jp/comic/products/0808017864" },
+      ],
+    },
+  };
+  const html = render(createElement(RevisionDiffInspector, {
+    base: { version: 3, snapshot: { kind: "person", title: "Artist", external_links: [] } },
+    current,
+    allowOps: false,
+  }));
+  for (const leak of ["official_website", "origin", "migration"]) {
+    assert.doesNotMatch(html, new RegExp(leak), `inspector must not show ${leak}`);
+  }
+  const editor = render(createElement(RevisionDiffInspector, {
+    base: { version: 3, snapshot: { kind: "person", title: "Artist", external_links: [] } },
+    current,
+    allowOps: true,
+  }));
+  assert.ok(editor.includes("official_website"));
+  assert.ok(editor.includes("migration"));
 });

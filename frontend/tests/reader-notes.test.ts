@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import {
   isMachineToken,
   isOpsNote,
+  isOpsDiffKey,
+  isOpsDiffValue,
   readerRevisionNote,
   readerSourceLabel,
   readerVisiblePointers,
   readerVisibleSources,
+  readerVisibleDiffData,
 } from "../src/lib/readerNotes";
 
 test("机器码 token：attributes.* / AUX-* / snake_case", () => {
@@ -118,4 +121,76 @@ test("读者面 pointers 过滤字段路径", () => {
     readerVisiblePointers(["attributes.publisher", "AUX-P2"], { allowOps: true }),
     ["attributes.publisher", "AUX-P2"],
   );
+});
+
+test("差异面板运维键：origin / migration / external_id / attributes.*；不误伤 schema 字段", () => {
+  assert.equal(isOpsDiffKey("origin"), true);
+  assert.equal(isOpsDiffKey("migration"), true);
+  assert.equal(isOpsDiffKey("external_id"), true);
+  assert.equal(isOpsDiffKey("attributes.publisher"), true);
+  assert.equal(isOpsDiffKey("AUX-P2"), true);
+  // 平台码是取值不是键；schema 字段键要保留给可读标签
+  assert.equal(isOpsDiffKey("netease_music_artist"), false);
+  assert.equal(isOpsDiffKey("external_links"), false);
+  assert.equal(isOpsDiffKey("parent_id"), false);
+  assert.equal(isOpsDiffKey("source_id"), false);
+  assert.equal(isOpsDiffKey("version_label"), false);
+  assert.equal(isOpsDiffKey("url"), false);
+  assert.equal(isOpsDiffKey("kind"), false);
+  assert.equal(isOpsDiffKey("title"), false);
+});
+
+test("差异面板运维取值：机器码与 migration", () => {
+  assert.equal(isOpsDiffValue("netease_music_artist"), true);
+  assert.equal(isOpsDiffValue("apple_music_artist"), true);
+  assert.equal(isOpsDiffValue("official_website"), true);
+  assert.equal(isOpsDiffValue("migration"), true);
+  assert.equal(isOpsDiffValue("origin"), true);
+  assert.equal(isOpsDiffValue("https://music.163.com/#/artist?id=1"), false);
+  assert.equal(isOpsDiffValue("isni"), false);
+  assert.equal(isOpsDiffValue(339594), false);
+});
+
+test("读者面差异树藏掉 Mili 式外链机器码；编辑者仍见原文", () => {
+  const snapshot = {
+    title: "Mili",
+    external_links: [
+      {
+        kind: "netease_music_artist",
+        external_id: "339594",
+        origin: "migration",
+        url: "https://music.163.com/#/artist?id=339594",
+      },
+      {
+        kind: "official_website",
+        origin: "migration",
+        url: "https://projectmili.com",
+      },
+      {
+        kind: "isni",
+        external_id: "0000000470325273",
+        origin: "migration",
+        url: "https://isni.org/isni/0000000470325273",
+      },
+    ],
+  };
+
+  const reader = readerVisibleDiffData(snapshot);
+  assert.equal(reader.title, "Mili");
+  assert.equal(reader.external_links.length, 3);
+  for (const link of reader.external_links) {
+    assert.equal("external_id" in link, false, "external_id key hidden");
+    assert.equal("origin" in link, false, "origin key hidden");
+    assert.ok(link.url, "url kept");
+  }
+  // snake_case kind 取值整行藏；isni 无下划线保留
+  assert.equal("kind" in reader.external_links[0], false);
+  assert.equal("kind" in reader.external_links[1], false);
+  assert.equal(reader.external_links[2].kind, "isni");
+
+  const editor = readerVisibleDiffData(snapshot, { allowOps: true });
+  assert.deepEqual(editor, snapshot);
+  assert.equal(editor.external_links[0].kind, "netease_music_artist");
+  assert.equal(editor.external_links[0].origin, "migration");
+  assert.equal(editor.external_links[0].external_id, "339594");
 });

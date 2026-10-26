@@ -311,7 +311,7 @@ export function WorkspaceDetail({ id }: { id: string }) {
       </div>
     </>}
 
-    {diff && <RevisionDiffInspector base={diff.base} current={diff.current} onClose={() => setDiff(null)} assetContext={{ kind: "workspace", id }} />}
+    {diff && <RevisionDiffInspector base={diff.base} current={diff.current} onClose={() => setDiff(null)} assetContext={{ kind: "workspace", id }} allowOps />}
     {conflict && <Modal open onClose={() => { if (!busy) setConflict(null); }} title={t("collaboration.resolveConflicts")} icon={<GitBranch className="h-5 w-5 text-primary" aria-hidden="true" />} maxWidth="max-w-[1440px] h-[90dvh]" footer={<div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-text-muted">{t("collaboration.conflictProgress", { count: Object.keys(conflict.choices).length, total: conflict.conflicts.length })}</p><button type="button" className={primary} disabled={!!busy || Object.keys(conflict.choices).length !== conflict.conflicts.length} onClick={resolve}>{t("collaboration.resolveAndSync")}</button></div>}>
       {error && <p role="alert" className="mb-4 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{error}</p>}
       <p className="mb-5 text-sm text-text-muted">{t("collaboration.conflictHint")}</p>

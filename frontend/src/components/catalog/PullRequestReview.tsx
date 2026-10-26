@@ -261,7 +261,7 @@ export function PullRequestDetail({ id }: { id: string }) {
         <div><button type="button" className="cv-primary inline-flex items-center gap-1.5" disabled={busy || loading || conflict || !data.commits.length} onClick={() => void mutate("merge")}><GitMerge className="h-4 w-4" aria-hidden="true" />{t("collaboration.mergePullRequest")}</button></div>
       </Card>}
     </>}
-    {diff && data && <RevisionDiffInspector base={diff.base} current={diff.current} onClose={() => setDiff(null)} assetContext={{ kind: "pull-request", id }} />}
+    {diff && data && <RevisionDiffInspector base={diff.base} current={diff.current} onClose={() => setDiff(null)} assetContext={{ kind: "pull-request", id }} allowOps />}
   </section>;
 }
 
