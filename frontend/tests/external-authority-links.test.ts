@@ -86,3 +86,22 @@ test("属性回落只加链接、不写 role，不出现官方徽标样式", () 
   assert.doesNotMatch(html, /bg-emerald-500\/10/);
   assert.doesNotMatch(html, /bg-primary\/10[^"]*"[^>]*>官方</);
 });
+
+test("list 变体：平台名完整显示，百分号编码副行解码", () => {
+  const html = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      variant: "list",
+      externalLinks: [
+        { kind: "official_website", url: "https://example.org/", external_id: "" },
+        { kind: "moegirl", url: "https://zh.moegirl.org.cn/%E9%B9%BF%E4%B9%83", external_id: "%E9%B9%BF%E4%B9%83" },
+      ],
+    }),
+  }));
+  // 官方网站（权威库缺省时的 i18n 名）应完整出现，不应只剩「官」
+  assert.match(html, /官方网站/);
+  assert.doesNotMatch(html, />官…</);
+  // 副行解码；href 仍可保留百分号编码（合法 URL）
+  assert.match(html, /title="鹿乃">鹿乃</);
+  assert.match(html, /font-sans break-words">官方网站</);
+});
