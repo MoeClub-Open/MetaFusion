@@ -103,5 +103,6 @@ test("list 变体：平台名完整显示，百分号编码副行解码", () => 
   assert.doesNotMatch(html, />官…</);
   // 副行解码；href 仍可保留百分号编码（合法 URL）
   assert.match(html, /title="鹿乃">鹿乃</);
-  assert.match(html, /font-sans break-words">官方网站</);
+  // CJK 用 break-keep，避免「官/方」中字断开；不截成「官…」
+  assert.match(html, /font-sans break-keep">官方网站</);
 });

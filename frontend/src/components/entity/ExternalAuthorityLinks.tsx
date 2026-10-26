@@ -202,10 +202,11 @@ export function ExternalAuthorityLinks({
                   ) : (
                     <IconComp className={`w-4 h-4 shrink-0 ${isOfficial ? "text-emerald-500" : isBangumi ? "text-[#f09199]" : "opacity-70"}`} />
                   )}
-                  <span className="font-sans break-words">{item.name}</span>
+                  {/* break-keep：CJK 不中字断开（官/方）；拉丁可在空格处换行，不用 truncate 回「官…」 */}
+                  <span className="font-sans break-keep">{item.name}</span>
                   {roleBadge(item.role)}
                 </span>
-                <span className="flex items-center gap-1 shrink-0 ml-2 font-mono text-[11px] opacity-75 max-w-[40%]">
+                <span className="flex min-w-0 max-w-[40%] shrink items-center gap-1 ml-2 font-mono text-[11px] opacity-75">
                   <span className="truncate" title={externalLinkSecondary(item.externalId, item.url || item.id)}>
                     {externalLinkSecondary(item.externalId, item.url || item.id)}
                   </span>
