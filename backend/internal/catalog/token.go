@@ -59,6 +59,8 @@ type Claims struct {
 	// audience 收口已拒）。audience 收口（Verify 的 bad audience）拒掉 aud 指向客户端的
 	// 令牌，这里再标记"aud 仍是平台但带 OAuth 标记"的那一种。
 	TokenUse string `json:"token_use,omitempty"`
+	// TokenVersion 与签发侧 Claims.tv 对齐。
+	TokenVersion int64 `json:"tv,omitempty"`
 	Issuer   string `json:"iss"`
 	Audience string `json:"aud"`
 	IssuedAt int64  `json:"iat"`
@@ -463,7 +465,7 @@ func ClaimsToUser(c *Claims) *User {
 	}
 	return &User{ID: c.Subject, Username: c.Username, Email: c.Email,
 		Groups: c.Groups, Permissions: c.Permissions,
-		IsThirdParty: thirdParty}
+		IsThirdParty: thirdParty, TokenVersion: c.TokenVersion}
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }

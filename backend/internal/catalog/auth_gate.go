@@ -52,12 +52,36 @@ func attachIdentity(c *gin.Context, s *Store) *patRejection {
 		if token == "" {
 			continue
 		}
-		if u, err := s.Authenticate(token); err == nil {
-			c.Set("catalog_user", u)
-			break
+		u, err := s.Authenticate(token)
+		if err != nil {
+			continue
 		}
+		ok, unavailable := s.checkCredentials(c.Request.Context(), u)
+		if unavailable {
+			return &patRejection{status: http.StatusServiceUnavailable, code: CodeAuthUnavailable}
+		}
+		if !ok {
+			continue // 世代不匹配或已封禁：试下一凭据 / 按匿名
+		}
+		c.Set("catalog_user", u)
+		break
 	}
 	return nil
+}
+
+// checkCredentials 在 JWKS 验签后核对账号库世代。未配置核对器时放行（ok=true）。
+func (s *Store) checkCredentials(ctx context.Context, u *User) (ok bool, unavailable bool) {
+	if s == nil || s.Creds == nil || !s.Creds.Enabled() || u == nil {
+		return true, false
+	}
+	st, err := s.Creds.Lookup(ctx, u.ID)
+	if err != nil {
+		return false, true
+	}
+	if !st.Match(u.TokenVersion) {
+		return false, false
+	}
+	return true, false
 }
 
 // introspectPAT 是 PAT 的内省入口：内省器未注入（未配置 AUTH_URL）时按不可用处理。

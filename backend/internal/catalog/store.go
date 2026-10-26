@@ -43,6 +43,8 @@ type Store struct {
 	// PAT 是个人访问令牌（mfp_ 前缀）的内省器，见 pat.go。为 nil（未配置 AUTH_URL）时，
 	// 带 mfp_ 前缀的请求一律 503 auth_unavailable：身份只能问账号服务，目录不查它的表。
 	PAT *PATIntrospector
+	// Creds 核对会话/OAuth JWT 的 token_version 与封禁（见 credentials.go）。
+	Creds *CredentialsChecker
 	// Audit 是审计留痕写入器（internal/audit，见 audit.go 的接线）。为 nil 时写路由不写审计行
 	// （单测里大量夹具只有 Store{DB:…}，不该为了"没接审计"而让请求变形）。
 	Audit *auditlog.Recorder

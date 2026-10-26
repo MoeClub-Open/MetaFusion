@@ -106,6 +106,7 @@ func main() {
 	// 而不是 401——bot/CI 拿到 401 会以为凭据有问题去换令牌。
 	if authURL := strings.TrimSpace(os.Getenv("AUTH_URL")); authURL != "" {
 		s.PAT = catalog.NewPATIntrospector(authURL)
+		s.Creds = catalog.NewCredentialsChecker(authURL)
 		log.Printf("catalog accepts personal access tokens via %s (introspection cached for %s)", authURL, catalog.PATCacheTTL)
 		// 实际生效的出站策略要能被运维看见：账号服务慢到什么程度算故障、会重试几次、熔断阈值多少，
 		// 只写在代码里的话，"为什么 PAT 请求 503 了"只能靠读源码猜。
