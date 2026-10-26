@@ -3,7 +3,7 @@
 解析不出 "构建目标不存在" 这类错误——deploy/docker-compose.metadata.yml 就曾把
 catalog-server 当成 backend 的阶段名，直到 build 才炸）。
 
-检查四件事，任一不过以非零码退出：
+检查五件事，任一不过以非零码退出：
 1. deploy/*.yml 能被 YAML 解析；
 2. build 字段里的变量写法能展开（${VAR} / ${VAR:-默认值} / ${VAR:?报错} / $VAR；
    名字只吃 [A-Za-z_][A-Za-z0-9_]*，${VAR:?msg} 的 msg 不参与）；
@@ -12,7 +12,8 @@ catalog-server 当成 backend 的阶段名，直到 build 才炸）。
 3. 构建上下文在本机时，build.target 必须在对应 Dockerfile 里存在；
    目录不在本机（只检出主仓库、兄弟仓库缺席）只记"未能校验"并照常退出 0，不算失败；
 4. 编排里 "${VAR:?...}" 形式声明的必填变量，必须能在 .env.example 里找到。
-自测还通过模拟 Docker 验证真实部署函数的停写顺序和迁移失败行为，不连接容器。
+5. 存储维护工具与存储服务使用同一镜像，命令包含实际可执行文件。
+自测通过模拟 Docker 验证停写顺序和迁移失败行为，并检查镜像清理归属与保护规则，不连接容器。
 
 用法：python scripts/check_deploy.py [仓库根目录]
       python scripts/check_deploy.py --selftest    # 只跑变量展开 / 路径解析的自测
@@ -24,6 +25,7 @@ import subprocess
 import sys
 
 import yaml  # 解析编排要用；--selftest 也走这里（CI 的这一步本来就会装 pyyaml）
+from prune_images import cleanup_candidates
 
 REQUIRED = re.compile(r"\${([A-Z][A-Z0-9_]*):\?")
 STAGE = re.compile(r"^FROM\s+\S+\s+[aA][sS]\s+(\S+)", re.M)
@@ -259,6 +261,34 @@ docker() {
     return failures, len(scenarios)
 
 
+def image_cleanup_selftest():
+    config = {"name": "deploy", "services": {"frontend": {"build": {"context": "/repo/frontend"}}}}
+
+    def image(name, tags=None, labels=None):
+        return {"Id": name, "RepoTags": tags, "Config": {"Labels": labels}}
+
+    images = [
+        image("active", ["metafusion-backend:old"]),
+        image("migration", ["metafusion-migrator:current"]),
+        image("stopped", ["metafusion-auth:old"]),
+        image("old", ["metafusion-backend:old-build"]),
+        image("frontend", ["deploy-frontend:previous"]),
+        image("unlabelled", labels={"com.docker.compose.project": "deploy"}),
+        image("source", labels={"org.opencontainers.image.source": "https://github.com/MoeClub-Open/MetaFusion"}),
+        image("other", ["other-project:old"], {"com.docker.compose.project": "other"}),
+        image("unrelated-name", ["deploy-unrelated:old"]),
+        image("unknown"),
+        image("shared", ["metafusion-backend:shared", "other-project:shared"]),
+    ]
+    candidates = cleanup_candidates(config, images, {"active", "migration", "stopped"})
+    got = {item["Id"] for item in candidates}
+    expected = {"old", "frontend", "unlabelled", "source", "shared"}
+    failures = [] if got == expected else ["镜像清理保护错误：期望 %s，实际 %s" % (sorted(expected), sorted(got))]
+    if any("other-project:shared" in item["CleanupRefs"] for item in candidates):
+        failures.append("镜像清理包含了其他项目的共享标签")
+    return failures, len(images)
+
+
 def selftest():
     """离线自测：变量、路径和真实迁移函数；不调用真实 Docker、不改环境。"""
     failures = []
@@ -285,9 +315,11 @@ def selftest():
 
     quiesce_failures, quiesce_total = migration_quiesce_selftest()
     failures.extend(quiesce_failures)
+    image_failures, image_total = image_cleanup_selftest()
+    failures.extend(image_failures)
     for bad in failures:
         print("FAIL " + bad)
-    total = len(SELFTEST_CASES) + len(SELFTEST_JOIN_CASES) + len(SELFTEST_MIGRATOR_CASES) + quiesce_total
+    total = len(SELFTEST_CASES) + len(SELFTEST_JOIN_CASES) + len(SELFTEST_MIGRATOR_CASES) + quiesce_total + image_total
     print("check_deploy --selftest: %d 项用例，%d 个问题" % (total, len(failures)))
     return 1 if failures else 0
 
@@ -334,6 +366,10 @@ def main():
                 )
 
         services = doc.get("services") or {}
+        worker = services.get("storage-worker")
+        if worker and (worker.get("command") != ["/app/storage-server", "worker"]
+                       or worker.get("image") != (services.get("storage") or {}).get("image")):
+            problems.append("%s: storage-worker 必须与 storage 共用镜像并显式调用 storage-server worker" % rel)
         sources = {}
         for key in ("backend", "backend-migrate"):
             b = (services.get(key) or {}).get("build")

@@ -14,6 +14,8 @@ python3 scripts/check_release_manifest.py --strict --expect-tag sha-<short-sha> 
 
 清单 v2 必须包含 backend、frontend、migrator 的真实 digest。`deploy.sh pull` 按 digest 拉取三个镜像，从锁定检出构建兄弟服务及其 UI；迁移器必须与后端同源。部署要求各服务运行 DSN，以及仅交给一次性 `auth-migrate` 的 `AUTH_MIGRATION_DATABASE_URL`。该结构身份不得注入账号 HTTP 服务；私钥仅归 auth，配置检查不得打印凭据。
 
+网关候选校验读取当前 Compose 配置声明的镜像，离线校验、容器重建和 reload 使用同一组覆盖文件。生产拉取路径必须一直保留 `docker-compose.prod.yml` 与发布清单生成的覆盖，不能在重载网关时退回基础编排。
+
 首次安装先从根目录 `.env.example` 建立本地配置，准备数据库和各域运行身份，按[授权步骤](./database-roles.md#6-授权验收与回退)执行角色脚本并验证隔离。共享审计预建须显式传 `-v audit_bootstrap=1`；普通重跑不会自动收敛其 owner。随后用 `prod/pull` 应用目录迁移与种子、启动服务，验收通过后由 `/setup` 创建首个管理员。不要将未初始化数据库交给 HTTP 进程自动建库。
 
 ## 备份与升级
@@ -110,13 +112,27 @@ CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默�
 
 账号旧显式 auth_rate_limit_per_minute=15 不会随代码默认值自动改变；升级时按已批准配置改为180。目录旧显式策略同样保留，须通过管理 API 核对实际全局、组和账号规则。目录同主体读写共用每分钟默认180预算，并由 PostgreSQL 跨副本计数；admin 默认无限，但显式账号或 admin 组规则可覆盖。身份来自验签，不依据调用方传入的 role 或通配 scope。
 
+## 镜像与维护工具清理
+
+部署完成后不自动清理宿主机镜像或构建缓存。显式镜像清理使用 `deploy.sh prune`，生产环境须附加当前生效的全部覆盖文件；先用 `--dry-run` 查看候选：
+
+```bash
+cd deploy
+./deploy.sh prune --dry-run -f docker-compose.prod.yml -f releases/<当前发布>.yml
+./deploy.sh prune -f docker-compose.prod.yml -f releases/<当前发布>.yml
+```
+
+脚本通过包含全部 profiles 的配置解析镜像身份，保护运行中和已停止容器的引用，以及当前配置中的一次性迁移、维护工具。配置引用缺失时停止清理；依据项目构建标签、来源与仓库名称识别归属，不能确认的镜像保留。共享镜像只撤本项目标签，其他项目标签保留。删除使用明确引用及 `--no-prune`，不 force，也不执行全局 image/system/builder/volume prune；配置中的环境变量只在内存和管道传递。
+
+存储维护工具 `storage-worker` 与 `storage` 共用镜像，显式执行 `/app/storage-server worker`；它按[存储运行约定](./storage-operations.md)回收资产，和构建镜像清理是独立操作，不随部署或镜像清理自动运行。
+
+旧备份、回退配置和镜像锚点的保留与删除以实例当前恢复策略及明确授权为准；默认保留已验证的恢复点。用户明确临时停用备份时，在 `docs-local/deploy/runbook.md` 记录当前约定，不由镜像清理脚本创建备份。
+
 ## 目录生命周期格式收敛
 
 031 引入提交审核；032 将目录实体列与历史实体快照统一为 `state`，仅 active/deleted/merged，删除运行时旧字段回退。历史快照的题名、正文、属性、作者、来源、版本与时间保留，旧发布标记一次性归为正常或对应终态；业务属性中的 status 不改。已结案管理员提交记为 reviewed/exempt，其原始请求及摘要保留作不可变证据，不重新执行。旧 entity.unpublished 事件迁为普通保存事件，消费者只使用当前生命周期协议。存储域010同步将生命周期投影列改为state。
 
 切换前停止旧目录写入，显式应用目录032并检查，再启用同批目录、社区与存储；目录启动要求与发布匹配的精确结构契约，不支持旧列、双写或降级读取。技能工具仅提供TypeScript，要求Node.js24+，不保留 JavaScript 启动器；MCP技能资源与版本锁同步发布。
-
-新版全量备份完成校验、隔离恢复及线上事实/历史和服务验收后，可按本次明确授权删除旧发布备份、过期回退配置和旧镜像锚点；保留一份新版完整恢复备份及其受限配置，不使用全局docker prune。
 
 目录免审资格按账号当前权限组计算，PAT/MCP 的账号内省通过 `catalog_review_exempt` 传递，操作权限仍为账号权限与 scopes 的交集。账号服务、目录服务与 Key 编辑界面须同批升级；不以 Key 是否勾选 `catalog.review.bypass` 决定免审，也不根据组名回退授权。管理员的既有编辑 Key/MCP 连接无需重建，只读 Key 不可借本人条目所有权写入；撤回免审资格受最长60秒内省缓存限制，已入队提交不自动应用。
 

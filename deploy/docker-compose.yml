@@ -510,7 +510,7 @@ services:
       dockerfile: Dockerfile
     image: metafusion-storage:${METAFUSION_TAG:-local}
     profiles: ["maintenance"]
-    command: ["worker"]
+    command: ["/app/storage-server", "worker"]
     environment:
       - DATABASE_URL=${STORAGE_DATABASE_URL:?STORAGE_DATABASE_URL must be set}
       - STORAGE_ROOT=/app/storage-data

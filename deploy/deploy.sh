@@ -61,9 +61,13 @@ fi
 # 不再“跳过并返回成功”（跳过等于带着错配置继续部署）。
 function check_gateway_candidate() {
     local nginx_conf="$SCRIPT_DIR/nginx.conf"
-    local candidate_image="nginx:1.30.6-alpine"
+    local candidate_image
     if [ ! -f "$nginx_conf" ]; then
         echo "❌ 找不到网关候选配置 $nginx_conf：部署中止（候选缺失必须失败，不跳过）" >&2
+        return 1
+    fi
+    if ! candidate_image=$(docker compose $COMPOSE_ENV -f docker-compose.yml "$@" config --images gateway); then
+        echo "❌ 无法读取当前配置的网关镜像：部署中止" >&2
         return 1
     fi
     # ① 先验候选：失败直接非零退出，运行中的网关与旧容器一律不动。
@@ -79,11 +83,11 @@ function reload_gateway() {
     fi
     # 前置校验已在各动作的 up 之前由 check_gateway_candidate 做过；这里仍先验后切，
     # 候选在检查与切换之间被改坏时依然拦得住（多一次 docker run，换一次确定性）。
-    if ! check_gateway_candidate; then
+    if ! check_gateway_candidate "$@"; then
         return 1
     fi
     # ② 原子切换：重建以挂上新 inode，再验再载（失败即非零，不吞错）。
-    docker compose $COMPOSE_ENV -f docker-compose.yml up -d --force-recreate --no-deps gateway
+    docker compose $COMPOSE_ENV -f docker-compose.yml "$@" up -d --force-recreate --no-deps gateway
     if docker exec metafusion-gateway nginx -t >/dev/null 2>&1; then
         docker exec metafusion-gateway nginx -s reload >/dev/null 2>&1
         echo "🔄 网关候选已验证并切换：路由矩阵已重载"
@@ -220,6 +224,20 @@ function prune_release_tags() {
             return 1
         fi
     done
+}
+
+function prune_project_images() {
+    # profiles 中的一次性工具也必须保留；配置只经管道传递，不输出环境变量。
+    local config
+    local options=() compose_options=()
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) options+=("$arg") ;;
+            *) compose_options+=("$arg") ;;
+        esac
+    done
+    config=$(docker compose $COMPOSE_ENV -f docker-compose.yml --profile '*' "${compose_options[@]}" config --format json)
+    printf '%s' "$config" | python3 "$SCRIPT_DIR/../scripts/prune_images.py" "${options[@]}"
 }
 
 # 迁移必须用**当前镜像里**的迁移器：迁移是编译进二进制的（embed），用运行中的旧容器
@@ -439,7 +457,7 @@ function print_usage() {
     echo "  seed            - 显式合并种子定义（只增不改；prod/pull 在迁移后自动跑）"
     echo "  check-refs      - 悬挂引用体检（部署前置检查；非零=先修数据或显式确认）"
     echo "  restart [svc]   - 快速重启容器 (不重编镜像)"
-    echo "  prune           - 清理所有旧镜像与未使用的构建缓存 (释放磁盘)"
+    echo "  prune [--dry-run] [-f FILE ...] - 清理本项目闲置镜像，保留容器和配置引用"
     echo "  logs [svc]      - 实时查看容器运行日志"
     echo "  status          - 查看全部容器健康状态"
     echo ""
@@ -498,11 +516,8 @@ case "$ACTION" in
             docker compose $COMPOSE_ENV up -d --remove-orphans
         fi
         reload_gateway
-        # 先补版本 tag 再清悬空层：本批镜像有了名字就不会被当成无主镜像清掉，
-        # 也让"回退到上一版"变成换 tag + recreate（见 tag_release_images 的注释）。
+        # 自动部署只维护版本 tag；镜像清理由显式 prune 动作处理。
         tag_release_images
-        echo "🧹 自动清理悬空层..."
-        docker image prune -f >/dev/null 2>&1 || true
         echo "✅ 极速部署完成！"
         ;;
 
@@ -531,7 +546,6 @@ case "$ACTION" in
         docker compose $COMPOSE_ENV up -d --build --remove-orphans
         reload_gateway
         tag_release_images
-        docker image prune -f >/dev/null 2>&1 || true
         echo "✅ 生产环境已启动！"
         ;;
 
@@ -556,11 +570,11 @@ case "$ACTION" in
         migrate_up_checked -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         seed_checked -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         check_refs_report -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
-        check_gateway_candidate
+        check_gateway_candidate -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         migrate_auth_checked -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         docker compose $COMPOSE_ENV -f docker-compose.yml -f docker-compose.prod.yml -f "$PULL_OVERRIDE" run --rm --no-deps mcp-migrate
         docker compose $COMPOSE_ENV -f docker-compose.yml -f docker-compose.prod.yml -f "$PULL_OVERRIDE" up -d --no-build --pull never --remove-orphans
-        reload_gateway
+        reload_gateway -f docker-compose.prod.yml -f "$PULL_OVERRIDE"
         echo "✅ 生产镜像拉取与启动完成！"
         ;;
 
@@ -604,9 +618,8 @@ case "$ACTION" in
         ;;
 
     prune)
-        echo "🧹 正在深度清理 Docker 磁盘占用..."
-        docker image prune -f
-        docker builder prune -f --keep-storage 1GB
+        echo "🧹 清理本项目未使用的镜像..."
+        prune_project_images "${@:2}"
         echo "📊 当前 Docker 存储概览:"
         docker system df
         ;;
