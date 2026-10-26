@@ -78,7 +78,7 @@ export function ExternalAuthorityLinks({
     if (officialAttr && !hasOfficial) {
       const url = safeExternalAuthorityURL(String(officialAttr));
       if (url) {
-        links.push({ kind: "official_website", url, role: "official" });
+        links.push({ kind: "official_website", url });
       }
     }
     return links;

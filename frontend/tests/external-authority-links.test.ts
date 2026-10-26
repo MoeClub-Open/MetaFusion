@@ -70,3 +70,19 @@ test("实体 external_links 历史标识在无预设时仍以文字展示", () =
   assert.match(html, /4901234567894/);
   assert.doesNotMatch(html, /<a\b/);
 });
+
+test("属性回落只加链接、不写 role，不出现官方徽标样式", () => {
+  const html = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      entity: {
+        attributes: { website: "https://example.org/" },
+        external_links: [],
+      },
+    }),
+  }));
+  assert.match(html, /href="https:\/\/example\.org\/"/);
+  // kind=official_website 显示「官方网站」名称可以有，但不能有 role=official 的翡翠徽标样式
+  assert.doesNotMatch(html, /bg-emerald-500\/10/);
+  assert.doesNotMatch(html, /bg-primary\/10[^"]*"[^>]*>官方</);
+});
