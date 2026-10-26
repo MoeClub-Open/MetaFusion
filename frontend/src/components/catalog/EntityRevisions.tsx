@@ -48,6 +48,8 @@ export function EntityRevisions({
 }) {
   const { t, locale } = useI18n();
   const { user } = useAuth();
+  // 与修订列表摘要同一套读者面规则：无编辑权不直出运维键 / 机器码。
+  const allowOps = currentEntity ? canEditRevision(currentEntity, user ?? undefined) : Boolean(user);
   const [restore, setRestore] = useState<{ entity: Entity; base: Entity; revision: RevisionItem } | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreError, setRestoreError] = useState("");
@@ -164,6 +166,7 @@ export function EntityRevisions({
           base={diffTarget.base}
           current={diffTarget.current}
           onClose={() => setDiffTarget(null)}
+          allowOps={allowOps}
         />
       )}
 
@@ -201,7 +204,6 @@ export function EntityRevisions({
           const revKey = String(rev.id || idx);
           const author = rev.actor_name || anonymousName;
           const fallback = idx === sortedRevisions.length - 1 ? t("revisions.initialNote") : t("revisions.updateNote");
-          const allowOps = currentEntity ? canEditRevision(currentEntity, user ?? undefined) : Boolean(user);
           const note = readerRevisionNote(rev, fallback, { allowOps });
           const sources = rev.sources || [];
           const isLatest = idx === 0;

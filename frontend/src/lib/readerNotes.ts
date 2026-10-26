@@ -129,3 +129,55 @@ export function readerSourceLabel(source: ReaderSource): string {
     return url;
   }
 }
+
+/**
+ * 修订差异面板里的运维键名。
+ * 只藏明确的运维元数据键；不要用整段 snake_case 误伤 parent_id /
+ * external_links / version_label 等有可读标签的 schema 字段。
+ * 机器码取值由 isOpsDiffValue 处理。
+ */
+export function isOpsDiffKey(key: string | undefined | null): boolean {
+  const k = (key || "").trim();
+  if (!k) return false;
+  // 迁移痕迹 / 外部 ID 元数据（bug 复现里直出的那些）
+  if (k === "origin" || k === "migration" || k === "external_id") return true;
+  // 字段路径 / AUX 码作键名
+  if (/^attributes(?:\.[A-Za-z0-9_]+)+$/.test(k)) return true;
+  if (/^AUX-[A-Za-z0-9_-]+$/i.test(k)) return true;
+  return false;
+}
+
+/**
+ * 修订差异面板里的运维 / 机器码取值（如 netease_music_artist、migration）。
+ * 非字符串不判定；读者面不直出。
+ */
+export function isOpsDiffValue(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  if (!v) return false;
+  if (v === "origin" || v === "migration") return true;
+  return isMachineToken(v) || isOpsNote(v);
+}
+
+function sanitizeDiffNode(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeDiffNode);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (isOpsDiffKey(key)) continue;
+      if (isOpsDiffValue(child)) continue;
+      out[key] = sanitizeDiffNode(child);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * 读者面差异树：丢掉运维键（external_id / origin 等）与机器码取值。
+ * allowOps 时原样返回（编辑者看原文）。
+ */
+export function readerVisibleDiffData<T>(value: T, options?: { allowOps?: boolean }): T {
+  if (options?.allowOps) return value;
+  return sanitizeDiffNode(value) as T;
+}

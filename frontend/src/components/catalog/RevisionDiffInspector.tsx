@@ -9,6 +9,7 @@ import { RevisionVisualDiff } from "./RevisionVisualDiff";
 import { buildRevisionDiff, isRevisionSnapshot, type DiffHunk } from "./revisionDiff";
 import { revisionChanges } from "./revisionData";
 import type { CatalogAssetContext } from "@/lib/catalogAssetPreview";
+import { readerVisibleDiffData } from "@/lib/readerNotes";
 
 export interface DiffSnapshot {
   label?: string;
@@ -52,11 +53,13 @@ function HunkRows({ hunk }: { hunk: DiffHunk }) {
   </>;
 }
 
-export function RevisionDiffInspector({ base, current, onClose, assetContext }: {
+export function RevisionDiffInspector({ base, current, onClose, assetContext, allowOps = false }: {
   base: DiffSnapshot | null;
   current: DiffSnapshot;
   onClose?: () => void;
   assetContext?: CatalogAssetContext;
+  /** 有编辑权时直出运维键 / 机器码；未登录与无编辑权读者面过滤。 */
+  allowOps?: boolean;
 }) {
   const { t } = useI18n();
   const { definitions, kinds } = useDefinitions();
@@ -71,13 +74,16 @@ export function RevisionDiffInspector({ base, current, onClose, assetContext }: 
     if ((base !== null && !isRevisionSnapshot(base.snapshot)) || !isRevisionSnapshot(current.snapshot)) {
       return { oldLabel, newLabel, available: false as const };
     }
-    const before = base === null ? null : base.snapshot;
-    const after = current.snapshot;
+    const rawBefore = base === null ? null : base.snapshot;
+    const rawAfter = current.snapshot;
+    // 读者面：可视化与代码差异共用同一套过滤，避免 JSON 视图漏机器码。
+    const before = readerVisibleDiffData(rawBefore, { allowOps });
+    const after = readerVisibleDiffData(rawAfter, { allowOps });
     return { oldLabel, newLabel, available: true as const, before, after,
       fields: Object.keys(revisionChanges(before, after)).length,
       diff: buildRevisionDiff(before, after, oldLabel, newLabel) };
   }, [base === null, base?.snapshot, base?.label, base?.version, base?.actor_name,
-    current.snapshot, current.label, current.version, current.actor_name, systemActor, initialLabel]);
+    current.snapshot, current.label, current.version, current.actor_name, systemActor, initialLabel, allowOps]);
   const activeComparison = useRef(comparison);
   activeComparison.current = comparison;
 
@@ -131,7 +137,7 @@ export function RevisionDiffInspector({ base, current, onClose, assetContext }: 
 
   const content = !comparison.available ? <p role="status" className="p-6 text-center text-sm text-text-muted">{t("revisions.diffUnavailable")}</p>
     : view === "visual" ? <RevisionVisualDiff before={comparison.before} after={comparison.after} definitions={definitions} kinds={kinds}
-      oldLabel={comparison.oldLabel} newLabel={comparison.newLabel} assetContext={assetContext} />
+      oldLabel={comparison.oldLabel} newLabel={comparison.newLabel} assetContext={assetContext} allowOps={allowOps} />
     : <RevisionCodeDiff hunks={comparison.diff.hunks} oldLabel={comparison.oldLabel} newLabel={comparison.newLabel} />;
 
   // 历史入口使用真正的 body portal 弹窗；审核页各个操作保留内嵌比较。

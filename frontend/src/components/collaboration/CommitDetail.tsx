@@ -54,6 +54,6 @@ export function CommitDetail({ id }: { id: string }) {
       </li>)}</ul>
     </>}
     {diff && <RevisionDiffInspector base={diff.before === null ? null : { label: t("collaboration.base"), snapshot: diff.before, version: diff.base_version }}
-      current={{ label: t("collaboration.proposed"), snapshot: diff.after, version: diff.base_version + 1, actor_name: data?.author.name }} onClose={() => setDiff(null)} assetContext={{ kind: "commit", id }} />}
+      current={{ label: t("collaboration.proposed"), snapshot: diff.after, version: diff.base_version + 1, actor_name: data?.author.name }} onClose={() => setDiff(null)} assetContext={{ kind: "commit", id }} allowOps />}
   </section>;
 }
