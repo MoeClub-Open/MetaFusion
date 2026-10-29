@@ -97,15 +97,6 @@ export interface ExternalDatabaseDefinition {
   updated_at?: string;
 }
 
-export interface ExternalLinkDisplay {
-  code: string;
-  name: string;
-  icon: string;
-  icon_url: string;
-  external_id: string;
-  url: string;
-}
-
 export function fetchExternalDatabases(category?: string): Promise<{ items: ExternalDatabaseDefinition[] }> {
   const q = category ? `?category=${encodeURIComponent(category)}` : "";
   // 统一通过主系统 /api/catalog/external-databases 获取

@@ -62,13 +62,8 @@ func workspacePageFrom(ctx context.Context, q queryer, limit, offset int, u User
 	if err := q.QueryRowContext(ctx, `SELECT count(*)`+where, u.ID).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	query := `SELECT w.id::text` + where + ` ORDER BY w.updated_at DESC,w.id DESC`
-	args := []any{u.ID}
-	if limit > 0 {
-		query += ` LIMIT $2 OFFSET $3`
-		args = append(args, limit, offset)
-	}
-	ids, err := collaborationIDs(ctx, q, query, args...)
+	query := `SELECT w.id::text` + where + ` ORDER BY w.updated_at DESC,w.id DESC LIMIT $2 OFFSET $3`
+	ids, err := collaborationIDs(ctx, q, query, u.ID, limit, offset)
 	if err != nil {
 		return out, err
 	}
@@ -94,21 +89,6 @@ func (s *Store) ListWorkspacePage(ctx context.Context, limit, offset int, u User
 		return out, err
 	}
 	return out, tx.Commit()
-}
-
-// Internal callers that need every accessible workspace must not silently use
-// an HTTP page. The public endpoint always calls ListWorkspacePage instead.
-func (s *Store) ListWorkspaces(ctx context.Context, u User) ([]Workspace, error) {
-	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	out, err := workspacePageFrom(ctx, tx, 0, 0, u)
-	if err != nil {
-		return nil, err
-	}
-	return out.Items, tx.Commit()
 }
 
 func collaborationIDs(ctx context.Context, q queryer, query string, args ...any) ([]string, error) {
@@ -278,26 +258,6 @@ func (s *Store) GetCollaborationCommit(ctx context.Context, id string, u User) (
 	return c, tx.Commit()
 }
 
-func (s *Store) WorkspaceCommits(ctx context.Context, id string, u User) ([]CollaborationCommit, error) {
-	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	allowed, err := workspaceReadable(ctx, tx, id, u, false)
-	if err != nil {
-		return nil, err
-	}
-	if !allowed {
-		return nil, sql.ErrNoRows
-	}
-	out, err := workspaceCommitsFrom(ctx, tx, id, false)
-	if err != nil {
-		return nil, err
-	}
-	return out, tx.Commit()
-}
-
 func pullRequestCommitsFrom(ctx context.Context, q queryer, p PullRequest) ([]CollaborationCommit, error) {
 	// The base is exclusive. Only immutable ancestors of the submitted head can
 	// enter a review; later commits and uncommitted workspace changes are absent.
@@ -407,11 +367,8 @@ func pullRequestPageFrom(ctx context.Context, q queryer, status, workspaceID str
 	if err := q.QueryRowContext(ctx, `SELECT count(*)`+where, args...).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	query := `SELECT p.id::text` + where + ` ORDER BY p.updated_at DESC,p.id DESC`
-	if limit > 0 {
-		query += ` LIMIT $6 OFFSET $7`
-		args = append(args, limit, offset)
-	}
+	query := `SELECT p.id::text` + where + ` ORDER BY p.updated_at DESC,p.id DESC LIMIT $6 OFFSET $7`
+	args = append(args, limit, offset)
 	ids, err := collaborationIDs(ctx, q, query, args...)
 	if err != nil {
 		return out, err
@@ -438,17 +395,4 @@ func (s *Store) ListPullRequestPage(ctx context.Context, status, workspaceID str
 		return out, err
 	}
 	return out, tx.Commit()
-}
-
-func (s *Store) ListPullRequests(ctx context.Context, u User) ([]PullRequest, error) {
-	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	out, err := pullRequestPageFrom(ctx, tx, "", "", 0, 0, u)
-	if err != nil {
-		return nil, err
-	}
-	return out.Items, tx.Commit()
 }

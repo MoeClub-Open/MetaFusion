@@ -29,11 +29,6 @@ export function getAuthPasswordUrl(): string {
   return "/settings?tab=password";
 }
 
-// 账号管理统一进入管理中心；服务自带应用仍挂在 /admin/account/，由管理中心嵌入。
-export function getAuthUsersAdminUrl(): string {
-  return "/admin?workspace=account";
-}
-
 // 条目 → 论坛的地址。条目页的「在论坛打开」统一收在这里：板块可选，社区页从
 // board_code 读初始板块（app/community/page.tsx），不传就是全部板块。
 // 社区没有独立域名：站点同域由网关按 /community 前缀分流。

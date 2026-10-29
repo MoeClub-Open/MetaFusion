@@ -11,13 +11,13 @@ export type { InviteCode, InviteLedger, SetupStatusResponse, PublicAuthSettings,
 export { toggleFavorite, fetchFavoriteStatus, fetchFavorites, normalizeBoard, boardDisplayName, boardDisplayDesc, ALL_FORUM_BOARD, fetchBoards, getBoardSync, shareContent, buildShareUrl, createTopic, createPost, setTopicPinned, fetchDirectMessages, sendDirectMessage, fetchConversations, fetchUnreadMessageCount, markConversationRead, fetchMessageSettings, updateMessageSettings, fetchEntityPosts, fetchEntityCollections, createEntityComment } from "./api/community";
 export type { FavoriteTargetType, FavoriteItem, ForumPost, DiscussionTopic, CreateTopicPayload, CreatePostPayload, EntityComment, EntityCollectionRef, DirectMessage, ConversationItem, ForumBoard } from "./api/community";
 export { pickLocalizedName, catalogEntityHref, mergeEntities } from "./api/catalog";
-export type { Tag, ConnectedEntityItem, EntityRevision, EntityRelationship, RelationType, GraphNode, GraphLink } from "./api/catalog";
+export type { Tag, GraphNode, GraphLink } from "./api/catalog";
 export { fetchUserProfile, fetchUserContributions, fetchUserCommunityStats } from "./api/users";
 export type { PublicUser, PublicUserProfile, ContributionSummary, ContributionActor, ContributionEntity, ContributionDay, ContributionItem, UserContributions, CommunityUserStats } from "./api/users";
 export { fetchOwnAuditLogs, AUDIT_PAGE_SIZE } from "./api/audit";
 export type { AuditLogEntry, AuditLogPage } from "./api/audit";
 export { fetchExternalDatabases, fetchAdminExternalDatabases, createExternalDatabase, updateExternalDatabase, deleteExternalDatabase } from "./api/admin";
-export type { ExternalDatabaseDefinition, ExternalLinkDisplay } from "./api/admin";
+export type { ExternalDatabaseDefinition } from "./api/admin";
 export { fetchAdminRateLimits, saveAdminRateLimits, fetchCommunityAdminRateLimits, saveCommunityAdminRateLimits } from "./api/admin";
 export type { RateLimitRule, RateLimitPolicy, RateLimitConfig, CommunityRateLimitConfig, MessageRateLimitPolicy } from "./api/admin";
 export { fetchExternalSources } from "./api/externalSources";

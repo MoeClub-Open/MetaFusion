@@ -143,8 +143,6 @@ export const pushWorkspace = (id: string, input: { expected_version: number; exp
 export interface RebaseAction { expected_version: number; expected_head: string; id: string; onto_commit_id?: string; order?: string[]; message?: string; resolutions?: ConflictResolution[] }
 export const rebaseWorkspace = (id: string, input: RebaseAction, signal?: AbortSignal) =>
   jsonRequest<{ workspace: Workspace; commit: WorkspaceCommit | null }>(`${workspacePath(id)}/rebase`, "POST", input, signal);
-export const createPullRequest = (input: { workspace_id: string; expected_version: number; expected_head: string; title: string }, signal?: AbortSignal) =>
-  jsonRequest<PullRequest>("/catalog/pull-requests", "POST", input, signal);
 export const listPullRequests = (input: { status?: PullRequest["status"]; limit?: number; offset?: number } = {}, signal?: AbortSignal) => {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(input)) if (value !== undefined) query.set(key, String(value));
@@ -162,10 +160,8 @@ export interface VersionEvent { id: number; request_id: string; actor_id: string
 export interface VersionTag { id: string; name: string; commit_id: string; message: string; version: number; created_by: string; created_at: string }
 export interface VersionStash { id: string; name: string; created_by: string; created_at: string }
 export interface VersionSnapshot { commit_id: string; scope: "catalog" | "known_records" | "tracked_records"; objects: WorkspaceObject[]; total: number; limit: number; offset: number }
-export interface VersionStatus { version: number; head: string | null; dirty_count: number; pending_commits: number; mergeable: boolean; conflicts: WorkspaceConflict[] }
 export const forkWorkspace = (input: { id: string; name: string; commit_id: string;entity_ids?:string[];relation_ids?:string[] }, signal?: AbortSignal) => jsonRequest<Workspace>("/catalog/workspaces/fork", "POST", input, signal);
 export const applyWorkspaceVersion = (id: string, input: VersionAction, signal?: AbortSignal) => jsonRequest<{ workspace: Workspace; commit: WorkspaceCommit | null }>(`${workspacePath(id)}/version`, "POST", input, signal);
-export const getWorkspaceStatus = (id: string, signal?: AbortSignal) => fetchApi<VersionStatus>(`${workspacePath(id)}/status`, { signal });
 export const getCommitSnapshot = (id: string, offset = 0, signal?: AbortSignal) => fetchApi<VersionSnapshot>(`/catalog/commits/${encodeURIComponent(id)}/snapshot?limit=20&offset=${offset}`, { signal });
 export const compareCommits = (base: string, head: string, signal?: AbortSignal, offset=0) => fetchApi<{base_id:string;head_id:string;changes:WorkspaceChange[];total:number;limit:number;offset:number}>(`/catalog/commits/${encodeURIComponent(head)}/compare?base=${encodeURIComponent(base)}&offset=${offset}`, { signal });
 export const getCatalogHistory=(offset=0,signal?:AbortSignal)=>fetchApi<CollaborationPage<WorkspaceCommit>>(`/catalog/history?limit=20&offset=${offset}`,{signal});

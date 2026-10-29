@@ -160,7 +160,7 @@ func TestCollaborationFrozenReadsAgainstPostgres(t *testing.T) {
 	if _, err := f.s.GetWorkspace(ctx, w.ID, reviewer); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("reviewer read private workspace: %v", err)
 	}
-	if _, err := f.s.WorkspaceCommits(ctx, w.ID, reviewer); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := f.s.VersionHistory(ctx, w.ID, VersionHistoryQuery{}, reviewer); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("reviewer listed unpushed commits: %v", err)
 	}
 	if _, err := f.s.GetCollaborationCommit(ctx, late, reviewer); !errors.Is(err, sql.ErrNoRows) {
@@ -172,9 +172,9 @@ func TestCollaborationFrozenReadsAgainstPostgres(t *testing.T) {
 	if _, err := f.s.GetPullRequest(ctx, prID, User{}); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("anonymous caller read closed private PR: %v", err)
 	}
-	all, err := f.s.WorkspaceCommits(ctx, w.ID, f.u)
-	if err != nil || len(all) != 207 {
-		t.Fatalf("private commit history truncated: count=%d err=%v", len(all), err)
+	history, err := f.s.VersionHistory(ctx, w.ID, VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: 100, Offset: 200}}, f.u)
+	if err != nil || history.Total != 207 || len(history.Items) != 7 {
+		t.Fatalf("private commit history truncated: total=%d count=%d err=%v", history.Total, len(history.Items), err)
 	}
 }
 
@@ -304,9 +304,9 @@ func TestCollaborationPaginationAgainstPostgres(t *testing.T) {
 	if err != nil || last.Total != 23 || len(last.Items) != 3 || last.Items[0].ID == page.Items[0].ID {
 		t.Fatalf("last workspace page: %+v err=%v", last, err)
 	}
-	all, err := f.s.ListWorkspaces(ctx, f.u)
-	if err != nil || len(all) != 23 {
-		t.Fatalf("internal workspace listing truncated: count=%d err=%v", len(all), err)
+	all, err := f.s.ListWorkspacePage(ctx, 100, 0, f.u)
+	if err != nil || len(all.Items) != 23 {
+		t.Fatalf("workspace listing truncated: count=%d err=%v", len(all.Items), err)
 	}
 	prs, err := f.s.ListPullRequestPage(ctx, "open", "", 20, 20, f.u)
 	if err != nil || prs.Total != 23 || len(prs.Items) != 3 || prs.Offset != 20 {
@@ -320,9 +320,9 @@ func TestCollaborationPaginationAgainstPostgres(t *testing.T) {
 	if err != nil || public.Total != 0 || len(public.Items) != 0 {
 		t.Fatalf("private PR activity leaked to anonymous list: %+v err=%v", public, err)
 	}
-	allPRs, err := f.s.ListPullRequests(ctx, f.u)
-	if err != nil || len(allPRs) != 23 {
-		t.Fatalf("internal PR listing truncated: count=%d err=%v", len(allPRs), err)
+	allPRs, err := f.s.ListPullRequestPage(ctx, "", "", 100, 0, f.u)
+	if err != nil || len(allPRs.Items) != 23 {
+		t.Fatalf("PR listing truncated: count=%d err=%v", len(allPRs.Items), err)
 	}
 }
 

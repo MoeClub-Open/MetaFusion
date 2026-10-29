@@ -512,9 +512,9 @@ func TestPostgresWorkspacePushIncludesMoreThanTwoHundredCommits(t *testing.T) {
 		saved = testWorkspaceSave(t, f, w, f.u, WorkspaceOperation{Target: "entity", Action: "update", ID: id, Patch: []CommitPatch{patchValue("/title", fmt.Sprintf("Commit %d", i))}})
 		w, _ = testWorkspaceCommit(t, f, saved.Workspace, f.u, fmt.Sprintf("Edit %d", i))
 	}
-	commits, err := f.s.WorkspaceCommits(ctx, w.ID, f.u)
-	if err != nil || len(commits) != total {
-		t.Fatalf("history truncated: %d %v", len(commits), err)
+	history, err := f.s.VersionHistory(ctx, w.ID, VersionHistoryQuery{VersionReadQuery: VersionReadQuery{Limit: 100, Offset: 200}}, f.u)
+	if err != nil || history.Total != total || len(history.Items) != total-200 {
+		t.Fatalf("history truncated: total=%d count=%d err=%v", history.Total, len(history.Items), err)
 	}
 	out, err := f.s.PushWorkspace(ctx, w.ID, pushWorkspaceInput(w), f.u)
 	if err != nil || !out.Applied || len(out.Commits) != total {
