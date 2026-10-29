@@ -22,15 +22,10 @@ package-lock.json
 out/
 dist/
 build/
-.turbo/
 .vercel/
 .turbo
-# Next.js 缓存
-.next/cache/
 # TypeScript 增量构建
 *.tsbuildinfo
-**/*.tsbuildinfo
-tsconfig.tsbuildinfo
 
 # Next 自动生成（可按需提交，此处默认忽略以保持干净）
 **/next-env.d.ts
@@ -85,7 +80,6 @@ docs-local/
 
 # --- 各编辑器的私有工作区状态（不入库）---
 .mimosa/
-**/.mimosa/
 .zcode/
 .muse/
 .claude/
