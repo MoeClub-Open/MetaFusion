@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/migrator"
 	"github.com/metafusion/metafusion-app/internal/testutil"
-	"github.com/metafusion/metafusion-app/migrations"
 )
 
 func TestCollaborationMigrationPreservesHistoryAndConvertsProposals(t *testing.T) {
@@ -106,7 +105,9 @@ func TestCollaborationMigrationPreservesHistoryAndConvertsProposals(t *testing.T
 		'reviewed_by',reviewed_by,'reviewed_at',reviewed_at,'review_note',review_note)::text,'' ORDER BY id)) FROM catalog.commits`).Scan(&originalDecisions); err != nil {
 		t.Fatal(err)
 	}
-	upgrade := migrator.New(db, migrations.FS)
+	// This case verifies the collaboration upgrade through 037; later migrations
+	// have their own upgrade and startup checks.
+	upgrade := migrator.New(db, catalogMigrationsBefore(t, "000038"))
 	if err := upgrade.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
