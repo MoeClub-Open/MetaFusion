@@ -232,7 +232,7 @@ function MessagesContent() {
           <p className="text-xs">{t("messages.loginRequiredHint")}</p>
           <a
             href={getAuthLoginUrl("/messages")}
-            className="mt-1 inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg bg-primary text-white keep-white text-xs font-semibold hover:opacity-90 transition-opacity"
+            className="mt-1 inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
           >
             <LogIn className="w-3.5 h-3.5" />
             <span>{t("nav.login")}</span>

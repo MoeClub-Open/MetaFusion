@@ -59,7 +59,7 @@
 嵌入协议为 `metafusion.admin.v1`：子窗口名 `metafusion-admin-{account|community|storage}`，
 父页面必须为同源 `/admin`。双方同时核对消息 origin、source、channel 和 workspace；
 宿主只接受对应应用路径下的页面导航，不接收任意 URL、API 或静态资源路径。
-子应用回报 `ready`、`navigate`、`login`，宿主发送 `connect` 与 `preferences`（四语 locale、显示模式、主色与色调）。
+子应用回报 `ready`、`navigate`、`login`，宿主发送 `connect` 与 `preferences`（四语 locale、`mode=dark|light|system`、accent、tone、pattern）。子应用用共享主题上下文应用完整选择，保留跟随系统的语义，不只修改根元素的外观属性。
 嵌入模式的子路由使用 replace；用户导航声明 `history=push`，由宿主创建唯一历史项；初始化、自动选页和恢复仅替换当前项。
 会话、权限和业务请求仍由各应用与服务负责，不通过消息传递令牌或权限声明。跨出应用的普通链接在顶层打开；
 登录失效由宿主跳登录，回跳目标保留当前管理工作区。
@@ -103,7 +103,7 @@ auth 将组展开为 permissions，业务服务按权限码判定自己的操作
 | 迁移与运行权限 | 互动、存储仍在启动执行 DDL；目录和账号已有 owner 显式迁移及只读启动。各域须验空库安装、存量升级、共享审计归属、新对象授权与受限启动，再撤运行角色 DDL；不能先撤权 |
 | 公共协议一致性 | 各服务维护自身实现，以现行契约验证身份、验签、错误、分页、health 与请求标记；比较 Cookie/PAT/JWT、JWKS 失败、空权限、过期和各服务分页语义。业务模型、SQL 与可见性仍归各服务 |
 | 独立发布 | 主仓 backend/frontend/migrator 有固定摘要发布物，兄弟服务与 UI 由锁定检出构建。独立镜像须扩展发布清单、同 SHA 检查及整组回退，不能使用 latest 或来源不明旧镜像 |
-| 普通用户 UI | 管理台和账号登录/初始化应用已独立，其余账号/开发者页及目录内社区/资源区块仍有主仓耦合。账号自助页的主题逻辑、控件、令牌、圆角、底纹及四语主题文案由主仓 `frontend` 的 `bun run theme:sync-auth` 同步为账号仓静态源码，`bun scripts/sync-account-theme.ts --check` 检查一致性；构建和运行独立，同域以 `metafusion_theme_{mode,accent,tone,pattern}` 保持偏好。其他迁页仍须先明确设计令牌、四语字典、会话和导航协议，以及区块 locale、身份、entity_id、能力与故障隔离，不复制业务状态掩盖耦合 |
+| 普通用户 UI | 管理台和账号登录/初始化应用已独立，其余账号/开发者页及目录内社区/资源区块仍有主仓耦合。主仓 `frontend` 的 `bun run theme:sync` 将主题逻辑、控件、令牌、圆角、底纹及四语主题文案同步到账号自助页、三个服务管理台及文档站；`bun run theme:check` 纳入跨仓 CI。生成物随各仓提交，构建和运行独立，同域以 `metafusion_theme_{mode,accent,tone,pattern}` 保持偏好。基础变量、原生控件与页面业务样式分别维护在 `theme.tokens.css`、`theme.base.css`、`globals.css`；纯主题逻辑在 `lib/theme.ts`，React 与文档站各自接入。其他迁页仍须明确会话、导航、身份、entity_id、能力与故障隔离，不复制业务状态掩盖耦合 |
 | 跨业务事件 | 已有存储生命周期定向投递，尚无通用广播。新增消费者先定义推送/拉取、event_id 幂等、重试/死信、可观测性、重放与 merged 重定向 |
 | 物理分库与矩阵迁移 | 独立 DSN 已提供权限边界，物理分库尚未实施，不复制目录身份或引入跨库 SQL。若迁移网关矩阵，须一次切换权威来源、固定版本输入并保留双向检查 |
 

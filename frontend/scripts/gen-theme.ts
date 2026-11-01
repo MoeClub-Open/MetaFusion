@@ -67,6 +67,20 @@ function contrastRatio(a, b) {
 }
 const contrastOn = (hex) => (contrastRatio(BUTTON_INK, hex) >= contrastRatio("#ffffff", hex) ? BUTTON_INK : "#ffffff");
 
+// 主色同时用于链接与按钮；在各表面色调上保持正文级对比，色卡仍展示原始品牌色。
+function accessiblePrimary(hex, mode) {
+  const base = mode === "dark" ? BASE_DARK : BASE_LIGHT;
+  const surfaces = TONES.flatMap((tone) => {
+    const values = toneVars(tone, base, mode);
+    return [values.bg, values.surface, values.surfaceHover];
+  });
+  for (let delta = 0; delta <= 100; delta++) {
+    const candidate = shift(hex, { dl: mode === "dark" ? delta : -delta });
+    if (surfaces.every((surface) => contrastRatio(candidate, surface) >= 4.5)) return candidate;
+  }
+  return hex;
+}
+
 // 每个配色在两套模式下的五个变量：主色 / 悬停 / 亮色 / 主色上的文字 / 第二强调色
 function accentVars(a) {
   // lightBase 只给需要钉死浅色原色的方案（Everforest）。其余仍按同一明度差推导。
@@ -76,6 +90,10 @@ function accentVars(a) {
   const light = a.lightBase
     ? { primary: a.lightBase, hover: shift(a.lightBase, { dl: -6 }), light: shift(a.lightBase, { dl: 8 }), accent: a.lightAccent || a.accent }
     : { primary: shift(a.base, { dl: -6 }), hover: shift(a.base, { dl: -14 }), light: shift(a.base, { dl: 10 }), accent: a.accent };
+  for (const [mode, values] of [["dark", dark], ["light", light]]) {
+    values.primary = accessiblePrimary(values.primary, mode);
+    values.hover = shift(values.primary, { dl: mode === "dark" ? -6 : -8 });
+  }
   return {
     dark: { ...dark, contrast: contrastOn(dark.primary) },
     light: { ...light, contrast: contrastOn(light.primary) },

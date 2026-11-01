@@ -21,7 +21,7 @@ export default function Error({
   }, [error]);
 
   return (
-    <main className="mf-enter min-h-screen relative flex flex-col items-center justify-center overflow-clip px-6 py-12 selection:bg-primary selection:text-white">
+    <main className="mf-enter min-h-screen relative flex flex-col items-center justify-center overflow-clip px-6 py-12 ">
 
       <div className="relative z-10 max-w-lg w-full text-center flex flex-col items-center">
         <div className="mb-6">
@@ -50,7 +50,7 @@ export default function Error({
         <div className="flex flex-wrap items-center justify-center gap-3 w-full mt-4">
           <button
             onClick={() => reset()}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-medium shadow-lg shadow-primary/25 transition-all duration-base ease-soft"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-lg shadow-primary/25 transition-all duration-base ease-soft"
           >
             <RotateCcw className="w-4 h-4" />
             <span>{t("error.retry")}</span>

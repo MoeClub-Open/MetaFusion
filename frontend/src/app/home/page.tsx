@@ -143,7 +143,7 @@ export default function HomePage() {
   const showSkeleton = authLoading || loading;
 
   return (
-    <div className="min-h-screen flex flex-col text-text-strong relative overflow-clip selection:bg-primary selection:text-white">
+    <div className="min-h-screen flex flex-col text-text-strong relative overflow-clip ">
 
       <Navbar />
 

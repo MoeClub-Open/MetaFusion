@@ -121,7 +121,7 @@ export default function MyReportsPage() {
             <p className="text-sm text-text-body">{t("report.loginRequired")}</p>
             <Link
               href={`/login?redirect=${encodeURIComponent("/reports")}`}
-              className="inline-flex items-center px-3.5 h-8 rounded-md bg-primary text-white text-xs font-semibold hover:opacity-90"
+              className="inline-flex items-center px-3.5 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
             >
               {t("nav.login")}
             </Link>
@@ -296,7 +296,7 @@ export default function MyReportsPage() {
                             type="button"
                             onClick={() => void handleAppeal(item)}
                             disabled={appealBusy || appealBody.trim() === ""}
-                            className="px-3 h-8 rounded-md bg-primary text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 h-8 rounded-md bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {appealBusy ? t("report.submitting") : t("reports.appealSubmit")}
                           </button>

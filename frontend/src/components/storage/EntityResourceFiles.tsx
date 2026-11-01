@@ -365,7 +365,7 @@ export function EntityResourceFiles({ entityId, className }: { entityId: string;
             <button
               type="button"
               onClick={() => setPanelOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors duration-fast ease-soft"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors duration-fast ease-soft"
             >
               <Upload className="w-3.5 h-3.5" />
               <span>{t("storage.files.uploadToggle")}</span>
@@ -497,7 +497,7 @@ export function EntityResourceFiles({ entityId, className }: { entityId: string;
                   type="button"
                   onClick={() => void startUpload()}
                   disabled={busy || !file || !roleValid}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                   <span>{busy ? t("storage.files.busy") : t("storage.files.start")}</span>

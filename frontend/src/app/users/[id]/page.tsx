@@ -294,7 +294,7 @@ export default function UserDetailPage() {
                   }
                   setIsChatOpen(true);
                 }}
-                className="px-3.5 h-8 rounded-lg bg-primary hover:opacity-90 text-white keep-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-opacity"
+                className="px-3.5 h-8 rounded-lg bg-primary hover:opacity-90 text-primary-foreground text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-opacity"
               >
                 <MessageCircle className="w-3.5 h-3.5 stroke-[2]" />
                 <span>{t("users.profile.sendMessage")}</span>
@@ -466,7 +466,7 @@ export default function UserDetailPage() {
             <button
               disabled={!hasNext}
               onClick={() => setPage((p) => p + 1)}
-              className="px-2.5 h-6.5 rounded-md bg-primary text-white keep-white font-semibold disabled:opacity-40 hover:opacity-90 transition-opacity text-xs"
+              className="px-2.5 h-6.5 rounded-md bg-primary text-primary-foreground font-semibold disabled:opacity-40 hover:opacity-90 transition-opacity text-xs"
             >
               {t("users.profile.nextPage")}
             </button>

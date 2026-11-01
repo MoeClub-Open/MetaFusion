@@ -87,7 +87,7 @@ export function SecretRevealModal({
             <button
               type="button"
               onClick={() => copy("secret", reveal.secret)}
-              className="px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-[11px] font-medium transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
+              className="px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-medium transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
             >
               {copied === "secret" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied === "secret" ? t("admin.oauth.secretCopied") : t("admin.oauth.secretCopy")}</span>

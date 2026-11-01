@@ -290,7 +290,7 @@ function CommunityContent() {
  const pageOutOfRange = !loading && !loadError && total > 0 && topics.length === 0 && page > totalPages;
 
  return (
- <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white text-sm">
+ <div className="min-h-screen relative flex flex-col overflow-clip text-sm">
  <Navbar />
 
  {/* Forum layout: sidebar + topic stream */}
@@ -384,7 +384,7 @@ function CommunityContent() {
  setIsComposerOpen(true);
  }}
  disabled={!canCreateTopic}
- className="w-full py-1.5 rounded-md bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+ className="w-full py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
  >
  <Plus className="w-4 h-4" />
  <span>{t("community.publishNew")}</span>
@@ -469,7 +469,7 @@ function CommunityContent() {
 	          <button
 	            onClick={() => setIsComposerOpen(true)}
 	            disabled={!canCreateTopic}
-	            className="px-4 h-11 rounded-lg bg-primary text-white text-sm font-bold inline-flex items-center gap-2 shadow-xs hover:opacity-90 transition-opacity shrink-0 disabled:opacity-50"
+	            className="px-4 h-11 rounded-lg bg-primary text-primary-foreground text-sm font-bold inline-flex items-center gap-2 shadow-xs hover:opacity-90 transition-opacity shrink-0 disabled:opacity-50"
 	          >
 	            <Plus className="w-4 h-4 stroke-[2.5]" />
 	            <span className="hidden sm:inline">{t("community.newTopic")}</span>
@@ -526,7 +526,7 @@ function CommunityContent() {
 	                    }}
 	                    className={`w-full text-left px-2.5 py-2 rounded-md text-xs flex items-center justify-between transition-colors duration-fast ease-soft ${
 	                      selectedBoard === "all"
-	                        ? "bg-primary text-white font-semibold"
+	                        ? "bg-primary text-primary-foreground font-semibold"
 	                        : "text-text-body hover:text-white hover:bg-emphasis/[0.05]"
 	                    }`}
 	                  >
@@ -622,7 +622,7 @@ function CommunityContent() {
 	                    }}
 	                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs font-mono flex items-center justify-between transition-colors duration-fast ease-soft ${
 	                      !filterTagId && !filterTagName
-	                        ? "bg-primary text-white font-semibold"
+	                        ? "bg-primary text-primary-foreground font-semibold"
 	                        : "text-text-muted hover:text-white hover:bg-emphasis/[0.05]"
 	                    }`}
 	                  >

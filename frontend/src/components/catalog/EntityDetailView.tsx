@@ -1582,7 +1582,7 @@ export function EntityDetailView({ id }: { id: string }) {
                     <button
                       type="submit"
                       disabled={submittingComment || !newCommentBody.trim()}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>{submittingComment ? t("entity.page.posting") : t("entity.page.postComment")}</span>

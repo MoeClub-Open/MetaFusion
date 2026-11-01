@@ -289,7 +289,7 @@ export function AppFormModal({
           <button
             type="submit"
             disabled={busy}
-            className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
+            className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
             <span>{busy ? t("developer.form.saving") : t("developer.form.save")}</span>

@@ -20,7 +20,7 @@ export default function NotFound() {
   };
 
   return (
-    <main className="mf-enter min-h-screen relative flex flex-col items-center justify-center overflow-clip px-6 py-12 selection:bg-primary selection:text-white">
+    <main className="mf-enter min-h-screen relative flex flex-col items-center justify-center overflow-clip px-6 py-12 ">
 
       <div className="relative z-10 max-w-md w-full text-center flex flex-col items-center">
         <div className="mb-6 animate-pulse">
@@ -52,7 +52,7 @@ export default function NotFound() {
 
           <Link
             href="/home"
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-medium shadow-lg shadow-primary/25 transition-all duration-base ease-soft"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-lg shadow-primary/25 transition-all duration-base ease-soft"
           >
             <Home className="w-4 h-4" />
             <span>{t("nav.home")}</span>

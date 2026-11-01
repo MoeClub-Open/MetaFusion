@@ -139,7 +139,7 @@ function ServiceWorkspaceFrame({ workspace, active, href, onNavigate }: {
   onNavigate: (workspace: ServiceWorkspace, href: string, push: boolean) => void;
 }) {
   const { t, locale } = useI18n();
-  const { resolvedMode, accent, tone } = useTheme();
+  const { mode, accent, tone, pattern } = useTheme();
   const frame = useRef<HTMLIFrameElement>(null);
   const initialHref = useRef(href);
   const currentHref = useRef(href);
@@ -148,8 +148,8 @@ function ServiceWorkspaceFrame({ workspace, active, href, onNavigate }: {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const preferences = useRef({ locale, mode: resolvedMode, accent, tone });
-  preferences.current = { locale, mode: resolvedMode, accent, tone };
+  const preferences = useRef({ locale, mode, accent, tone, pattern });
+  preferences.current = { locale, mode, accent, tone, pattern };
   const sendPreferences = useCallback(() => {
     frame.current?.contentWindow?.postMessage({ channel: ADMIN_WORKSPACE_CHANNEL, workspace, type: "preferences", ...preferences.current }, window.location.origin);
   }, [workspace]);
@@ -172,7 +172,7 @@ function ServiceWorkspaceFrame({ workspace, active, href, onNavigate }: {
     return () => window.removeEventListener("message", receive);
   }, [workspace, onNavigate, sendPreferences]);
 
-  useEffect(() => { if (ready) sendPreferences(); }, [ready, locale, resolvedMode, accent, tone, sendPreferences]);
+  useEffect(() => { if (ready) sendPreferences(); }, [ready, locale, mode, accent, tone, pattern, sendPreferences]);
   useEffect(() => {
     if (!active || !ready || currentHref.current === href) return;
     // 后退或直达另一页面时只刷新内容区，管理中心的顶栏与其他工作区保持挂载。

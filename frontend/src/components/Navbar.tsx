@@ -294,7 +294,7 @@ export const Navbar: React.FC<{
               <Bell className="w-3.5 h-3.5" strokeWidth={1.8} />
               {unreadNotifications !== null && unreadNotifications > 0 && (
                 <span
-                  className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-white text-[9px] font-mono font-bold flex items-center justify-center"
+                  className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-mono font-bold flex items-center justify-center"
                   title={t("notifications.unreadBadge", { count: unreadNotifications })}
                 >
                   {unreadNotifications > 99 ? "99+" : unreadNotifications}

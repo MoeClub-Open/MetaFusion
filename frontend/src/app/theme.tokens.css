@@ -1,0 +1,129 @@
+:root {
+  --radius-chip: 4px;
+  --radius-control: 8px;
+  --radius-card: var(--radius-control);
+  --radius-panel: var(--radius-control);
+  --radius-round: 9999px;
+}
+
+:root, [data-theme-mode="dark"], html.dark {
+  --foreground-rgb: 211 198 170;
+  --bg-rgb: 45 53 59;
+  --surface-rgb: 52 63 68;
+  --surface-hover-rgb: 61 72 77;
+  --surface-border-color: rgba(211, 198, 170, 0.14);
+  --line-color: rgba(211, 198, 170, 0.14);
+  --line-subtle-color: rgba(211, 198, 170, 0.08);
+  --line-strong-color: rgba(211, 198, 170, 0.24);
+  --surface-subtle-color: rgba(211, 198, 170, 0.05);
+  --text-strong-color: #d3c6aa;
+  --text-body-color: #c5bba3;
+  --text-muted-color: #a2aca5;
+  --text-faint-color: #99a197;
+  --ring-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  --bg-color: #2d353b;
+  --surface-color: #343f44;
+  --surface-hover-color: #3d484d;
+  --card: #343f44;
+  --card-foreground: #d3c6aa;
+  --border: rgba(211, 198, 170, 0.14);
+  --foreground: #d3c6aa;
+  --background: #2d353b;
+  --primary: #a7c080;
+  --card-rgb: 52 63 68;
+  --muted-rgb: 61 72 77;
+  --secondary-rgb: 61 72 77;
+  --muted-foreground-rgb: 162 172 165;
+  --border-rgb: 74 82 82;
+  --destructive-rgb: 230 126 128;
+  --destructive-foreground-rgb: 30 35 38;
+  --primary-rgb: 167 192 128;
+  --accent-rgb: 131 192 146;
+  --primary-contrast-rgb: 30 35 38;
+  --emphasis-rgb: 211 198 170;
+  --scrollbar-thumb-color: #475258;
+  --scrollbar-thumb-hover-color: #56635f;
+  --state-warn-rgb: 219 188 127;
+  --state-warn-soft-rgb: 219 188 127;
+  --state-success-rgb: 167 192 128;
+  --state-success-soft-rgb: 167 192 128;
+  --state-danger-rgb: 230 126 128;
+  --state-danger-soft-rgb: 230 126 128;
+  --state-info-rgb: 127 187 179;
+  --state-info-soft-rgb: 127 187 179;
+  --state-alt-rgb: 214 153 182;
+  --state-alt-soft-rgb: 214 153 182;
+  --font-display: var(--font-instrument-serif, "Instrument Serif"), "Noto Serif SC", Georgia, serif;
+  --font-sans: var(--font-inter, "Inter"), "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono, "JetBrains Mono"), "Fira Code", ui-monospace, monospace;
+}
+
+[data-theme-mode="light"], html.light {
+  --foreground-rgb: 92 106 114;
+  --bg-rgb: 253 246 227;
+  --surface-rgb: 244 240 217;
+  --surface-hover-rgb: 239 235 212;
+  --surface-border-color: rgba(92, 106, 114, 0.16);
+  --line-color: rgba(92, 106, 114, 0.16);
+  --line-subtle-color: rgba(92, 106, 114, 0.09);
+  --line-strong-color: rgba(92, 106, 114, 0.28);
+  --surface-subtle-color: rgba(92, 106, 114, 0.06);
+  --text-strong-color: #5c6a72;
+  --text-body-color: #5c6a72;
+  --text-muted-color: #657364;
+  --text-faint-color: #667466;
+  --ring-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  --bg-color: #fdf6e3;
+  --surface-color: #f4f0d9;
+  --surface-hover-color: #efebd4;
+  --card: #f4f0d9;
+  --card-foreground: #5c6a72;
+  --border: rgba(92, 106, 114, 0.16);
+  --foreground: #5c6a72;
+  --background: #fdf6e3;
+  --primary: #92a701;
+  --card-rgb: 244 240 217;
+  --muted-rgb: 239 235 212;
+  --secondary-rgb: 239 235 212;
+  --muted-foreground-rgb: 101 115 100;
+  --border-rgb: 220 219 201;
+  --destructive-rgb: 209 12 8;
+  --destructive-foreground-rgb: 255 255 255;
+  --primary-rgb: 146 167 1;
+  --accent-rgb: 53 167 124;
+  --primary-contrast-rgb: 30 35 38;
+  --emphasis-rgb: 60 72 79;
+  --scrollbar-thumb-color: rgba(92, 106, 114, 0.45);
+  --scrollbar-thumb-hover-color: rgba(92, 106, 114, 0.65);
+  --state-warn-rgb: 136 98 0;
+  --state-success-rgb: 97 110 1;
+  --state-danger-rgb: 209 12 8;
+  --state-info-rgb: 43 111 148;
+  --state-alt-rgb: 188 40 142;
+  --state-warn-soft-rgb: 136 98 0;
+  --state-success-soft-rgb: 97 110 1;
+  --state-danger-soft-rgb: 209 12 8;
+  --state-info-soft-rgb: 43 111 148;
+  --state-alt-soft-rgb: 188 40 142;
+}
+:root {
+  --primary-color: #a7c080;
+  --primary-hover-color: #94b265;
+  --primary-light-color: #bace9b;
+  --primary-contrast-color: #1e2326;
+  --accent-color: #83c092;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+:root {
+  --page-pattern-image: url("/patterns/catalog.svg");
+  --page-pattern-size: 240px 240px;
+  --page-pattern-opacity: 0.14;
+}
+html.light { --page-pattern-opacity: 0.075; }

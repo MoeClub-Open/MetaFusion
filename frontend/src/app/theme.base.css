@@ -1,0 +1,180 @@
+html {
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: var(--bg-color);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+html.light .shadow-elevated {
+  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06) !important;
+}
+
+html.light .shadow-soft {
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.08) !important;
+}
+[data-theme-pattern="dots"] {
+  --page-pattern-image: url("/patterns/dots.svg");
+  --page-pattern-size: 32px 32px;
+}
+[data-theme-pattern="none"] body::before { display: none; }
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--page-pattern-opacity);
+  background-color: rgb(var(--primary-rgb));
+  -webkit-mask-image: var(--page-pattern-image);
+  mask-image: var(--page-pattern-image);
+  -webkit-mask-size: var(--page-pattern-size);
+  mask-size: var(--page-pattern-size);
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+}
+@layer base {
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  input[type="checkbox"], input[type="radio"] {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    vertical-align: middle;
+    border: 1px solid var(--surface-border-color);
+    background: var(--surface-color);
+    border-radius: var(--radius-chip);
+    cursor: pointer;
+  }
+  input[type="radio"] { border-radius: 50%; }
+  input[type="checkbox"]::before, input[type="radio"]::before {
+    content: "";
+    width: 0.625rem;
+    height: 0.625rem;
+    transform: scale(0);
+    background: var(--primary-contrast-color, rgb(var(--primary-contrast-rgb)));
+    clip-path: polygon(14% 44%, 0 65%, 43% 100%, 100% 16%, 80% 0, 37% 65%);
+  }
+  input[type="radio"]::before { border-radius: 50%; clip-path: none; }
+  input[type="checkbox"]:checked, input[type="radio"]:checked {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+  }
+  input[type="checkbox"]:checked::before, input[type="radio"]:checked::before { transform: scale(1); }
+  input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type="file"]::file-selector-button {
+    border: 1px solid var(--surface-border-color);
+    border-radius: var(--radius-control);
+    padding: 0.375rem 0.625rem;
+    margin-right: 0.625rem;
+    background: var(--surface-color);
+    color: rgb(var(--foreground-rgb));
+    cursor: pointer;
+  }
+  @media (forced-colors: active) {
+    input[type="checkbox"], input[type="radio"] { appearance: auto; }
+    input[type="checkbox"]::before, input[type="radio"]::before { content: none; }
+  }
+}
+
+a, button, input, select, textarea {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+select {
+  line-height: 1.5;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--ring-color, rgba(59, 130, 246, 0.18)), 0 1px 2px rgba(0,0,0,0.2);
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 14px 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+select:not(.select-compact) { padding-right: 2.25rem; }
+select.select-compact { padding-right: 1.75rem; }
+html.dark select { color-scheme: dark; }
+html.light select { color-scheme: light; }
+select:hover { border-color: color-mix(in srgb, var(--primary-color) 45%, var(--surface-border-color)); }
+select:focus { border-color: var(--primary-color); }
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555d70' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+select option {
+  background-color: var(--surface-color);
+  color: rgb(var(--foreground-rgb));
+  padding: 6px 12px;
+}
+select option:checked, select option:hover {
+  background-color: var(--surface-hover-color);
+  color: rgb(var(--foreground-rgb));
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb-color); border-radius: var(--radius-round); }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover-color); }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+::selection { background: color-mix(in srgb, var(--primary-color) 28%, transparent); color: rgb(var(--emphasis-rgb)); }
+@layer components {
+  .mf-focus {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-color)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-color)];
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+  body::before { display: none; }
+}
+
+/* ——— Mobile baseline ——— */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+* { -webkit-tap-highlight-color: transparent; }
+body { overscroll-behavior-y: contain; }
+
+/* iOS: prevent input zoom — keep 16px on small screens */
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Tables: momentum scroll on iOS */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* Ensure media never overflows horizontally */
+img, video { max-width: 100%; }
+
+/* Fixed bottom bars should respect safe area */
+.fixed.bottom-0 { padding-bottom: env(safe-area-inset-bottom); }

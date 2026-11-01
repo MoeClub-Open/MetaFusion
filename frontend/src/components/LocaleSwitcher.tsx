@@ -72,7 +72,7 @@ export function LocaleSwitcher({ compact }: { compact?: boolean }) {
  }}
  className={`w-full px-3.5 py-2.5 rounded-lg flex items-center justify-between transition-colors duration-fast ease-soft cursor-pointer ${
  active
- ? "bg-primary text-white keep-white font-semibold shadow-soft"
+ ? "bg-primary text-primary-foreground font-semibold shadow-soft"
  : "text-text-body hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-surfaceHover"
  }`}
  >

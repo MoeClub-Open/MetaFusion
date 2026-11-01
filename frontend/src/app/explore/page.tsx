@@ -605,7 +605,7 @@ function ExploreInner() {
                 <span
                   className={
                     "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors " +
-                    (currentHasPictures ? "bg-primary border-primary text-white" : "border-line text-transparent")
+                    (currentHasPictures ? "bg-primary border-primary text-primary-foreground" : "border-line text-transparent")
                   }
                 >
                   <Check className="w-3 h-3" />

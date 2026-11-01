@@ -430,7 +430,7 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
           <button
             type="button"
             onClick={() => setGroups([...groups, { key: "", unlimited: false, perMinute: "" }])}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white font-semibold text-xs transition-colors duration-fast ease-soft cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-colors duration-fast ease-soft cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{t("admin.ratelimits.addGroup")}</span>
@@ -509,7 +509,7 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
           <button
             type="button"
             onClick={() => setAccounts([...accounts, { key: "", unlimited: false, perMinute: "" }])}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white font-semibold text-xs transition-colors duration-fast ease-soft cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-colors duration-fast ease-soft cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{t("admin.ratelimits.addAccount")}</span>
@@ -622,7 +622,7 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
             type="button"
             onClick={() => void handleSave()}
             disabled={!canSave}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded bg-primary text-white text-xs font-bold font-mono hover:bg-primary/90 transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded bg-primary text-primary-foreground text-xs font-bold font-mono hover:bg-primary/90 transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
           >
             {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : null}
             <span>{t("admin.ratelimits.save")}</span>

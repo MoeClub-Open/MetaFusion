@@ -217,7 +217,7 @@ export default function TopicDetailPage() {
  const opPost: ForumPost | null = firstPost;
 
  return (
- <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white pb-24 text-sm">
+ <div className="min-h-screen relative flex flex-col overflow-clip pb-24 text-sm">
  <Navbar />
 
  <PageShell width="page">
@@ -529,7 +529,7 @@ export default function TopicDetailPage() {
  <p className="text-sm text-text-faint font-mono">{t("community.replyPlaceholder")}</p>
  <button
  onClick={openTopicReply}
- className="w-full sm:w-auto px-3.5 h-10 max-sm:min-h-[44px] bg-primary text-white font-bold rounded-md hover:opacity-90 flex items-center justify-center space-x-1.5 transition-opacity text-sm"
+ className="w-full sm:w-auto px-3.5 h-10 max-sm:min-h-[44px] bg-primary text-primary-foreground font-bold rounded-md hover:opacity-90 flex items-center justify-center space-x-1.5 transition-opacity text-sm"
  >
  <Reply className="w-4 h-4" />
  <span>{t("community.replyTopic")}</span>

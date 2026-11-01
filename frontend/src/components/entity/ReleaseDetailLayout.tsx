@@ -702,7 +702,7 @@ export default function ReleaseDetailLayout() {
   };
 
   return (
-    <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
+    <div className="min-h-screen relative flex flex-col overflow-clip ">
       <PageShell
         width="page"
         className="pb-[max(1.5rem,env(safe-area-inset-bottom))]"
@@ -725,7 +725,7 @@ export default function ReleaseDetailLayout() {
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div className="space-y-1.5 min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] tracking-wide">
-                <span className="px-2 py-0.5 rounded-sm bg-primary text-white font-semibold">{t("release.detail.badge")}</span>
+                <span className="px-2 py-0.5 rounded-sm bg-primary text-primary-foreground font-semibold">{t("release.detail.badge")}</span>
                 <QualityBadge
                   entityId={releaseId}
                   onNavigate={() => {
@@ -846,7 +846,7 @@ export default function ReleaseDetailLayout() {
                     aria-current={active ? "page" : undefined}
                     className={`shrink-0 max-w-[220px] rounded-md border px-3 py-2 text-left transition-colors duration-fast ease-soft ${
                       active
-                        ? "bg-primary text-white border-primary"
+                        ? "bg-primary text-primary-foreground border-primary"
                         : "bg-surfaceSubtle border-line hover:border-primary/40"
                     }`}
                   >
@@ -913,7 +913,7 @@ export default function ReleaseDetailLayout() {
               aria-pressed={activeTab === "all"}
               className={`shrink-0 h-9 max-sm:min-h-[44px] px-3 rounded-md border font-mono text-xs transition-colors duration-fast ease-soft ${
                 activeTab === "all"
-                  ? "bg-primary text-white border-primary"
+                  ? "bg-primary text-primary-foreground border-primary"
                   : "bg-surface border-line text-text-body hover:border-primary/40 hover:text-primary"
               }`}
             >
@@ -930,7 +930,7 @@ export default function ReleaseDetailLayout() {
                   aria-pressed={activeTab === fmt}
                   className={`shrink-0 h-9 max-sm:min-h-[44px] px-3 rounded-md border font-mono text-xs transition-colors duration-fast ease-soft ${
                     activeTab === fmt
-                      ? "bg-primary text-white border-primary"
+                      ? "bg-primary text-primary-foreground border-primary"
                       : "bg-surface border-line text-text-body hover:border-primary/40 hover:text-primary"
                   }`}
                 >

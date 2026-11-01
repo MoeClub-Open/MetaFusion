@@ -51,7 +51,7 @@ export function ApiKeyRevealModal({
           <button
             type="button"
             onClick={async () => setCopied((await copyText(created.token)) ? "ok" : "failed")}
-            className="px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white keep-white text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer"
+            className="px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer"
           >
             {copied === "ok" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copied === "ok" ? t("developer.apiKeyCopied") : t("developer.apiKeyCopy")}</span>

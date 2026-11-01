@@ -403,7 +403,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
               <div className="rounded-xl border border-line-subtle bg-surfaceSubtle p-4">
                 <h3 className="text-sm font-semibold text-text-strong mb-3">{t("admin.console.quickActions")}</h3>
                 <div className="flex flex-wrap gap-2">
-                  <Link href="/new" className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white hover:bg-primary/90">
+                  <Link href="/new" className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90">
                     <Plus className="h-4 w-4" aria-hidden="true" />{t("catalog.newEntity")}
                   </Link>
                   <button type="button" disabled={!canUseCatalogAdminTab(user, "definitions")} onClick={() => selectTab("definitions")} className="rounded-lg border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover">{t("admin.tab.definitions")}</button>
@@ -439,7 +439,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                   </button>
                   <Link
                     href="/new"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-xs font-medium text-white transition-colors duration-fast ease-soft"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-xs font-medium text-primary-foreground transition-colors duration-fast ease-soft"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>{t("catalog.newEntity")}</span>
@@ -671,7 +671,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                 <button
                   type="submit"
                   disabled={merging}
-                  className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                  className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-semibold transition-all shadow-xs cursor-pointer"
                 >
                   {merging ? t("admin.console.merging") : t("admin.console.previewMerge")}
                 </button>

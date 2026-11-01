@@ -86,7 +86,7 @@ export default function ReportDialog({
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-white text-sm font-semibold hover:opacity-90"
+              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90"
             >
               {t("report.close")}
             </button>
@@ -171,7 +171,7 @@ export default function ReportDialog({
             <button
               type="submit"
               disabled={submitting}
-              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? t("report.submitting") : t("report.submit")}
             </button>

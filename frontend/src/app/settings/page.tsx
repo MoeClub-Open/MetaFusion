@@ -204,7 +204,7 @@ export default function SettingsPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
+    <div className="min-h-screen relative flex flex-col overflow-clip ">
       <Navbar />
       <PageShell>
         <header className="mb-6"><h1 className="text-xl font-semibold text-text-strong">{t("settings.title")}</h1><p className="mt-1 text-sm text-text-muted">{t("settings.subtitle")}</p></header>
@@ -269,7 +269,7 @@ export default function SettingsPage() {
                   <button
                     type="submit"
                     disabled={savingProfile}
-                    className="px-4 h-9 rounded-lg bg-primary text-white keep-white font-semibold text-xs inline-flex items-center gap-1.5 hover:opacity-90 transition-opacity disabled:opacity-50"
+                    className="px-4 h-9 rounded-lg bg-primary text-primary-foreground font-semibold text-xs inline-flex items-center gap-1.5 hover:opacity-90 transition-opacity disabled:opacity-50"
                   >
                     {savingProfile ? t("settings.profileSaving") : t("settings.profileSave")}
                   </button>
@@ -413,7 +413,7 @@ export default function SettingsPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full h-10 rounded-lg bg-primary text-white keep-white font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 mt-1 shadow-xs"
+                className="w-full h-10 rounded-lg bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 mt-1 shadow-xs"
               >
                 {submitting ? <div className="w-4 h-4 rounded-full border-2 border-emphasis/30 border-t-white animate-spin" /> : t("settings.confirmChange")}
               </button>

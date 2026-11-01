@@ -48,7 +48,7 @@ export function ApiKeyEditorModal({ open, token, onClose, onCreated, onSaved }: 
   const field = "w-full rounded-lg border border-line bg-surfaceSubtle px-3 py-2 text-sm text-text-body";
   return <Modal open={open} onClose={() => { if (!busy) onClose(); }} title={t(token ? "developer.apiKeyEditTitle" : "developer.apiKeyCreateTitle")} icon={<KeyRound className="h-4 w-4 text-primary" />} initialFocus='input[name="name"]' footer={<div className="flex justify-end gap-2">
     <button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-xs text-text-body">{t("developer.permissions.cancel")}</button>
-    <button type="submit" form={formID} disabled={busy || !scopes.length} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs text-white disabled:opacity-50">{busy && <Loader2 className="h-3 w-3 animate-spin" />}{t(token ? "developer.permissions.save" : "developer.apiKeyCreateBtn")}</button>
+    <button type="submit" form={formID} disabled={busy || !scopes.length} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50">{busy && <Loader2 className="h-3 w-3 animate-spin" />}{t(token ? "developer.permissions.save" : "developer.apiKeyCreateBtn")}</button>
   </div>}>
     <form id={formID} onSubmit={submit} className="space-y-4">
       {error && <p role="alert" className="text-xs text-danger">{error}</p>}

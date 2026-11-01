@@ -73,7 +73,7 @@ export function AssistantCredentials({ items, onChanged }: { items: AssistantCre
         <label className="block text-xs space-y-1"><span>{t("assistant.user.apiKey")}</span><input required={editing === "new"} type="password" autoComplete="new-password" value={form.api_key} className={inputClass} onChange={(event) => setForm({ ...form, api_key: event.target.value })} />
           <span className="block text-text-muted leading-relaxed">{t(editing === "new" ? "assistant.user.keyWriteOnly" : "assistant.user.keyKeepEmpty")}</span></label>
         {error && <p role="alert" className="text-xs text-danger">{error}</p>}
-        <button type="submit" disabled={busy} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}{t("common.save")}</button>
+        <button type="submit" disabled={busy} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">{busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}{t("common.save")}</button>
       </form>
     </Modal>
     <ConfirmDialog open={!!deleting} title={t("assistant.user.deleteCredential")} message={t("assistant.user.deleteCredentialHint", { name: deleting?.name || "" })}

@@ -784,7 +784,7 @@ export default function PostComposer({
               <button
                 type="submit"
                 disabled={submitting || !selectedBoardObj}
-                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-white font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
+                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-primary-foreground font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>{submitting ? t("community.creating") : t("community.createTopic")}</span>
@@ -833,7 +833,7 @@ export default function PostComposer({
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-white font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
+                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-primary-foreground font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>{submitting ? t("community.creating") : t("community.reply")}</span>

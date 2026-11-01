@@ -11,9 +11,6 @@ import {
   ACCENTS,
   TONES,
   PATTERNS,
-  ACCENT_IDS,
-  TONE_IDS,
-  PATTERN_IDS,
   DEFAULT_ACCENT,
   DEFAULT_TONE,
   DEFAULT_PATTERN,
@@ -25,13 +22,10 @@ import {
   type PatternEntry,
 } from "@/lib/theme.generated";
 
-export type ThemeMode = "dark" | "light" | "system";
+import { applyTheme, readThemeSelection, writeStorage, MODE_STORAGE_KEY, ACCENT_STORAGE_KEY, TONE_STORAGE_KEY, PATTERN_STORAGE_KEY, THEME_STORAGE_KEYS, type ThemeMode, type ThemeSelection } from "./theme";
+export type { ThemeMode, ThemeSelection } from "./theme";
+export { MODE_STORAGE_KEY, ACCENT_STORAGE_KEY, TONE_STORAGE_KEY, PATTERN_STORAGE_KEY } from "./theme";
 export type { ThemeAccent, ThemeTone, ThemePattern, AccentEntry, ToneEntry, PatternEntry };
-
-export const MODE_STORAGE_KEY = "metafusion_theme_mode";
-export const ACCENT_STORAGE_KEY = "metafusion_theme_accent";
-export const TONE_STORAGE_KEY = "metafusion_theme_tone";
-export const PATTERN_STORAGE_KEY = "metafusion_theme_pattern";
 
 /** 配色方案的展示名：以 i18n 键为权威来源，缺键时回落到 id。 */
 export function accentLabel(id: ThemeAccent, t: (key: string) => string): string {
@@ -56,19 +50,13 @@ export function patternLabel(id: ThemePattern, t: (key: string) => string): stri
   return v && v !== found.labelKey ? v : id;
 }
 
-interface ThemeSelection {
-  mode: ThemeMode;
-  accent: ThemeAccent;
-  tone: ThemeTone;
-  pattern: ThemePattern;
-}
-
 interface ThemeContextType {
   mode: ThemeMode;
   accent: ThemeAccent;
   tone: ThemeTone;
   pattern: ThemePattern;
   resolvedMode: "dark" | "light";
+  setTheme: (selection: ThemeSelection) => void;
   setMode: (mode: ThemeMode) => void;
   setAccent: (accent: ThemeAccent) => void;
   setTone: (tone: ThemeTone) => void;
@@ -84,6 +72,7 @@ const ThemeContext = createContext<ThemeContextType>({
   tone: DEFAULT_TONE,
   pattern: DEFAULT_PATTERN,
   resolvedMode: "dark",
+  setTheme: () => {},
   setMode: () => {},
   setAccent: () => {},
   setTone: () => {},
@@ -92,44 +81,6 @@ const ThemeContext = createContext<ThemeContextType>({
   tones: TONES,
   patterns: PATTERNS,
 });
-
-const isAccent = (v: string | null): v is ThemeAccent => !!v && (ACCENT_IDS as string[]).includes(v);
-const isTone = (v: string | null): v is ThemeTone => !!v && (TONE_IDS as string[]).includes(v);
-const isPattern = (v: string | null): v is ThemePattern => !!v && (PATTERN_IDS as string[]).includes(v);
-const isMode = (v: string | null): v is ThemeMode => v === "dark" || v === "light" || v === "system";
-function readStorage(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-
-function writeStorage(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch { /* 本页仍可切换主题。 */ }
-}
-
-/** 把四组选择写到 <html> 上；同时同步浏览器地址栏/移动端状态栏配色。 */
-function applyTheme({ mode, accent, tone, pattern }: ThemeSelection): "dark" | "light" {
-  const effectiveMode: "dark" | "light" =
-    mode === "system"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : mode;
-
-  const root = document.documentElement;
-  root.setAttribute("data-theme-mode", effectiveMode);
-  root.setAttribute("data-theme-accent", accent);
-  root.setAttribute("data-theme-tone", tone);
-  root.setAttribute("data-theme-pattern", pattern);
-  root.classList.toggle("dark", effectiveMode === "dark");
-  root.classList.toggle("light", effectiveMode === "light");
-  root.style.colorScheme = effectiveMode;
-
-  // 移动端地址栏/状态栏跟随底色，避免深色站点配白色状态栏。
-  const meta = document.querySelector('meta[name="theme-color"]');
-  const bg = getComputedStyle(root).getPropertyValue("--bg-color").trim();
-  if (meta && bg) meta.setAttribute("content", bg);
-
-  return effectiveMode;
-}
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setModeState] = useState<ThemeMode>("dark");
@@ -140,21 +91,20 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const selection = useRef<ThemeSelection>({ mode: "dark", accent: DEFAULT_ACCENT, tone: DEFAULT_TONE, pattern: DEFAULT_PATTERN });
 
   useEffect(() => {
-    const savedModeRaw = readStorage(MODE_STORAGE_KEY);
-    const savedMode = isMode(savedModeRaw) ? savedModeRaw : "dark";
-    const savedAccentRaw = readStorage(ACCENT_STORAGE_KEY);
-    const savedToneRaw = readStorage(TONE_STORAGE_KEY);
-    const savedPatternRaw = readStorage(PATTERN_STORAGE_KEY);
-    const savedAccent = isAccent(savedAccentRaw) ? savedAccentRaw : DEFAULT_ACCENT;
-    const savedTone = isTone(savedToneRaw) ? savedToneRaw : DEFAULT_TONE;
-    const savedPattern = isPattern(savedPatternRaw) ? savedPatternRaw : DEFAULT_PATTERN;
-    selection.current = { mode: savedMode, accent: savedAccent, tone: savedTone, pattern: savedPattern };
-
-    setModeState(savedMode);
-    setAccentState(savedAccent);
-    setToneState(savedTone);
-    setPatternState(savedPattern);
-    setResolvedMode(applyTheme(selection.current));
+    const sync = () => {
+      const saved = readThemeSelection();
+      selection.current = saved;
+      setModeState(saved.mode);
+      setAccentState(saved.accent);
+      setToneState(saved.tone);
+      setPatternState(saved.pattern);
+      setResolvedMode(applyTheme(saved));
+    };
+    sync();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || THEME_STORAGE_KEYS.includes(event.key)) sync();
+    };
+    window.addEventListener("storage", onStorage);
 
     // 跟随系统时，系统主题变化要即时生效；换配色/色调不需要重挂监听。
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -163,7 +113,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setResolvedMode(applyTheme(selection.current));
     };
     mediaQuery.addEventListener("change", handler);
-    return () => mediaQuery.removeEventListener("change", handler);
+    return () => { mediaQuery.removeEventListener("change", handler); window.removeEventListener("storage", onStorage); };
   }, []);
 
   // 以内存中的当前选择合并更新，避免存储被禁用时切换某项重置其他项。
@@ -197,8 +147,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     updateSelection({ pattern: nextPattern });
   }, [updateSelection]);
 
+  const setTheme = useCallback((next: ThemeSelection) => {
+    writeStorage(MODE_STORAGE_KEY, next.mode);
+    writeStorage(ACCENT_STORAGE_KEY, next.accent);
+    writeStorage(TONE_STORAGE_KEY, next.tone);
+    writeStorage(PATTERN_STORAGE_KEY, next.pattern);
+    updateSelection(next);
+  }, [updateSelection]);
+
   return (
-    <ThemeContext.Provider value={{ mode, accent, tone, pattern, resolvedMode, setMode, setAccent, setTone, setPattern, accents: ACCENTS, tones: TONES, patterns: PATTERNS }}>
+    <ThemeContext.Provider value={{ mode, accent, tone, pattern, resolvedMode, setTheme, setMode, setAccent, setTone, setPattern, accents: ACCENTS, tones: TONES, patterns: PATTERNS }}>
       {children}
     </ThemeContext.Provider>
   );

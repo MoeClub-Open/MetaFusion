@@ -251,7 +251,7 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
                     className={
                       "max-w-[80%] rounded-card px-3.5 py-2.5 text-xs whitespace-pre-wrap leading-relaxed shadow-sm " +
                       (mine
-                        ? "bg-primary text-white rounded-tr-xs"
+                        ? "bg-primary text-primary-foreground rounded-tr-xs"
                         : "bg-surface border border-line text-text-strong rounded-tl-xs")
                     }
                   >
@@ -289,7 +289,7 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
           <span>{t("users.profile.dmError.unauthorized")}</span>
           <Link
             href="/login"
-            className="px-2.5 h-7 rounded-md bg-primary text-white keep-white font-semibold inline-flex items-center gap-1 shrink-0"
+            className="px-2.5 h-7 rounded-md bg-primary text-primary-foreground font-semibold inline-flex items-center gap-1 shrink-0"
           >
             <LogIn className="w-3.5 h-3.5" />
             <span>{t("nav.login")}</span>
@@ -316,7 +316,7 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
           <button
             type="submit"
             disabled={!inputContent.trim() || sending}
-            className="h-11 px-4 rounded-xl bg-primary hover:opacity-90 disabled:opacity-40 text-white text-sm font-bold flex items-center justify-center gap-1.5 transition-all shrink-0 shadow-soft cursor-pointer"
+            className="h-11 px-4 rounded-xl bg-primary hover:opacity-90 disabled:opacity-40 text-primary-foreground text-sm font-bold flex items-center justify-center gap-1.5 transition-all shrink-0 shadow-soft cursor-pointer"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />

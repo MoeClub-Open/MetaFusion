@@ -253,7 +253,7 @@ export default function InvitesPage() {
               <button
                 type="submit"
                 disabled={creating}
-                className="w-full h-10 rounded-control bg-primary text-white keep-white font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity duration-fast shadow-xs disabled:opacity-50 mf-focus"
+                className="w-full h-10 rounded-control bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity duration-fast shadow-xs disabled:opacity-50 mf-focus"
               >
                 {creating ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

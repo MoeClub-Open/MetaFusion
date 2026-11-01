@@ -206,7 +206,7 @@ export function HomeCustomizeModal({
       </button>
       <div className="ml-auto flex items-center gap-2">
         <button type="button" onClick={closeModal} disabled={saving} className="min-h-11 px-3 py-2 rounded-lg border border-line text-xs text-text-body hover:text-emphasis hover:bg-surfaceHover transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{t("catalog.cancel")}</button>
-        <button type="button" onClick={handleSave} disabled={saving || loading || loadFailed} className="min-h-11 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{saving ? t("common.saving") : t("common.save")}</button>
+        <button type="button" onClick={handleSave} disabled={saving || loading || loadFailed} className="min-h-11 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{saving ? t("common.saving") : t("common.save")}</button>
       </div>
     </div>
   );
@@ -299,7 +299,7 @@ export function HomeCustomizeModal({
                         "w-5 h-5 rounded border grid place-items-center shrink-0 transition-colors duration-fast ease-soft cursor-pointer " +
                         (row.hidden
                           ? "border-emphasis/15 bg-transparent text-transparent"
-                          : "border-primary bg-primary text-white")
+                          : "border-primary bg-primary text-primary-foreground")
                       }
                       aria-pressed={!row.hidden}
                       aria-label={t("home.toggleSection")}

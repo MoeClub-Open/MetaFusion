@@ -241,7 +241,7 @@ export function EntityEditor({
         <p className="text-sm text-text-muted">{t("catalog.loginToEdit")}</p>
         <a
           href={getAuthLoginUrl()}
-          className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg bg-primary text-white keep-white text-sm font-semibold mf-focus"
+          className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg bg-primary text-primary-foreground text-sm font-semibold mf-focus"
         >
           {t("nav.login")}
         </a>

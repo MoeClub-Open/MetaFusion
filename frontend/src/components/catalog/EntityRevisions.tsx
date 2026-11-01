@@ -214,7 +214,7 @@ export function EntityRevisions({
               <div
                 className={"absolute -left-6 sm:-left-8 top-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-xs transition-transform duration-base ease-soft group-hover:scale-110 " + (
                   isLatest
-                    ? "border-primary bg-primary text-white"
+                    ? "border-primary bg-primary text-primary-foreground"
                     : "border-black/20 dark:border-white/20 bg-surface text-text-faint group-hover:border-primary group-hover:text-primary"
                 )}
               >

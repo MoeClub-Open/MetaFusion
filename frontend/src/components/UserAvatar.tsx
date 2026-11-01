@@ -37,7 +37,7 @@ const shapeMap = {
 
 // 根据用户名生成稳定的柔和渐变/背景色，让无头像的用户色彩丰富
 function getFallbackBg(name: string): string {
-  if (!name) return "bg-primary text-white";
+  if (!name) return "bg-primary text-primary-foreground";
   const colors = [
     "bg-emerald-600 text-emphasis",
     "bg-sky-600 text-emphasis",
