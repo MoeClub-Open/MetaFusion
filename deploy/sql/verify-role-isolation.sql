@@ -210,7 +210,9 @@ BEGIN
   IF to_regclass('audit.api_statistics') IS NOT NULL THEN
     FOR i IN 1 .. array_length(services, 1) LOOP
       app_role := services[i][1];
-      IF NOT has_table_privilege(app_role,'audit.api_statistics','SELECT,INSERT,UPDATE')
+      IF NOT (has_table_privilege(app_role,'audit.api_statistics','SELECT')
+              AND has_table_privilege(app_role,'audit.api_statistics','INSERT')
+              AND has_table_privilege(app_role,'audit.api_statistics','UPDATE'))
          OR has_table_privilege(app_role,'audit.api_statistics','DELETE')
          OR has_table_privilege(app_role,'audit.api_statistics','TRUNCATE') THEN
         RAISE EXCEPTION 'API statistics privileges invalid: %', app_role;
