@@ -995,7 +995,6 @@
   "admin.console.backToSite": "返回主站",
   "admin.console.consoleTitle": "目录管理",
   "admin.console.sysOverview": "目录概览",
-  "admin.console.quickActions": "常用操作",
   "admin.console.pendingReviews": "待合并请求",
   "admin.console.tombstones": "已删除或合并",
   "admin.console.extDatabases": "外部权威库（启用）",
@@ -1202,7 +1201,6 @@
   "admin.tab.extdb": "外部来源管理",
   "admin.tab.shelves": "虚拟分类预设",
   "admin.tab.merge": "实体版本与合并",
-  "admin.tab.modules": "子系统与能力",
   "revisions.initialVersion": "初始版本",
   "revisions.officialSource": "官方来源",
   "locale.simplifiedChinese": "简体中文",
@@ -2721,5 +2719,9 @@
   "settings.activity.target.logs": "日志",
   "settings.activity.field.before": "截止日期",
   "settings.activity.field.service": "服务",
-  "settings.activity.field.removed": "清理数量"
+  "settings.activity.field.removed": "清理数量",
+  "admin.capability.exchange": "实例交换",
+  "admin.capability.community": "社区",
+  "admin.capability.storage": "资源存储",
+  "settings.activity.action.board.created": "创建板块"
 }

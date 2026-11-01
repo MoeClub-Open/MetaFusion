@@ -19,7 +19,7 @@ import { ExternalDatabasesTab } from "./components/tabs/ExternalDatabasesTab";
 import { RateLimitsTab } from "./components/tabs/RateLimitsTab";
 import { ShelvesTab } from "./components/tabs/ShelvesTab";
 import { ExchangeTab } from "./components/tabs/ExchangeTab";
-import { CATALOG_LIFECYCLE_MANAGE, can, canEnterCatalogConsole } from "@/lib/permissions";
+import { CATALOG_LIFECYCLE_MANAGE, can } from "@/lib/permissions";
 import { fetchApi } from "@/lib/api";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
@@ -39,6 +39,7 @@ import {
   Gauge,
 } from "lucide-react";
 
+import { CatalogOverview } from "./CatalogOverview";
 import { isCompatibleMergeTarget } from "@/lib/mergeTarget";
 import { canUseCatalogAdminTab, type CatalogAdminTab as AdminTab } from "@/lib/catalogAdminNavigation";
 
@@ -58,7 +59,6 @@ const NAV_GROUPS: { labelKey: string; tabs: { id: AdminTab; labelKey: string; ic
   { labelKey: "admin.nav.operations", tabs: [
     { id: "assistant", labelKey: "assistant.admin.title", icon: Cpu },
     { id: "ratelimits", labelKey: "admin.tab.ratelimits", icon: Gauge },
-    { id: "modules", labelKey: "admin.tab.modules", icon: Cpu },
     { id: "exchange", labelKey: "admin.tab.exchange", icon: ArrowUpRight },
   ] },
 ];
@@ -108,14 +108,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
       window.removeEventListener("hashchange", syncFromUrl);
     };
   }, [visibleTabsKey, active]);
-  // 四个计数各为 null 表示"还没拿到或取不到"：卡片显示占位符，不把没取到的数当成 0 讲成事实。
-  const [stats, setStats] = useState<{
-    pending: number | null;
-    active: number | null;
-    tombstones: number | null;
-    extDatabases: number | null;
-  }>({ pending: null, active: null, tombstones: null, extDatabases: null });
-  const [modules, setModules] = useState<any[]>([]);
   // Entities management state
   const [entitiesList, setEntitiesList] = useState<AdminEntity[]>([]);
   const [entitiesListFailed, setEntitiesListFailed] = useState(false);
@@ -140,47 +132,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
   const [merging, setMerging] = useState(false);
   const mergeBusy = useRef(false);
   const [mergePreview, setMergePreview] = useState<{source: Record<string, any>; target: Record<string, any>; note: string; sources: Source[]} | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(false);
-  const [overviewFailed, setOverviewFailed] = useState(false);
-  const overviewRequest = useRef(0);
-
-  const loadOverview = async () => {
-    const request = ++overviewRequest.current;
-    setOverviewLoading(true);
-    setOverviewFailed(false);
-    setStats({ pending: null, active: null, tombstones: null, extDatabases: null });
-    setModules([]);
-    const results = await Promise.allSettled([
-      mayManageLifecycle ? fetchApi<{states: Record<string, number>; pending_pull_requests:number}>("/catalog/entities/stats") : Promise.resolve(null),
-      fetchApi<{items: unknown[]}>("/catalog/external-databases"),
-      fetchApi<{modules: any[]}>("/capabilities"),
-    ]);
-    if (request !== overviewRequest.current) return;
-    let failed = results.some((result) => result.status === "rejected");
-    const counts = results[0];
-    if (counts.status === "fulfilled" && counts.value) {
-      const statuses = counts.value.states;
-      const pending = countOrNull(counts.value.pending_pull_requests);
-      const active = countOrNull(statuses?.active);
-      const deleted = countOrNull(statuses?.deleted);
-      const merged = countOrNull(statuses?.merged);
-      if ([pending, active, deleted, merged].some((v) => v === null)) failed = true;
-      setStats((prev) => ({...prev, pending, active, tombstones: deleted !== null && merged !== null ? deleted + merged : null}));
-    }
-    const external = results[1];
-    if (external.status === "fulfilled") {
-      if (Array.isArray(external.value.items)) setStats((prev) => ({...prev, extDatabases: external.value.items.length}));
-      else failed = true;
-    }
-    const capability = results[2];
-    if (capability.status === "fulfilled") {
-      if (Array.isArray(capability.value.modules)) setModules(capability.value.modules);
-      else failed = true;
-    }
-    setOverviewFailed(failed);
-    setOverviewLoading(false);
-  };
-
   const loadEntities = (page = entitiesPage) => {
     const request = ++entitiesRequest.current;
     setEntitiesLoading(true);
@@ -210,15 +161,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
       })
       .finally(() => { if (request === entitiesRequest.current) setEntitiesLoading(false); });
   };
-
-  const mayEnterCatalog = canEnterCatalogConsole(user);
-
-  useEffect(() => {
-    if (mayEnterCatalog) {
-      loadOverview();
-    }
-    return () => { overviewRequest.current += 1; };
-  }, [mayEnterCatalog, user?.id, mayManageLifecycle]);
 
   useEffect(() => {
     if (currentTab === "entities" && mayManageLifecycle) {
@@ -283,7 +225,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
       setMergeError(false);
       setMergeMessage(t("admin.console.mergeSuccess"));
       setMergeSource(""); setMergeTarget(""); setMergeNote("");
-      void loadOverview();
     } catch (err) {
       setMergeError(true);
       setMergeMessage(localizeCatalogError(String((err as Error).message || err), t));
@@ -333,9 +274,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                     >
                       <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span className="flex-1">{t(item.labelKey)}</span>
-                      {item.id === "reviews" && stats.pending != null && stats.pending > 0 ? (
-                        <span className="rounded-chip bg-amber-500/15 px-2 py-0.5 text-[11px] text-warn">{stats.pending}</span>
-                      ) : null}
                     </button>
                   );
                 })}
@@ -349,67 +287,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
         {/* key 让每次切换页签都重放进入动画；外层统一包裹层保证各页签的首元素落在同一纵向位置 */}
         <TabPanel activeKey={currentTab} spacing="none" className="flex-1 min-w-0">
           <div className="space-y-4 [&>*:first-child]:mt-0">
-          {currentTab === "overview" && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-text-strong">
-                  {t("admin.console.sysOverview")}
-                </h2>
-              </div>
-
-              {/* 卡片只放目录域拿得到的真实数据，且标签与端点口径一致：数据库版本与会话模式没有
-                  任何端点暴露，部署态能力数（/api/capabilities）不是目录域指标，都不出现在这里；
-                  取不到显示占位符，不写死、不拿 0 冒充。 */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4" aria-busy={overviewLoading}>
-                {mayManageLifecycle && <>
-                <button type="button" onClick={() => selectTab("reviews")} className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle hover:border-primary/40 hover:bg-surfaceHover text-left transition-colors cursor-pointer">
-                  <div className="text-xs text-text-muted font-mono mb-1">
-                    {t("admin.console.pendingReviews")}
-                  </div>
-                  <div className="text-2xl font-bold text-warn">{stats.pending ?? "—"}</div>
-                </button>
-                <button type="button" onClick={() => { setEntitiesPage(1); selectTab("entities"); }} className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle hover:border-primary/40 hover:bg-surfaceHover text-left transition-colors cursor-pointer">
-                  <div className="text-xs text-text-muted font-mono mb-1">
-                    {t("admin.console.activeEntities")}
-                  </div>
-                  <div className="text-2xl font-bold text-success">{stats.active ?? "—"}</div>
-                </button>
-                {/* 墓碑 = deleted + merged，只来自 GET /catalog/entities/stats：列表端点的过滤固定带
-                    status NOT IN ('deleted','merged')（backend/internal/catalog/store.go listFilter），
-                    与 status=deleted 相与恒为空，所以这张卡不走列表端点。取不到仍是占位符，
-                    不拿 0 冒充——线上同表 deleted 有 288 条，显示 0 就是假数据。 */}
-                <div className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle">
-                  <div className="text-xs text-text-muted font-mono mb-1">
-                    {t("admin.console.tombstones")}
-                  </div>
-                  <div className="text-2xl font-bold text-text-strong">{stats.tombstones ?? "—"}</div>
-                </div>
-                </>}
-                <button type="button" disabled={!canUseCatalogAdminTab(user, "extdb")} onClick={() => selectTab("extdb")} className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle hover:border-primary/40 hover:bg-surfaceHover text-left transition-colors cursor-pointer">
-                  <div className="text-xs text-text-muted font-mono mb-1">
-                    {t("admin.console.extDatabases")}
-                  </div>
-                  <div className="text-2xl font-bold text-text-strong">{stats.extDatabases ?? "—"}</div>
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                {overviewFailed ? <p role="alert" className="text-xs text-danger">{t("admin.console.overviewFailed")}</p> : <span />}
-                <button type="button" disabled={overviewLoading} onClick={() => void loadOverview()} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs disabled:opacity-50"><RefreshCw className={overviewLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />{t("common.refresh")}</button>
-              </div>
-              <div className="rounded-xl border border-line-subtle bg-surfaceSubtle p-4">
-                <h3 className="text-sm font-semibold text-text-strong mb-3">{t("admin.console.quickActions")}</h3>
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/new" className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90">
-                    <Plus className="h-4 w-4" aria-hidden="true" />{t("catalog.newEntity")}
-                  </Link>
-                  <button type="button" disabled={!canUseCatalogAdminTab(user, "definitions")} onClick={() => selectTab("definitions")} className="rounded-lg border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover">{t("admin.tab.definitions")}</button>
-                  <button type="button" disabled={!canUseCatalogAdminTab(user, "shelves")} onClick={() => selectTab("shelves")} className="rounded-lg border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover">{t("admin.tab.shelves")}</button>
-                </div>
-              </div>
-
-            </div>
-          )}
+          {currentTab === "overview" && <CatalogOverview />}
 
           {currentTab === "entities" && (
             <div className="space-y-4">
@@ -673,56 +551,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                   {merging ? t("admin.console.merging") : t("admin.console.previewMerge")}
                 </button>
               </form>
-            </div>
-          )}
-
-          {currentTab === "modules" && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-surfaceSubtle border border-line-subtle flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-text-strong">
-                    {t("admin.console.modulesTitle")}
-                  </h2>
-                  <p className="text-xs text-text-muted">
-                    {t("admin.console.modulesDesc")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={loadOverview}
-                  aria-label={t("common.refresh")}
-                  className="p-2 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover text-xs text-text-body"
-                >
-                  <RefreshCw className="w-4 h-4" aria-hidden="true" />
-                </button>
-              </div>
-
-              {overviewFailed && <p role="alert" className="text-xs text-danger">{t("admin.console.overviewFailed")}</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-busy={overviewLoading}>
-                {modules.map((mod) => (
-                  <div
-                    key={mod.id}
-                    className="p-4 rounded-xl border border-line-subtle bg-surfaceSubtle flex items-start justify-between gap-4"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-text-strong text-sm font-mono">{mod.id}</span>
-                      </div>
-
-                    </div>
-
-                    <span
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                        mod.enabled
-                          ? "bg-emerald-500/15 text-success"
-                          : "bg-rose-500/15 text-danger"
-                      }`}
-                    >
-                      {mod.enabled ? t("admin.console.deployed") : t("admin.console.notDeployed")}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 

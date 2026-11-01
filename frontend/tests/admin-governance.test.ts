@@ -37,7 +37,7 @@ test("all-state records require lifecycle management", () => {
 test("community rate-limit grant opens only the shared rate-limit workspace", () => {
   const operator = user(["community.rate_limits.manage"]);
   assert.ok(canUseCatalogAdminTab(operator, "ratelimits"));
-  for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "shelves", "modules", "exchange"] as const) {
+  for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "shelves", "exchange"] as const) {
     assert.equal(canUseCatalogAdminTab(operator, section), false);
   }
 });
@@ -45,7 +45,7 @@ test("community rate-limit grant opens only the shared rate-limit workspace", ()
 test("assistant operators only enter assistant governance and definition operators manage public sources", () => {
   const operator = user(["assistant.manage"]);
   assert.ok(canUseCatalogAdminTab(operator, "assistant"));
-  for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "publicSources", "shelves", "modules", "exchange", "ratelimits"] as const) {
+  for (const section of ["overview", "entities", "reviews", "merge", "definitions", "extdb", "publicSources", "shelves", "exchange", "ratelimits"] as const) {
     assert.equal(canUseCatalogAdminTab(operator, section), false);
   }
   assert.equal(canUseCatalogAdminTab(user(["catalog.definitions.manage"]), "assistant"), false);

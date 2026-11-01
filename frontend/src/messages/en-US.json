@@ -995,7 +995,6 @@
   "admin.console.backToSite": "Back to Site",
   "admin.console.consoleTitle": "Catalog Admin",
   "admin.console.sysOverview": "Catalog Overview",
-  "admin.console.quickActions": "Quick actions",
   "admin.console.pendingReviews": "Open pull requests",
   "admin.console.tombstones": "Deleted or merged",
   "admin.console.extDatabases": "External authority DBs (enabled)",
@@ -1202,7 +1201,6 @@
   "admin.tab.extdb": "External sources",
   "admin.tab.shelves": "Virtual category presets",
   "admin.tab.merge": "Entity merge",
-  "admin.tab.modules": "Subsystems & capabilities",
   "revisions.initialVersion": "Initial",
   "revisions.officialSource": "Official Source",
   "locale.simplifiedChinese": "Simplified Chinese",
@@ -2721,5 +2719,9 @@
   "settings.activity.target.logs": "Logs",
   "settings.activity.field.before": "Before date",
   "settings.activity.field.service": "Service",
-  "settings.activity.field.removed": "Rows deleted"
+  "settings.activity.field.removed": "Rows deleted",
+  "admin.capability.exchange": "Instance exchange",
+  "admin.capability.community": "Community",
+  "admin.capability.storage": "Resource storage",
+  "settings.activity.action.board.created": "Created board"
 }

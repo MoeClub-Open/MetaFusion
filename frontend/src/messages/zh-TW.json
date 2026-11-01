@@ -995,7 +995,6 @@
   "admin.console.backToSite": "返回主站",
   "admin.console.consoleTitle": "目錄管理",
   "admin.console.sysOverview": "目錄概覽",
-  "admin.console.quickActions": "常用操作",
   "admin.console.pendingReviews": "待合併請求",
   "admin.console.tombstones": "已刪除或合併",
   "admin.console.extDatabases": "外部權威庫（啟用）",
@@ -1202,7 +1201,6 @@
   "admin.tab.extdb": "外部來源管理",
   "admin.tab.shelves": "虛擬分類預設",
   "admin.tab.merge": "實體版本與合併",
-  "admin.tab.modules": "子系統與能力",
   "revisions.initialVersion": "初始版本",
   "revisions.officialSource": "官方來源",
   "locale.simplifiedChinese": "簡體中文",
@@ -2721,5 +2719,9 @@
   "settings.activity.target.logs": "日誌",
   "settings.activity.field.before": "截止日期",
   "settings.activity.field.service": "服務",
-  "settings.activity.field.removed": "清理數量"
+  "settings.activity.field.removed": "清理數量",
+  "admin.capability.exchange": "實例交換",
+  "admin.capability.community": "社群",
+  "admin.capability.storage": "資源儲存",
+  "settings.activity.action.board.created": "建立板塊"
 }

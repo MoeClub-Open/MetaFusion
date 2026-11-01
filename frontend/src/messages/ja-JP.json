@@ -995,7 +995,6 @@
   "admin.console.backToSite": "メインサイトへ戻る",
   "admin.console.consoleTitle": "カタログ管理",
   "admin.console.sysOverview": "カタログ概要",
-  "admin.console.quickActions": "よく使う操作",
   "admin.console.pendingReviews": "未マージのプルリクエスト",
   "admin.console.tombstones": "削除・統合済み",
   "admin.console.extDatabases": "外部権威DB（有効）",
@@ -1202,7 +1201,6 @@
   "admin.tab.extdb": "外部ソース管理",
   "admin.tab.shelves": "仮想カテゴリープリセット",
   "admin.tab.merge": "エンティティ統合",
-  "admin.tab.modules": "サブシステムと機能",
   "revisions.initialVersion": "初期バージョン",
   "revisions.officialSource": "公式ソース",
   "locale.simplifiedChinese": "簡体字中国語",
@@ -2721,5 +2719,9 @@
   "settings.activity.target.logs": "ログ",
   "settings.activity.field.before": "基準日",
   "settings.activity.field.service": "サービス",
-  "settings.activity.field.removed": "削除件数"
+  "settings.activity.field.removed": "削除件数",
+  "admin.capability.exchange": "インスタンス交換",
+  "admin.capability.community": "コミュニティ",
+  "admin.capability.storage": "リソースストレージ",
+  "settings.activity.action.board.created": "板を作成"
 }
