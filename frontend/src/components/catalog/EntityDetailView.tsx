@@ -9,7 +9,7 @@ import { COVER_PICTURE_INDEX, coverUrl, PICTURE_ROLE_VOCABULARY, resolveCover } 
 import { EntityCover } from "@/components/common/EntityCover";
 import { PictureLightbox, type LightboxPicture } from "@/components/catalog/PictureLightbox";
 import FavoriteButton from "@/components/FavoriteButton";
-import { WorkFacts, entityBadges } from "@/components/work/WorkFacts";
+import { WorkFacts, entityBadges, entityHasFacts } from "@/components/work/WorkFacts";
 import { EntityIdentityHeader } from "@/components/entity/EntityIdentityHeader";
 import { EntityEditor } from "@/components/catalog/EntityEditor";
 import { useCatalog } from "@/components/catalog/CatalogProvider";
@@ -747,7 +747,7 @@ export function EntityDetailView({ id }: { id: string }) {
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-text-body hover:bg-black/5 dark:hover:bg-white/5 transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-line text-xs font-medium text-text-body hover:bg-surfaceHover transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>{t("entity.detail.backToDetail")}</span>
@@ -757,7 +757,7 @@ export function EntityDetailView({ id }: { id: string }) {
               {title(entity, locale, titleOrder)}
             </span>
           </div>
-          <span className="px-2 py-0.5 rounded-sm bg-primary/10 text-primary text-[10px] font-mono font-semibold uppercase">
+          <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary text-[10px] font-mono font-semibold uppercase">
             {t("entity.detail.editEntity")}
           </span>
         </PageContainer>
@@ -773,6 +773,12 @@ export function EntityDetailView({ id }: { id: string }) {
   }
 
   const localizedTitle = title(entity, locale, titleOrder);
+  const structureFields = (defs?.structure?.[entity.kind]?.fields || []).filter((field) => {
+    const reference = (entity as Record<string, unknown>)[field.code];
+    return typeof reference === "string" && reference.length > 0;
+  });
+  const infoTags = Array.isArray(entity.attributes?.tags) ? entity.attributes.tags : [];
+  const showBasicInfo = structureFields.length > 0 || infoTags.length > 0 || entityHasFacts(entity, defs);
 
   const collectionRelations = categorizedRelations.filter(
     (r) => r.target && r.target.kind === "collection"
@@ -805,7 +811,7 @@ export function EntityDetailView({ id }: { id: string }) {
     .sort((a, b) => a.position - b.position);
 
   return (
-    <div className="min-h-screen relative flex flex-col overflow-clip selection:bg-primary selection:text-white">
+    <div className="min-h-screen relative flex flex-col overflow-clip">
 
       {/* Top Breadcrumb Navigation：作为页头交给外壳，页头到正文的间距由外壳统一给。 */}
       <PageShell
@@ -818,13 +824,13 @@ export function EntityDetailView({ id }: { id: string }) {
               <ArrowLeft className="w-3 h-3" strokeWidth={1.6} />
               <span>{t("nav.home")}</span>
             </Link>
-            <span className="text-text-muted dark:text-white/20">/</span>
+            <span className="text-text-faint">/</span>
             <Link href="/explore" className="hover:text-primary transition-colors duration-fast ease-soft">
               {t("nav.catalog")}
             </Link>
             {motherWork && (
               <>
-                <span className="text-text-muted dark:text-white/20">/</span>
+                <span className="text-text-faint">/</span>
                 <Link
                   href={`/catalog/${motherWork.id}`}
                   className="hover:text-primary transition-colors duration-fast ease-soft truncate max-w-[200px]"
@@ -836,7 +842,7 @@ export function EntityDetailView({ id }: { id: string }) {
             )}
             {motherRelease && (
               <>
-                <span className="text-text-muted dark:text-white/20">/</span>
+                <span className="text-text-faint">/</span>
                 <Link
                   href={`/catalog/${motherRelease.id}`}
                   className="hover:text-primary transition-colors duration-fast ease-soft truncate max-w-[200px]"
@@ -848,30 +854,26 @@ export function EntityDetailView({ id }: { id: string }) {
             )}
             {motherMedium && (
               <>
-                <span className="text-text-muted dark:text-white/20">/</span>
+                <span className="text-text-faint">/</span>
                 <Link href={`/catalog/${motherMedium.id}`} className="hover:text-primary truncate max-w-[200px]">
                   {title(motherMedium, locale, titleOrder)}
                 </Link>
               </>
             )}
-            <span className="text-text-muted dark:text-white/20">/</span>
-            <span className="text-text-strong font-semibold truncate max-w-[280px]">
-              {localizedTitle}
-            </span>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={copyUuid}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-line bg-surfaceSubtle hover:border-primary/50 text-text-faint hover:text-gray-900 dark:hover:text-white transition-all text-xs font-mono cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-control border border-line bg-surfaceSubtle hover:border-primary/50 text-text-faint hover:text-emphasis transition-colors text-xs font-mono cursor-pointer"
               title={entity.id}
             >
-              {copiedId ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              {copiedId ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
               <span>{copiedId ? t("entity.detail.idCopied") : t("entity.detail.copyId")}</span>
             </button>
             {copyFailed === "id" && (
-              <span className="text-[11px] font-mono text-amber-600 dark:text-warn">{t("common.copyFailed")}</span>
+              <span className="text-[11px] font-mono text-warn">{t("common.copyFailed")}</span>
             )}
 
           </div>
@@ -880,7 +882,7 @@ export function EntityDetailView({ id }: { id: string }) {
         }
       >
         {projectionFailed && (
-          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] p-3 text-xs text-amber-700 dark:text-warn-soft">
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-control border border-warn/30 bg-warn/10 p-3 text-xs text-warn">
             <span>{t("catalog.loadFailed")}</span>
             <button type="button" onClick={() => void load()} className="text-primary hover:underline cursor-pointer">{t("catalog.retry")}</button>
           </div>
@@ -889,7 +891,7 @@ export function EntityDetailView({ id }: { id: string }) {
             （与 /works、/releases、/mediums 等同一条左边线）；两栏结构保留在标题之下。 */}
         <header className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 text-xs font-mono font-bold tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-chip bg-primary/10 text-primary border border-primary/20 text-xs font-mono font-bold tracking-wider">
               {kindLabel(entity.kind)}
             </span>
 
@@ -897,7 +899,7 @@ export function EntityDetailView({ id }: { id: string }) {
             {headerBadges.map((b, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] border border-line text-text-body font-mono text-xs"
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-chip bg-emphasis/[0.06] border border-line text-text-body font-mono text-xs"
               >
                 {b.icon}
                 <span>{b.text}</span>
@@ -938,7 +940,7 @@ export function EntityDetailView({ id }: { id: string }) {
                   href={getStorageEntityUrl(entity.id || id)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-sky-500/25 bg-sky-500/10 text-xs font-medium text-sky-600 dark:text-info hover:bg-sky-500/20 hover:border-sky-500/40 transition-all shadow-2xs cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-control border border-info/25 bg-info/10 text-xs font-medium text-info hover:bg-info/20 transition-colors cursor-pointer"
                   title={t("entity.page.openResourceDownload")}
                 >
                   <HardDrive className="w-3.5 h-3.5" />
@@ -950,14 +952,14 @@ export function EntityDetailView({ id }: { id: string }) {
               <button
                 type="button"
                 onClick={copyShareLink}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-line bg-surface text-xs font-medium text-text-faint hover:text-gray-900 dark:hover:text-white transition-all shadow-2xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-control border border-line bg-surface text-xs font-medium text-text-faint hover:text-emphasis transition-colors cursor-pointer"
                 title={copiedLink ? t("entity.page.linkCopied") : t("entity.page.share")}
               >
-                {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Share2 className="w-3.5 h-3.5" />}
+                {copiedLink ? <Check className="w-3.5 h-3.5 text-success" /> : <Share2 className="w-3.5 h-3.5" />}
                 <span>{copiedLink ? t("entity.page.linkCopied") : t("entity.page.share")}</span>
               </button>
               {copyFailed === "link" && (
-                <span className="text-[11px] font-mono text-amber-600 dark:text-warn">{t("common.copyFailed")}</span>
+                <span className="text-[11px] font-mono text-warn">{t("common.copyFailed")}</span>
               )}
             </div>
 
@@ -996,25 +998,15 @@ export function EntityDetailView({ id }: { id: string }) {
             /></div>
 
             {/* 3. Basic Facts & Information Card */}
-            <Card padding="section" className="order-4 col-span-2 min-w-0 shadow-xs space-y-3">
+            {showBasicInfo && <Card padding="section" className="order-4 col-span-2 min-w-0 shadow-xs space-y-3">
               <CardTitle icon={<Sliders className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                 {t("entity.page.basicInfo")}
               </CardTitle>
 
-              <dl className="space-y-3 text-xs">
-                <div>
-                  <dt className="text-text-muted font-mono text-[11px] mb-0.5">
-                    {t("entity.page.entityKind")}
-                  </dt>
-                  <dd className="font-medium text-text-strong flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-primary" />
-                    <span>{kindLabel(entity.kind)}</span>
-                  </dd>
-                </div>
-
-                {(defs?.structure?.[entity.kind]?.fields || []).map((field) => {
-                  const reference = (entity as Record<string, unknown>)[field.code];
-                  if (typeof reference !== "string" || !reference) return null;
+              {structureFields.length > 0 && (
+              <dl className="space-y-2 text-xs">
+                {structureFields.map((field) => {
+                  const reference = (entity as Record<string, unknown>)[field.code] as string;
                   const resolved = [motherWork, motherRelease, motherMedium].find((parent) => parent?.id === reference);
                   return (
                     <div key={field.code}>
@@ -1027,24 +1019,22 @@ export function EntityDetailView({ id }: { id: string }) {
                     </div>
                   );
                 })}
-
-                {/* 官方链接只在「外部链接」卡片里出现（排第一并带「官方」标记），基本信息里不再重复。 */}
               </dl>
+              )}
 
               {/* 其余属性按实体自身模板分区渲染，与作品布局共用同一实现。
                   字段、分区、次序、类型均来自服务端声明，新增媒体类型无需改本文件。 */}
-              <WorkFacts entity={entity} defs={defs} locale={locale} />
+              <WorkFacts entity={entity} defs={defs} locale={locale} stacked />
 
               {/* 标签是独立的自由检索词；业务类型只决定字段方案，不再在界面上展示。 */}
-              {Array.isArray(entity.attributes?.tags) && entity.attributes.tags.length > 0 && (
+              {infoTags.length > 0 && (
                 <div className="pt-3 border-t border-line-subtle space-y-2">
-                  {Array.isArray(entity.attributes?.tags) && entity.attributes.tags.length > 0 && <>
                   <div className="flex items-center gap-1 text-[11px] font-mono text-text-muted">
                     <TagIcon className="w-3 h-3" />
                     <span>{t("work.detail.tagsHeading")}</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {(Array.isArray(entity.attributes?.tags) ? entity.attributes.tags : []).map((tag: any, idx: number) => {
+                    {infoTags.map((tag: any, idx: number) => {
                       // 显示名走 tags 词表多语言（getTagName），链接参数仍用原始 tag code：
                       // 否则 /explore?tags= 会去筛一个库里不存在的本地化名。
                       const code = tagCode(tag);
@@ -1053,39 +1043,16 @@ export function EntityDetailView({ id }: { id: string }) {
                         <Link
                           key={idx}
                           href={`/explore?tags=${encodeURIComponent(code)}`}
-                          className="px-2 py-0.5 rounded bg-black/[0.04] dark:bg-white/[0.06] hover:bg-primary/10 hover:text-primary text-text-body text-[11px] transition-colors duration-fast ease-soft"
+                          className="px-2 py-0.5 rounded-chip bg-emphasis/[0.06] hover:bg-primary/10 hover:text-primary text-text-body text-[11px] transition-colors duration-fast ease-soft"
                         >
                           {getTagName(defs, code, locale)}
                         </Link>
                       );
                     })}
                   </div>
-                  </>}
                 </div>
               )}
-            </Card>
-
-            {/* 4. Decoupled Resource Station Quick Jump（资源站未接入时不显示） */}
-            {hasResourceStation() && (
-              <Card padding="card" className="order-5 col-span-2 !border-sky-500/20 !bg-sky-500/[0.04] dark:!bg-sky-500/[0.08] space-y-2.5">
-                <div className="flex items-center gap-2 text-sky-600 dark:text-info font-semibold text-xs font-mono">
-                  <HardDrive className="w-4 h-4" />
-                  <span>{t("entity.page.resourceStation")}</span>
-                </div>
-                <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
-                  {t("entity.page.resourceStationDesc")}
-                </p>
-                <a
-                  href={getStorageEntityUrl(entity.id || id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 dark:text-info hover:underline cursor-pointer"
-                >
-                  <span>{t("entity.page.openResourceStation")}</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </a>
-              </Card>
-            )}
+            </Card>}
           </aside>
 
           {/* ============================================================ */}
@@ -1138,7 +1105,7 @@ export function EntityDetailView({ id }: { id: string }) {
               {(entity.pictures?.length || 0) > 0 && (
                 <div id="pictures" className="pt-2 space-y-3 border-t border-line-subtle">
                   <div className="flex items-center gap-2 pt-3">
-                    <h3 className="font-display text-sm font-bold text-text-strong uppercase tracking-wider font-mono">
+                    <h3 className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
                       {t("catalog.pictureGallery")}
                     </h3>
                     <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
@@ -1151,31 +1118,30 @@ export function EntityDetailView({ id }: { id: string }) {
                         <button
                           type="button"
                           onClick={() => setLightboxIndex(i)}
-                          className="group block w-full text-left rounded-lg mf-focus"
+                          className="group block w-full text-left rounded-control mf-focus"
                           title={pic.source?.citation || pic.caption}
                         >
                           {/* 画廊用同一套封面组件：自托管封面取不到（如 404 object_missing）时
                               退化成程序封面，而不是让浏览器画破图图标——作品页早就这么兜底，
                               两个页面对同一份数据给出两种观感是这里此前唯一的不一致。 */}
-                          <Card tone="subtle" padding="none" className="relative aspect-[3/4] overflow-hidden">
+                          <Card tone="subtle" padding="none" className="relative overflow-hidden">
                             <EntityCover
                               src={pic.url}
                               alt={pic.caption}
                               title={pic.caption}
                               id={entity.id}
-                              className="w-full h-full"
-                              imgClassName="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-fast ease-soft"
+                              imgClassName="w-full h-auto max-h-48 object-contain"
                             />
                             {/* 首张=封面是顺序事实，其余图用 picture_role 词表的用途标签；
                                 没有 role 就不显示（存量 800+ 张全是未声明，必须照常展示）。 */}
                             <span className="absolute left-1.5 top-1.5 flex flex-wrap items-center gap-1">
                               {pic.isCover && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-black/65 dark:bg-black/75 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] font-semibold leading-none">
+                                <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] font-semibold leading-none">
                                   {t("catalog.pictureCoverBadge")}
                                 </span>
                               )}
                               {pic.roleLabel && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-black/65 dark:bg-black/75 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] leading-none max-w-[7rem] truncate">
+                                <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] leading-none max-w-[7rem] truncate">
                                   {pic.roleLabel}
                                 </span>
                               )}

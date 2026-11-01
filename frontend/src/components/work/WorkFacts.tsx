@@ -7,6 +7,45 @@ import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
 
 const NO_EXCLUDED_FIELDS: string[] = [];
 
+type FactEntity = { kind?: string; attributes?: Record<string, any> | null };
+
+function collectFactSections(
+  entity: FactEntity | null,
+  defs: DynamicDefinitions | null | undefined,
+  excludeFields: string[],
+) {
+  const attrs = entity?.attributes || {};
+  const visible = (code: string) => {
+    if (excludeFields.includes(code)) return false;
+    const v = attrs[code];
+    if (v === undefined || v === null || v === "") return false;
+    // 存档字段不进信息面板（页面上有专用区块呈现）。
+    if (defs?.fields?.[code]?.hidden) return false;
+    return true;
+  };
+  const templates = templatesForEntity(defs, entity?.kind || "", attrs);
+  const seen = new Set<string>();
+  const sections: { names: Record<string, string>; fields: string[] }[] = [];
+  for (const tpl of templates) {
+    for (const sec of tpl.sections || []) {
+      const fields = (sec.fields || []).filter((f: string) => !seen.has(f) && visible(f));
+      if (!fields.length) continue;
+      fields.forEach((f: string) => seen.add(f));
+      sections.push({ names: sec.names || {}, fields });
+    }
+  }
+  const restFields = Object.keys(attrs).filter((k) => !seen.has(k) && visible(k));
+  return { sections, restFields };
+}
+
+export function entityHasFacts(
+  entity: FactEntity | null,
+  defs: DynamicDefinitions | null | undefined,
+): boolean {
+  const { sections, restFields } = collectFactSections(entity, defs, NO_EXCLUDED_FIELDS);
+  return sections.length + restFields.length > 0;
+}
+
 // WorkFacts：作品/实体的信息面板，按 kind 与已存字段匹配模板分区渲染。
 // 作品专用布局与通用布局共用同一实现，避免字段集合与
 // 展示次序各写一份而漂移。分区、字段、次序全部来自服务端 definitions，
@@ -17,41 +56,22 @@ export function WorkFacts({
   locale,
   className = "",
   excludeFields = NO_EXCLUDED_FIELDS,
+  stacked = false,
 }: {
-  entity: { kind?: string; attributes?: Record<string, any> | null } | null;
+  entity: FactEntity | null;
   defs: DynamicDefinitions | null | undefined;
   locale: string;
   className?: string;
   excludeFields?: string[];
+  /** 窄侧栏用标签在上、值在下。宽栏保持右对齐栅格。 */
+  stacked?: boolean;
 }) {
   const { t } = useI18n();
 
-  const { sections, restFields } = useMemo(() => {
-    const attrs = entity?.attributes || {};
-    const visible = (code: string) => {
-      if (excludeFields.includes(code)) return false;
-      const v = attrs[code];
-      if (v === undefined || v === null || v === "") return false;
-      // 存档字段不进信息面板（页面上有专用区块呈现）。
-      if (defs?.fields?.[code]?.hidden) return false;
-      return true;
-    };
-    const templates = templatesForEntity(defs, entity?.kind || "", attrs);
-
-    const seen = new Set<string>();
-    const out: { names: Record<string, string>; fields: string[] }[] = [];
-    for (const tpl of templates) {
-      for (const sec of tpl.sections || []) {
-        const fields = (sec.fields || []).filter((f: string) => !seen.has(f) && visible(f));
-        if (!fields.length) continue;
-        fields.forEach((f: string) => seen.add(f));
-        out.push({ names: sec.names || {}, fields });
-      }
-    }
-    // 模板未覆盖的属性兜底展示，避免数据被隐藏；同样排除存档字段。
-    const rest = Object.keys(attrs).filter((k) => !seen.has(k) && visible(k));
-    return { sections: out, restFields: rest };
-  }, [entity, defs, excludeFields]);
+  const { sections, restFields } = useMemo(
+    () => collectFactSections(entity, defs, excludeFields),
+    [entity, defs, excludeFields],
+  );
 
   if (!defs) return null;
   if (!sections.length && !restFields.length) return null;
@@ -59,18 +79,18 @@ export function WorkFacts({
   return (
     <div className={`space-y-3 ${className}`}>
       {sections.map((sec, i) => (
-        <Section key={`s${i}`} title={resolveLocalizedName(sec.names, locale, "")}>
+        <Section key={`s${i}`} title={resolveLocalizedName(sec.names, locale, "")} stacked={stacked}>
           {sec.fields.map((code) => (
-            <Row key={code} label={getFieldName(defs, code, locale)}>
+            <Row key={code} label={getFieldName(defs, code, locale)} stacked={stacked}>
               <FieldValue code={code} value={(entity?.attributes || {})[code]} defs={defs} locale={locale} />
             </Row>
           ))}
         </Section>
       ))}
       {restFields.length > 0 && (
-        <Section title={t("catalog.attributes")}>
+        <Section title={t("catalog.attributes")} stacked={stacked}>
           {restFields.map((code) => (
-            <Row key={code} label={getFieldName(defs, code, locale) || code}>
+            <Row key={code} label={getFieldName(defs, code, locale) || code} stacked={stacked}>
               <FieldValue code={code} value={(entity?.attributes || {})[code]} defs={defs} locale={locale} />
             </Row>
           ))}
@@ -80,7 +100,7 @@ export function WorkFacts({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, stacked = false, children }: { title: string; stacked?: boolean; children: React.ReactNode }) {
   return (
     <section>
       {title && (
@@ -88,15 +108,23 @@ function Section({ title, children }: { title: string; children: React.ReactNode
           {title}
         </h3>
       )}
-      {/* 键值对栅格：左侧标签定宽右对齐、右侧取值，压缩行高以提升信息密度。 */}
-      <dl className="grid grid-cols-[minmax(72px,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs items-baseline">
+      {/* 宽栏：标签右对齐。窄侧栏：标签在上，避免 220px 里两列互挤。 */}
+      <dl className={stacked ? "space-y-2 text-xs" : "grid grid-cols-[minmax(72px,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs items-baseline"}>
         {children}
       </dl>
     </section>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, stacked = false, children }: { label: string; stacked?: boolean; children: React.ReactNode }) {
+  if (stacked) {
+    return (
+      <div>
+        <dt className="text-text-muted font-mono text-[11px] mb-0.5">{label}</dt>
+        <dd className="text-text-strong leading-5 break-words min-w-0">{children}</dd>
+      </div>
+    );
+  }
   return (
     <>
       <dt className="text-text-muted text-[11px] leading-5 text-right">{label}</dt>

@@ -5,6 +5,7 @@ export interface ToneEntry { id: string; labelKey: string; }
 export interface PatternEntry { id: string; labelKey: string; }
 
 export const ACCENTS: AccentEntry[] = [
+  { id: "everforest", labelKey: "theme.accent.everforest", swatch: "#a7c080" },
   { id: "blue", labelKey: "theme.accent.blue", swatch: "#3b82f6" },
   { id: "sky", labelKey: "theme.accent.sky", swatch: "#0ea5e9" },
   { id: "cyan", labelKey: "theme.accent.cyan", swatch: "#06b6d4" },
@@ -42,6 +43,8 @@ export const PATTERN_IDS = PATTERNS.map((p) => p.id);
 export type ThemeAccent = (typeof ACCENT_IDS)[number];
 export type ThemeTone = (typeof TONE_IDS)[number];
 export type ThemePattern = (typeof PATTERN_IDS)[number];
-export const DEFAULT_ACCENT: ThemeAccent = "blue";
+export const DEFAULT_ACCENT: ThemeAccent = "everforest";
 export const DEFAULT_TONE: ThemeTone = "neutral";
 export const DEFAULT_PATTERN: ThemePattern = "catalog";
+export const DEFAULT_BG_DARK = "#2d353b";
+export const DEFAULT_BG_LIGHT = "#fdf6e3";

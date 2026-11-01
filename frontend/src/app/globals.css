@@ -46,119 +46,115 @@
    下面三个栈把自托管字体放在首位，缺失时回落到系统字体。 */
 
 :root, [data-theme-mode="dark"], html.dark {
-  --foreground-rgb: 240 243 246;
-  --bg-rgb: 11 15 23;
-  --surface-rgb: 18 24 38;
-  --surface-hover-rgb: 26 35 54;
-  --surface-border-color: rgba(255, 255, 255, 0.08);
-  /* 语义色板：组件只引用这几个，深/浅色差异全部收敛在这里 */
-  --line-color: rgba(255, 255, 255, 0.10);
-  --line-subtle-color: rgba(255, 255, 255, 0.06);
-  --line-strong-color: rgba(255, 255, 255, 0.18);
-  --surface-subtle-color: rgba(255, 255, 255, 0.03);
-  --text-strong-color: #f0f3f6;
-  --text-body-color: #cbd5e1;
-  --text-muted-color: #94a3b8;
-  --text-faint-color: #64748b;
+  --foreground-rgb: 211 198 170;
+  --bg-rgb: 45 53 59;
+  --surface-rgb: 52 63 68;
+  --surface-hover-rgb: 61 72 77;
+  --surface-border-color: rgba(211, 198, 170, 0.14);
+  /* 语义色板：组件只引用这几个，深/浅色差异全部收敛在这里。
+     数值与 theme-palette.ts 的 BASE_DARK（Everforest medium）一致。 */
+  --line-color: rgba(211, 198, 170, 0.14);
+  --line-subtle-color: rgba(211, 198, 170, 0.08);
+  --line-strong-color: rgba(211, 198, 170, 0.24);
+  --surface-subtle-color: rgba(211, 198, 170, 0.05);
+  --text-strong-color: #d3c6aa;
+  --text-body-color: #c5bba3;
+  --text-muted-color: #a2aca5;
+  --text-faint-color: #99a197;
   --ring-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
-  --bg-color: #0b0f17;
-  --surface-color: #121826;
-  --surface-hover-color: #1a2336;
-  --card: #121826;
-  --card-foreground: #f0f3f6;
-  --border: rgba(255, 255, 255, 0.1);
-  --foreground: #f0f3f6;
-  --background: #0b0f17;
-  --primary: #3b82f6;
-  /* 语义令牌三通道值：深色下与 #121826 / #1a2336 / #94a3b8 / rgba(255,255,255,.10) 对齐。
+  --bg-color: #2d353b;
+  --surface-color: #343f44;
+  --surface-hover-color: #3d484d;
+  --card: #343f44;
+  --card-foreground: #d3c6aa;
+  --border: rgba(211, 198, 170, 0.14);
+  --foreground: #d3c6aa;
+  --background: #2d353b;
+  --primary: #a7c080;
+  /* 语义令牌三通道值与上面的表面色对齐。
      --primary-rgb 由 theme.generated.css 的每套配色块覆盖，这里是没有主题属性时的兜底。 */
-  --card-rgb: 18 24 38;
-  --muted-rgb: 26 35 54;
-  --secondary-rgb: 26 35 54;
-  --muted-foreground-rgb: 148 163 184;
-  --border-rgb: 42 47 60;
-  --destructive-rgb: 248 113 113;
-  --destructive-foreground-rgb: 255 255 255;
+  --card-rgb: 52 63 68;
+  --muted-rgb: 61 72 77;
+  --secondary-rgb: 61 72 77;
+  --muted-foreground-rgb: 162 172 165;
+  --border-rgb: 74 82 82;
+  --destructive-rgb: 230 126 128;
+  --destructive-foreground-rgb: 30 35 38;
   /* 主色的三通道值与对照色：每套配色的块在 theme.generated.css 里覆盖，这里是兜底 */
-  --primary-rgb: 79 142 247;
-  --accent-rgb: 34 211 238;
-  --primary-contrast-rgb: 255 255 255;
-  /* 强调前景/叠加色：与迁移前的字面白逐通道相等（纯白），深色外观零变化；
-     浅色模式取最强前景色，见下面 light 块。 */
-  --emphasis-rgb: 255 255 255;
-  /* 滚动条：深色下就是原先写死的 #222938 / #2e364d（深色外观零变化），浅色下另给一套墨色。 */
-  --scrollbar-thumb-color: #222938;
-  --scrollbar-thumb-hover-color: #2e364d;
-  /* 状态色：base = 400 档（与迁移前写的 text-amber-400 / text-emerald-400 / text-rose-400 /
-     text-sky-400 / text-violet-400 逐通道相等），soft = 300 档；两档在浅色模式下合并成一个角色色。 */
-  --state-warn-rgb: 251 191 36;
-  --state-warn-soft-rgb: 252 211 77;
-  --state-success-rgb: 52 211 153;
-  --state-success-soft-rgb: 110 231 183;
-  --state-danger-rgb: 251 113 133;
-  --state-danger-soft-rgb: 253 164 175;
-  --state-info-rgb: 56 189 248;
-  --state-info-soft-rgb: 125 211 252;
-  --state-alt-rgb: 167 139 250;
-  --state-alt-soft-rgb: 196 181 253;
+  --primary-rgb: 167 192 128;
+  --accent-rgb: 131 192 146;
+  --primary-contrast-rgb: 30 35 38;
+  /* 强调前景取 Everforest fg，浅色模式取深墨，见下面 light 块。 */
+  --emphasis-rgb: 211 198 170;
+  --scrollbar-thumb-color: #475258;
+  --scrollbar-thumb-hover-color: #56635f;
+  /* 状态色取 Everforest 的 yellow / green / red / blue / purple。深色一档就够亮，soft 与 base 同值。 */
+  --state-warn-rgb: 219 188 127;
+  --state-warn-soft-rgb: 219 188 127;
+  --state-success-rgb: 167 192 128;
+  --state-success-soft-rgb: 167 192 128;
+  --state-danger-rgb: 230 126 128;
+  --state-danger-soft-rgb: 230 126 128;
+  --state-info-rgb: 127 187 179;
+  --state-info-soft-rgb: 127 187 179;
+  --state-alt-rgb: 214 153 182;
+  --state-alt-soft-rgb: 214 153 182;
   --font-display: var(--font-instrument-serif, "Instrument Serif"), "Noto Serif SC", Georgia, serif;
   --font-sans: var(--font-inter, "Inter"), "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono, "JetBrains Mono"), "Fira Code", ui-monospace, monospace;
 }
 
 [data-theme-mode="light"], html.light {
-  --foreground-rgb: 15 23 42;
-  --bg-rgb: 248 250 252;
-  --surface-rgb: 255 255 255;
-  --surface-hover-rgb: 241 245 249;
-  --surface-border-color: rgba(0, 0, 0, 0.08);
-  --line-color: rgba(15, 23, 42, 0.12);
-  --line-subtle-color: rgba(15, 23, 42, 0.07);
-  --line-strong-color: rgba(15, 23, 42, 0.22);
-  --surface-subtle-color: rgba(15, 23, 42, 0.035);
-  --text-strong-color: #0f172a;
-  --text-body-color: #334155;
-  /* 与 theme-palette.ts 的 BASE_LIGHT 同值：次要文字在最浅的表面（#f1f5f9）上也要 ≥4.5:1 */
-  --text-muted-color: #55606f;
-  --text-faint-color: #636e80;
+  --foreground-rgb: 92 106 114;
+  --bg-rgb: 253 246 227;
+  --surface-rgb: 244 240 217;
+  --surface-hover-rgb: 239 235 212;
+  --surface-border-color: rgba(92, 106, 114, 0.16);
+  --line-color: rgba(92, 106, 114, 0.16);
+  --line-subtle-color: rgba(92, 106, 114, 0.09);
+  --line-strong-color: rgba(92, 106, 114, 0.28);
+  --surface-subtle-color: rgba(92, 106, 114, 0.06);
+  --text-strong-color: #5c6a72;
+  --text-body-color: #5c6a72;
+  /* 与 theme-palette.ts 的 BASE_LIGHT 同值：次要文字在最浅的纸色（#fdf6e3）上也要 ≥4.5:1 */
+  --text-muted-color: #657364;
+  --text-faint-color: #667466;
   --ring-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
-  --bg-color: #f8fafc;
-  --surface-color: #ffffff;
-  --surface-hover-color: #f1f5f9;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --border: rgba(0, 0, 0, 0.1);
-  --foreground: #0f172a;
-  --background: #f8fafc;
-  --primary: #2563eb;
-  /* 语义令牌三通道值：浅色下与上面的 #ffffff / #f1f5f9 / #64748b / rgba(15,23,42,.12) 对齐。
+  --bg-color: #fdf6e3;
+  --surface-color: #f4f0d9;
+  --surface-hover-color: #efebd4;
+  --card: #f4f0d9;
+  --card-foreground: #5c6a72;
+  --border: rgba(92, 106, 114, 0.16);
+  --foreground: #5c6a72;
+  --background: #fdf6e3;
+  --primary: #92a701;
+  /* 语义令牌三通道值与上面的浅色表面对齐。
      border 取 --line-color 在 --surface-color 上的不透明等价值（生成器同规则）。 */
-  --card-rgb: 255 255 255;
-  --muted-rgb: 241 245 249;
-  --secondary-rgb: 241 245 249;
-  --muted-foreground-rgb: 85 96 111;
-  --border-rgb: 226 227 230;
-  --destructive-rgb: 220 38 38;
+  --card-rgb: 244 240 217;
+  --muted-rgb: 239 235 212;
+  --secondary-rgb: 239 235 212;
+  --muted-foreground-rgb: 101 115 100;
+  --border-rgb: 220 219 201;
+  --destructive-rgb: 209 12 8;
   --destructive-foreground-rgb: 255 255 255;
-  --primary-rgb: 37 99 235;
-  --accent-rgb: 34 211 238;
-  --primary-contrast-rgb: 255 255 255;
-  /* 状态色：300/400 档在深色底上才够亮，白底只有 1.4-2.7:1；浅色改用同色相深色（≥5:1） */
-  --emphasis-rgb: 15 23 42;
-  /* 滚动条滑块：浅色轨道（#f8fafc）上要明显比轨道深，0.45 墨色约 3:1（非文本对比度下限）。 */
-  --scrollbar-thumb-color: rgba(15, 23, 42, 0.45);
-  --scrollbar-thumb-hover-color: rgba(15, 23, 42, 0.6);
-  --state-warn-rgb: 180 83 9;
-  --state-success-rgb: 4 120 87;
-  --state-danger-rgb: 190 18 60;
-  --state-info-rgb: 3 105 161;
-  --state-alt-rgb: 109 40 217;
-  /* 浅色下 soft 与 base 同值：300 档在白底只有 1.4-2.7:1，浅色只剩"一个角色一个色"。 */
-  --state-warn-soft-rgb: 180 83 9;
-  --state-success-soft-rgb: 4 120 87;
-  --state-danger-soft-rgb: 190 18 60;
-  --state-info-soft-rgb: 3 105 161;
-  --state-alt-soft-rgb: 109 40 217;
+  --primary-rgb: 146 167 1;
+  --accent-rgb: 53 167 124;
+  --primary-contrast-rgb: 30 35 38;
+  /* 状态色沿 Everforest 色相压暗，纸色上 ≥5:1。浅色 soft 与 base 同值。 */
+  --emphasis-rgb: 60 72 79;
+  --scrollbar-thumb-color: rgba(92, 106, 114, 0.45);
+  --scrollbar-thumb-hover-color: rgba(92, 106, 114, 0.65);
+  --state-warn-rgb: 136 98 0;
+  --state-success-rgb: 97 110 1;
+  --state-danger-rgb: 209 12 8;
+  --state-info-rgb: 43 111 148;
+  --state-alt-rgb: 188 40 142;
+  --state-warn-soft-rgb: 136 98 0;
+  --state-success-soft-rgb: 97 110 1;
+  --state-danger-soft-rgb: 209 12 8;
+  --state-info-soft-rgb: 43 111 148;
+  --state-alt-soft-rgb: 188 40 142;
 }
 
 html {
@@ -171,11 +167,11 @@ html {
 /* 主色只在 :root 给默认值（无 JS / 未选配色时），具体配色由生成的属性块覆盖；
    不要写进 html.dark 这类选择器，否则会盖住 [data-theme-accent] 块。 */
 :root {
-  --primary-color: #4f8ef7;
-  --primary-hover-color: #1e6ff5;
-  --primary-light-color: #89b4fa;
-  --primary-contrast-color: #ffffff;
-  --accent-color: #22d3ee;
+  --primary-color: #a7c080;
+  --primary-hover-color: #94b265;
+  --primary-light-color: #bace9b;
+  --primary-contrast-color: #1e2326;
+  --accent-color: #83c092;
 }
 
 html.dark {

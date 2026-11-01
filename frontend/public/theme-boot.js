@@ -8,7 +8,7 @@
   var a = read("metafusion_theme_accent");
   var t = read("metafusion_theme_tone");
   var p = read("metafusion_theme_pattern");
-  if (["blue","sky","cyan","teal","emerald","lime","amber","orange","red","rose","fuchsia","purple","violet","indigo","slate","monochrome"].indexOf(a) < 0) a = "blue";
+  if (["everforest","blue","sky","cyan","teal","emerald","lime","amber","orange","red","rose","fuchsia","purple","violet","indigo","slate","monochrome"].indexOf(a) < 0) a = "everforest";
   if (["neutral","cool","warm","deep"].indexOf(t) < 0) t = "neutral";
   if (["catalog","dots","none"].indexOf(p) < 0) p = "catalog";
   var e = m === "system"

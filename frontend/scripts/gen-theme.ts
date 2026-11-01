@@ -10,7 +10,7 @@ const ROOT = process.cwd();
 const CSS_OUT = path.join(ROOT, "src/app/theme.generated.css");
 const TS_OUT = path.join(ROOT, "src/lib/theme.generated.ts");
 
-// —— 颜色工具：按色相/明度推导，保证 16 套配色的派生规则一致 ——
+// —— 颜色工具：按色相/明度推导，保证各套配色的派生规则一致 ——
 function hexToRgb(hex) {
   const h = hex.replace("#", "");
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
@@ -54,27 +54,28 @@ const blendOver = (rgba, surfaceHex) => {
   return [r, g, b].map((c, i) => Math.round(c * a + s[i] * (1 - a))).join(" ");
 };
 
-// 相对亮度决定"主色上的文字"用什么颜色：亮主色（黄/柠檬）配深字，其余配白字。
+// 主色上的文字取对比更高的一侧。深字用比页面底更暗的森林色：
+// 页面底 #2d353b 叠在亮蓝上只有 3.9:1，#1e2326 才能让现有主色保持 ≥4.5:1。
+const BUTTON_INK = "#1e2326";
 function luminance(hex) {
   const [r, g, b] = hexToRgb(hex).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-const contrastOn = (hex) => (luminance(hex) > 0.45 ? "#0b0f17" : "#ffffff");
+function contrastRatio(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+const contrastOn = (hex) => (contrastRatio(BUTTON_INK, hex) >= contrastRatio("#ffffff", hex) ? BUTTON_INK : "#ffffff");
 
 // 每个配色在两套模式下的五个变量：主色 / 悬停 / 亮色 / 主色上的文字 / 第二强调色
 function accentVars(a) {
-  const dark = {
-    primary: shift(a.base, { dl: 4 }),
-    hover: shift(a.base, { dl: -6 }),
-    light: shift(a.base, { dl: 16 }),
-    accent: a.accent,
-  };
-  const light = {
-    primary: shift(a.base, { dl: -6 }),
-    hover: shift(a.base, { dl: -14 }),
-    light: shift(a.base, { dl: 10 }),
-    accent: a.accent,
-  };
+  // lightBase 只给需要钉死浅色原色的方案（Everforest）。其余仍按同一明度差推导。
+  const dark = a.lightBase
+    ? { primary: a.base, hover: shift(a.base, { dl: -8 }), light: shift(a.base, { dl: 8 }), accent: a.accent }
+    : { primary: shift(a.base, { dl: 4 }), hover: shift(a.base, { dl: -6 }), light: shift(a.base, { dl: 16 }), accent: a.accent };
+  const light = a.lightBase
+    ? { primary: a.lightBase, hover: shift(a.lightBase, { dl: -6 }), light: shift(a.lightBase, { dl: 8 }), accent: a.lightAccent || a.accent }
+    : { primary: shift(a.base, { dl: -6 }), hover: shift(a.base, { dl: -14 }), light: shift(a.base, { dl: 10 }), accent: a.accent };
   return {
     dark: { ...dark, contrast: contrastOn(dark.primary) },
     light: { ...light, contrast: contrastOn(light.primary) },
@@ -192,6 +193,8 @@ const ts = [
   `export const DEFAULT_ACCENT: ThemeAccent = ${JSON.stringify(DEFAULT_ACCENT)};`,
   `export const DEFAULT_TONE: ThemeTone = ${JSON.stringify(DEFAULT_TONE)};`,
   `export const DEFAULT_PATTERN: ThemePattern = ${JSON.stringify(DEFAULT_PATTERN)};`,
+  `export const DEFAULT_BG_DARK = ${JSON.stringify(BASE_DARK.bg)};`,
+  `export const DEFAULT_BG_LIGHT = ${JSON.stringify(BASE_LIGHT.bg)};`,
   "",
 ].join("\n");
 fs.writeFileSync(TS_OUT, ts);

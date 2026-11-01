@@ -8,6 +8,7 @@ import { useDefinitions, getKindName, getTagNames, type KindMap } from "@/lib/de
 import { pickRecordTitle } from "@/lib/titles";
 import { displayCover, withDisplayCovers, type CoverBearing, type ResolvedCover } from "@/lib/cover";
 import { PageContainer, PageShell } from "@/components/ui/PageShell";
+import { SectionTitle } from "@/components/ui/SectionTitle";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { useAuth } from "@/lib/authContext";
 import { EntityCard } from "@/components/common/EntityCard";
@@ -17,7 +18,6 @@ import { localizeCatalogError } from "@/lib/catalogErrors";
 import { HomeCustomizeModal } from "@/components/home/HomeCustomizeModal";
 import {
   EMPTY_PREFERENCES,
-  iconFor,
   normalizePreferences,
   shelfTitle,
   type HomePreferences,
@@ -201,30 +201,28 @@ export default function HomePage() {
           </div>
         ) : (
           visibleSections.map(({ shelf, items, total }) => {
-            const Icon = iconFor(shelf);
             const title = shelfTitle(shelf, locale);
             return (
               <section key={shelf.slug} id={`shelf-${shelf.slug}`} aria-labelledby={`shelf-title-${shelf.slug}`} className="scroll-mt-[calc(var(--mf-header-h)+1rem)] space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="w-9 h-9 shrink-0 rounded-xl border border-primary/20 bg-primary/10 flex items-center justify-center text-primary">
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h2 id={`shelf-title-${shelf.slug}`} className="break-words font-bold text-text-strong text-base sm:text-lg tracking-tight">{title}</h2>
-                      <span className="shrink-0 px-2 py-0.5 rounded-chip bg-emphasis/[0.06] text-text-muted text-xs font-mono">
+                <SectionTitle
+                  id={`shelf-title-${shelf.slug}`}
+                  actions={
+                    <>
+                      <span className="px-2 py-0.5 rounded-chip bg-emphasis/[0.06] text-text-muted text-xs font-mono">
                         {t("home.itemCount", { count: (total ?? items.length).toString() })}
                       </span>
-                    </div>
-                  </div>
-                  <Link
-                    href={"/explore?" + shelfExploreParam(shelf)}
-                    className="mf-focus shrink-0 inline-flex items-center gap-1 min-h-9 text-xs text-primary hover:underline"
-                  >
-                    <span>{t("home.viewAll")}</span>
-                    <ArrowRight className="w-3.5 h-3.5" aria-hidden />
-                  </Link>
-                </div>
+                      <Link
+                        href={"/explore?" + shelfExploreParam(shelf)}
+                        className="mf-focus inline-flex items-center gap-1 min-h-9 text-xs text-primary hover:underline"
+                      >
+                        <span>{t("home.viewAll")}</span>
+                        <ArrowRight className="w-3.5 h-3.5" aria-hidden />
+                      </Link>
+                    </>
+                  }
+                >
+                  {title}
+                </SectionTitle>
 
                 <EntityCardGrid className="grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
                   {items.map((item) => {

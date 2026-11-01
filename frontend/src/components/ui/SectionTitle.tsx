@@ -5,11 +5,13 @@ import React from "react";
  * 页面里不要再各写 text-sm font-semibold + border-b + pb-* 的组合。
  */
 export function SectionTitle({
+  id,
   icon,
   children,
   actions,
   className = "",
 }: {
+  id?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
   actions?: React.ReactNode;
@@ -19,7 +21,7 @@ export function SectionTitle({
     <div
       className={`flex items-center justify-between gap-2 border-b border-line-subtle pb-2.5 ${className}`}
     >
-      <h2 className="text-sm font-semibold text-text-strong flex items-center gap-1.5 min-w-0">
+      <h2 id={id} className="text-sm font-semibold text-text-strong flex items-center gap-1.5 min-w-0">
         {icon}
         <span className="truncate">{children}</span>
       </h2>

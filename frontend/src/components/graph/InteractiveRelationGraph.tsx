@@ -287,15 +287,19 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   // 只在层级布局下生效； radial / force 保持原样平铺。
   const [expandedHub, setExpandedHub] = useState<string | null>(null);
 
-  // 主题配色
-  const capsuleBg = isDark ? "#18181b" : "#ffffff";
-  const capsuleStroke = isDark ? "#27272a" : "#e4e4e7";
-  const nodeNameFill = isDark ? "#f4f4f5" : "#09090b";
-  const edgeBadgeBg = isDark ? "#27272a" : "#ffffff";
-  const edgeBadgeStroke = isDark ? "#3f3f46" : "#d4d4d8";
-  const edgeBadgeText = isDark ? "#e4e4e7" : "#3f3f46";
-  const centerFill = isDark ? "#3b82f6" : "#2563eb";
-  const centerBorder = isDark ? "#0b0f17" : "#ffffff";
+  // 图谱底色跟随当前主题变量，不另维护一套锌灰/蓝色。
+  const themePaint = (name: string, fallback: string) => {
+    if (typeof window === "undefined") return fallback;
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  };
+  const capsuleBg = themePaint("--surface-color", isDark ? "#343f44" : "#f4f0d9");
+  const capsuleStroke = themePaint("--line-color", isDark ? "rgba(211,198,170,0.14)" : "rgba(92,106,114,0.16)");
+  const nodeNameFill = themePaint("--text-strong-color", isDark ? "#d3c6aa" : "#5c6a72");
+  const edgeBadgeBg = capsuleBg;
+  const edgeBadgeStroke = themePaint("--line-strong-color", capsuleStroke);
+  const edgeBadgeText = themePaint("--text-body-color", nodeNameFill);
+  const centerFill = themePaint("--primary-color", isDark ? "#a7c080" : "#92a701");
+  const centerBorder = themePaint("--bg-color", isDark ? "#2d353b" : "#fdf6e3");
 
   // 过滤连线：筛选维度（关联对象 / 关系分类 / 关系类型）全部由连线自身与 definitions
   // 推导——分组名与类型名都取服务端声明，新增关系或改分组后图谱即刻跟随，

@@ -5,7 +5,7 @@ import { ApplicationBoundary } from "@/components/ApplicationBoundary";
 import { CatalogProvider } from "@/components/catalog/CatalogProvider";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { ThemeProvider } from "@/lib/themeContext";
-import { DEFAULT_ACCENT, DEFAULT_TONE, DEFAULT_PATTERN } from "@/lib/theme.generated";
+import { DEFAULT_ACCENT, DEFAULT_BG_DARK, DEFAULT_TONE, DEFAULT_PATTERN } from "@/lib/theme.generated";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site";
 
 // 拉丁字体随源码提供，构建和浏览器访问均不依赖 Google Fonts；来源与许可证见 fonts/。
@@ -46,7 +46,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#0b0f17",
+  themeColor: DEFAULT_BG_DARK,
 };
 
 export default function RootLayout({
@@ -66,8 +66,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <meta name="theme-color" content="#0b0f17" />
-        {/* 首帧前同步应用主题：见 public/theme-boot.js（静态文件，无需内联拼字符串） */}
+        {/* 首帧前同步应用主题：见 public/theme-boot.js（静态文件，无需内联拼字符串）。
+            theme-color 由 viewport 导出，避免与这里再写一条。 */}
         <script src="/theme-boot.js" />
       </head>
       <body className="font-sans min-h-screen bg-background text-text-strong flex flex-col antialiased">
