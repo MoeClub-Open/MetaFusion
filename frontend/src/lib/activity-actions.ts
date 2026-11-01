@@ -1,5 +1,6 @@
 // Stable audit codes, localized in messages/*.json.
 export const ACTIVITY_ACTIONS: ReadonlyArray<{ code: string; service: string }> = [
+  { code: "audit.logs_cleaned", service: "auth" },
   { code: "user.avatar_updated", service: "auth" },
   { code: "user.avatar_removed", service: "auth" },
   { code: "asset.blocked", service: "storage" },

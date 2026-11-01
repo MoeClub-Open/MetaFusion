@@ -2715,5 +2715,11 @@
   "versioning.onto": "New base commit",
   "versioning.currentMain": "Leave blank for current catalog head",
   "versioning.customOrder": "Choose replay order",
-  "versioning.orderHint": "List pending edit commits in the order to keep. Omitted commits are dropped; an empty list drops all. Originals remain in the operation history."
+  "versioning.orderHint": "List pending edit commits in the order to keep. Omitted commits are dropped; an empty list drops all. Originals remain in the operation history.",
+  "developer.apiKeyScope.auth.audit.manage": "Clean up logs",
+  "settings.activity.action.audit.logs_cleaned": "Cleaned up logs",
+  "settings.activity.target.logs": "Logs",
+  "settings.activity.field.before": "Before date",
+  "settings.activity.field.service": "Service",
+  "settings.activity.field.removed": "Rows deleted"
 }

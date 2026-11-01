@@ -2715,5 +2715,11 @@
   "versioning.onto": "新しい基点コミット",
   "versioning.currentMain": "空欄なら現在の正式カタログ",
   "versioning.customOrder": "再適用の順序を指定",
-  "versioning.orderHint": "保持する未統合の編集コミットを順番に入力します。省略したコミットは除外し、空欄ならすべて除外します。元のコミットは操作履歴から確認できます。"
+  "versioning.orderHint": "保持する未統合の編集コミットを順番に入力します。省略したコミットは除外し、空欄ならすべて除外します。元のコミットは操作履歴から確認できます。",
+  "developer.apiKeyScope.auth.audit.manage": "ログの削除",
+  "settings.activity.action.audit.logs_cleaned": "ログを削除",
+  "settings.activity.target.logs": "ログ",
+  "settings.activity.field.before": "基準日",
+  "settings.activity.field.service": "サービス",
+  "settings.activity.field.removed": "削除件数"
 }

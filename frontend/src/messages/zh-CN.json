@@ -2715,5 +2715,11 @@
   "versioning.onto": "新基线提交",
   "versioning.currentMain": "留空使用当前正式目录",
   "versioning.customOrder": "自定义重放顺序",
-  "versioning.orderHint": "按先后顺序填写要保留的未合入编辑提交；省略的提交会丢弃，留空会丢弃全部。原始提交仍可从操作历史找回。"
+  "versioning.orderHint": "按先后顺序填写要保留的未合入编辑提交；省略的提交会丢弃，留空会丢弃全部。原始提交仍可从操作历史找回。",
+  "developer.apiKeyScope.auth.audit.manage": "清理日志",
+  "settings.activity.action.audit.logs_cleaned": "清理日志",
+  "settings.activity.target.logs": "日志",
+  "settings.activity.field.before": "截止日期",
+  "settings.activity.field.service": "服务",
+  "settings.activity.field.removed": "清理数量"
 }
