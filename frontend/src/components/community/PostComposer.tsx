@@ -266,11 +266,13 @@ export default function PostComposer({
   const [newContent, setNewContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const widthDrag = useRef({ x: 0, width: 0 });
   const [widthPercent, setWidthPercent] = useState<number | null>(null);
   useEffect(() => {
     try {
       const saved = Number(localStorage.getItem("mf_community_composer_width"));
-      if (Number.isInteger(saved) && saved >= 50 && saved <= 100) setWidthPercent(saved);
+      if (Number.isFinite(saved) && saved >= 50 && saved <= 100) setWidthPercent(saved);
     } catch {}
   }, []);
   const changeWidth = (value: number | null) => {
@@ -501,6 +503,7 @@ export default function PostComposer({
   // ── Render ──
   return (
     <PageContainer className="fixed bottom-3 inset-x-0 z-50 pointer-events-none md:w-[var(--composer-width)]" style={{ "--composer-width": expanded ? "100%" : widthPercent === null ? "100%" : `${widthPercent}vw`, maxWidth: expanded || widthPercent !== null ? "100%" : undefined } as React.CSSProperties}>
+    <div ref={frameRef} className="relative pointer-events-auto">
     <div
       role="dialog"
       aria-label={headerTitle}
@@ -513,11 +516,6 @@ export default function PostComposer({
           <span className="font-bold text-emphasis text-xs truncate">{headerTitle}</span>
         </div>
         <div className="flex items-center gap-2">
-          <label className={`hidden md:flex items-center gap-2 text-xs text-text-muted ${expanded ? "opacity-50" : ""}`}>
-            <span>{t("community.composerWidth")}</span>
-            <input type="range" min={50} max={100} step={5} value={widthPercent ?? 80} disabled={expanded} onChange={(event) => changeWidth(Number(event.target.value))} aria-label={t("community.composerWidth")} aria-valuetext={widthPercent === null ? t("community.composerWidthPage") : `${widthPercent}%`} className="w-24 accent-primary cursor-ew-resize disabled:cursor-default" />
-            <span className="min-w-14 text-right tabular-nums">{widthPercent === null ? t("community.composerWidthPage") : `${widthPercent}%`}</span>
-          </label>
           <button type="button" onClick={() => changeWidth(null)} disabled={expanded || widthPercent === null} title={t("community.composerWidthPage")} aria-label={t("community.composerWidthPage")} className="hidden md:block mf-focus p-1.5 rounded text-text-muted hover:text-emphasis disabled:opacity-40">
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -844,6 +842,45 @@ export default function PostComposer({
           </div>
         </form>
       )}
+    </div>
+    {!expanded && ([{ side: "left", direction: -1, position: "-left-2" }, { side: "right", direction: 1, position: "-right-2" }] as const).map(({ side, direction, position }) => (
+      <div
+        key={side}
+        role="separator"
+        aria-label={t(`community.composerResize.${side}`)}
+        title={t(`community.composerResize.${side}`)}
+        aria-orientation="vertical"
+        aria-valuemin={50}
+        aria-valuemax={100}
+        aria-valuenow={widthPercent ?? 100}
+        aria-valuetext={widthPercent === null ? t("community.composerWidthPage") : `${Math.round(widthPercent)}%`}
+        tabIndex={0}
+        className={`mf-focus absolute ${position} top-3 bottom-3 hidden w-4 touch-none select-none cursor-col-resize place-items-center rounded-control text-text-faint hover:bg-primary/10 hover:text-primary focus-visible:bg-primary/10 md:grid`}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          widthDrag.current = { x: event.clientX, width: frameRef.current!.parentElement!.getBoundingClientRect().width };
+          event.currentTarget.focus();
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const width = widthDrag.current.width + (event.clientX - widthDrag.current.x) * direction * 2;
+          changeWidth(Math.min(100, Math.max(50, width / window.innerWidth * 100)));
+        }}
+        onPointerUp={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const current = frameRef.current!.parentElement!.getBoundingClientRect().width / window.innerWidth * 100;
+          changeWidth(event.key === "Home" ? 50 : event.key === "End" ? 100 : Math.min(100, Math.max(50, current + (event.key === "ArrowRight" ? 5 : -5) * direction)));
+        }}
+      >
+        <GripVertical className="h-5 w-3" aria-hidden />
+      </div>
+    ))}
     </div>
     </PageContainer>
   );
