@@ -103,7 +103,7 @@ const config: Config = {
       fontFamily: {
         sans: [
           // next/font 自托管字体优先（变量缺席时回落到系统字体），见 layout.tsx
-          "var(--font-inter)",
+          "var(--font-inter, Inter)",
           "Inter",
           "ui-sans-serif",
           "-apple-system",
@@ -114,7 +114,7 @@ const config: Config = {
           "sans-serif",
         ],
         mono: [
-          "var(--font-jetbrains-mono)",
+          "var(--font-jetbrains-mono, JetBrains Mono)",
           "JetBrains Mono",
           "Fira Code",
           "ui-monospace",
@@ -122,7 +122,7 @@ const config: Config = {
           "monospace",
         ],
         display: [
-          "var(--font-instrument-serif)",
+          "var(--font-instrument-serif, Instrument Serif)",
           "Instrument Serif",
           "Noto Serif SC",
           "Georgia",
