@@ -262,7 +262,8 @@ docker() {
 
 
 def image_cleanup_selftest():
-    config = {"name": "deploy", "services": {"frontend": {"build": {"context": "/repo/frontend"}}}}
+    # Production overrides remove frontend.build but its old Compose image tags remain ours.
+    config = {"name": "deploy", "services": {"frontend": {"image": "ghcr.io/moeclub-open/metafusion/frontend@sha256:current"}}}
 
     def image(name, tags=None, labels=None):
         return {"Id": name, "RepoTags": tags, "Config": {"Labels": labels}}

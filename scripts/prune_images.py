@@ -22,7 +22,7 @@ def repository(ref):
 
 def cleanup_candidates(config, images, protected):
     project = config["name"]
-    repositories = {
+    repositories = {project + "-" + name for name in config["services"]} | {
         repository(service.get("image") or project + "-" + name)
         for name, service in config["services"].items() if service.get("build")
     }
