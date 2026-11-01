@@ -38,7 +38,7 @@ export const ThemeControls: React.FC<Props> = ({ layout = "full" }) => {
                 title={t(item.labelKey)}
                 aria-label={t(item.labelKey)}
                 aria-pressed={active}
-                className={`mf-focus group relative min-h-11 min-w-0 rounded-chip grid place-items-center border transition-colors duration-fast ease-soft cursor-pointer ${
+                className={`mf-focus group relative min-h-11 min-w-0 rounded-control grid place-items-center border transition-colors duration-fast ease-soft cursor-pointer ${
                   active ? "border-primary/60 ring-1 ring-primary/40" : "border-line-subtle hover:border-line"
                 }`}
               >

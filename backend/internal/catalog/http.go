@@ -309,9 +309,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	// 且在下面所有写路由注册**之前**——gin 的 RouterGroup.Use 只对之后注册的路由生效
 	//（0be8ae9 的回归就是位置放错导致的）。只有 AuditActions 里登记的路由会写行。
 	api.Use(auditMiddleware(s))
-	// 调用日志（开发者中心「API 请求日志」）：同样挂在身份中间件之后、所有路由注册之前。
-	// 只记已登录请求；读日志端点自身与文档/探针面跳过（见 requestLogMiddleware）。
-	api.Use(requestLogMiddleware(s))
 	// 交互式文档页是**管理面**：它们在浏览器里执行脚本、与本域同源，匿名可达等于把整份 API 面
 	// 连同同源脚本执行面一起交出去（审计 S-4）。移到 attachUser 之后并要求本侧唯一的
 	// admin-only 码 catalog.lifecycle.manage（与 AdminGate 同码，不新造码）。
@@ -340,8 +337,6 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	// 不是可编辑的动态定义（放进 document 会被后台保存时当成未知键处理），但同样必须由服务端
 	// 提供多语言，前端不硬编码。
 	// 本人调用日志（开发者中心「API 请求日志」）：只读自己的行，按时间倒序。
-	// 日志读不回写（requestLogMiddleware 跳过本路径），查看不污染列表。
-	cat.GET("/developer/request-logs", requestLogEndpoint(s))
 	cat.GET("/definitions", func(c *gin.Context) {
 		v, err := s.Definitions(c.Request.Context())
 		if err != nil {

@@ -19,6 +19,7 @@ import (
 	"github.com/metafusion/metafusion-app/internal/catalog"
 	"github.com/metafusion/metafusion-app/internal/httplog"
 	"github.com/metafusion/metafusion-app/internal/nettrust"
+	"github.com/metafusion/metafusion-app/internal/telemetry"
 	"github.com/metafusion/metafusion-app/internal/upstream"
 )
 
@@ -119,9 +120,9 @@ func main() {
 	}
 
 	r := gin.New()
-	// request_id 必须在访问日志之前：接受 X-Request-ID 或自行生成，写入上下文与响应头；
-	// AccessLogger 每一行都带上它，方便用返回的 request_id 在容器 stdout 里对账。
-	r.Use(httplog.RequestID(), httplog.AccessLogger(nil), gin.Recovery())
+	metrics := telemetry.New(s.DB, "catalog")
+	defer metrics.Close()
+	r.Use(httplog.RequestID(), metrics.Middleware(), gin.Recovery())
 	// 真实客户端 IP：只信任显式声明的来源（TRUSTED_PROXIES，默认回环 + RFC1918 私网 = 网关容器所在网段）。
 	// 此前这里是 SetTrustedProxies(nil)（谁都不是代理），于是 XFF 被整段忽略、ClientIP() 恒等于网关
 	// 容器 IP：routeLimiter 的桶键退化成"全站共享一个桶"（线上实测第 11 次 /api/catalog/compare 即 429），

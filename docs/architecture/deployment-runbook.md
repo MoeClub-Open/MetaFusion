@@ -33,6 +33,8 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 目录与账号 HTTP 启动只做只读兼容检查。账号先构建匹配发布的 `auth` 镜像，再执行 `docker compose -f deploy/docker-compose.yml run --rm --no-deps auth-migrate`；CLI 是 `/app/auth-server -migrate`，无需签发私钥。用户名大小写冲突会阻断迁移并列出冲突标识；先人工确认并修复，不自动重命名或删号。迁移失败时 `deploy.sh` 保持账号入口停止。手工运维时 `mf-migrate up`、`seed`、`check-refs` 是不同任务；不能通过重启或健康响应推断它们已完成。种子对存量定义、货架和外部库只补缺失项，保留人工配置和停用状态。
 
+038 将旧目录请求日志汇总后删除明细，并建立四服务 API 日统计。升级先构建全部目标镜像，再停目录、MCP 和账号入口，执行匹配的 backend-migrate up、auth-migrate；重跑 `roles-least-privilege.sql` 和 `verify-role-isolation.sql`，确认统计表更新权限及清理函数只允许 mf_auth 执行后再启动。互动/存储随后按自身嵌入迁移记账；不要把旧后端接回 038 之后的库。网关及四服务关闭逐请求访问输出，保留错误输出、操作审计与日统计。后台清理不可恢复，按[审计契约](./audit-log.md#api-统计与日志清理)执行；业务历史和 OAuth 事务记录不参与清理。
+
 `mf-migrate` 的操作超时默认 15 分钟；大库应先在备份恢复库测量 022 建索引和 023 引用规范化的耗时，必要时调整。全局 `-timeout` 必须放在命令前，例如 `mf-migrate -timeout 30m up`、`mf-migrate -timeout 30m check-refs -json`，不接受零或负时长。直接使用 Compose 时同样放在命令前：`docker compose -f deploy/docker-compose.yml run --rm --no-deps backend-migrate -timeout 30m up`，并先停写。
 
 `deploy.sh migrate up/down` 也会先停止 `backend`，完成后不自动启动。迁移、账本、种子或引用检查失败时，保持所有目录写入端停写，核对失败原因、账本与备份并处理；不得仅重启旧后端继续写入新协议数据。

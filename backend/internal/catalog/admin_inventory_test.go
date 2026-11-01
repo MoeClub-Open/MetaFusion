@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +32,7 @@ func adminInventoryRequest(r *gin.Engine, path string) *httptest.ResponseRecorde
 
 func TestAdminInventoryPermissionAndValidation(t *testing.T) {
 	manager := &User{ID: uuid.NewString(), Permissions: []string{PermissionLifecycleManage}}
-	for _, path := range []string{"/api/admin/catalog-entities", "/api/admin/catalog-request-logs"} {
+	for _, path := range []string{"/api/admin/catalog-entities"} {
 		for _, tc := range []struct {
 			name   string
 			user   *User
@@ -63,12 +62,6 @@ func TestAdminInventoryPermissionAndValidation(t *testing.T) {
 		"/api/admin/catalog-entities?limit=101",
 		"/api/admin/catalog-entities?offset=-1",
 		"/api/admin/catalog-entities?q=%00",
-		"/api/admin/catalog-request-logs?user_id=not-a-uuid",
-		"/api/admin/catalog-request-logs?status=200%20OR%201=1",
-		"/api/admin/catalog-request-logs?status=0",
-		"/api/admin/catalog-request-logs?status=600",
-		"/api/admin/catalog-request-logs?path=%00",
-		"/api/admin/catalog-request-logs?limit=0",
 	} {
 		got := adminInventoryRequest(adminInventoryEngine(&Store{}, manager), path)
 		if got.Code != 400 {
@@ -145,53 +138,9 @@ func TestPostgresAdminEntityInventoryAllStatesAndFilters(t *testing.T) {
 	}
 }
 
-func TestPostgresAdminRequestLogsAllUsersAndFilters(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	first, second := uuid.NewString(), uuid.NewString()
-	LogRequest(ctx, f.s.DB, first, "pat", "deploy-key", "GET", "/api/catalog/entities", 200, 3)
-	LogRequest(ctx, f.s.DB, first, "session", "", "PUT", "/api/catalog/entities/:id", 409, 4)
-	LogRequest(ctx, f.s.DB, second, "pat", "deploy-key", "GET", "/api/catalog/entities/:id", 404, 5)
-	engine := adminInventoryEngine(f.s, &f.u)
-	read := func(query string) AdminRequestLogInventory {
-		t.Helper()
-		response := adminInventoryRequest(engine, "/api/admin/catalog-request-logs?"+query)
-		var result AdminRequestLogInventory
-		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &result) != nil {
-			t.Fatalf("%s: %d %s", query, response.Code, response.Body.String())
-		}
-		if strings.Contains(response.Body.String(), "token") || strings.Contains(response.Body.String(), "request_body") {
-			t.Fatalf("log response included non-log content: %s", response.Body.String())
-		}
-		return result
-	}
-	all := read("limit=2")
-	next := read("limit=2&offset=2")
-	if all.Total != 3 || len(all.Items) != 2 || !all.HasMore || next.Total != 3 || len(next.Items) != 1 || next.HasMore || all.Items[0].ID == next.Items[0].ID || all.Items[1].ID == next.Items[0].ID {
-		t.Fatalf("log pagination: %+v %+v", all, next)
-	}
-	filtered := read("user_id=" + second + "&credential=deploy-key&status=404&path=entities%2F%3Aid")
-	if filtered.Total != 1 || len(filtered.Items) != 1 || filtered.Items[0].UserID != second || filtered.Items[0].Status != 404 || filtered.Items[0].CredentialName != "deploy-key" || filtered.Items[0].Route != "/api/catalog/entities/:id" {
-		t.Fatalf("log filters: %+v", filtered)
-	}
-	literal := read("path=%25")
-	if literal.Total != 0 {
-		t.Fatalf("path wildcard escaped incorrectly: %+v", literal)
-	}
-	self, err := ListRequestLogs(ctx, f.s.DB, first, "", 50)
-	if err != nil || len(self) != 2 {
-		t.Fatalf("self-service log scope changed: %+v %v", self, err)
-	}
-	for _, item := range self {
-		if item.Status == 404 {
-			t.Fatal("self-service log read included another user")
-		}
-	}
-}
-
 func TestAdminInventoryOpenAPI(t *testing.T) {
 	paths := adminInventoryPaths()
-	for _, path := range []string{"/admin/catalog-entities", "/admin/catalog-request-logs"} {
+	for _, path := range []string{"/admin/catalog-entities"} {
 		item, ok := paths[path].(map[string]any)
 		if !ok || item["get"] == nil {
 			t.Fatalf("missing inventory contract: %s", path)

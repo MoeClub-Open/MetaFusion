@@ -163,24 +163,7 @@ export async function fetchDeveloperAuditLogs(clientId?: string, limit?: number)
 }
 
 /** 本人 API 调用日志：只记已登录请求，route 为模板路径（无实体 id 与查询串）。 */
-export interface RequestLogEntry {
-  at: string;
-  credential_type: string;
-  credential_name: string;
-  method: string;
-  route: string;
-  status: number;
-  ms: number;
-}
 
-export async function fetchRequestLogs(credential?: string, limit?: number): Promise<RequestLogEntry[]> {
-  const params = new URLSearchParams();
-  if (credential) params.set("credential", credential);
-  if (limit) params.set("limit", String(limit));
-  const qs = params.toString();
-  const res = await fetchApi<{ items?: RequestLogEntry[] }>("/catalog/developer/request-logs" + (qs ? "?" + qs : ""));
-  return res.items ?? [];
-}
 
 /** 回调白名单是"一行一个"：换行/空格都当分隔，去空去重后与原值比较才谈得上"改没改"。 */
 export function parseRedirects(raw: string): string[] {

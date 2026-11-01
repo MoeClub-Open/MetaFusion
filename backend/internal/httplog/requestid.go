@@ -1,14 +1,10 @@
-// Package httplog provides the catalog HTTP request-id middleware and access log.
-// request_id is accepted from X-Request-ID or generated, then written to the Gin
-// context, the response header and every access-log line so Leo can match a
-// returned request_id to container stdout.
+// Package httplog provides HTTP request identifiers for errors and operation audits.
 package httplog
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -61,30 +57,4 @@ func FromContext(c *gin.Context) string {
 	v, _ := c.Get(ContextKey)
 	s, _ := v.(string)
 	return s
-}
-
-// AccessLogger writes one gin-style access line that includes request_id.
-// Mount after RequestID so the id is already on the context.
-func AccessLogger(out io.Writer) gin.HandlerFunc {
-	if out == nil {
-		out = gin.DefaultWriter
-	}
-	return gin.LoggerWithConfig(gin.LoggerConfig{
-		Output: out,
-		Formatter: func(p gin.LogFormatterParams) string {
-			rid, _ := p.Keys[ContextKey].(string)
-			if rid == "" {
-				rid = "-"
-			}
-			return fmt.Sprintf("[GIN] %s | %3d | %13v | %15s | %s | %-7s %s\n",
-				p.TimeStamp.Format("2006/01/02 - 15:04:05"),
-				p.StatusCode,
-				p.Latency,
-				p.ClientIP,
-				rid,
-				p.Method,
-				p.Path,
-			)
-		},
-	})
 }

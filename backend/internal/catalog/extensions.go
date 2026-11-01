@@ -7,7 +7,7 @@ import "github.com/gin-gonic/gin"
 // and permissions; this does not grant the caller any additional capability.
 func (h HTTP) RegisterModule(r *gin.Engine, register func(*gin.RouterGroup)) {
 	api := r.Group("/api")
-	api.Use(attachUser(h.Store), routeLimiter(DefaultRateLimitPerMinute, h.Store.DB), auditMiddleware(h.Store), requestLogMiddleware(h.Store))
+	api.Use(attachUser(h.Store), routeLimiter(DefaultRateLimitPerMinute, h.Store.DB), auditMiddleware(h.Store))
 	register(api)
 }
 

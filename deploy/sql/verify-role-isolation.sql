@@ -207,6 +207,28 @@ BEGIN
     RAISE NOTICE '[F] 共享审计表：owner=mf_audit_owner，四个运行角色只追加（SELECT/INSERT），UPDATE/DELETE/TRUNCATE 被拒';
   END IF;
 
+  IF to_regclass('audit.api_statistics') IS NOT NULL THEN
+    FOR i IN 1 .. array_length(services, 1) LOOP
+      app_role := services[i][1];
+      IF NOT has_table_privilege(app_role,'audit.api_statistics','SELECT,INSERT,UPDATE')
+         OR has_table_privilege(app_role,'audit.api_statistics','DELETE')
+         OR has_table_privilege(app_role,'audit.api_statistics','TRUNCATE') THEN
+        RAISE EXCEPTION 'API statistics privileges invalid: %', app_role;
+      END IF;
+    END LOOP;
+  END IF;
+  IF to_regprocedure('audit.cleanup_logs(text,timestamp with time zone,text)') IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='audit.cleanup_logs(text,timestamptz,text)'::regprocedure
+      AND pg_get_userbyid(proowner)='mf_audit_owner' AND prosecdef AND proconfig @> ARRAY['search_path=pg_catalog']) THEN
+      RAISE EXCEPTION 'Log cleanup function owner or search_path invalid';
+    END IF;
+    FOR i IN 1 .. array_length(services, 1) LOOP
+      app_role := services[i][1];
+      IF has_function_privilege(app_role,'audit.cleanup_logs(text,timestamptz,text)','EXECUTE') IS DISTINCT FROM (app_role='mf_auth') THEN
+        RAISE EXCEPTION 'Log cleanup execute privileges invalid: %', app_role;
+      END IF;
+    END LOOP;
+  END IF;
   RAISE NOTICE 'verify-role-isolation: A/B/C/D 全部通过（% 组角色与 schema 授权）', array_length(services, 1);
 END
 $verify$;

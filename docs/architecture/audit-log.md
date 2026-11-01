@@ -150,7 +150,7 @@ OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不�
 
 匿名/系统操作的 `actor_username` 是空串（该列 NOT NULL DEFAULT ''），只有 `credential_type`（`anonymous`）能区分"匿名"与"用户名恰好为空"。
 
-管理台：账号服务 `admin/` 的最小只读页（列表 + 过滤 + 分页），不做导出/图表/详情抽屉。
+管理台：账号服务 `admin/` 的操作审计列表提供过滤与分页，同页另有 API 统计及有权限的清理入口，见下节。
 本人视角：站点设置页的「我的操作记录」始终显式传当前用户的 `actor_user_id`，包括管理员。
 支持服务、操作、结果、UTC 日期范围、对象 ID、请求编号筛选及每页 20/50/100 条；筛选与分页使用同一查询条件。
 按日期分组显示本地化操作名、对象摘要、结果与凭据类型；详情弹窗展示可读变更，IP、接口、请求编号及原始 JSON 放在折叠详情中。
@@ -163,6 +163,23 @@ OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不�
 - `changes` 是脱敏 + 截断后的摘要（§4），实体改动的完整前后值在 `catalog.revisions.snapshot`；
 - `auth.oauth_audit` 不在本表内（§7 明确不回填），OAuth 授权记录走开发者中心的自助读取面；
 - 账号注销后其审计行仍在（`actor_user_id` 无外键），但本人已无法登录查看。
+
+## API 统计与日志清理
+
+不保留逐次 API 请求记录。目录、账号、社区和存储服务将请求在内存中按 UTC 日期、服务、HTTP 方法、路由模板及状态码汇总，每 30 秒写入 `audit.api_statistics`，保存调用次数、总耗时和最长耗时。无用户、令牌名、IP、请求正文、查询串或具体实体 ID。未匹配 API 路径统一计为 `<unmatched>`；探针、版本、统计查询自身不计入。该统计是运维参考，不用于计费；异常退出可损失最后一个刷新周期，正常关闭在 HTTP 请求排空后刷新。
+
+`GET /api/admin/api-statistics` 由账号服务提供，要求 `auth.audit.read`。`from`、`to` 为 UTC `YYYY-MM-DD`，默认最近 7 天，最多 90 天；`service` 可选。返回 `items` 中的 `day/service/method/route/status/requests/total_ms/max_ms`，以及 `flush_interval_seconds:30`。平均耗时以 `sum(total_ms)/sum(requests)` 计算。旧目录请求记录在迁移 038 中先汇总再删除，旧数据只覆盖此前已登录请求；其他服务不补造历史统计。
+
+后台账号管理台「日志与统计」提供操作审计、API 统计和清理入口。清理要求单独的 `auth.audit.manage`，不是查看权限的附带能力：
+
+- `GET /api/admin/log-cleanup?kind=audit|statistics&before=YYYY-MM-DD&service=...` 预览匹配的行数 `count`。
+- `POST /api/admin/log-cleanup` 接受相同字段的 JSON，返回实际 `removed` 行数。`before` 必填、按 UTC 严格小于截止日期，不能晚于当前 UTC 日期；保留当天。`service` 留空表示全部四服务。
+
+界面展示范围、预计数量与不可恢复提示，确认后删除；预览与执行之间数量可能变化，以 `removed` 为准。清理本身登记 `audit.logs_cleaned`，保留操作者、范围和实际数量。只清理统一审计或日统计，不触碰目录修订、提交图、贡献、OAuth 事务记录、助手用量账本或容器错误输出。
+
+`audit.cleanup_logs(text,timestamptz,text)` 使用固定 `search_path=pg_catalog` 和完整 schema 名，由 `mf_audit_owner` 持有。只有 `mf_auth` 获得执行权；运行角色仍没有审计表 UPDATE/DELETE/TRUNCATE 权限。统计表只授 SELECT/INSERT/UPDATE，不能直接 DELETE/TRUNCATE。部署显式执行迁移及角色授权脚本后，用隔离校验脚本验证。
+
+生产应用和网关关闭逐请求访问输出，保留启动、业务错误与操作审计。容器错误输出按 Compose 轮转，不通过网页直接清空宿主机日志文件。
 
 ## 6. 迁移与测试
 
@@ -185,7 +202,7 @@ OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不�
 ### 6.1.2 库侧授权（部署时必查）
 
 共享对象归 mf_audit_owner，运行角色只有表 SELECT/INSERT，不能是 owner；schema 权限、显式预建和 F 段断言
-见[数据库角色](./database-roles.md#41-共享审计表)。清理或归档使用运维身份，不能依赖应用角色权限。
+见[数据库角色](./database-roles.md#41-共享审计表)。清理由专用受限函数执行，不能直接授运行角色删除表权限；归档使用运维身份。
 
 ### 6.2 真库用例（必须有）
 - 每个被审计动作各产生**恰好一行**（按 request_id / 动作码查）；
@@ -206,5 +223,5 @@ OAuth 子域的 auth.oauth_audit 继续在业务事务内写入，历史行不�
 - **`auth.oauth_audit` 保留不迁移**：OAuth 子域已有的事务内审计继续写入；新表不复制它的历史行，
   完整 OAuth 史须核对事务审计与统一审计两处。
 - **credential_type 是写入时的映射**：catalog/auth 已使用认证身份的 OAuth 判定；community/storage 仍记录 pat/session，旧行不改写，不能仅凭旧值或这两个服务的 session 值区分 JWT 用途。
-- **不做保留策略与分区**：表会持续增长，清理/归档是运维议题（需要时再加）。
-- **审计行对应用角色只可追加**（`deploy/sql/roles-least-privilege.sql` 已 REVOKE UPDATE/DELETE/TRUNCATE），但**不做防篡改的哈希链**：拥有 `mf_audit_owner` 的人仍可改写历史行。清理/归档只能用该 owner 角色。
+- **不自动删除操作审计**：后台可按服务和 UTC 截止日期手动清理；尚未做分区或自动归档。
+- **审计行对应用角色只可追加**（`deploy/sql/roles-least-privilege.sql` 已 REVOKE UPDATE/DELETE/TRUNCATE），但**不做防篡改的哈希链**：拥有 `mf_audit_owner` 的人仍可改写历史行。后台清理通过该 owner 持有的受限函数执行；运维归档仍使用 owner 身份。

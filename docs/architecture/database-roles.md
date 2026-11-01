@@ -19,6 +19,8 @@
 | 本域表、序列与函数 | 运行角色执行本域业务读写 |
 | 其它业务 schema | 不读、不写；身份和可见性走 HTTP |
 | audit.audit_log | 四个运行角色 SELECT/INSERT，不得 UPDATE/DELETE/TRUNCATE |
+| audit.api_statistics | 四个运行角色 SELECT/INSERT/UPDATE，不得 DELETE/TRUNCATE |
+| audit.cleanup_logs | mf_audit_owner 持有受限清理函数；仅 mf_auth 可 EXECUTE |
 | public.schema_migrations | 目录迁移账本，由运维身份管理，不授予运行角色 |
 
 目标实例是否落实权限，以库侧断言和受限角色真实启动为准；实例快照不作为跨部署契约。
@@ -41,7 +43,7 @@ Tier 2 的目标是运行角色仅有 CRUD。按服务实施 owner 迁移与只�
 
 | 例外 | 身份与用途 |
 | --- | --- |
-| 共享审计表 | mf_audit_owner 负责结构与清理；运行角色只追加及读取，读取面在账号服务 |
+| 共享审计表 | mf_audit_owner 负责结构；运行角色只追加及读取，账号服务经受限函数执行后台清理 |
 | community-migrate | 切流搬运的独立管理身份，可读旧单体数据、写 community；不并入任何运行角色 |
 | public 迁移账本 | mf-migrate 使用 DB_* 中的运维身份，不能改指向运行角色以规避 owner 分离 |
 

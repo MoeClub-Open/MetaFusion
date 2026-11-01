@@ -8,7 +8,6 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { PullRequestQueue } from "@/components/catalog/PullRequestReview";
 import { AssistantAdmin } from "@/components/assistant/AssistantAdmin";
 import { PublicSourcesAdmin } from "@/components/admin/PublicSourcesAdmin";
-import { CatalogRequestLogsAdmin } from "@/components/admin/CatalogRequestLogsAdmin";
 import { DefinitionsEditor } from "@/components/catalog/DefinitionsEditor";
 import { ChangeNote } from "@/components/catalog/Fields";
 import type { Entity, Source } from "@/components/catalog/api";
@@ -38,7 +37,6 @@ import {
   ArrowUpRight,
   Globe,
   Gauge,
-  Activity,
 } from "lucide-react";
 
 import { isCompatibleMergeTarget } from "@/lib/mergeTarget";
@@ -59,7 +57,6 @@ const NAV_GROUPS: { labelKey: string; tabs: { id: AdminTab; labelKey: string; ic
   ] },
   { labelKey: "admin.nav.operations", tabs: [
     { id: "assistant", labelKey: "assistant.admin.title", icon: Cpu },
-    { id: "requestLogs", labelKey: "admin.requestLogs.title", icon: Activity },
     { id: "ratelimits", labelKey: "admin.tab.ratelimits", icon: Gauge },
     { id: "modules", labelKey: "admin.tab.modules", icon: Cpu },
     { id: "exchange", labelKey: "admin.tab.exchange", icon: ArrowUpRight },
@@ -732,7 +729,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
           {currentTab === "exchange" && <ExchangeTab />}
           {currentTab === "assistant" && <AssistantAdmin />}
           {currentTab === "publicSources" && <PublicSourcesAdmin />}
-          {currentTab === "requestLogs" && <CatalogRequestLogsAdmin />}
           </div>
         </TabPanel>
       </PageContainer>

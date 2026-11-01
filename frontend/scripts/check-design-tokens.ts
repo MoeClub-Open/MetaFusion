@@ -13,7 +13,7 @@
  *   ① 生成：源码里出现的语义令牌与静态布局、控件、动效 utility（含 hover:/dark:/placeholder: 等变体与 /NN、
  *      /[0.0x] 透明度档）都必须在产出 CSS 里有选择器；
  *   ② 令牌清单：config 仍注册这些语义色，且注册值支持 <alpha-value>；
- *   ③ 变量定义：这些令牌的三通道变量在 globals.css 的深浅两套模式块里都定义了
+ *   ③ 变量定义：这些令牌的三通道变量在生成 CSS 的深浅两套模式块里都定义了
  *      （只定义一边 = 另一种模式看不见，属于同一类"改了但不生效"）；
  *   ④ 迁移不回退：无条件（不带 dark: 前缀）的字面白/调色板色不得回到源码里。
  *
@@ -46,7 +46,7 @@ const SEMANTIC_COLORS = [
 // 注册值必须带 <alpha-value>（否则 /10 这类透明度变体整批不生成）；surfaceBorder 是整值描边，例外。
 const ALPHA_REQUIRED = ["foreground", "card", "muted", "secondary", "border", "theme", "destructive", "primary",
   "emphasis", "warn", "success", "danger", "info", "alt"];
-// 令牌的三通道变量：globals.css 的深色块与浅色块都要有一份。
+// 令牌的三通道变量：最终 CSS 的深色块与浅色块都要有一份。
 const REQUIRED_VARS = ["--emphasis-rgb", "--state-warn-rgb", "--state-warn-soft-rgb", "--state-success-rgb",
   "--state-success-soft-rgb", "--state-danger-rgb", "--state-danger-soft-rgb", "--state-info-rgb",
   "--state-info-soft-rgb", "--state-alt-rgb", "--state-alt-soft-rgb", "--card-rgb", "--muted-rgb",
@@ -174,8 +174,8 @@ note(true, "② 令牌清单：" + ALPHA_REQUIRED.length + " 个语义色 + 5 �
 
 // —— ③ 变量定义（两套模式都要有）——
 for (const v of REQUIRED_VARS) {
-  const n = globals.split(new RegExp(v + ":", "g")).length - 1;
-  if (n < 2) bad("③ 变量定义：" + v + " 在 globals.css 里只出现 " + n + " 次（深/浅两套模式块各要一次）");
+  const n = css.split(new RegExp(v + ":", "g")).length - 1;
+  if (n < 2) bad("③ 变量定义：" + v + " 在生成 CSS 里只出现 " + n + " 次（深/浅两套模式块各要一次）");
 }
 note(true, "③ 变量定义：" + REQUIRED_VARS.length + " 个三通道变量在深浅两套模式块里都定义了");
 

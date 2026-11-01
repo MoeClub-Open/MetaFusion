@@ -11,7 +11,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity,
   AppWindow,
   Check,
   Copy,
@@ -51,7 +50,6 @@ import { AppFormModal, type AppFormOutcome } from "./components/AppFormModal";
 import { ApiKeysPanel } from "@/components/developer/ApiKeysPanel";
 import { McpGrantsPanel } from "@/components/developer/McpGrantsPanel";
 import { AuditLogsCard } from "./components/AuditLogsCard";
-import { RequestLogsCard } from "./components/RequestLogsCard";
 
 /** 待确认的破坏性动作：轮换与删除都先弹确认。 */
 type Pending = { kind: "rotate" | "delete"; app: DeveloperApp };
@@ -84,14 +82,13 @@ export default function DeveloperPage() {
     { key: "keys", label: t("developer.apiKeys.title"), icon: KeyRound },
     { key: "mcp", label: t("developer.mcp.manage"), icon: SlidersHorizontal },
     { key: "audit", label: t("developer.audit.title"), icon: History },
-    { key: "logs", label: t("developer.reqlogs.title"), icon: Activity },
   ] as const;
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("apps");
   const [keyModalOpen, setKeyModalOpen] = useState(false);
 
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("tab");
-    if (value === "apps" || value === "keys" || value === "mcp" || value === "audit" || value === "logs") setTab(value);
+    if (value === "apps" || value === "keys" || value === "mcp" || value === "audit") setTab(value);
   }, []);
 
   const load = useCallback(async () => {
@@ -436,7 +433,6 @@ export default function DeveloperPage() {
               </Card>
               )}
               {tab === "audit" && <AuditLogsCard apps={apps} />}
-              {tab === "logs" && <RequestLogsCard />}
             </div>
           </div>
         ) : null}

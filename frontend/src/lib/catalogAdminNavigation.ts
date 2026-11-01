@@ -6,7 +6,7 @@ import {
 import type { User } from "./api";
 
 export type CatalogAdminTab = "overview" | "entities" | "definitions" | "reviews"
-  | "merge" | "modules" | "extdb" | "shelves" | "exchange" | "ratelimits" | "assistant" | "publicSources" | "requestLogs";
+  | "merge" | "modules" | "extdb" | "shelves" | "exchange" | "ratelimits" | "assistant" | "publicSources";
 
 const sectionPermissions: Partial<Record<CatalogAdminTab, string>> = {
   definitions: CATALOG_DEFINITIONS_MANAGE,
@@ -15,7 +15,6 @@ const sectionPermissions: Partial<Record<CatalogAdminTab, string>> = {
   shelves: CATALOG_SHELVES_MANAGE,
   reviews: CATALOG_REVIEW_MANAGE,
   entities: CATALOG_LIFECYCLE_MANAGE,
-  requestLogs: CATALOG_LIFECYCLE_MANAGE,
   merge: CATALOG_LIFECYCLE_MANAGE,
   assistant: ASSISTANT_MANAGE,
 };

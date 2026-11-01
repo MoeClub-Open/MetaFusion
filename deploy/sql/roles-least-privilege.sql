@@ -413,6 +413,26 @@ BEGIN
 END
 $audit$;
 
+-- API aggregates may be updated; operation audits remain append-only.
+DO $telemetry_grants$
+DECLARE app_role text;
+BEGIN
+  IF to_regclass('audit.api_statistics') IS NOT NULL THEN
+    ALTER TABLE audit.api_statistics OWNER TO mf_audit_owner;
+    FOR app_role IN SELECT unnest(ARRAY['mf_catalog','mf_auth','mf_community','mf_storage']) LOOP
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON audit.api_statistics TO %I', app_role);
+      EXECUTE format('REVOKE DELETE, TRUNCATE ON audit.api_statistics FROM %I', app_role);
+    END LOOP;
+  END IF;
+  IF to_regprocedure('audit.cleanup_logs(text,timestamp with time zone,text)') IS NOT NULL THEN
+    ALTER FUNCTION audit.cleanup_logs(text,timestamptz,text) OWNER TO mf_audit_owner;
+    REVOKE ALL ON FUNCTION audit.cleanup_logs(text,timestamptz,text) FROM PUBLIC,mf_catalog,mf_community,mf_storage;
+    GRANT EXECUTE ON FUNCTION audit.cleanup_logs(text,timestamptz,text) TO mf_auth;
+  END IF;
+END
+$telemetry_grants$;
+
+
 -- public schema：默认谁都不需要它——四个服务的业务对象都在自己的 schema 里。
 -- 例外只有一处、且属于**运维身份**而不是服务：目录迁移工具的账本表 public.schema_migrations
 -- （backend/internal/migrator 用的是不带 schema 的 schema_migrations，按 search_path 落在 public）。

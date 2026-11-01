@@ -25,6 +25,7 @@
 | auth | `/api/setup`、`/api/auth/*` | 初始化、注册登录、会话、邀请、PAT 与自助授权 |
 | auth | `/api/admin/users*`、`/api/admin/groups*`、`/api/admin/permissions`、`/api/admin/settings`、`/api/admin/invites*` | 账号与权限管理；同 admin 前缀逐条分流 |
 | auth | `/api/admin/audit-logs` | 跨服务审计的唯一读取面，见[审计契约](./audit-log.md) |
+| auth | `/api/admin/api-statistics`、`/api/admin/log-cleanup` | 四服务 API 日统计与有权限的日志清理；不保存逐请求日志，见[审计契约](./audit-log.md#api-统计与日志清理) |
 | auth | `/api/admin/credentials*` | 管理用户创建的 PAT/MCP 凭据；OAuth 授权与令牌记录由 `/api/admin/oauth/*` 管理 |
 | auth | `/api/oauth/*`、`/api/oidc/jwks`、`/api/.well-known/openid-configuration`、`/.well-known/*` | 授权、discovery 与公钥；只有 auth 签发令牌 |
 | auth | `/api/developer/*`、`/api/admin/oauth/*` | 开发者自助登记与管理员客户端治理 |
