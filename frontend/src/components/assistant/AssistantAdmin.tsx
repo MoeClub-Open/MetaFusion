@@ -157,8 +157,8 @@ export function AssistantAdmin() {
   }
 
   if (!mayManage) return <p role="alert" className="text-sm text-danger">{t("assistant.admin.forbidden")}</p>;
-  return <section className="min-w-0 max-w-full space-y-5">
-    <div><h2 className="text-lg font-semibold">{t("assistant.admin.title")}</h2><p className="mt-1 text-sm text-text-muted">{t("assistant.admin.description")}</p></div>
+  return <section className="min-w-0 max-w-full space-y-3">
+    <h2 className="text-base font-semibold">{t("assistant.admin.title")}</h2>
     <nav aria-label={t("assistant.admin.sections")} className="flex gap-1 overflow-x-auto border-b border-line pb-2 sm:flex-wrap sm:overflow-visible">
       {TABS.map((item) => <button key={item} type="button" aria-current={tab === item ? "page" : undefined} onClick={() => { setTab(item); setOffset(0); setFilter(""); setFilterInput(""); setStatus(""); setNotice(""); }} className={`${buttonClass} shrink-0 ${tab === item ? "border-primary bg-primary/10 text-primary" : "border-transparent"}`}>{t(`assistant.admin.tab.${item}`)}</button>)}
     </nav>
@@ -167,7 +167,7 @@ export function AssistantAdmin() {
         <label className="space-y-1 text-xs text-text-muted"><span>{t(tab === "generated" ? "assistant.admin.field.entity_id" : "assistant.admin.field.user_id")}</span><input value={filterInput} onChange={(event) => setFilterInput(event.target.value)} className={inputClass} /></label>
         {tab === "requests" ? <label className="space-y-1 text-xs text-text-muted"><span>{t("assistant.admin.field.status")}</span><select value={status} onChange={(event) => { setOffset(0); setStatus(event.target.value); }} className={inputClass}><option value="">{t("common.all")}</option>{["pending", "completed", "failed"].map((item) => <option key={item} value={item}>{t(`assistant.admin.status.${item}`)}</option>)}</select></label> : null}
         <button type="submit" className={buttonClass}>{t("common.search")}</button>
-      </form> : <p className="max-w-xl text-xs text-text-muted">{t(`assistant.admin.hint.${tab}`)}</p>}
+      </form> : null}
       <div className="flex gap-2">
         <button type="button" onClick={reload} disabled={loading} className={buttonClass}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{t("common.refresh")}</button>
         {tab === "providers" || tab === "models" ? <button type="button" onClick={() => setEditor({ kind: tab === "providers" ? "provider" : "model" })} className={`${buttonClass} border-primary text-primary`}><Plus className="h-3.5 w-3.5" />{t("assistant.admin.add")}</button> : null}

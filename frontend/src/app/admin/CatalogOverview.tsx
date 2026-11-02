@@ -59,7 +59,7 @@ export function CatalogOverview() {
     ] : []),
     { label: "admin.console.extDatabases", value: counts.external },
   ];
-  return <div className="space-y-5">
+  return <div className="space-y-3">
     <div className="flex items-center justify-between gap-3">
       <h2 className="text-base font-semibold text-text-strong">{t("admin.console.sysOverview")}</h2>
       <button type="button" disabled={loading} onClick={() => { setNonce(value => value + 1); void refresh(); }} className="inline-flex items-center gap-2 rounded-control border border-line px-3 py-2 text-xs disabled:opacity-50">
@@ -67,15 +67,14 @@ export function CatalogOverview() {
       </button>
     </div>
     {failed && <p role="alert" className="text-xs text-danger">{t("admin.console.overviewFailed")}</p>}
-    <dl aria-busy={loading} className="grid grid-cols-2 gap-5 border-y border-line-subtle py-4 sm:grid-cols-4">
+    <dl aria-busy={loading} className="grid grid-cols-2 gap-3 border-y border-line-subtle py-3 sm:grid-cols-4">
       {items.map(item => <div key={item.label}>
         <dt className="text-xs text-text-muted">{t(item.label)}</dt>
-        <dd className="mt-2 text-2xl font-semibold text-text-strong">{item.value === null ? "—" : item.value.toLocaleString(locale)}</dd>
+        <dd className="mt-1 text-xl font-semibold text-text-strong">{item.value === null ? "—" : item.value.toLocaleString(locale)}</dd>
       </div>)}
     </dl>
     <section aria-labelledby="catalog-services-title">
       <h3 id="catalog-services-title" className="text-sm font-semibold text-text-strong">{t("admin.console.modulesTitle")}</h3>
-      <p className="mt-1 text-xs text-text-muted">{t("admin.console.modulesDesc")}</p>
       <dl className="mt-3 divide-y divide-line-subtle">
         {modules.map(module => <div key={module.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
           <dt>{tr(`admin.capability.${module.id}`, module.id)}</dt>

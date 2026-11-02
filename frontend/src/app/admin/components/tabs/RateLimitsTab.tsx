@@ -80,7 +80,7 @@ export function RateLimitsTab() {
   const [selected, setSelected] = useState<RateLimitService>(services[0] || "catalog");
   const service = services.includes(selected) ? selected : services[0];
   if (!service) return <p role="alert">{t("admin.ratelimits.forbidden")}</p>;
-  return <div className="space-y-4">
+  return <div className="space-y-3">
     <div role="tablist" aria-label={t("admin.ratelimits.serviceLabel")} className="flex flex-wrap gap-2">
       {services.map((item) => <button key={item} type="button" role="tab" aria-selected={service === item}
         onClick={() => setSelected(item)}
@@ -290,7 +290,7 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
   // 取不到配置时不渲染半截表单：给可读错误 + 重新加载，避免 403 / 网络失败变成白屏。
   if (!loaded) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div
           role="alert"
           className="p-8 rounded-xl border border-rose-500/30 bg-rose-500/5 text-center text-xs space-y-3"
@@ -310,15 +310,14 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 标题与重新加载 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-text-strong flex items-center gap-2">
             <Gauge className="w-4 h-4 text-info" aria-hidden="true" />
             <span>{t("admin.ratelimits.title")}</span>
           </h2>
-          <p className="text-xs text-text-muted font-mono mt-0.5">{t(`admin.ratelimits.${service}Desc`)}</p>
         </div>
         <button
           type="button"
@@ -331,8 +330,9 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
         </button>
       </div>
 
-      {/* 语义说明：回落顺序、0 的含义、整体替换——三条都容易理解反，常驻展示 */}
-      <div className="rounded-xl border border-line-subtle bg-surfaceSubtle p-4 space-y-1.5">
+      <details className="text-xs text-text-muted">
+        <summary className="w-fit cursor-pointer">{t("admin.ratelimits.policyHelp")}</summary>
+        <div className="mt-2 space-y-1">
         <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.fallbackHint")}</p>
         <p className="text-[11px] text-text-muted leading-relaxed">{t(`admin.ratelimits.${service}DefaultHint`)}</p>
         <p className="text-[11px] text-text-muted leading-relaxed">{t("admin.ratelimits.inheritHint")}</p>
@@ -343,7 +343,8 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
             {t("admin.ratelimits.updatedAt", { time: updatedAt })}
           </p>
         ) : null}
-      </div>
+        </div>
+      </details>
 
       {policyEmpty ? (
         <div className="rounded-xl border border-dashed border-line bg-surfaceSubtle p-4 text-xs text-text-muted leading-relaxed">
@@ -424,7 +425,6 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
             <h3 className="text-xs font-semibold text-text-strong">{t("admin.ratelimits.groups")}</h3>
-            <p className="text-[11px] text-text-muted mt-0.5 leading-relaxed">{t("admin.ratelimits.groupsDesc")}</p>
             <p className="text-[10px] text-text-faint mt-0.5 leading-relaxed">{t("admin.ratelimits.groupKeyHint")}</p>
           </div>
           <button
@@ -503,7 +503,6 @@ function RateLimitPolicyEditor({ service }: { service: RateLimitService }) {
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
             <h3 className="text-xs font-semibold text-text-strong">{t("admin.ratelimits.accounts")}</h3>
-            <p className="text-[11px] text-text-muted mt-0.5 leading-relaxed">{t("admin.ratelimits.accountsDesc")}</p>
             <p className="text-[10px] text-text-faint mt-0.5 leading-relaxed">{t("admin.ratelimits.accountKeyHint")}</p>
           </div>
           <button

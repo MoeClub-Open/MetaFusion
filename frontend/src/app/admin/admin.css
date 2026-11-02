@@ -1,0 +1,57 @@
+/* 管理台共用密度；由主题同步脚本分发到三个独立后台。 */
+[data-mf-admin] {
+  --mf-admin-control-height: 32px;
+  background: var(--background);
+}
+
+[data-mf-admin-content] :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select) {
+  height: var(--mf-admin-control-height);
+  min-height: var(--mf-admin-control-height);
+  padding-block: 4px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+[data-mf-admin-content] :where(button) {
+  min-height: var(--mf-admin-control-height);
+  padding-block: 4px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+[data-mf-admin-content] :where(label) {
+  font-size: 12px;
+}
+
+[data-mf-admin-content] :where(table) {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+[data-mf-admin-content] :where(th, td) {
+  padding: 6px 10px;
+}
+
+[data-mf-admin-content] :where(th) {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+[data-mf-admin-content] :where(tbody tr) {
+  border-bottom: 1px solid var(--line-subtle-color);
+}
+
+[data-mf-admin-content] :where(tbody tr:hover) {
+  background: var(--surface-hover-color);
+}
+
+[data-mf-admin-content] :where(td button, td a[role="button"]) {
+  min-height: 26px;
+  padding-block: 2px;
+}
+
+@media (pointer: coarse) {
+  [data-mf-admin] { --mf-admin-control-height: 40px; }
+  [data-mf-admin-content] :where(td button, td a[role="button"]) { min-height: 36px; }
+}

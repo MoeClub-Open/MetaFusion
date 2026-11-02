@@ -246,7 +246,7 @@ export function ShelvesTab() {
   const vocabOptions = Object.keys(defs?.vocabularies || {});
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-text-strong flex items-center gap-2">
@@ -371,7 +371,7 @@ export function ShelvesTab() {
         title={editing ? t("admin.shelves.editTitle") : t("admin.shelves.createTitle")}
         icon={<Layers className="w-4 h-4 text-success" />}
       >
-        <form onSubmit={handleSave} className="space-y-4 text-xs max-h-[80vh] overflow-y-auto pr-1">
+        <form onSubmit={handleSave} className="space-y-3 text-xs max-h-[80vh] overflow-y-auto pr-1">
           <div>
             <label className="block text-[11px] font-mono text-text-body font-medium mb-1">
               {t("admin.shelves.fieldSlug")}

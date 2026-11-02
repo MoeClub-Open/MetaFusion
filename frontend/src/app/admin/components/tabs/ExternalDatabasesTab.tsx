@@ -161,17 +161,13 @@ export function ExternalDatabasesTab() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* 标题说明 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-3">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-text-strong flex items-center gap-2">
             <Globe className="w-4 h-4 text-info" />
             <span>{t("admin.extdb.title")}</span>
           </h2>
-          <p className="text-xs text-text-muted font-mono mt-0.5">
-            {t("admin.extdb.desc")}
-          </p>
         </div>
 
         <button
@@ -348,7 +344,7 @@ export function ExternalDatabasesTab() {
         title={editingItem ? t("common.edit") : t("admin.extdb.newPreset")}
         icon={<Globe className="w-4 h-4 text-info" />}
       >
-        <form onSubmit={handleSave} className="space-y-4 text-xs">
+        <form onSubmit={handleSave} className="space-y-3 text-xs">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-text-muted font-mono text-[11px] mb-1">

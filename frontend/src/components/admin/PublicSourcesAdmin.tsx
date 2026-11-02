@@ -95,10 +95,9 @@ export function PublicSourcesAdmin() {
 
   return (
     <form onSubmit={save} className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold text-text-strong"><Globe className="size-4" />{t("admin.publicSources.title")}</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-text-muted">{t("admin.publicSources.description")}</p>
         </div>
         <button type="button" className={buttonClass} onClick={() => void load()} disabled={loading || saving || dirty}>
           <RefreshCw className="size-3.5" />{t("common.refresh")}

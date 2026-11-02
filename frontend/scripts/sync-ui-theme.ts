@@ -33,8 +33,9 @@ for (const app of apps) {
     emit(target, `src/shared/theme/${name}`, source(`src/app/${name}`).replaceAll('url("/patterns/', `url("${app.base}/patterns/`));
   }
   emit(target, app.config, source("tailwind.config.ts"));
+  if (app.name.endsWith("-admin")) emit(target, "src/shared/theme/admin.css", source("src/app/admin/admin.css"));
   const config = path.relative("src/shared/theme", app.config).replaceAll("\\", "/");
-  emit(target, "src/shared/theme/globals.css", `/* ${header} */\n@import "./theme.generated.css";\n@import "tailwindcss";\n@import "./theme.tokens.css";\n@import "./theme.base.css";\n@config "./${config}";\n`);
+  emit(target, "src/shared/theme/globals.css", `/* ${header} */\n@import "./theme.generated.css";\n@import "tailwindcss";\n@import "./theme.tokens.css";\n@import "./theme.base.css";\n${app.name.endsWith("-admin") ? '@import "./admin.css";\n' : ""}@config "./${config}";\n`);
   for (const name of ["catalog", "dots"]) emit(target, `public/patterns/${name}.svg`, source(`public/patterns/${name}.svg`));
   emit(target, "src/shared/theme/boot.generated.ts", `// ${header}\nexport const themeBootScript = ${JSON.stringify(boot)};\n`);
   for (const locale of ["zh-CN", "en-US", "zh-TW", "ja-JP"]) {

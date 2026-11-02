@@ -20,17 +20,17 @@ export function SectionHeader({
 }: {
   icon: React.ReactNode;
   title: string;
-  desc: string;
+  desc?: string;
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 p-4 rounded-xl bg-surfaceSubtle border border-line-subtle">
+    <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
         <h3 className="text-sm font-semibold text-text-strong flex items-center gap-2">
           {icon}
           <span>{title}</span>
         </h3>
-        <p className="text-[11px] text-text-muted leading-relaxed mt-1 max-w-3xl">{desc}</p>
+        {desc ? <p className="mt-1 text-xs text-text-muted">{desc}</p> : null}
       </div>
       {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
     </div>

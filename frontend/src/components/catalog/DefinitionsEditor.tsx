@@ -436,7 +436,6 @@ export function DefinitionsEditor() {
     <div className="cv-form">
       <div className="cv-heading"><h1>{t("catalog.configure")}</h1></div>
       <ErrorMessage error={error} />
-      <p className="cv-muted">{t("catalog.definitionHelp")}</p>
       <details className="rounded-xl border border-line-subtle bg-surfaceSubtle p-3">
         <summary className="cursor-pointer text-sm font-medium text-text-body">{t("catalog.modules")}</summary>
         <div className="mt-3 flex flex-wrap gap-2">

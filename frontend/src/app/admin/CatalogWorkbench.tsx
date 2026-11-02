@@ -237,11 +237,11 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
 
   return (
     <div className="flex flex-col bg-background text-text-strong">
-      <PageContainer className="py-6 flex-1 flex flex-col lg:flex-row gap-6">
+      <PageContainer width="workspace" className="py-3 flex-1 flex flex-col lg:flex-row gap-4">
         {/* Left Sidebar */}
-        <aside className="w-full lg:w-64 shrink-0 lg:sticky lg:top-32 lg:self-start lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto">
-          <div className="lg:hidden rounded-xl border border-line-subtle bg-surfaceSubtle p-3">
-            <label htmlFor="admin-section" className="block text-xs font-medium text-text-muted mb-2">
+        <aside className="w-full lg:w-[200px] shrink-0 lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+          <div className="lg:hidden">
+            <label htmlFor="admin-section" className="sr-only">
               {t("admin.nav.section")}
             </label>
             <Select
@@ -255,10 +255,10 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
             />
           </div>
           {/* 目录导航避开管理中心顶栏与工作区切换行。 */}
-          <nav aria-label={t("admin.nav.section")} className="hidden lg:block rounded-xl border border-line-subtle bg-surfaceSubtle p-2">
+          <nav aria-label={t("admin.nav.section")} className="hidden lg:block p-1">
             {visibleGroups.map((group) => (
               <div key={group.labelKey} className="py-1 first:pt-0 last:pb-0">
-                <div className="px-3 py-2 text-[11px] font-semibold text-text-faint tracking-wide">
+                <div className="px-2 py-1 text-[11px] font-semibold text-text-faint">
                   {t(group.labelKey)}
                 </div>
                 {group.tabs.map((item) => {
@@ -270,7 +270,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                       type="button"
                       aria-current={active ? "page" : undefined}
                       onClick={() => selectTab(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors ${active ? "bg-primary/15 text-primary font-semibold" : "text-text-muted hover:text-text-strong hover:bg-surfaceHover"}`}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-control text-[13px] text-left transition-colors ${active ? "bg-primary/15 text-primary font-semibold" : "text-text-muted hover:text-text-strong hover:bg-surfaceHover"}`}
                     >
                       <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span className="flex-1">{t(item.labelKey)}</span>
@@ -286,20 +286,17 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
         {/* Right Main Workbench */}
         {/* key 让每次切换页签都重放进入动画；外层统一包裹层保证各页签的首元素落在同一纵向位置 */}
         <TabPanel activeKey={currentTab} spacing="none" className="flex-1 min-w-0">
-          <div className="space-y-4 [&>*:first-child]:mt-0">
+          <div data-mf-admin-content className="space-y-3 [&>*:first-child]:mt-0">
           {currentTab === "overview" && <CatalogOverview />}
 
           {currentTab === "entities" && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* Entities Header & Search */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-surfaceSubtle border border-line-subtle">
+              <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="text-base font-semibold text-text-strong">
                     {t("admin.entities.title")}
                   </h2>
-                  <p className="text-xs text-text-muted mt-0.5">
-                    {t("admin.entities.desc")}
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -325,7 +322,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
 
 
               {/* Filter Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3.5 rounded-xl bg-surfaceSubtle border border-line-subtle">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -372,11 +369,9 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                     ]} />
                 </div>
               </div>
-              <p className="text-xs text-text-faint">{t("admin.entities.allStatesHint")}</p>
-
               {/* Table */}
               {entitiesLoading ? (
-                <div className="py-20 text-center text-xs text-text-faint font-mono flex items-center justify-center gap-2">
+                <div className="py-6 text-center text-xs text-text-faint flex items-center justify-center gap-2">
                   <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                   <span>{t("catalog.loading")}</span>
                 </div>
@@ -458,7 +453,6 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
                           </td>
                         </tr>
                         {expandedEntity === e.id && <tr><td colSpan={5} className="p-3 bg-surfaceSubtle">
-                          <p className="mb-2 text-xs text-text-muted">{t("admin.entities.recordHint")}</p>
                           <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-surface p-3 text-[11px] font-mono text-text-body">{JSON.stringify(e, null, 2)}</pre>
                         </td></tr>}
                         </React.Fragment>
@@ -490,17 +484,14 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
           {currentTab === "reviews" && <PullRequestQueue />}
 
           {currentTab === "merge" && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-surfaceSubtle border border-line-subtle">
+            <div className="space-y-3">
+              <div className="flex min-h-8 items-center">
                 <h2 className="text-base font-semibold text-text-strong mb-1">
                   {t("admin.console.mergeTitle")}
                 </h2>
-                <p className="text-xs text-text-muted leading-relaxed">
-                  {t("admin.console.mergeDesc")}
-                </p>
               </div>
 
-              <form onSubmit={handleMergeSubmit} className="p-4 rounded-xl bg-surfaceSubtle border border-line-subtle space-y-4 max-w-xl">
+              <form onSubmit={handleMergeSubmit} className="space-y-3 max-w-2xl">
                 <div>
                   <label htmlFor="merge-source" className="block text-xs font-medium text-text-body mb-1">
                     {t("admin.console.sourceUuid")}

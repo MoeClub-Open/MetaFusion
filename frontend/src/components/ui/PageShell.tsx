@@ -10,7 +10,7 @@ import React from "react";
  */
 
 /** 容器宽度档位：page（主内容）/ narrow（阅读与表单的居中窄列）。 */
-export type PageWidth = "page" | "narrow";
+export type PageWidth = "page" | "narrow" | "workspace";
 
 /**
  * 横向对齐容器：max-w-page + 统一水平内边距（唯一出处）。
@@ -33,7 +33,7 @@ export function PageContainer({
   children: React.ReactNode;
 }) {
   return (
-    <Tag data-mf-pagecontainer={width} style={style} className={`mx-auto w-full max-w-page px-4 sm:px-6 lg:px-8 ${className}`}>
+    <Tag data-mf-pagecontainer={width} style={style} className={`mx-auto w-full ${width === "workspace" ? "max-w-none px-4" : "max-w-page px-4 sm:px-6 lg:px-8"} ${className}`}>
       {width === "narrow" ? <div className="mx-auto w-full max-w-narrow">{children}</div> : children}
     </Tag>
   );

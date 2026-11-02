@@ -95,9 +95,9 @@ export default function AdminPage() {
     <Link href="/home" className="text-sm text-primary">{t("admin.console.backToSite")}</Link>
   </div>;
 
-  return <div className="min-h-screen text-text-strong">
+  return <div data-mf-admin className="min-h-screen bg-background text-text-strong">
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
-      <PageContainer className="flex h-14 items-center justify-between gap-2">
+      <PageContainer width="workspace" className="flex h-12 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Link href="/home" aria-label={t("admin.console.backToSite")} title={t("admin.console.backToSite")} className="flex h-11 w-11 shrink-0 items-center justify-center gap-1 text-xs text-text-muted hover:text-text-strong sm:w-auto">
             <ArrowLeft className="h-4 w-4" /><span className="hidden sm:inline">{t("admin.console.backToSite")}</span>
@@ -110,8 +110,8 @@ export default function AdminPage() {
           <span className="hidden max-w-40 truncate rounded border border-primary/30 bg-primary/20 px-2 py-0.5 font-mono text-xs text-primary sm:inline-flex">{user.username}</span>
         </div>
       </PageContainer>
-      <PageContainer>
-        <nav aria-label={t("admin.workspace.switch")} className="flex h-12 gap-1 overflow-x-auto">
+      <PageContainer width="workspace">
+        <nav aria-label={t("admin.workspace.switch")} className="flex h-10 gap-1 overflow-x-auto">
           {permitted.map((workspace) => <button key={workspace} type="button" aria-current={active === workspace ? "page" : undefined} onClick={() => selectWorkspace(workspace)} className={`shrink-0 whitespace-nowrap border-b-2 px-3 text-sm transition-colors ${active === workspace ? "border-primary font-semibold text-primary" : "border-transparent text-text-muted hover:text-text-strong"}`}>
             {t(WORKSPACE_LABELS[workspace])}
           </button>)}
@@ -186,7 +186,7 @@ function ServiceWorkspaceFrame({ workspace, active, href, onNavigate }: {
     return () => window.clearTimeout(timer);
   }, [ready, attempt]);
 
-  return <div className="relative h-[calc(100dvh-6.5rem)] min-h-[28rem]">
+  return <div className="relative h-[calc(100dvh-5.5rem)] min-h-[28rem]">
     {!ready ? <div role="status" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background px-6 text-center text-sm text-text-muted">
       <p>{t(failed ? "admin.workspace.noResponse" : "admin.workspace.connecting")}</p>
       {failed ? <div className="flex flex-wrap justify-center gap-4">

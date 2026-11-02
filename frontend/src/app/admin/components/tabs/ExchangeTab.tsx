@@ -26,7 +26,7 @@ const BUTTON_CLASS =
 export function ExchangeTab() {
   const { t } = useI18n();
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="p-4 rounded-xl bg-surfaceSubtle border border-line-subtle space-y-3">
         <h2 className="text-base font-semibold text-text-strong flex items-center gap-2">
           <ArrowLeftRight className="w-4 h-4 text-primary" />
@@ -126,7 +126,6 @@ function ExportPanel() {
       <SectionHeader
         icon={<Download className="w-4 h-4 text-info" />}
         title={t("admin.exchange.exportTitle")}
-        desc={t("admin.exchange.exportDesc")}
       />
 
       <div className="flex flex-col sm:flex-row gap-2">
