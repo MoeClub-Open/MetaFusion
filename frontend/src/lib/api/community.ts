@@ -3,6 +3,7 @@ import { requireArray, safeCount } from "./fields";
 import type { Tag } from "./catalog";
 import type { User } from "./client";
 import type { Entity } from "@/components/catalog/api";
+import { copyText } from "@/lib/clipboard";
 
 // ── 收藏 ──
 // target_type 直接就是实体 kind（固定八种骨架），不再使用旧词表别名。
@@ -330,13 +331,13 @@ export function getBoardSync(code: string, boards: ForumBoard[]): ForumBoard | u
 }
 
 /**
- * 论坛分享：优先使用系统原生分享面板，失败或不支持时降级为剪贴板复制
- * 返回 'shared' | 'copied' | 'failed' 供调用方展示反馈
+ * 论坛/实体分享：优先 Web Share；用户取消返回 cancelled；否则降级剪贴板。
+ * 返回 'shared' | 'copied' | 'cancelled' | 'failed'——调用方必须展示反馈，禁止静默失败。
  */
 
-export async function shareContent(opts: { title: string; text?: string; url: string }): Promise<'shared' | 'copied' | 'failed'> {
+export async function shareContent(opts: { title: string; text?: string; url: string }): Promise<'shared' | 'copied' | 'cancelled' | 'failed'> {
   const url = opts.url;
-  // 1) 尝试 Web Share API (移动端最友好)
+  // 1) 尝试 Web Share API (移动端最友好)；失败不静默——落到复制并回传结果。
   try {
     if (typeof navigator !== 'undefined' && (navigator as any).share) {
       const canShare = !(navigator as any).canShare || (navigator as any).canShare({ title: opts.title, text: opts.text, url });
@@ -346,20 +347,14 @@ export async function shareContent(opts: { title: string; text?: string; url: st
       }
     }
   } catch (e: any) {
-    // 用户取消分享（AbortError）视为未失败，不再尝试剪贴板
+    // 用户取消：不算失败，也不偷偷复制。
     if (e && (e.name === 'AbortError' || String(e.message || '').includes('Abort'))) {
-      return 'failed';
+      return 'cancelled';
     }
   }
 
-  // 2) 降级：剪贴板复制
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url);
-      return 'copied';
-    }
-  } catch {}
-
+  // 2) 降级：剪贴板（含非安全上下文的 execCommand）
+  if (await copyText(url)) return 'copied';
   return 'failed';
 }
 

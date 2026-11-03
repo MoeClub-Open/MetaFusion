@@ -125,7 +125,9 @@ export default function WorkReleasesPage() {
       >
         <div className="rounded-card border border-line-subtle bg-surface/70 backdrop-blur overflow-hidden">
           <div className="px-4 md:px-5 py-4 border-b border-line-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h1 className="font-display text-xl tracking-tight text-emphasis">{t("work.releases.releaseCount", { count: total })}</h1>
+            <h1 className="font-display text-xl tracking-tight text-emphasis">
+              {loading ? t("work.detail.loadingReleases") : t("work.releases.releaseCount", { count: total })}
+            </h1>
             <form onSubmit={onSearch} className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-faint" strokeWidth={1.5} />
               <input value={qInput} {...searchInputLimitProps(setQInput)} placeholder={t("work.detail.searchPlaceholder")} className="pl-9 pr-3 h-10 sm:h-9 w-full sm:w-56 bg-emphasis/[0.04] border border-line rounded-control text-xs text-emphasis placeholder:text-text-faint focus:outline-none focus:border-primary/40" />
@@ -169,7 +171,12 @@ export default function WorkReleasesPage() {
           </div>
 
           {loading ? (
-            <div className="p-5 text-center font-mono text-xs text-text-faint">{t("common.loading")}</div>
+            <div className="p-4 space-y-2" aria-busy="true" aria-live="polite">
+              <span className="sr-only">{t("common.loading")}</span>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-10 rounded-md bg-emphasis/[0.04] border border-line-subtle animate-pulse" />
+              ))}
+            </div>
           ) : pageItems.length === 0 ? (
             <div className="p-5 text-center font-mono text-xs text-text-faint">{entities.length === 0 ? t("work.releases.noReleases") : t("work.detail.noFilterResult")}</div>
           ) : (

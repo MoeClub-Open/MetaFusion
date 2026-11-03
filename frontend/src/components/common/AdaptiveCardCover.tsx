@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { NeutralCover } from "./NeutralCover";
 
 interface AdaptiveCardCoverProps {
   src?: string | null;
@@ -101,40 +102,31 @@ export function AdaptiveCardCover({
           />
         </>
       ) : (
-        /* 兜底占位层：无图或取图失败时不画破图图标 */
-        fallbackContent ?? <div className="w-full h-full relative overflow-hidden bg-surfaceSubtle flex flex-col items-center justify-center p-3 text-center">
-          <svg
-            aria-hidden="true"
-            focusable="false"
-            viewBox="0 0 240 320"
-            preserveAspectRatio="xMidYMid slice"
-            className="absolute inset-0 w-full h-full text-primary/[0.12] pointer-events-none"
-            fill="none"
-          >
-            <path d="M24 40H88M24 48H60M152 272H216M180 280H216" stroke="currentColor" strokeWidth="1" />
-            <path d="M24 64V96M24 224V256M216 64V96M216 224V256" stroke="currentColor" strokeWidth="1" />
-            <path d="M48 80H96L144 128H192M48 240H96L144 192H192" stroke="currentColor" strokeWidth="1" />
-            <circle cx="48" cy="80" r="3" fill="currentColor" />
-            <circle cx="192" cy="128" r="3" fill="currentColor" />
-            <circle cx="48" cy="240" r="3" fill="currentColor" />
-            <circle cx="192" cy="192" r="3" fill="currentColor" />
-          </svg>
-          {fallbackIcon && (
-            <div className="relative w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-1.5 shadow-2xs group-hover:scale-110 transition-transform duration-base ease-soft">
-              {fallbackIcon}
-            </div>
-          )}
-          {fallbackTitle && (
-            <span className="relative text-[11px] font-medium text-text-strong line-clamp-1 w-full px-1">
-              {fallbackTitle}
-            </span>
-          )}
-          {fallbackSubtitle && (
-            <span className="relative text-[9px] font-mono text-text-faint uppercase tracking-wider mt-0.5">
-              {fallbackSubtitle}
-            </span>
-          )}
-        </div>
+        /* 兜底：无图或取图失败用中性占位，不再画深色调试网格 / 技术线稿 */
+        fallbackContent ?? (
+          <div className="w-full h-full relative">
+            <NeutralCover />
+            {(fallbackIcon || fallbackTitle || fallbackSubtitle) && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-3 text-center pointer-events-none">
+                {fallbackIcon && (
+                  <div className="relative w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-1.5 shadow-2xs">
+                    {fallbackIcon}
+                  </div>
+                )}
+                {fallbackTitle && (
+                  <span className="relative text-[11px] font-medium text-text-strong line-clamp-1 w-full px-1">
+                    {fallbackTitle}
+                  </span>
+                )}
+                {fallbackSubtitle && (
+                  <span className="relative text-[9px] font-mono text-text-faint uppercase tracking-wider mt-0.5">
+                    {fallbackSubtitle}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )
       )}
 
       {/* 左上角类别胶囊徽标 */}

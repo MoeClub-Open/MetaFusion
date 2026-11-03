@@ -40,6 +40,7 @@ import {
   fetchEntityPosts,
   fetchEntityCollections,
   createEntityComment,
+  shareContent,
 } from "@/lib/api";
 import type { EntityComment, EntityCollectionRef } from "@/lib/api";
 import { EntityRevisions } from "./EntityRevisions";
@@ -516,10 +517,20 @@ export function EntityDetailView({ id }: { id: string }) {
 
   const copyShareLink = async () => {
     if (typeof window === "undefined") return;
-    const ok = await copyText(window.location.href);
-    setCopiedLink(ok);
-    setCopyFailed(ok ? null : "link");
-    setTimeout(() => { setCopiedLink(false); setCopyFailed(null); }, 2000);
+    const url = window.location.href;
+    const title = entity?.title || (typeof document !== "undefined" ? document.title : url);
+    const result = await shareContent({ title, text: title, url });
+    if (result === "cancelled") return;
+    if (result === "shared" || result === "copied") {
+      setCopiedLink(true);
+      setCopyFailed(null);
+      setTimeout(() => { setCopiedLink(false); setCopyFailed(null); }, 2500);
+      return;
+    }
+    // Web Share / 剪贴板都失败：明确反馈，不静默。
+    setCopiedLink(false);
+    setCopyFailed("link");
+    setTimeout(() => setCopyFailed(null), 2500);
   };
 
   const handlePostComment = async (e: React.FormEvent) => {
@@ -959,12 +970,16 @@ export function EntityDetailView({ id }: { id: string }) {
                 onClick={copyShareLink}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-control border border-line bg-surface text-xs font-medium text-text-faint hover:text-emphasis transition-colors cursor-pointer"
                 title={copiedLink ? t("entity.page.linkCopied") : t("entity.page.share")}
+                aria-live="polite"
               >
                 {copiedLink ? <Check className="w-3.5 h-3.5 text-success" /> : <Share2 className="w-3.5 h-3.5" />}
                 <span>{copiedLink ? t("entity.page.linkCopied") : t("entity.page.share")}</span>
               </button>
+              {copiedLink && (
+                <span role="status" className="text-[11px] font-mono text-success">{t("entity.page.linkCopied")}</span>
+              )}
               {copyFailed === "link" && (
-                <span className="text-[11px] font-mono text-warn">{t("common.copyFailed")}</span>
+                <span role="status" className="text-[11px] font-mono text-warn">{t("community.shareFailed")}</span>
               )}
             </div>
 

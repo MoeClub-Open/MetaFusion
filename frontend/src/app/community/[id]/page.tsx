@@ -111,6 +111,7 @@ export default function TopicDetailPage() {
  const url = buildShareUrl(topicId, highlightPostId);
  const title = topic?.title || t("community.createTitle");
  const result = await shareContent({ title, text: title, url });
+ if (result === 'cancelled') return;
  if (result === 'shared') {
  setShareFeedback((p) => ({ ...p, [id]: t("community.shareNative") }));
  } else if (result === 'copied') {

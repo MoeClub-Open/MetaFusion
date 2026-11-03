@@ -173,7 +173,9 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
  <Layers className="w-4 h-4 text-sky-500" strokeWidth={1.5} />
  </span>
  <h2 className="font-display text-base font-bold tracking-tight text-text-strong">{t("work.detail.releaseCatalog")}</h2>
+ {!loadingReleases && !releasesFailed && (
  <span className="text-sm text-text-faint">{t("work.detail.totalReleases", { count: total })}</span>
+ )}
  </div>
  <form onSubmit={onSearch} className="relative w-full sm:w-auto">
  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" strokeWidth={1.5} />
@@ -188,7 +190,12 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
  </div>
 
  {loadingReleases ? (
- <div className="p-8 text-center text-sm text-text-faint">{t("work.detail.loadingReleases")}</div>
+ <div className="p-4 space-y-2" aria-busy="true" aria-live="polite">
+ <span className="sr-only">{t("work.detail.loadingReleases")}</span>
+ {Array.from({ length: 5 }).map((_, i) => (
+ <div key={i} className="h-10 rounded-md bg-emphasis/[0.04] border border-line-subtle animate-pulse" />
+ ))}
+ </div>
  ) : releasesFailed ? (
  <div role="alert" className="p-8 text-center text-sm space-y-2">
  <p className="text-amber-700 dark:text-warn-soft">{t("catalog.listFailed")}</p>

@@ -635,7 +635,7 @@ function ExploreInner() {
             {/* 搜索统一在顶栏；本栏只保留排序与视图切换。 */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface border border-line shadow-xs">
               <p role="status" className="w-full sm:w-auto sm:mr-auto text-sm font-medium text-text-body">
-                {/* 出错时下方的 alert 已经给出唯一一条错误说明，这里不再重复（以前两处文案还互相矛盾）。 */}
+                {/* 加载中不报「约 0 项」：总数未到前只显示加载文案。出错时下方 alert 已给说明。 */}
                 {loading ? t("catalog.loading") : loadError ? null : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
               </p>
               <div className="flex w-full sm:w-auto items-center gap-2">
@@ -730,9 +730,31 @@ function ExploreInner() {
             )}
 
             {loading ? (
-              <div className="py-8 text-center text-text-faint font-mono text-xs flex flex-col items-center justify-center gap-3">
-                <RefreshCw className="w-6 h-6 animate-spin text-primary" />
-                <span>{t("catalog.loading")}</span>
+              <div className="space-y-4" aria-busy="true" aria-live="polite">
+                <span className="sr-only">{t("catalog.loading")}</span>
+                {viewMode === "grid" ? (
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+                    {Array.from({ length: Math.min(limit, 12) }).map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <div className="aspect-[3/4] rounded-xl bg-emphasis/[0.04] border border-line-subtle animate-pulse" />
+                        <div className="h-3.5 w-3/4 max-w-[9rem] rounded bg-emphasis/[0.04] animate-pulse" />
+                        <div className="h-3 w-1/2 max-w-[6rem] rounded bg-emphasis/[0.03] animate-pulse" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {Array.from({ length: Math.min(limit, 8) }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-line-subtle bg-surface/40">
+                        <div className="w-11 h-11 rounded-md bg-emphasis/[0.05] animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-2 min-w-0">
+                          <div className="h-3.5 w-2/3 max-w-[14rem] rounded bg-emphasis/[0.05] animate-pulse" />
+                          <div className="h-3 w-1/3 max-w-[8rem] rounded bg-emphasis/[0.03] animate-pulse" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : loadError ? (
               // 错误态与空态是两种状态：这里说的是"这一次没取到"，并给重试入口；
@@ -888,7 +910,8 @@ function ExploreInner() {
               </TabPanel>
             )}
 
-            {!noResults && (
+            {/* 加载完成前不渲染分页与「约 0 项」：否则请求在飞时会闪零计数。 */}
+            {!loading && !noResults && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs font-mono text-text-muted">
               <div>
                 {/* 空结果不显示"第 1 - 0 项"这类自相矛盾的区间（offset 有值而 items 为空）。 */}
