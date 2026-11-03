@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildStaffCredits, unrenderedCreditRelations } from "../src/components/entity/staffCredits";
 import { canonicalDetailPath } from "../src/lib/entityRoutes";
+import { readerCreditRole } from "../src/lib/readerNotes";
 import type { DynamicDefinitions } from "../src/lib/definitions";
 import type { Entity } from "../src/components/catalog/api";
 
@@ -56,4 +57,9 @@ test("修改展示分组不改变署名语义", () => {
 test("规范详情地址只由 id 决定（kind 不参与 URL 命名）", () => {
   assert.equal(canonicalDetailPath("entity-1"), "/catalog/entity-1");
   assert.equal(canonicalDetailPath(null), null);
+});
+
+test("署名职位：英文机器码回落关系名", () => {
+  assert.equal(readerCreditRole("performer", "演出", "职员"), "演出");
+  assert.equal(readerCreditRole("作词", "职员", "职员"), "作词");
 });

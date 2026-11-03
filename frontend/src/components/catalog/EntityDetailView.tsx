@@ -23,6 +23,7 @@ import {
 import { loadCatalogSection } from "@/lib/catalogSection";
 import { fetchEntityRelationships, type RelationshipRecord } from "@/lib/catalogRelationships";
 import { useAuth } from "@/lib/authContext";
+import { canEditEntity } from "@/lib/permissions";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isDistinctOriginalTitle } from "@/lib/titles";
 import { isNotFoundError, localizeCatalogError } from "@/lib/catalogErrors";
@@ -862,6 +863,7 @@ export function EntityDetailView({ id }: { id: string }) {
             )}
           </div>
 
+          {canEditEntity(user ?? undefined, entity) && (
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
@@ -877,6 +879,7 @@ export function EntityDetailView({ id }: { id: string }) {
             )}
 
           </div>
+          )}
         </div>
 
         }
@@ -906,7 +909,8 @@ export function EntityDetailView({ id }: { id: string }) {
               </span>
             ))}
 
-            {/* 质量标签：匿名可读；接口失败整颗隐藏。a08da54c 误删后恢复。 */}
+            {/* 质量标签：仅编辑者；匿名不露「无缺项/有缺项」。接口失败整颗隐藏。 */}
+            {canEditEntity(user ?? undefined, entity) && (
             <QualityBadge
               entityId={entity.id || id}
               onNavigate={(tabId) => {
@@ -914,6 +918,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 select(shown ? tabId : "overview");
               }}
             />
+            )}
           </div>
 
           {/* 标题和各语种题名 */}

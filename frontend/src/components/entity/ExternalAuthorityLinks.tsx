@@ -3,6 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { ExternalLink, Globe, ArrowUpRight } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useAuth } from "@/lib/authContext";
+import { can, CATALOG_ENTITY_EDIT } from "@/lib/permissions";
 import { fetchExternalDatabases, ExternalDatabaseDefinition, pickLocalizedName } from "@/lib/api";
 import { authorityIcon } from "@/lib/authorityIcons";
 import { safeExternalAuthorityURL } from "@/lib/externalAuthorityURL";
@@ -53,6 +55,9 @@ export function ExternalAuthorityLinks({
   emptyText,
 }: Props) {
   const { t, locale } = useI18n();
+  const { user } = useAuth();
+  // 编辑者可读不透明权威 ID；匿名读者只看平台名 + 可读副行。
+  const allowOpaque = can(user, CATALOG_ENTITY_EDIT);
   const [definitions, setDefinitions] = useState<ExternalDatabaseDefinition[]>([]);
 
   useEffect(() => {
@@ -179,6 +184,7 @@ export function ExternalAuthorityLinks({
             const LinkTag = item.url ? "a" : "span";
             const isOfficial = item.role === "official";
             const isBangumi = item.isBangumi;
+            const secondary = externalLinkSecondary(item.externalId, item.url || item.id, { allowOpaque });
             let badgeClass =
               "bg-black/[0.04] dark:bg-white/[0.06] border-line text-text-body hover:border-primary/40 hover:text-primary";
             if (isOfficial) {
@@ -193,7 +199,7 @@ export function ExternalAuthorityLinks({
               <LinkTag
                 key={item.code}
                 {...(item.url ? { href: item.url, target: "_blank", rel: "noopener noreferrer" } : {})}
-                title={`${item.name}: ${externalLinkSecondary(item.externalId, item.url || item.id)}`}
+                title={secondary ? `${item.name}: ${secondary}` : item.name}
                 className={`inline-flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-xs font-medium group ${badgeClass}`}
               >
                 <span className="flex items-center gap-2 min-w-0 flex-1">
@@ -207,9 +213,9 @@ export function ExternalAuthorityLinks({
                   {roleBadge(item.role)}
                 </span>
                 <span className="flex min-w-0 max-w-[40%] shrink items-center gap-1 ml-2 font-mono text-[11px] opacity-75">
-                  <span className="truncate" title={externalLinkSecondary(item.externalId, item.url || item.id)}>
-                    {externalLinkSecondary(item.externalId, item.url || item.id)}
-                  </span>
+                  {secondary ? (
+                    <span className="truncate" title={secondary}>{secondary}</span>
+                  ) : null}
                   {item.url && <ArrowUpRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-base ease-soft" />}
                 </span>
               </LinkTag>
@@ -227,6 +233,7 @@ export function ExternalAuthorityLinks({
         const LinkTag = item.url ? "a" : "span";
         const isOfficial = item.role === "official";
         const isBangumi = item.isBangumi;
+        const secondary = externalLinkSecondary(item.externalId, item.url || item.id, { allowOpaque });
         let badgeClass =
           "bg-black/[0.04] dark:bg-white/[0.06] hover:bg-sky-500/10 border-line hover:border-sky-500/40 text-gray-700 dark:text-gray-200 hover:text-sky-600 dark:hover:text-info-soft";
         if (isOfficial) {
@@ -241,7 +248,7 @@ export function ExternalAuthorityLinks({
           <LinkTag
             key={item.code}
             {...(item.url ? { href: item.url, target: "_blank", rel: "noopener noreferrer" } : {})}
-            title={`${item.name} (${item.id})`}
+            title={secondary ? `${item.name}: ${secondary}` : item.name}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-all shadow-2xs ${badgeClass}`}
           >
             {item.icon_url ? (
@@ -251,7 +258,11 @@ export function ExternalAuthorityLinks({
             )}
             <span>{item.name}</span>
             {roleBadge(item.role)}
-            {item.url ? <ExternalLink className="w-2.5 h-2.5 opacity-40 ml-0.5" /> : <span className="font-mono">{item.id}</span>}
+            {item.url ? (
+              <ExternalLink className="w-2.5 h-2.5 opacity-40 ml-0.5" />
+            ) : secondary ? (
+              <span className="font-mono">{secondary}</span>
+            ) : null}
           </LinkTag>
         );
       })}

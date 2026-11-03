@@ -8,6 +8,9 @@ import { Select } from "@/components/ui/Select";
 import { useI18n } from "@/i18n/I18nProvider";
 import { relationParticipantSlot, useDefinitions, type ParticipantSlot } from "@/lib/definitions";
 import type { StaffCredit } from "./staffCredits";
+import { readerCreditRole } from "@/lib/readerNotes";
+import { useAuth } from "@/lib/authContext";
+import { can, CATALOG_ENTITY_EDIT } from "@/lib/permissions";
 
 export type { StaffCredit } from "./staffCredits";
 
@@ -118,6 +121,8 @@ function StaffRow({ credit, role }: { credit: StaffCredit; role: string }) {
 
 export function StaffCharacterSection({ credits }: StaffCharacterSectionProps) {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const allowOps = can(user, CATALOG_ENTITY_EDIT);
   const { definitions: defs } = useDefinitions();
   const defaultRole = t("work.detail.staffDefaultRole");
   const characterFallback = t("work.detail.relGroupCharacters");
@@ -166,7 +171,7 @@ export function StaffCharacterSection({ credits }: StaffCharacterSectionProps) {
       const selfIsCharacter = !!c.character && !!c.agent.id && c.agent.id === c.character.id;
       if (!selfIsCharacter) {
         const context = [c.language, c.contextLabel].filter(Boolean).join(" · ");
-        const role = c.creditRole || c.relationLabel || defaultRole;
+        const role = readerCreditRole(c.creditRole, c.relationLabel, defaultRole, { allowOps });
         // 同一演员、职位与上下文的重复关系只留一条；不同语言/篇目各自保留。
         const dup = card.voices.some(
           (v) => v.id === c.agent.id && v.role === role && (v.context || "") === context,
@@ -184,12 +189,12 @@ export function StaffCharacterSection({ credits }: StaffCharacterSectionProps) {
         if (!card.character.id && c.character.id) card.character.id = c.character.id;
         if (!card.character.avatar_url && c.character.avatarUrl) card.character.avatar_url = c.character.avatarUrl;
         // 角色自身的登场关系决定角色徽章；配音关系不得把「配音者」写到角色上。
-        card.character.roleBadge = c.character.rankLabel || c.creditRole || c.relationLabel || characterFallback;
+        card.character.roleBadge = c.character.rankLabel || readerCreditRole(c.creditRole, c.relationLabel, characterFallback, { allowOps });
         if (c.character.rankCode) card.character.rankCode = c.character.rankCode;
       }
     }
     return Array.from(cardMap.values());
-  }, [credits, characterFallback, defaultRole]);
+  }, [credits, characterFallback, defaultRole, allowOps]);
 
   // 角色与配音只是「全部」里的合成展示，不另建 A+B 页签；关系筛选只列实际关系码。
   const relationFilters = useMemo(() => {
@@ -211,8 +216,8 @@ export function StaffCharacterSection({ credits }: StaffCharacterSectionProps) {
   const activeRelation = effectiveTab.startsWith("rel:") ? effectiveTab.slice(4) : "";
   const relationCredits = activeRelation ? credits.filter((c) => c.relationType === activeRelation) : [];
 
-  // 格式化具体职务标签：来源职位文本优先，缺失回退关系本地化名。
-  const formatRole = (c: StaffCredit) => c.creditRole || c.relationLabel || defaultRole;
+  // 格式化具体职务标签：可读原文优先；英文机器码（performer 等）回落关系本地化名。
+  const formatRole = (c: StaffCredit) => readerCreditRole(c.creditRole, c.relationLabel, defaultRole, { allowOps });
 
   // 全部与逐类筛选共用一个网格和展开状态，不再让角色与其他人员各自滚动。
   const displayItems = effectiveTab === "all"

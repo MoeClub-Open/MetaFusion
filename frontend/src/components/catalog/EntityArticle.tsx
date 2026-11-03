@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { canEditEntity } from "@/lib/permissions";
+import { readerVisibleProse } from "@/lib/readerNotes";
 import { languageLabel } from "@/lib/languages";
 import { buildTitleChain, findRowForLocale } from "@/lib/titles";
 import { articleTranslations, pickArticleTranslation } from "@/lib/catalogArticle";
@@ -23,9 +24,11 @@ export function EntityArticle({ entity, titleOrder }: { entity: Entity; titleOrd
   const article = chosen || pickArticleTranslation(entity, locale, titleOrder);
   const summaries = Object.entries(entity.translations || {}).map(([lang, row]) => ({ locale: lang, summary: row.summary }));
   const chain = buildTitleChain(article?.locale || locale, { order: article ? [article.locale] : titleOrder, originalLanguage: entity.original_language }, summaries.map((row) => row.locale));
-  const summary = chain.map((lang) => findRowForLocale(summaries, lang)?.summary?.trim()).find(Boolean)
+  const rawSummary = chain.map((lang) => findRowForLocale(summaries, lang)?.summary?.trim()).find(Boolean)
     || (typeof entity.attributes?.summary === "string" ? entity.attributes.summary : "")
     || (typeof entity.attributes?.description === "string" ? entity.attributes.description : "");
+  const allowOps = canEditEntity(user ?? undefined, entity);
+  const summary = readerVisibleProse(rawSummary, { allowOps });
   return (
     <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">

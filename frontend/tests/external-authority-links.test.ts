@@ -106,3 +106,25 @@ test("list 变体：平台名完整显示，百分号编码副行解码", () => 
   // CJK 用 break-keep，避免「官/方」中字断开；不截成「官…」
   assert.match(html, /font-sans break-keep">官方网站</);
 });
+
+test("读者面 list 变体副行不直出 MusicBrainz UUID（href 可含）", () => {
+  const html = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      variant: "list",
+      externalLinks: [
+        {
+          kind: "musicbrainz_artist",
+          external_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          url: "https://musicbrainz.org/artist/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        },
+      ],
+    }),
+  }));
+  // 链接目标可含 UUID；可见副行 / title 不得把 UUID 当主文案
+  assert.match(html, /href="https:\/\/musicbrainz\.org\/artist\/a1b2c3d4-e5f6-7890-abcd-ef1234567890"/);
+  assert.match(html, /title="[^"]*musicbrainz\.org"/);
+  assert.doesNotMatch(html, /title="[^"]*a1b2c3d4-e5f6-7890-abcd-ef1234567890"/);
+  assert.match(html, />musicbrainz\.org</);
+});
+

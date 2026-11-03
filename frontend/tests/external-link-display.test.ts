@@ -19,3 +19,31 @@ test("无 ID 时副行取短域名或末段路径", () => {
   assert.equal(externalLinkSecondary(undefined, "https://example.org/"), "example.org");
   assert.equal(externalLinkSecondary(undefined, "https://example.org/wiki/Title"), "Title");
 });
+
+test("读者面副行不直出 UUID / Wikidata Q-id，回落主机名", () => {
+  assert.equal(
+    externalLinkSecondary(
+      "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "https://musicbrainz.org/artist/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    ),
+    "musicbrainz.org",
+  );
+  assert.equal(
+    externalLinkSecondary("Q42", "https://www.wikidata.org/wiki/Q42"),
+    "www.wikidata.org",
+  );
+  assert.equal(
+    externalLinkSecondary(
+      "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "https://musicbrainz.org/artist/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      { allowOpaque: true },
+    ),
+    "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  );
+});
+
+test("可读产品码与 Bangumi ep 仍作副行", () => {
+  assert.equal(externalLinkSecondary("ep257552", "https://bgm.tv/ep/257552"), "ep257552");
+  assert.equal(externalLinkSecondary("4901234567894", "4901234567894"), "4901234567894");
+});
+
