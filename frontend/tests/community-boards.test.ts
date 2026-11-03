@@ -49,3 +49,52 @@ test("sharing without supported browser capabilities reports failure", async () 
     else Reflect.deleteProperty(globalThis, "navigator");
   }
 });
+
+test("sharing cancelled via Web Share AbortError does not fall back to clipboard", async () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  let clipboardCalls = 0;
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      share: async () => {
+        const err = new Error("Share canceled");
+        err.name = "AbortError";
+        throw err;
+      },
+      canShare: () => true,
+      clipboard: {
+        writeText: async () => {
+          clipboardCalls += 1;
+        },
+      },
+    },
+  });
+  try {
+    assert.equal(await shareContent({ title: "Topic", url: "https://example.invalid/community/topic" }), "cancelled");
+    assert.equal(clipboardCalls, 0);
+  } finally {
+    if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    else Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
+
+test("sharing falls back to clipboard copy when Web Share is unavailable", async () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      clipboard: {
+        writeText: async (value: string) => {
+          assert.equal(value, "https://example.invalid/community/topic");
+        },
+      },
+    },
+  });
+  try {
+    assert.equal(await shareContent({ title: "Topic", url: "https://example.invalid/community/topic" }), "copied");
+  } finally {
+    if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    else Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
+

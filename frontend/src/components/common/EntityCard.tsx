@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { AdaptiveCardCover } from "./AdaptiveCardCover";
-import { ProceduralCover } from "./ProceduralCover";
+import { NeutralCover } from "./NeutralCover";
 import { GRID_COVER_ASPECT } from "@/lib/cover";
 
 export interface EntityCardProps {
@@ -54,8 +54,7 @@ export function EntityCard({
       <AdaptiveCardCover
         src={pictureUrl}
         alt={title}
-        naturalAspect
-        /* 3:4 仅用于加载中与无图占位，实际封面按原图比例撑开。 */
+        /* 固定 3:4，避免封面加载后卡片高度跳动。 */
         aspectRatio={GRID_COVER_ASPECT}
         badge={
           <span className="px-2 py-0.5 rounded-chip bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
@@ -64,8 +63,8 @@ export function EntityCard({
           </span>
         }
         fallbackContent={
-          <div className="w-full h-full" aria-hidden>
-            <ProceduralCover id={id} title={title} originalTitle={baseTitle} compact />
+          <div className="w-full h-full relative" aria-hidden>
+            <NeutralCover label={title} />
             {fallbackSubtitle && <span className="absolute bottom-3 inset-x-3 text-center text-xs text-text-muted line-clamp-1">{fallbackSubtitle}</span>}
           </div>
         }

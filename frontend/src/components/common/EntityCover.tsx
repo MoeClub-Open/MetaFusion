@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ProceduralCover } from "./ProceduralCover";
+import { NeutralCover } from "./NeutralCover";
 
 interface EntityCoverProps {
   src?: string | null;
@@ -30,13 +30,13 @@ export function EntityCover({
   src,
   alt = "",
   title = "Untitled",
-  originalTitle,
-  id = "",
+  originalTitle: _originalTitle,
+  id: _id = "",
   className = "",
   imgClassName,
   loading = "lazy",
   onLoad,
-  compact = false,
+  compact: _compact = false,
   backdrop = false,
   width = 512,
   height = 512,
@@ -44,15 +44,7 @@ export function EntityCover({
   const [hasError, setHasError] = useState(false);
 
   if (!src || hasError) {
-    return (
-      <ProceduralCover
-        title={title}
-        originalTitle={originalTitle}
-        id={id}
-        className={className}
-        compact={compact}
-      />
-    );
+    return <NeutralCover className={className} label={title} />;
   }
 
   if (backdrop) {
