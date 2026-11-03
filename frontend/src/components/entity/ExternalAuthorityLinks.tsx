@@ -8,7 +8,7 @@ import { can, CATALOG_ENTITY_EDIT } from "@/lib/permissions";
 import { fetchExternalDatabases, ExternalDatabaseDefinition, pickLocalizedName } from "@/lib/api";
 import { authorityIcon } from "@/lib/authorityIcons";
 import { safeExternalAuthorityURL } from "@/lib/externalAuthorityURL";
-import { externalLinkSecondary } from "@/lib/externalLinkDisplay";
+import { externalLinkPrimaryFallback, externalLinkSecondary } from "@/lib/externalLinkDisplay";
 import type { ExternalLink as CatalogExternalLink } from "@/components/catalog/api";
 
 interface Props {
@@ -107,16 +107,17 @@ export function ExternalAuthorityLinks({
 
       const key = link.kind.toLowerCase();
       const def = defMap.get(key);
+      const url = safeExternalAuthorityURL(link.url);
       let name = "";
       if (def) {
         name = pickLocalizedName(locale, def.names, def.code);
-      } else if (key === "official_website") {
-        name = t("authority.officialWebsite");
       } else {
-        name = key.toUpperCase();
+        // defs 未就绪时禁止 UPPER_SNAKE 枚举闪屏；主机品牌 / 通用文案回落。
+        name = externalLinkPrimaryFallback(key, url || link.url || "", {
+          officialWebsiteLabel: t("authority.officialWebsite"),
+          genericLabel: t("entity.authority.label"),
+        });
       }
-
-      const url = safeExternalAuthorityURL(link.url);
       const role = link.role || "";
       const isBangumi = key.startsWith("bangumi");
       const defaultOrder = role === "official" ? 5 : isBangumi ? 10 : def?.sort_order ?? 100;

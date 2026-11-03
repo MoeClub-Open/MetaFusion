@@ -128,3 +128,40 @@ test("读者面 list 变体副行不直出 MusicBrainz UUID（href 可含）", (
   assert.match(html, />musicbrainz\.org</);
 });
 
+
+test("缺 defs 首屏主标签不闪 SPOTIFY_ARTIST / APPLE_MUSIC_ARTIST 枚举", () => {
+  const html = renderToStaticMarkup(createElement(I18nProvider, {
+    initialLocale: "zh-CN",
+    children: createElement(ExternalAuthorityLinks, {
+      variant: "list",
+      externalLinks: [
+        {
+          kind: "spotify_artist",
+          external_id: "2uH0TGvdgttfPNNqQtw4lE",
+          url: "https://open.spotify.com/artist/2uH0TGvdgttfPNNqQtw4lE",
+        },
+        {
+          kind: "apple_music_artist",
+          external_id: "1038457852",
+          url: "https://music.apple.com/us/artist/mili/1038457852",
+        },
+        {
+          kind: "youtube_channel",
+          external_id: "UC1234567890abcdefghijkl",
+          url: "https://www.youtube.com/channel/UC1234567890abcdefghijkl",
+        },
+      ],
+    }),
+  }));
+  assert.doesNotMatch(html, /SPOTIFY_ARTIST/);
+  assert.doesNotMatch(html, /APPLE_MUSIC_ARTIST/);
+  assert.doesNotMatch(html, /YOUTUBE_CHANNEL/);
+  assert.match(html, /Spotify/);
+  assert.match(html, /Apple Music/);
+  assert.match(html, /YouTube/);
+  // 副行主机名，不露原始机码
+  assert.match(html, /open\.spotify\.com/);
+  assert.doesNotMatch(html, />2uH0TGvdgttfPNNqQtw4lE</);
+  assert.doesNotMatch(html, />1038457852</);
+  assert.doesNotMatch(html, />UC1234567890abcdefghijkl</);
+});
