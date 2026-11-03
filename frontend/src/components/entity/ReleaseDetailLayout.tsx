@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, Entity, mapLimit, title as entityTitle } from "@/components/catalog/api";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useAuth } from "@/lib/authContext";
+import { canEditEntity } from "@/lib/permissions";
 import {
   useDefinitions,
   getKindName,
@@ -146,6 +148,7 @@ export default function ReleaseDetailLayout() {
   const params = useParams();
   const releaseId = params.id as string;
   const { t, locale } = useI18n();
+  const { user } = useAuth();
   const titleOrder = useTitleDisplayOrder();
   // 定义一律走 lib/definitions.ts 的缓存（与 /catalog 路由同源）——定义从来不住在 CatalogProvider 里
   // （Provider 只留模块状态与实例初始化状态），以前这里读 Provider 的 definition 恒为 undefined，字段名只能显示裸码。
@@ -726,6 +729,7 @@ export default function ReleaseDetailLayout() {
             <div className="space-y-1.5 min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] tracking-wide">
                 <span className="px-2 py-0.5 rounded-sm bg-primary text-primary-foreground font-semibold">{t("release.detail.badge")}</span>
+                {canEditEntity(user ?? undefined, release) && (
                 <QualityBadge
                   entityId={releaseId}
                   onNavigate={() => {
@@ -733,6 +737,7 @@ export default function ReleaseDetailLayout() {
                     if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
                   }}
                 />
+                )}
                 {editionLabel && (
                   <span className="px-2 py-0.5 rounded-sm bg-violet-500/10 text-violet-600 dark:text-alt-soft border border-violet-500/25 font-semibold">
                     {editionLabel}

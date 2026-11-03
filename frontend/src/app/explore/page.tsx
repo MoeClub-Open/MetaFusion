@@ -12,6 +12,8 @@ import { fetchQualityBatch } from "@/lib/quality";
 import { Pagination } from "@/components/common/Pagination";
 import { kindIcon } from "@/lib/kindIcons";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useAuth } from "@/lib/authContext";
+import { can, CATALOG_ENTITY_EDIT } from "@/lib/permissions";
 import { useDefinitions, getKindName, getTagName, getTagNames } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
 import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover";
@@ -38,6 +40,8 @@ import { languageLabel, searchLanguages } from "@/lib/languages";
 
 // 固定骨架的浏览顺序；可选项和多语言名称仍由 definitions 提供。
 const EXPLORE_KIND_ORDER = ["work", "content_unit", "expression", "release", "medium", "track", "agent", "collection"];
+/** FRBR 内部层级标签（内容单元/内容表达/载体/曲目）：仅编辑者侧栏可见。 */
+const FRBR_INTERNAL_KINDS = new Set(["content_unit", "expression", "medium", "track"]);
 
 /** 列表项：图片结构复用 lib/cover 的 CoverBearing（首张即封面只在那一处定义）。 */
 interface EntityItem extends CoverBearing {
@@ -68,6 +72,8 @@ function getLocalizedTitle(
 
 function ExploreInner() {
   const { t, tr, locale } = useI18n();
+  const { user } = useAuth();
+  const isEditor = can(user, CATALOG_ENTITY_EDIT);
   const searchParams = useSearchParams();
   const router = useRouter();
   const [filtersExpanded, setFiltersExpanded] = useState(false);
@@ -264,9 +270,9 @@ function ExploreInner() {
     return () => { alive = false; };
   }, [currentKind, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
 
-  // 探索页质量圆点：仅 partial 显示；接口失败整页不显示，不影响列表。
+  // 探索页质量圆点：仅编辑者 + partial；匿名不露「有缺项」。接口失败整页不显示。
   useEffect(() => {
-    if (!items.length) {
+    if (!isEditor || !items.length) {
       setQualityById({});
       return;
     }
@@ -286,7 +292,7 @@ function ExploreInner() {
         setQualityById({});
       });
     return () => { alive = false; };
-  }, [items]);
+  }, [items, isEditor]);
 
   const updateFilters = (updates: Record<string, string>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -351,6 +357,7 @@ function ExploreInner() {
     () =>
       Object.keys(kinds || {})
         .filter((code) => kinds[code]?.enabled !== false)
+        .filter((code) => isEditor || !FRBR_INTERNAL_KINDS.has(code) || code === currentKind)
         .sort((a, b) => {
           const rank = (code: string) => {
             const index = EXPLORE_KIND_ORDER.indexOf(code);
@@ -358,7 +365,7 @@ function ExploreInner() {
           };
           return rank(a) - rank(b) || getKindName(kinds, a, locale).localeCompare(getKindName(kinds, b, locale));
         }),
-    [kinds, locale],
+    [kinds, locale, isEditor, currentKind],
   );
 
   // 面板条目 =「全部」+ 各启用种类；名称走 definitions 多语言名（helper 缺失时才回退前端字典）。
@@ -372,19 +379,27 @@ function ExploreInner() {
   // 各条目的数量：取列表接口响应里的 total（不是 items.length——列表被 limit 截断）。
   // 单个种类请求失败只让那一格留空，不影响其它条目与整页渲染。
   useEffect(() => {
+    // 分面计数相对「当前筛选集合」：带上 q/tags/…，只换 kind 维（含 all）。
+    // 以前只传 limit=1，侧栏恒显全库 ~23 万，与结果区「共 339」对不上。
     const codes = ["all", ...kindOptions];
     let cancelled = false;
+    const base = new URLSearchParams();
+    if (currentQ) base.set("q", clampSearchQuery(currentQ));
+    currentTags.forEach((tag) => base.append("tags", tag));
+    if (currentTagsMode !== "any") base.set("tags_mode", currentTagsMode);
+    if (currentOriginalLanguage) base.set("original_language", currentOriginalLanguage);
+    if (currentHasPictures) base.set("has_pictures", "1");
+    base.set("limit", "1");
+
     Promise.all(
-      codes.map((code) =>
-        fetch(
-          "/api/catalog/entities?" +
-            new URLSearchParams(code === "all" ? { limit: "1" } : { kind: code, limit: "1" }).toString(),
-          { credentials: "same-origin" },
-        )
+      codes.map((code) => {
+        const params = new URLSearchParams(base);
+        if (code !== "all") params.set("kind", code);
+        return fetch("/api/catalog/entities?" + params.toString(), { credentials: "same-origin" })
           .then((res) => (res.ok ? res.json() : null))
           .then((data) => { const n = safeCount(data?.total, -1); return n >= 0 ? n : null; })
-          .catch(() => null),
-      ),
+          .catch(() => null);
+      }),
     ).then((totals) => {
       if (cancelled) return;
       const next: Record<string, number> = {};
@@ -396,7 +411,7 @@ function ExploreInner() {
     return () => {
       cancelled = true;
     };
-  }, [kindOptions]);
+  }, [kindOptions, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures]);
 
   // 列表容器 key：视图与筛选变化时重挂载、重放 .mf-tabpanel；
   // 顶栏尚未提交的搜索输入不参与，否则打字过程会一直闪。
