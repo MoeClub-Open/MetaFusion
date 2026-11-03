@@ -2,7 +2,9 @@
 // 约束：
 //   1) 只做 metadata，不改渲染策略（这些页面仍是客户端取数渲染，SSR 骨架化是另一件事）；
 //   2) 取数失败/超时一律回落到站点级 metadata，绝不把详情页变成 500；
-//   3) 题名走既有 locale 解析 helper（lib/titles.ts 的选取链），不新造回退链。
+//   3) 题名走既有 locale 解析 helper（lib/titles.ts 的选取链），不新造回退链；
+//   4) 读面 prose 与 body 同一契约：description / OG / twitter（及未来 JSON-LD）走 readerVisibleProse，
+//      不把 edition_type= 等机器码当 SEO 例外留给爬虫/分享卡。
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { getMessages } from "@/i18n/getMessages";
@@ -10,6 +12,7 @@ import { normalizeLocale, parseAcceptLanguage } from "@/i18n/routing";
 import { coverUrl, type CoverBearing } from "./cover";
 import { pickRecordEntry } from "./titles";
 import { SITE_NAME, absoluteUrl } from "./site";
+import { readerVisibleProse } from "./readerNotes";
 
 /** 服务端取数超时：metadata 取不到就回落站点级，不让首字节被上游拖住。 */
 const SEO_FETCH_TIMEOUT_MS = 2500;
@@ -168,7 +171,10 @@ export async function entityMetadata(id: string, routePrefix: string): Promise<M
   );
   const displayTitle = (title || entity.title || "").trim();
   if (!displayTitle) return siteFallback();
-  const description = clamp(body || structuredDescription(entity, locale) || displayTitle);
+  // 与 EntityArticle 读面同一过滤：meta / og:description / twitter:description 共用 description。
+  // 当前无 JSON-LD 发射点；若日后补 ld+json，描述字段须复用同一 cleanedBody，勿另开 SEO 例外。
+  const cleanedBody = readerVisibleProse(body);
+  const description = clamp(cleanedBody || structuredDescription(entity, locale) || displayTitle);
   return build(displayTitle, description, `${routePrefix}/${entity.id || id}`, ogImage(entity), "article");
 }
 
