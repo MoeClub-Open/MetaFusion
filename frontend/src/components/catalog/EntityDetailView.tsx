@@ -969,12 +969,12 @@ export function EntityDetailView({ id }: { id: string }) {
                 type="button"
                 onClick={copyShareLink}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-control border border-line bg-surface text-xs font-medium text-text-faint hover:text-emphasis transition-colors cursor-pointer"
-                title={copiedLink ? t("entity.page.linkCopied") : t("entity.page.share")}
-                aria-live="polite"
+                title={t("entity.page.share")}
               >
-                {copiedLink ? <Check className="w-3.5 h-3.5 text-success" /> : <Share2 className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? t("entity.page.linkCopied") : t("entity.page.share")}</span>
+                <Share2 className="w-3.5 h-3.5" />
+                <span>{t("entity.page.share")}</span>
               </button>
+              {/* 成功反馈只走 role=status，避免按钮文案与 live region 双重播报。 */}
               {copiedLink && (
                 <span role="status" className="text-[11px] font-mono text-success">{t("entity.page.linkCopied")}</span>
               )}
