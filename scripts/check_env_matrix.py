@@ -127,7 +127,7 @@ KEYS = {
     # 站内通知的跨服务投递密钥（互动服务 → 目录，唯一一条服务间写入）。两个读者：目录侧校验它、
     # 互动侧带着它投递。默认值本身安全（空 = 目录侧端点整体 503 internal_api_disabled、
     # 互动侧不投递，评论/回帖照常成功），危险的是"以为配了其实没配"——所以两边都登记、都要注入。
-    "INTERNAL_API_TOKEN": {"readers": [("catalog", "cmd/server/main.go"), ("community", "internal/config/config.go")], "default": "空 = 跨服务通知投递关闭（评论/回帖仍成功，只是不产生通知）", "safe": True},
+    "INTERNAL_API_TOKEN": {"readers": [("catalog", "cmd/server/main.go"), ("community", "internal/config/config.go"), ("storage", "internal/config/config.go"), ("auth", "internal/config/config.go")], "default": "空 = 通知投递关闭 + credentials-status 服务身份 fail-closed（下游 H1/H2 会 auth_unavailable）", "safe": True, "note": "四服务同值：目录校验通知投递；账号校验 credentials-status；互动/存储/目录 Lookup 携带 X-Internal-Token"},
     # ── 存储服务（../metafusion-storage）─────────────────────────────────
     "STORAGE_ROOT": {"readers": [("storage", "internal/config/config.go")], "default": "./storage-data", "safe": True},
     "STORAGE_S3_ENDPOINT": {"readers": [("storage", "internal/config/config.go")], "default": "空 = 本地对象模式", "safe": True},

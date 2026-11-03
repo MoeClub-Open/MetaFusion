@@ -105,10 +105,14 @@ func main() {
 	// 账号服务的内省端点判定（结果进程内缓存 60 秒 → 吊销与过期最长 60 秒后在下游生效）。
 	// AUTH_URL 未配置时不装配内省器：这类请求回 503 auth_unavailable（依赖不可用），
 	// 而不是 401——bot/CI 拿到 401 会以为凭据有问题去换令牌。
+	internalAPIToken := strings.TrimSpace(os.Getenv("INTERNAL_API_TOKEN"))
 	if authURL := strings.TrimSpace(os.Getenv("AUTH_URL")); authURL != "" {
 		s.PAT = catalog.NewPATIntrospector(authURL)
-		s.Creds = catalog.NewCredentialsChecker(authURL)
+		s.Creds = catalog.NewCredentialsChecker(authURL, internalAPIToken)
 		log.Printf("catalog accepts personal access tokens via %s (introspection cached for %s)", authURL, catalog.PATCacheTTL)
+		if internalAPIToken == "" {
+			log.Print("INTERNAL_API_TOKEN is not configured: credentials-status lookups will fail closed after auth lockdown (H1/H2 auth_unavailable)")
+		}
 		// 实际生效的出站策略要能被运维看见：账号服务慢到什么程度算故障、会重试几次、熔断阈值多少，
 		// 只写在代码里的话，"为什么 PAT 请求 503 了"只能靠读源码猜。
 		if pol := catalog.PATIntrospectPolicy(); true {
@@ -154,7 +158,7 @@ func main() {
 	// INTERNAL_API_TOKEN 是跨服务投递站内通知的共享密钥（唯一一个服务间写端点）。
 	// 未配置即该端点关闭：评论回复照常成功，只是不产生通知（行为可见、可排查），
 	// 而不是"任何登录用户都能给任何人塞通知"。密钥只从环境读取，不进日志。
-	internalToken := strings.TrimSpace(os.Getenv("INTERNAL_API_TOKEN"))
+	internalToken := internalAPIToken
 	if internalToken == "" {
 		log.Print("INTERNAL_API_TOKEN is not configured: cross-service notification delivery is disabled (POST /api/notifications/internal returns 503 internal_api_disabled)")
 	}

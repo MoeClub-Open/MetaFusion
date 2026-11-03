@@ -266,6 +266,8 @@ services:
       # 所在网段）。语义与安全边界见 backend/internal/nettrust（四个服务同一份实现）。留空即默认值；
       # 非法值会让服务**拒绝启动**——静默退回"无可信代理"会让限流重新退化成全站共享一个桶。
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      # 与目录/互动/存储同值：credentials-status 服务身份；空 = 账号侧 fail-closed，下游 H1/H2 会 auth_unavailable。
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-}
     # 服务镜像基于 alpine，只有 busybox wget 没有 curl；/ready 会 ping postgres，
     # 数据库不可达时返回 503，正好当健康判据。
     healthcheck:
@@ -476,6 +478,8 @@ services:
       # 存量不透明会话令牌的兜底解析：身份问题只问账号服务（不查目录服务）。
       - AUTH_URL=http://auth:8081
       - CATALOG_URL=http://backend:8080
+      # credentials-status 服务身份（与 auth/catalog/community 同值）；空 = 账号侧 fail-closed。
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-}
       # 应用层限流与审计要按**真实客户端 IP**：只信任显式来源（默认回环 + RFC1918 私网 = 网关容器
       # 所在网段）。语义与安全边界见 backend/internal/nettrust（四个服务同一份实现）。留空即默认值；
       # 非法值会让服务**拒绝启动**——静默退回"无可信代理"会让限流重新退化成全站共享一个桶。

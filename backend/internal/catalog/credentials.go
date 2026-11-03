@@ -2,6 +2,7 @@ package catalog
 
 // 凭据世代核对：本地 JWKS 验签之后，向账号服务读取 auth.users.token_version / banned。
 // 共享源是 Postgres（经 GET /api/auth/credentials-status/:user_id），不是进程内 jti map。
+// 调用必须带服务身份 X-Internal-Token（INTERNAL_API_TOKEN），不得转发用户 Cookie/JWT。
 // 改密 / 全量登出 / 重置密码 / 封禁会 bump token_version，旧会话 JWT 的 tv 对不上即作废。
 
 import (
@@ -37,9 +38,10 @@ type CredentialsStatus struct {
 // CredentialsChecker 拉取账号凭据快照。baseURL 空时 Enabled=false，验签路径跳过核对
 // （部署未配 AUTH_URL 时与 PAT 一样留下缺口，启动日志已警告）。
 type CredentialsChecker struct {
-	baseURL string
-	up      *upstream.Client
-	now     func() time.Time
+	baseURL       string
+	internalToken string
+	up            *upstream.Client
+	now           func() time.Time
 
 	mu    sync.Mutex
 	cache map[string]credentialsCacheEntry
@@ -50,17 +52,20 @@ type credentialsCacheEntry struct {
 	until  time.Time
 }
 
-// NewCredentialsChecker 用账号服务基址建核对器。
-func NewCredentialsChecker(baseURL string) *CredentialsChecker {
+// NewCredentialsChecker 用账号服务基址与跨服务共享密钥建核对器。
+// internalToken 对应 INTERNAL_API_TOKEN；空串时仍会发请求，但账号侧服务身份 fail-closed，
+// Lookup 会失败并表现为 auth_unavailable（部署必须同值注入）。
+func NewCredentialsChecker(baseURL, internalToken string) *CredentialsChecker {
 	policy := upstream.DefaultPolicy("credentials")
 	policy.Attempts = 2
 	policy.AttemptTimeout = 1500 * time.Millisecond
 	policy.Budget = 4 * time.Second
 	return &CredentialsChecker{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		up:      upstream.New(policy),
-		now:     time.Now,
-		cache:   map[string]credentialsCacheEntry{},
+		baseURL:       strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		internalToken: strings.TrimSpace(internalToken),
+		up:            upstream.New(policy),
+		now:           time.Now,
+		cache:         map[string]credentialsCacheEntry{},
 	}
 }
 
@@ -97,6 +102,9 @@ func (c *CredentialsChecker) fetch(ctx context.Context, userID string) (Credenti
 	u := c.baseURL + credentialsStatusPath + url.PathEscape(userID)
 	header := http.Header{}
 	header.Set("Accept", "application/json")
+	if c.internalToken != "" {
+		header.Set(InternalTokenHeader, c.internalToken)
+	}
 	resp, err := c.up.Do(ctx, upstream.Request{Method: http.MethodGet, URL: u, Header: header})
 	if err != nil {
 		return CredentialsStatus{}, fmt.Errorf("credentials status request failed: %w", err)
