@@ -50,4 +50,9 @@ test("entity detail share uses shareContent and surfaces status feedback", () =>
   assert.match(view, /result === "cancelled"/);
   assert.match(view, /role="status"/);
   assert.match(view, /community\.shareFailed/);
+  // 成功文案只在 role=status；按钮保持「分享」，避免与 live region 双重播报。
+  assert.match(view, /\{copiedLink && \([\s\S]*?role="status"[\s\S]*?entity\.page\.linkCopied/);
+  assert.doesNotMatch(view, /title=\{copiedLink \? t\("entity\.page\.linkCopied"\)/);
+  assert.doesNotMatch(view, /aria-live="polite"/);
+  assert.doesNotMatch(view, /copiedLink \? <Check/);
 });
