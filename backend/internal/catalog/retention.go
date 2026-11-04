@@ -23,12 +23,13 @@ const (
 // events. A disabled integration is omitted by the server's explicit wiring.
 type RetentionPolicy struct {
 	OutboxDays        int
+	IdempotencyDays   int
 	Interval          time.Duration
 	RequiredConsumers []string
 }
 
 func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error) {
-	p := RetentionPolicy{OutboxDays: 7, Interval: time.Hour,
+	p := RetentionPolicy{OutboxDays: 7, IdempotencyDays: 30, Interval: time.Hour,
 		RequiredConsumers: []string{openSearchConsumer}}
 	if value := strings.TrimSpace(getenv("CATALOG_OUTBOX_RETENTION_DAYS")); value != "" {
 		parsed, err := strconv.Atoi(value)
@@ -36,6 +37,13 @@ func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error)
 			return p, fmt.Errorf("invalid CATALOG_OUTBOX_RETENTION_DAYS: expected 0..36500 days")
 		}
 		p.OutboxDays = parsed
+	}
+	if value := strings.TrimSpace(getenv("CATALOG_IDEMPOTENCY_RETENTION_DAYS")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 0 || parsed > 36500 {
+			return p, fmt.Errorf("invalid CATALOG_IDEMPOTENCY_RETENTION_DAYS: expected 0..36500 days")
+		}
+		p.IdempotencyDays = parsed
 	}
 	if value := strings.TrimSpace(getenv("CATALOG_RETENTION_INTERVAL_SECONDS")); value != "" {
 		parsed, err := strconv.Atoi(value)
@@ -48,7 +56,7 @@ func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error)
 }
 
 func (p RetentionPolicy) validate() error {
-	if p.OutboxDays < 0 || p.OutboxDays > 36500 ||
+	if p.OutboxDays < 0 || p.OutboxDays > 36500 || p.IdempotencyDays < 0 || p.IdempotencyDays > 36500 ||
 		p.Interval < time.Minute || p.Interval > 24*time.Hour {
 		return fmt.Errorf("invalid_catalog_retention_policy")
 	}
@@ -64,8 +72,9 @@ func (p RetentionPolicy) validate() error {
 }
 
 type RetentionResult struct {
-	Events     int64
-	Deliveries int64
+	Events          int64
+	Deliveries      int64
+	IdempotencyKeys int64
 }
 
 // RunRetention waits one interval before the first bounded cleanup, so startup
@@ -90,23 +99,24 @@ func (s *Store) RunRetention(ctx context.Context, policy RetentionPolicy) {
 				removed, err = s.CleanupRetention(cleanupCtx, policy)
 				result.Events += removed.Events
 				result.Deliveries += removed.Deliveries
-				if err != nil || removed.Events < retentionBatchSize {
+				result.IdempotencyKeys += removed.IdempotencyKeys
+				if err != nil || (removed.Events < retentionBatchSize && removed.IdempotencyKeys < retentionBatchSize) {
 					break
 				}
 			}
 			cancel()
 			if err != nil && ctx.Err() == nil {
 				log.Printf("catalog retention delayed: %v", err)
-			} else if result.Events != 0 || result.Deliveries != 0 {
-				log.Printf("catalog retention: events=%d deliveries=%d", result.Events, result.Deliveries)
+			} else if result.Events != 0 || result.Deliveries != 0 || result.IdempotencyKeys != 0 {
+				log.Printf("catalog retention: events=%d deliveries=%d idempotency_keys=%d", result.Events, result.Deliveries, result.IdempotencyKeys)
 			}
 		}
 	}
 }
 
-// CleanupRetention processes at most one outbox batch. OutboxDays=0 keeps those
-// events forever. Idempotency records, complete immutable commits and revisions
-// (including commit provenance) are deliberately never deleted.
+// CleanupRetention processes at most one batch of each disposable record type.
+// A zero day setting keeps that type forever. Complete immutable commits and
+// revisions (including commit provenance) are deliberately never deleted.
 func (s *Store) CleanupRetention(ctx context.Context, policy RetentionPolicy) (RetentionResult, error) {
 	var result RetentionResult
 	if err := policy.validate(); err != nil {
@@ -127,6 +137,17 @@ func (s *Store) CleanupRetention(ctx context.Context, policy RetentionPolicy) (R
 	if policy.OutboxDays > 0 {
 		result.Events, result.Deliveries, err = pruneOutbox(ctx, tx, policy)
 		if err != nil {
+			return RetentionResult{}, err
+		}
+	}
+	if policy.IdempotencyDays > 0 {
+		deleted, err := tx.ExecContext(ctx, `DELETE FROM catalog.idempotency_keys WHERE ctid IN (
+			SELECT ctid FROM catalog.idempotency_keys WHERE created_at < now() - make_interval(days => $1)
+			ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)`, policy.IdempotencyDays, retentionBatchSize)
+		if err != nil {
+			return RetentionResult{}, err
+		}
+		if result.IdempotencyKeys, err = deleted.RowsAffected(); err != nil {
 			return RetentionResult{}, err
 		}
 	}

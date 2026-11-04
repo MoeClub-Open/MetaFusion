@@ -51,19 +51,26 @@ func (s *Store) DisplayCovers(ctx context.Context, items []Entity, u *User) (map
 	}
 	occurrences := map[string]string{}
 	if len(missing) > 0 {
+		// Recording occurrences and Release subjects are both visible publication
+		// paths; a release that actually carries artwork is preferred.
 		rows, err := s.DB.QueryContext(ctx, `SELECT root.id::text, occurrence.release_id::text
 		FROM unnest($1::uuid[]) root(id)
 		JOIN LATERAL (
-		 SELECT m.release_id FROM catalog.expressions x
-		 JOIN catalog.entities xe ON xe.id=x.id AND xe.state='active'
-		 JOIN catalog.track_contents c ON c.expression_id=x.id
-		 JOIN catalog.tracks t ON t.id=c.track_id
-		 JOIN catalog.entities te ON te.id=t.id AND te.state='active'
-		 JOIN catalog.mediums m ON m.id=t.medium_id
-		 JOIN catalog.entities me ON me.id=m.id AND me.state='active'
-		 JOIN catalog.entities r ON r.id=m.release_id AND r.state='active'
-		 WHERE x.id=root.id OR x.work_id=root.id OR x.content_unit_id=root.id
-		 ORDER BY m.release_id,c.position,t.id LIMIT 1
+		 SELECT candidate.release_id FROM (
+		  SELECT 0 AS path, m.release_id, c.position, t.id::text AS tie FROM catalog.expressions x
+		  JOIN catalog.entities xe ON xe.id=x.id AND xe.state='active'
+		  JOIN catalog.track_contents c ON c.expression_id=x.id
+		  JOIN catalog.tracks t ON t.id=c.track_id
+		  JOIN catalog.entities te ON te.id=t.id AND te.state='active'
+		  JOIN catalog.mediums m ON m.id=t.medium_id
+		  JOIN catalog.entities me ON me.id=m.id AND me.state='active'
+		  WHERE x.id=root.id OR x.work_id=root.id OR x.content_unit_id=root.id
+		  UNION ALL
+		  SELECT 1, rs.release_id, rs.position, rs.role FROM catalog.release_subjects rs WHERE rs.work_id=root.id
+		 ) candidate
+		 JOIN catalog.entities r ON r.id=candidate.release_id AND r.state='active'
+		 ORDER BY (CASE WHEN jsonb_typeof(r.document->'pictures')='array' THEN jsonb_array_length(r.document->'pictures') ELSE 0 END)=0,
+		  candidate.path, candidate.release_id, candidate.position, candidate.tie LIMIT 1
 		) occurrence ON true`, pq.Array(missing))
 		if err != nil {
 			return nil, err
