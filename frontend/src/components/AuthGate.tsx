@@ -24,6 +24,7 @@ function isProtectedPath(pathname: string | null): boolean {
 }
 
 let cachedSetupStatus: { is_initialized: boolean } | null = null;
+let setupStatusRequest: ReturnType<typeof fetchSetupStatus> | null = null;
 
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -51,7 +52,8 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
       return;
     }
 
-    fetchSetupStatus()
+    setupStatusRequest ||= fetchSetupStatus();
+    setupStatusRequest
       .then((status) => {
         cachedSetupStatus = status;
         if (!status.is_initialized) {

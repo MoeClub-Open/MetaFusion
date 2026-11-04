@@ -1766,8 +1766,6 @@
   "catalog.tagMatchMode": "Tag matching",
   "catalog.tagMatchAll": "Match all",
   "catalog.tagMatchAny": "Match any",
-  "catalog.tagMatchAllHint": "Narrow results: selecting A and B shows only entries that contain both tags.",
-  "catalog.tagMatchAnyHint": "Broaden results: selecting A and B shows entries that contain either tag.",
   "catalog.tagMatchSummary": "Tags: {mode}",
   "catalog.activeFilters": "{count} active",
   "catalog.removeFilter": "Remove filter: {filter}",

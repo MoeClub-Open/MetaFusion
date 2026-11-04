@@ -21,6 +21,7 @@ test("publisher references survive pagination and show the release from the orga
   });
   assert.deepEqual(offsets, [0, 2]);
   assert.equal(result.items.length, 2);
+  assert.equal(result.truncated, false);
   const rows = relationDirectoryRows("publisher", result.items, result.entities);
   assert.equal(rows[0].direction, "incoming");
   assert.equal(rows[0].entity?.title, "棘アリ [通常盤]");
@@ -42,4 +43,15 @@ test("missing relation versions and failed later pages never become editable par
     if (offset) throw new Error("page unavailable");
     return { subject_id: "publisher", items: [link("reference")], entities: {}, limit: 100, has_more: true };
   }), /page unavailable/);
+});
+
+test("bounded preview read stops at maxItems and marks truncated when more pages remain", async () => {
+  const offsets: number[] = [];
+  const result = await loadEntityRelationships("publisher", async (offset) => {
+    offsets.push(offset);
+    return { subject_id: "publisher", items: [link("ref-" + offset)], entities: {}, limit: 100, has_more: true };
+  }, 300);
+  assert.deepEqual(offsets, [0, 100, 200]);
+  assert.equal(result.items.length, 3);
+  assert.equal(result.truncated, true);
 });

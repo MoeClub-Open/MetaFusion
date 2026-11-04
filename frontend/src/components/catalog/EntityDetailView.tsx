@@ -21,7 +21,7 @@ import {
   title,
 } from "@/components/catalog/api";
 import { loadCatalogSection } from "@/lib/catalogSection";
-import { fetchEntityRelationships, type RelationshipRecord } from "@/lib/catalogRelationships";
+import { fetchEntityRelationshipPreview, fetchEntityRelationships, type EntityRelationships, type RelationshipRecord } from "@/lib/catalogRelationships";
 import { useAuth } from "@/lib/authContext";
 import { canEditEntity } from "@/lib/permissions";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -154,6 +154,8 @@ export function EntityDetailView({ id }: { id: string }) {
   const [relatedEntities, setRelatedEntities] = useState<Record<string, Entity>>({});
   // 统一关系投影返回的主体 ID。
   const [relationSubjectId, setRelationSubjectId] = useState<string>("");
+  const [relationsTruncated, setRelationsTruncated] = useState(false);
+  const [relationsExpanding, setRelationsExpanding] = useState(false);
   const [loadedChildren, setChildren] = useState<Entity[]>([]);
   const children = isCurrentRead ? loadedChildren : [];
   const [revisions, setRevisions] = useState<any[]>([]);
@@ -226,6 +228,30 @@ export function EntityDetailView({ id }: { id: string }) {
     }
   };
 
+  const applyRelations = (rel: EntityRelationships) => {
+    // 映射覆盖每条关系的两端（含主体自身），subject_id 指出哪一端是主体。
+    setRelations(rel.items);
+    setRelatedEntities(rel.entities);
+    setRelationSubjectId(rel.subject_id);
+    setRelationsTruncated(rel.truncated);
+  };
+
+  const loadAllRelations = async () => {
+    if (!entity?.id || relationsExpanding) return;
+    const key = readKey;
+    const sequence = loadSequenceRef.current;
+    const current = () => currentReadKeyRef.current === key && loadSequenceRef.current === sequence;
+    setRelationsExpanding(true);
+    try {
+      const rel = await fetchEntityRelationships(entity.id);
+      if (current()) applyRelations(rel);
+    } catch {
+      if (current()) setSectionFailures((prev) => ({ ...prev, relations: true }));
+    } finally {
+      if (current()) setRelationsExpanding(false);
+    }
+  };
+
   const load = async () => {
     const key = readKey;
     const sequence = ++loadSequenceRef.current;
@@ -245,6 +271,8 @@ export function EntityDetailView({ id }: { id: string }) {
     setRelations([]);
     setRelatedEntities({});
     setRelationSubjectId("");
+    setRelationsTruncated(false);
+    setRelationsExpanding(false);
     setRevisions([]);
     setRevisionTotal(0);
     setRevisionOffset(0);
@@ -268,9 +296,12 @@ export function EntityDetailView({ id }: { id: string }) {
       let postsFailed = false;
       let collectionsFailed = false;
       let metadataFailed = false;
-      const [occResult, relResult, revResult, posts, collections] = await Promise.all([
+      // 关系单独加载：关系很多的条目（如合辑艺人）不拖住主体与其他分区。
+      fetchEntityRelationshipPreview(e.id!, user?.id)
+        .then((rel) => { if (current()) applyRelations(rel); })
+        .catch(() => { if (current()) setSectionFailures((prev) => ({ ...prev, relations: true })); });
+      const [occResult, revResult, posts, collections] = await Promise.all([
         loadCatalogSection(api<{ items: any[] }>(`/catalog/entities/${e.id}/occurrences`), { items: [] }),
-        loadCatalogSection(fetchEntityRelationships(e.id!), { items: [] as RelationshipRecord[], entities: {} as Record<string, Entity>, subject_id: e.id || "" }),
         loadCatalogSection(api<{ items: any[]; total: number; offset: number }>(`/catalog/entities/${e.id}/revisions`), { items: [], total: 0, offset: 0 }),
         // 互动服务没接入（或这两条端点不可用）时整块留空，不阻断条目详情渲染；
         // 端点与请求体由 lib/api/community.ts 的包装负责，本组件不再自己拼 URL。
@@ -279,20 +310,13 @@ export function EntityDetailView({ id }: { id: string }) {
       ]);
       if (!current()) return;
 
-      const occRes = occResult.data, relRes = relResult.data, revRes = revResult.data;
+      const occRes = occResult.data, revRes = revResult.data;
       failed.occurrences = occResult.failed;
-      failed.relations = relResult.failed;
       failed.revisions = revResult.failed;
       const occItems = Array.isArray(occRes.items) ? occRes.items : [];
-      const relItems = Array.isArray(relRes.items) ? relRes.items : [];
-      if (!Array.isArray(occRes.items) || !Array.isArray(relRes.items) || !Array.isArray(revRes.items)) metadataFailed = true;
-      // 普通关系与字段引用共用已有 links 投影，按 has_more 读取完整页及端点摘要。
-      // 映射覆盖每条关系的两端（含主体自身），subject_id 指出哪一端是主体；
-      setRelatedEntities(relRes.entities || {});
-      setRelationSubjectId(relRes.subject_id);
+      if (!Array.isArray(occRes.items) || !Array.isArray(revRes.items)) metadataFailed = true;
       const revItems = Array.isArray(revRes.items) ? revRes.items : [];
       setOccurrences(occItems);
-      setRelations(relItems);
       setRevisions(revItems);
       setRevisionTotal(revRes.total);
       setRevisionOffset(revRes.offset + revItems.length);
@@ -382,7 +406,7 @@ export function EntityDetailView({ id }: { id: string }) {
       await Promise.all(parentPromises);
       if (current()) {
         setProjectionFailed(metadataFailed);
-        setSectionFailures(failed);
+        setSectionFailures((prev) => ({ ...prev, ...failed }));
       }
     } catch (err) {
       if (current()) setError((err as Error).message);
@@ -691,15 +715,22 @@ export function EntityDetailView({ id }: { id: string }) {
 
   // 分节标签：与下方的条件渲染一一对应；标签集合随后数据到达再收窄。
   const templateBlocks = blocksForEntity(defs,entity?.kind || "",entity?.attributes);
+  const relationCount = (n: number) => relationsTruncated ? `${n}+` : n;
+  const loadAllRelationsButton = relationsTruncated ? (
+    <button type="button" onClick={loadAllRelations} disabled={relationsExpanding}
+      className="mf-focus h-8 px-3 rounded-md border border-line text-xs font-semibold text-text-muted hover:text-text-strong hover:bg-surfaceHover disabled:opacity-60">
+      {relationsExpanding ? t("common.loading") : t("home.viewAll")}
+    </button>
+  ) : null;
   const tabBlocks: Record<string,string> = {staff:"credits",contents:entity?.kind === "expression" ? "composition" : "directory",releases:"occurrences",relations:"relations",resources:"resources"};
   const tabs: TabItem[] = [
     { id: "overview", label: t("entity.page.navOverview"), icon: <BookOpen className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "staff", label: t("entity.page.navStaff"), badge: sectionFailures.relations ? undefined : staffCredits.length + staffRelations.length, visible: sectionFailures.relations || staffCredits.length + staffRelations.length > 0, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "staff", label: t("entity.page.navStaff"), badge: sectionFailures.relations ? undefined : relationCount(staffCredits.length + staffRelations.length), visible: sectionFailures.relations || staffCredits.length + staffRelations.length > 0, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 作品的内容目录覆盖篇目/表达/聚合组成项，比"子实体列表"更准（子实体查询会连发行版一起带回），
     // 因此目录在场时以目录计数，且不再重复渲染子实体网格。
     { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : (directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0)) + aggregate.count, visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0 || aggregate.count > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "releases", label: t("entity.page.navReleases"), badge: sectionFailures.occurrences ? undefined : (entity?.kind === "work" ? workReleaseCount : occurrences.length), visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : mediaRelations.length, visible: sectionFailures.relations || mediaRelations.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : relationCount(mediaRelations.length), visible: sectionFailures.relations || mediaRelations.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // entity 在数据到达前为 null，这里只能安全取值；分节本身的可见性由 kind 决定。
     { id: "resources", label: t("entity.detail.resourcesTitle"), visible: defs?.structure?.[String(entity?.kind || "")]?.resources === true, icon: <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
@@ -1265,10 +1296,11 @@ export function EntityDetailView({ id }: { id: string }) {
                     <SectionTitle icon={<Users className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
                       {t("entity.page.navStaff")}
                       <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                        {staffRelations.length}
+                        {relationCount(staffRelations.length)}
                       </span>
                     </SectionTitle>
                     <EntityRelationDirectory subjectId={entity.id || id} relations={staffRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
+                    {loadAllRelationsButton}
                   </Card>
                 )}
               </div>
@@ -1479,7 +1511,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 >
                   {t("entity.page.relationsTitle")}
                   <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                    {mediaRelations.length}
+                    {relationCount(mediaRelations.length)}
                   </span>
                 </SectionTitle>
 
@@ -1506,6 +1538,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 ) : (
                   <EntityRelationDirectory subjectId={entity.id || id} relations={mediaRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
                 )}
+                {loadAllRelationsButton}
               </Card>
             )}
 

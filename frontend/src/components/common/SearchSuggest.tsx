@@ -74,7 +74,7 @@ export function SearchSuggest({
     let alive = true;
     const timer = setTimeout(() => {
       fetch(
-        "/api/catalog/entities?q=" + encodeURIComponent(q) + "&limit=8&state=active",
+        "/api/catalog/entities?q=" + encodeURIComponent(q) + "&limit=8&state=active&kinds=work,release,agent,collection",
         { credentials: "same-origin" },
       )
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))

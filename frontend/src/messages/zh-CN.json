@@ -1766,8 +1766,6 @@
   "catalog.tagMatchMode": "标签匹配方式",
   "catalog.tagMatchAll": "全部包含",
   "catalog.tagMatchAny": "任一包含",
-  "catalog.tagMatchAllHint": "缩小范围：选中 A、B 后，只显示同时包含 A 和 B 的条目。",
-  "catalog.tagMatchAnyHint": "扩大范围：选中 A、B 后，包含 A 或 B 的条目都会显示。",
   "catalog.tagMatchSummary": "标签：{mode}",
   "catalog.activeFilters": "已选 {count} 项",
   "catalog.removeFilter": "移除筛选：{filter}",

@@ -31,18 +31,49 @@ export interface EntityLinksPage {
   has_more: boolean;
 }
 
+export type EntityRelationships = {
+  subject_id: string;
+  items: RelationshipRecord[];
+  entities: Record<string, Entity>;
+  /** More visible links exist beyond the loaded window. */
+  truncated: boolean;
+};
+
+/** Complete, uncached read for editors and explicit "load all" actions. */
 export function fetchEntityRelationships(subjectId: string) {
-  return loadEntityRelationships(subjectId, (offset) => api<EntityLinksPage>(
-    `/catalog/entities/${encodeURIComponent(subjectId)}/links?limit=100&offset=${offset}`,
-  ));
+  return loadEntityRelationships(subjectId, (offset) => readLinksPage(subjectId, offset));
+}
+
+const PREVIEW_LIMIT = 300;
+const PREVIEW_TTL = 5_000;
+const previews = new Map<string, { at: number; promise: Promise<EntityRelationships> }>();
+
+/**
+ * Detail sections share one bounded read per subject. Entities with thousands
+ * of links render the first window immediately and load the rest on request.
+ */
+export function fetchEntityRelationshipPreview(subjectId: string, viewerId = ""): Promise<EntityRelationships> {
+  const cacheKey = `${viewerId}:${subjectId}`;
+  const cached = previews.get(cacheKey);
+  if (cached && Date.now() - cached.at < PREVIEW_TTL) return cached.promise;
+  const promise = loadEntityRelationships(subjectId, (offset) => readLinksPage(subjectId, offset), PREVIEW_LIMIT);
+  previews.set(cacheKey, { at: Date.now(), promise });
+  promise.catch(() => previews.delete(cacheKey));
+  return promise;
+}
+
+function readLinksPage(subjectId: string, offset: number) {
+  return api<EntityLinksPage>(`/catalog/entities/${encodeURIComponent(subjectId)}/links?limit=100&offset=${offset}`);
 }
 
 export async function loadEntityRelationships(
   subjectId: string,
   readPage: (offset: number) => Promise<EntityLinksPage>,
-): Promise<{ subject_id: string; items: RelationshipRecord[]; entities: Record<string, Entity> }> {
+  maxItems = Infinity,
+): Promise<EntityRelationships> {
   const records = new Map<string, RelationshipRecord>();
   const entities: Record<string, Entity> = {};
+  let truncated = false;
   for (let offset = 0; ; ) {
     const page = await readPage(offset);
     if (page.subject_id !== subjectId || !Array.isArray(page.items) || !page.entities
@@ -66,8 +97,12 @@ export async function loadEntityRelationships(
     }
     if (!page.has_more) break;
     offset += page.limit;
+    if (offset >= maxItems) {
+      truncated = true;
+      break;
+    }
   }
-  return { subject_id: subjectId, items: [...records.values()], entities };
+  return { subject_id: subjectId, items: [...records.values()], entities, truncated };
 }
 
 export function editableRelations(records: RelationshipRecord[]): (Relation & { id: string })[] {

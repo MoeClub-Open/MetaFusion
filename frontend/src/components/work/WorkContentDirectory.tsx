@@ -7,7 +7,7 @@ import { Entity, title as entityTitle } from "@/components/catalog/api";
 import { fetchAllPages } from "@/components/catalog/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getKindName, getRelationName, getTermName, useDefinitions } from "@/lib/definitions";
-import { fetchEntityRelationships } from "@/lib/catalogRelationships";
+import { fetchEntityRelationshipPreview } from "@/lib/catalogRelationships";
 import { useAuth } from "@/lib/authContext";
 // 日期值的呈现与信息面板共用同一实现（本地化/图例口径一致，不另写格式化）。
 import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
@@ -102,7 +102,7 @@ export function useWorkDirectoryData(workId: string): WorkDirectoryData {
         const [units, exprs, rel] = await Promise.all([
           fetchAllPages<Entity>(`/catalog/entities?kind=content_unit&work_id=${encodeURIComponent(workId)}`),
           fetchAllPages<Entity>(`/catalog/entities?kind=expression&work_id=${encodeURIComponent(workId)}`),
-          fetchEntityRelationships(workId),
+          fetchEntityRelationshipPreview(workId, viewerId),
         ]);
         if (current()) setState({
           readKey, status: "ready", items: [...units, ...exprs],

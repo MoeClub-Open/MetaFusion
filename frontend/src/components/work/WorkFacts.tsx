@@ -88,7 +88,7 @@ export function WorkFacts({
         </Section>
       ))}
       {restFields.length > 0 && (
-        <Section title={t("catalog.attributes")} stacked={stacked}>
+        <Section title={sections.length ? t("catalog.attributes") : ""} stacked={stacked}>
           {restFields.map((code) => (
             <Row key={code} label={getFieldName(defs, code, locale) || code} stacked={stacked}>
               <FieldValue code={code} value={(entity?.attributes || {})[code]} defs={defs} locale={locale} />

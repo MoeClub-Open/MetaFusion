@@ -49,7 +49,7 @@ function harness(initialViewer, response) {
       }
     },
     fetchAllPages: request,
-    fetchEntityRelationships: (id) => request(`/catalog/entities/${id}/links`),
+    fetchEntityRelationshipPreview: (id) => request(`/catalog/entities/${id}/links`),
   };
   vm.runInNewContext(code, context);
   return {

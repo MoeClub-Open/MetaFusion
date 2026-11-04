@@ -1766,8 +1766,6 @@
   "catalog.tagMatchMode": "タグの一致条件",
   "catalog.tagMatchAll": "すべて一致",
   "catalog.tagMatchAny": "いずれか一致",
-  "catalog.tagMatchAllHint": "範囲を絞る：A と B を選ぶと、両方のタグを含む項目だけを表示します。",
-  "catalog.tagMatchAnyHint": "範囲を広げる：A と B を選ぶと、どちらかのタグを含む項目を表示します。",
   "catalog.tagMatchSummary": "タグ：{mode}",
   "catalog.activeFilters": "{count} 件を選択中",
   "catalog.removeFilter": "絞り込みを解除：{filter}",

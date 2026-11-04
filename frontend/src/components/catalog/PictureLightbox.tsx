@@ -16,7 +16,7 @@ import { useI18n } from "@/i18n/I18nProvider";
  */
 export interface LightboxPicture {
   /** 图片地址：自托管封面是 /api/storage/assets/<uuid>/content，取不到对象时由
-   *  AdaptiveCover 退化成程序封面而不是画破图。 */
+   *  AdaptiveCover 退化成中性封面占位而不是画破图。 */
   url: string;
   /** 图注：调用方按当前语种解析好（词表名与图注都要 definitions/locale），本组件不取数。 */
   caption: string;

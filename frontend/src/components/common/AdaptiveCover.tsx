@@ -26,7 +26,7 @@ interface AdaptiveCoverProps {
   /** 单张展示的外框上限，避免极端比例的大图撑坏版式 */
   maxHeight?: number | string;
   minHeight?: number | string;
-  /** 小缩略图：占位走精简版（见 ProceduralCover compact）。 */
+  /** 小缩略图标记。 */
   compact?: boolean;
   /**
    * 衬底（默认按图片展示方式自动判断）：contain 时把比例不合的留白垫成同色柔化画面，

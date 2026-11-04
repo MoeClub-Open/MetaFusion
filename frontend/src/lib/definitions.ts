@@ -211,6 +211,8 @@ let cachedVersion = "";
 let cachedETag: string | null = null;
 let definitionsPromise: Promise<DynamicDefinitions | null> | null = null;
 let revalidating = false;
+// 最近一次成功读取的时间：同一页面内多个组件陆续挂载时只校验一次。
+let loadedAt = 0;
 // 请求序号：只接受不早于已应用序号的响应，防止较早的请求晚到覆盖较新版本。
 let requestSeq = 0;
 let appliedSeq = 0;
@@ -223,6 +225,7 @@ async function loadDefinitions(): Promise<DynamicDefinitions | null> {
     .then((res) => (res.ok ? res.json() : null))
     .catch(() => null);
   if (!data?.document) return null;
+  loadedAt = Date.now();
   // 乱序响应防护：更早发出的请求（seq 更小）晚到且已被更新响应应用时丢弃。
   if (seq < appliedSeq) return cachedDefinitions;
   appliedSeq = seq;
@@ -247,7 +250,7 @@ export async function fetchDefinitions(): Promise<DynamicDefinitions | null> {
   if (cachedDefinitions) {
     // stale-while-revalidate：先返回缓存，后台按版本校验；发布新版本后
     // 下一次进入页面即刷新并通知订阅组件，不阻塞渲染。
-    if (!revalidating) {
+    if (!revalidating && Date.now() - loadedAt > 30_000) {
       revalidating = true;
       loadDefinitions().finally(() => {
         revalidating = false;

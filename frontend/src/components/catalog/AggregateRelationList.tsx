@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Entity } from "./api";
-import { fetchEntityRelationships } from "@/lib/catalogRelationships";
+import { fetchEntityRelationshipPreview } from "@/lib/catalogRelationships";
+import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getKindName, getRelationName, useDefinitions } from "@/lib/definitions";
 import { componentEntries, type RelationRow } from "@/components/work/WorkContentDirectory";
@@ -15,6 +16,8 @@ type RelationData = { items: RelationRow[]; entities: Record<string, Entity> };
  * （标签徽标「内容结构 N」要算上它，以前只数目录，聚合项全漏，显示成 0）。
  */
 export function useAggregateRelations(entityId: string) {
+  const { user } = useAuth();
+  const viewerId = user?.id || "";
   const { locale } = useI18n();
   const { definitions } = useDefinitions();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -25,7 +28,7 @@ export function useAggregateRelations(entityId: string) {
     if (!entityId) return;
     let active = true;
     setState("loading");
-    fetchEntityRelationships(entityId)
+    fetchEntityRelationshipPreview(entityId, viewerId)
       .then((response) => {
         if (!active) return;
         setData(response);
@@ -33,7 +36,7 @@ export function useAggregateRelations(entityId: string) {
       })
       .catch(() => { if (active) setState("error"); });
     return () => { active = false; };
-  }, [entityId, attempt]);
+  }, [entityId, viewerId, attempt]);
 
   const groups = useMemo(() => {
     const entries = componentEntries(

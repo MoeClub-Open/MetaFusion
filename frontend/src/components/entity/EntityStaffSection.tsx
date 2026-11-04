@@ -5,7 +5,8 @@
 // 不再各写一套演职员展示。无署名关系时渲染空。
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchEntityRelationships } from "@/lib/catalogRelationships";
+import { fetchEntityRelationshipPreview } from "@/lib/catalogRelationships";
+import { useAuth } from "@/lib/authContext";
 import { useDefinitions } from "@/lib/definitions";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Entity } from "@/components/catalog/api";
@@ -20,6 +21,8 @@ export function EntityStaffSection({
   /** 条目数回告：包卡片/页签的页面据此决定显隐（空时不留空卡）。 */
   onCount?: (n: number) => void;
 }) {
+  const { user } = useAuth();
+  const viewerId = user?.id || "";
   const { tr, locale } = useI18n();
   const { definitions: defs } = useDefinitions();
   const [relations, setRelations] = useState<RelationLike[]>([]);
@@ -27,7 +30,7 @@ export function EntityStaffSection({
 
   useEffect(() => {
     let alive = true;
-    fetchEntityRelationships(entityId)
+    fetchEntityRelationshipPreview(entityId, viewerId)
       .then((r) => {
         if (!alive) return;
         setRelations(Array.isArray(r.items) ? r.items : []);
@@ -41,7 +44,7 @@ export function EntityStaffSection({
     return () => {
       alive = false;
     };
-  }, [entityId]);
+  }, [entityId, viewerId]);
 
   const credits = useMemo(
     () => buildStaffCredits({ entityId, relations, relEntities, defs, locale, tr }),

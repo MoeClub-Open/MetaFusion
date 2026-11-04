@@ -39,6 +39,8 @@ import { Select } from "@/components/ui/Select";
 import { languageLabel, searchLanguages } from "@/lib/languages";
 
 // 固定骨架的浏览顺序；可选项和多语言名称仍由 definitions 提供。
+// 关键词搜索的「全部」只返回独立条目；同一作品的表达与收录位置在详情页展开。
+const SEARCH_DEFAULT_KINDS = "work,release,agent,collection";
 const EXPLORE_KIND_ORDER = ["work", "content_unit", "expression", "release", "medium", "track", "agent", "collection"];
 /** FRBR 内部层级标签（内容单元/内容表达/载体/曲目）：仅编辑者侧栏可见。 */
 const FRBR_INTERNAL_KINDS = new Set(["content_unit", "expression", "medium", "track"]);
@@ -208,6 +210,7 @@ function ExploreInner() {
     setLoadError("");
     const params = new URLSearchParams();
     if (currentKind !== "all") params.set("kind", currentKind);
+    else if (currentQ) params.set("kinds", SEARCH_DEFAULT_KINDS);
     // 深链/手改 URL 带来的超长 q 也先截断，避免请求直接 400。
     if (currentQ) params.set("q", clampSearchQuery(currentQ));
     currentTags.forEach((tag) => params.append("tags", tag));
@@ -376,13 +379,28 @@ function ExploreInner() {
 
   const [kindCounts, setKindCounts] = useState<Record<string, number>>({});
 
-  // 各条目的数量：取列表接口响应里的 total（不是 items.length——列表被 limit 截断）。
-  // 单个种类请求失败只让那一格留空，不影响其它条目与整页渲染。
   useEffect(() => {
-    // 分面计数相对「当前筛选集合」：带上 q/tags/…，只换 kind 维（含 all）。
-    // 以前只传 limit=1，侧栏恒显全库 ~23 万，与结果区「共 339」对不上。
+    // 无筛选时用一次公开统计；有筛选时各种类相对当前条件计数（只换 kind 维）。
     const codes = ["all", ...kindOptions];
     let cancelled = false;
+    const filtered = Boolean(currentQ || currentTags.length || currentOriginalLanguage || currentHasPictures);
+    const apply = (next: Record<string, number>) => { if (!cancelled) setKindCounts(next); };
+    if (!filtered) {
+      fetch("/api/catalog/stats", { credentials: "same-origin" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data) return;
+          const next: Record<string, number> = { all: safeCount(data.total, 0) };
+          for (const [code, counts] of Object.entries((data.kinds || {}) as Record<string, { total?: unknown }>)) {
+            next[code] = safeCount(counts?.total, 0);
+          }
+          apply(next);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
     const base = new URLSearchParams();
     if (currentQ) base.set("q", clampSearchQuery(currentQ));
     currentTags.forEach((tag) => base.append("tags", tag));
@@ -395,18 +413,18 @@ function ExploreInner() {
       codes.map((code) => {
         const params = new URLSearchParams(base);
         if (code !== "all") params.set("kind", code);
+        else if (currentQ) params.set("kinds", SEARCH_DEFAULT_KINDS);
         return fetch("/api/catalog/entities?" + params.toString(), { credentials: "same-origin" })
           .then((res) => (res.ok ? res.json() : null))
           .then((data) => { const n = safeCount(data?.total, -1); return n >= 0 ? n : null; })
           .catch(() => null);
       }),
     ).then((totals) => {
-      if (cancelled) return;
       const next: Record<string, number> = {};
       totals.forEach((n, i) => {
         if (typeof n === "number") next[codes[i]] = n;
       });
-      setKindCounts(next);
+      apply(next);
     });
     return () => {
       cancelled = true;
@@ -526,7 +544,6 @@ function ExploreInner() {
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11px] leading-relaxed text-text-muted">{t(currentTagsMode === "all" ? "catalog.tagMatchAllHint" : "catalog.tagMatchAnyHint")}</p>
                 </fieldset>
                 {/* 标签云本地搜索：只过滤面板展示，不发请求。 */}
                 <div className="relative flex items-center mb-2">
