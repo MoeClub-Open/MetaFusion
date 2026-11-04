@@ -150,6 +150,7 @@ export function EntityDetailView({ id }: { id: string }) {
   const [occurrences, setOccurrences] = useState<any[]>([]);
   // 作品发行数单独轻量拉取（不含 Medium 聚合），供页签角标在打开分节前显示。
   const [workReleaseCount, setWorkReleaseCount] = useState<number | undefined>(undefined);
+  const [workCoverRelease, setWorkCoverRelease] = useState<Entity | null>(null);
   const [relations, setRelations] = useState<RelationshipRecord[]>([]);
   const [relatedEntities, setRelatedEntities] = useState<Record<string, Entity>>({});
   // 统一关系投影返回的主体 ID。
@@ -266,6 +267,7 @@ export function EntityDetailView({ id }: { id: string }) {
     setMotherRelease(null);
     setMotherMedium(null);
     setSubjectWorks([]);
+    setWorkCoverRelease(null);
     setChildren([]);
     setOccurrences([]);
     setRelations([]);
@@ -287,6 +289,7 @@ export function EntityDetailView({ id }: { id: string }) {
       const e = await api<Entity>(`/catalog/entities/${id}/resolve`);
       if (!current()) return;
       setEntity(e);
+      setLoading(false);
 
       // resolve 可能返回合并后的规范 id；回落路由参数只为类型收口（能渲染到这里的实体必有 id）。
       const communityId = e.id || id;
@@ -300,7 +303,7 @@ export function EntityDetailView({ id }: { id: string }) {
       fetchEntityRelationshipPreview(e.id!, user?.id)
         .then((rel) => { if (current()) applyRelations(rel); })
         .catch(() => { if (current()) setSectionFailures((prev) => ({ ...prev, relations: true })); });
-      const [occResult, revResult, posts, collections] = await Promise.all([
+      const sectionsPromise = Promise.all([
         loadCatalogSection(api<{ items: any[] }>(`/catalog/entities/${e.id}/occurrences`), { items: [] }),
         loadCatalogSection(api<{ items: any[]; total: number; offset: number }>(`/catalog/entities/${e.id}/revisions`), { items: [], total: 0, offset: 0 }),
         // 互动服务没接入（或这两条端点不可用）时整块留空，不阻断条目详情渲染；
@@ -308,23 +311,6 @@ export function EntityDetailView({ id }: { id: string }) {
         fetchEntityPosts(communityId).catch(() => { postsFailed = true; return [] as EntityComment[]; }),
         fetchEntityCollections(communityId).catch(() => { collectionsFailed = true; return [] as EntityCollectionRef[]; }),
       ]);
-      if (!current()) return;
-
-      const occRes = occResult.data, revRes = revResult.data;
-      failed.occurrences = occResult.failed;
-      failed.revisions = revResult.failed;
-      const occItems = Array.isArray(occRes.items) ? occRes.items : [];
-      if (!Array.isArray(occRes.items) || !Array.isArray(revRes.items)) metadataFailed = true;
-      const revItems = Array.isArray(revRes.items) ? revRes.items : [];
-      setOccurrences(occItems);
-      setRevisions(revItems);
-      setRevisionTotal(revRes.total);
-      setRevisionOffset(revRes.offset + revItems.length);
-      setCommunityPosts(posts);
-      // 空数组 = 服务端确认没有；到这里仍是空且标记了失败 = 取不到——界面上不能混。
-      setCommunityPostsFailed(postsFailed);
-      setCommunityCollectionsFailed(collectionsFailed);
-      setCommunityCollections(collections);
 
       // Resolve parent references
       const parentPromises: Promise<any>[] = [];
@@ -360,24 +346,10 @@ export function EntityDetailView({ id }: { id: string }) {
         );
       }
 
-      // If occurrences have release subjects, fetch the primary subject work for cover inheritance
-      if (occItems.length > 0 && occItems[0]?.release?.subjects?.length > 0) {
-        const primaryWorkId = occItems[0].release.subjects[0].work_id;
-        parentPromises.push(
-          api<Entity>(`/catalog/entities/${primaryWorkId}`)
-            .then((w) => {
-              if (current() && w) {
-                setSubjectWorks((prev) => (prev.some((x) => x.id === w.id) ? prev : [...prev, w]));
-              }
-            })
-            .catch(() => { metadataFailed = true; })
-        );
-      }
-
-      // 归属与父子树是不同结构；章节、载体与轨道的直接子项都保留。
+      // 作品的内容结构由 useWorkDirectoryData 按 content_unit / expression 单独取数，
+      // 不走无 kind 的 work_id 查询（后者会把 release_subjects 的发行版一起混进 children）。
       const childQueries: string[] = [];
-      if (e.kind === "work") childQueries.push(`work_id=${e.id}`);
-      else if (e.kind === "content_unit") childQueries.push(`content_unit_id=${e.id}`, `kind=content_unit&parent_id=${e.id}`);
+      if (e.kind === "content_unit") childQueries.push(`content_unit_id=${e.id}`, `kind=content_unit&parent_id=${e.id}`);
       else if (e.kind === "release") childQueries.push(`release_id=${e.id}`);
       else if (e.kind === "medium") childQueries.push(`medium_id=${e.id}`, `kind=medium&parent_id=${e.id}`);
       else if (e.kind === "track") childQueries.push(`kind=track&parent_id=${e.id}`);
@@ -403,6 +375,38 @@ export function EntityDetailView({ id }: { id: string }) {
         );
       }
 
+      const [occResult, revResult, posts, collections] = await sectionsPromise;
+      if (!current()) return;
+
+      const occRes = occResult.data, revRes = revResult.data;
+      failed.occurrences = occResult.failed;
+      failed.revisions = revResult.failed;
+      const occItems = Array.isArray(occRes.items) ? occRes.items : [];
+      if (!Array.isArray(occRes.items) || !Array.isArray(revRes.items)) metadataFailed = true;
+      const revItems = Array.isArray(revRes.items) ? revRes.items : [];
+      setOccurrences(occItems);
+      setRevisions(revItems);
+      setRevisionTotal(revRes.total);
+      setRevisionOffset(revRes.offset + revItems.length);
+      setCommunityPosts(posts);
+      setCommunityPostsFailed(postsFailed);
+      setCommunityCollectionsFailed(collectionsFailed);
+      setCommunityCollections(collections);
+
+      // If occurrences have release subjects, fetch the primary subject work for cover inheritance
+      if (occItems.length > 0 && occItems[0]?.release?.subjects?.length > 0) {
+        const primaryWorkId = occItems[0].release.subjects[0].work_id;
+        parentPromises.push(
+          api<Entity>(`/catalog/entities/${primaryWorkId}`)
+            .then((w) => {
+              if (current() && w) {
+                setSubjectWorks((prev) => (prev.some((x) => x.id === w.id) ? prev : [...prev, w]));
+              }
+            })
+            .catch(() => { metadataFailed = true; })
+        );
+      }
+
       await Promise.all(parentPromises);
       if (current()) {
         setProjectionFailed(metadataFailed);
@@ -425,11 +429,14 @@ export function EntityDetailView({ id }: { id: string }) {
   const resolvedCover = useMemo(
     () =>
       resolveCover(entity, [
+        { origin: "medium", entity: motherMedium },
+        { origin: "release", entity: motherRelease },
         { origin: "mother_work", entity: motherWork },
-        { origin: "subject_work", entity: subjectWorks[0] },
-        { origin: "release", entity: occurrences[0]?.release },
+        { origin: "subject_work", entity: subjectWorks.find((w) => coverUrl(w)) },
+        { origin: "release", entity: occurrences.find((o) => coverUrl(o?.release))?.release },
+        { origin: "release", entity: workCoverRelease },
       ]),
-    [entity, motherWork, subjectWorks, occurrences],
+    [entity, motherMedium, motherRelease, motherWork, subjectWorks, occurrences, workCoverRelease],
   );
 
   // 图片用途标签：码值来自 definitions 的 picture_role 词表，四语名由词表自己带，
@@ -697,16 +704,21 @@ export function EntityDetailView({ id }: { id: string }) {
   useEffect(() => {
     if (!entity || entity.kind !== "work") {
       setWorkReleaseCount(undefined);
+      setWorkCoverRelease(null);
       return;
     }
     const workId = entity.id || id;
     let alive = true;
     fetchAllPages<Entity>(`/catalog/entities?kind=release&work_id=${encodeURIComponent(workId)}`)
       .then((items) => {
-        if (alive) setWorkReleaseCount(items.length);
+        if (!alive) return;
+        setWorkReleaseCount(items.length);
+        setWorkCoverRelease(items.find((r) => coverUrl(r)) ?? null);
       })
       .catch(() => {
-        if (alive) setWorkReleaseCount(undefined);
+        if (!alive) return;
+        setWorkReleaseCount(undefined);
+        setWorkCoverRelease(null);
       });
     return () => {
       alive = false;
