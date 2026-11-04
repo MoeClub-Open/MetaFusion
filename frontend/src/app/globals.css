@@ -139,12 +139,14 @@
 .cv-editor-context p { display: flex; flex-direction: column; min-width: 0; font-size: 0.8rem; }
 .cv-editor-context p > span { font-size: 0.7rem; color: var(--text-muted-color); }
 .cv-editor-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cv-editor-context button { flex-shrink: 0; }
+.cv-editor-context button { flex-shrink: 0; white-space: nowrap; }
 .cv-editor-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0; }
 .cv-editor-field-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 0.45rem 0.8rem; margin-top: 0.6rem; }
 .cv-form .cv-editor-field-options label { flex-direction: row; align-items: flex-start; gap: 0.45rem; }
 .cv-editor-field-options input { flex-shrink: 0; margin-top: 0.15rem; }
 .cv-form button.cv-primary {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 0.34rem 0.95rem;
   border-radius: var(--radius-control);
   background: var(--primary-color);
@@ -393,5 +395,11 @@
 @media (min-width: 1280px) {
   :root {
     --mf-header-h: 3.75rem;
+  }
+}
+
+@media (width < 40rem) {
+  button.w-9.max-sm\:min-h-11 {
+    min-width: 2.75rem;
   }
 }

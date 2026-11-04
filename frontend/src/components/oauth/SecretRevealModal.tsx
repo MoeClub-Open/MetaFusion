@@ -61,14 +61,14 @@ export function SecretRevealModal({
         <div className="space-y-1.5">
           <div className="text-[11px] font-mono text-text-muted">{t("admin.oauth.fieldClientId")}</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-surfaceSubtle border border-line font-mono text-[11px] text-text-strong break-all">
+            <code className="min-w-0 flex-1 px-2.5 py-1.5 rounded-lg bg-surfaceSubtle border border-line font-mono text-[11px] text-text-strong break-all">
               {reveal.clientId}
             </code>
             <button
               type="button"
               onClick={() => copy("client_id", reveal.clientId)}
               title={t("admin.oauth.secretCopy")}
-              className="p-2 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body transition-colors duration-fast ease-soft cursor-pointer"
+              className="shrink-0 p-2 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body transition-colors duration-fast ease-soft cursor-pointer"
             >
               {copied === "client_id" ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
@@ -80,16 +80,16 @@ export function SecretRevealModal({
           <div className="flex items-center gap-2">
             <code
               data-mf-oauth-secret=""
-              className="flex-1 px-2.5 py-1.5 rounded-lg bg-surfaceSubtle border border-primary/40 font-mono text-[11px] text-text-strong break-all select-all"
+              className="min-w-0 flex-1 px-2.5 py-1.5 rounded-lg bg-surfaceSubtle border border-primary/40 font-mono text-[11px] text-text-strong break-all select-all"
             >
               {reveal.secret}
             </code>
             <button
               type="button"
               onClick={() => copy("secret", reveal.secret)}
-              className="px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-medium transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
+              className="shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-medium transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
             >
-              {copied === "secret" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied === "secret" ? <Check className="w-3.5 h-3.5 shrink-0" /> : <Copy className="w-3.5 h-3.5 shrink-0" />}
               <span>{copied === "secret" ? t("admin.oauth.secretCopied") : t("admin.oauth.secretCopy")}</span>
             </button>
           </div>
@@ -102,7 +102,7 @@ export function SecretRevealModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-xs font-medium transition-colors duration-fast ease-soft cursor-pointer"
+            className="shrink-0 whitespace-nowrap px-4 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-xs font-medium transition-colors duration-fast ease-soft cursor-pointer"
           >
             {t("admin.oauth.secretSaved")}
           </button>

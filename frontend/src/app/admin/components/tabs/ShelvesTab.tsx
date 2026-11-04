@@ -247,18 +247,18 @@ export function ShelvesTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-text-strong flex items-center gap-2">
-            <Layers className="w-4 h-4 text-success" />
+            <Layers className="w-4 h-4 shrink-0 text-success" />
             {t("admin.shelves.title")}
           </h2>
         </div>
         <button
           onClick={openCreate}
-          className="px-3 py-1.5 rounded-lg bg-emerald-400 text-black text-xs font-semibold hover:bg-emerald-300 transition-colors duration-fast ease-soft flex items-center gap-1.5"
+          className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-emerald-400 text-black text-xs font-semibold hover:bg-emerald-300 transition-colors duration-fast ease-soft flex items-center gap-1.5"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Plus className="w-3.5 h-3.5 shrink-0" />
           <span>{t("admin.shelves.new")}</span>
         </button>
       </div>
@@ -420,12 +420,12 @@ export function ShelvesTab() {
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
                 placeholder="e.g. music"
-                className="flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
+                className="min-w-0 flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
               />
               <datalist id="shelf-tag-options">
                 {tagOptions.map((x) => (<option key={x} value={x} />))}
               </datalist>
-              <button type="button" onClick={addTag} className="px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
+              <button type="button" onClick={addTag} className="shrink-0 px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
                 +
               </button>
             </div>
@@ -462,7 +462,7 @@ export function ShelvesTab() {
                 value={fieldKey}
                 onChange={(e) => setFieldKey(e.target.value)}
                 placeholder="field"
-                className="flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
+                className="min-w-0 flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
               />
               <datalist id="shelf-field-options">
                 {fieldOptions.map((x) => (<option key={x} value={x} />))}
@@ -472,9 +472,9 @@ export function ShelvesTab() {
                 onChange={(e) => setFieldVal(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFieldPair(); } }}
                 placeholder="value"
-                className="flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
+                className="min-w-0 flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
               />
-              <button type="button" onClick={addFieldPair} className="px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
+              <button type="button" onClick={addFieldPair} className="shrink-0 px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
                 +
               </button>
             </div>
@@ -511,7 +511,7 @@ export function ShelvesTab() {
                 value={vocabKey}
                 onChange={(e) => setVocabKey(e.target.value)}
                 placeholder="vocab"
-                className="flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
+                className="min-w-0 flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
               />
               <datalist id="shelf-vocab-options">
                 {vocabOptions.map((x) => (<option key={x} value={x} />))}
@@ -522,14 +522,14 @@ export function ShelvesTab() {
                 onChange={(e) => setVocabVal(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addVocabPair(); } }}
                 placeholder="term"
-                className="flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
+                className="min-w-0 flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
               />
               {vocabKey && defs?.vocabularies?.[vocabKey] && (
                 <datalist id={`shelf-term-options-${vocabKey}`}>
                   {Object.keys(defs.vocabularies[vocabKey].terms || {}).map((x) => (<option key={x} value={x} />))}
                 </datalist>
               )}
-              <button type="button" onClick={addVocabPair} className="px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
+              <button type="button" onClick={addVocabPair} className="shrink-0 px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
                 +
               </button>
             </div>
@@ -560,12 +560,12 @@ export function ShelvesTab() {
                 onChange={(e) => setRelInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRelation(); } }}
                 placeholder="e.g. adaptation_of"
-                className="flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
+                className="min-w-0 flex-1 px-2.5 py-1.5 rounded bg-surfaceSubtle border border-line text-xs text-text-strong font-mono focus:border-emerald-400 outline-none"
               />
               <datalist id="shelf-relation-options">
                 {relationOptions.map((x) => (<option key={x} value={x} />))}
               </datalist>
-              <button type="button" onClick={addRelation} className="px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
+              <button type="button" onClick={addRelation} className="shrink-0 px-3 py-1.5 rounded bg-surfaceSubtle hover:bg-surfaceHover text-xs">
                 +
               </button>
             </div>
@@ -623,20 +623,20 @@ export function ShelvesTab() {
             </label>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-line">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-4 border-t border-line">
             <button
               type="button"
               onClick={() => {
                 setCreating(false);
                 setEditing(null);
               }}
-              className="px-3 py-1.5 rounded-lg border border-line text-text-muted hover:text-text-strong transition-colors duration-fast ease-soft"
+              className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg border border-line text-text-muted hover:text-text-strong transition-colors duration-fast ease-soft"
             >
               {t("common.cancel")}
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-lg bg-emerald-400 text-black font-semibold hover:bg-emerald-300 transition-colors duration-fast ease-soft"
+              className="shrink-0 whitespace-nowrap px-4 py-1.5 rounded-lg bg-emerald-400 text-black font-semibold hover:bg-emerald-300 transition-colors duration-fast ease-soft"
             >
               {t("common.save")}
             </button>

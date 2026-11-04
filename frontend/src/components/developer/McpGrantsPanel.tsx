@@ -62,13 +62,13 @@ export function McpGrantsPanel() {
       if (revoke) setError(text); else setEditError(text);
     } finally { setBusy(false); }
   };
-  const button = "inline-flex items-center gap-1.5 rounded-lg border border-line bg-surfaceSubtle px-3 py-1.5 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50";
+  const button = "shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-line bg-surfaceSubtle px-3 py-1.5 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50";
   const changed = editing && (selected.length !== editing.scopes.length || selected.some((scope) => !editing.scopes.includes(scope)));
   return <div className="space-y-4">
     <p className="text-xs leading-relaxed text-text-muted">{t("developer.mcp.subtitle")}</p>
     <p className="text-xs leading-relaxed text-text-faint">{t("developer.mcp.credentialHint")}</p>
     {endpoint && <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surfaceSubtle p-3">
-      <span className="text-xs text-text-muted">{t("developer.mcp.endpoint")}</span><code className="flex-1 break-all text-xs text-text-strong">{endpoint}</code>
+      <span className="text-xs text-text-muted">{t("developer.mcp.endpoint")}</span><code className="min-w-0 flex-1 break-all text-xs text-text-strong">{endpoint}</code>
       <button type="button" className={button} aria-label={t("developer.apiKeyCopy")} onClick={() => void copyText(endpoint).then((ok) => { setCopied(ok); if (!ok) setError(t("developer.copyFailed")); })}>{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>
     </div>}
     {error && <p role="alert" className="text-xs text-danger-soft">{error}</p>}
@@ -84,7 +84,7 @@ export function McpGrantsPanel() {
         <button type="button" className={button.replace("text-text-body", "text-danger-soft")} disabled={busy} onClick={() => { if (grant.revoked_at) void mutate(grant, true); else setPending(grant); }}>{t(grant.revoked_at ? "developer.mcp.retryCleanup" : "developer.mcp.revokeAll")}</button>
       </div>}
     </article>)}
-    <Modal open={!!editing} onClose={() => { if (!busy) setEditing(null); }} title={t("developer.mcp.editTitle", { name: editing?.client_name || "" })} initialFocus='input[type="search"]' footer={<div className="flex justify-end gap-2"><button type="button" disabled={busy} className={button} onClick={() => setEditing(null)}>{t("developer.permissions.cancel")}</button><button type="button" disabled={busy || !changed || !selected.length} className={button} onClick={() => { if (editing) void mutate(editing, false); }}>{t("developer.permissions.save")}</button></div>}>
+    <Modal open={!!editing} onClose={() => { if (!busy) setEditing(null); }} title={t("developer.mcp.editTitle", { name: editing?.client_name || "" })} initialFocus='input[type="search"]' footer={<div className="flex flex-wrap justify-end gap-2"><button type="button" disabled={busy} className={button} onClick={() => setEditing(null)}>{t("developer.permissions.cancel")}</button><button type="button" disabled={busy || !changed || !selected.length} className={button} onClick={() => { if (editing) void mutate(editing, false); }}>{t("developer.permissions.save")}</button></div>}>
       {editing && <div className="space-y-4">
         {editError && <p role="alert" className="text-xs text-danger-soft">{editError}</p>}
         <p className="text-xs text-text-muted">{t("developer.mcp.permissionsHint")}</p>

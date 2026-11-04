@@ -13,6 +13,7 @@ interface EntityCoverProps {
   imgClassName?: string;
   loading?: "lazy" | "eager";
   onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
+  onDimensions?: (width: number, height: number) => void;
   compact?: boolean;
   /**
    * 衬底：同一张图放大模糊后铺满容器（默认关）。
@@ -36,12 +37,19 @@ export function EntityCover({
   imgClassName,
   loading = "lazy",
   onLoad,
+  onDimensions,
   compact: _compact = false,
   backdrop = false,
   width = 512,
   height = 512,
 }: EntityCoverProps) {
-  const [hasError, setHasError] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const hasError = !!src && failedSrc === src;
+
+  const reportDimensions = (el: HTMLImageElement | null) => {
+    if (!el || !src || !el.complete || el.naturalWidth <= 0 || el.naturalHeight <= 0) return;
+    onDimensions?.(el.naturalWidth, el.naturalHeight);
+  };
 
   if (!src || hasError) {
     return <NeutralCover className={className} label={title} />;
@@ -69,8 +77,12 @@ export function EntityCover({
           width={width}
           height={height}
           decoding="async"
-          onError={() => setHasError(true)}
-          onLoad={onLoad}
+          ref={reportDimensions}
+          onError={() => setFailedSrc(src)}
+          onLoad={(e) => {
+            reportDimensions(e.currentTarget);
+            onLoad?.(e);
+          }}
         />
       </>
     );
@@ -85,8 +97,12 @@ export function EntityCover({
       width={width}
       height={height}
       decoding="async"
-      onError={() => setHasError(true)}
-      onLoad={onLoad}
+      ref={reportDimensions}
+      onError={() => setFailedSrc(src)}
+      onLoad={(e) => {
+        reportDimensions(e.currentTarget);
+        onLoad?.(e);
+      }}
     />
   );
 }

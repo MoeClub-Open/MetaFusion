@@ -13,7 +13,7 @@ import { applyWorkspaceVersion, applyWorkspaceStash, editWorkspaceTag, forkWorks
   type Workspace, type WorkspaceCommit, type VersionOperation, type VersionAction, type StashAction, type WorkspaceConflict, type ConflictResolution,
   type VersionEvent, type VersionTag, type VersionStash, type CollaborationPage, type RebaseAction } from "@/lib/api/collaboration";
 
-const button = "inline-flex items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-text-body hover:bg-surfaceSubtle disabled:opacity-50";
+const button = "shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-text-body hover:bg-surfaceSubtle disabled:opacity-50";
 const input = "w-full min-w-0 rounded-md border border-line bg-background px-3 py-2 text-sm text-text-body focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
 type ActionOperation = VersionOperation | "rebase";
 const operations: ActionOperation[] = ["merge", "rebase", "cherry_pick", "revert", "restore", "amend", "squash", "reset", "discard"];

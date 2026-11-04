@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { EntityCover } from "./EntityCover";
 import {
   clampCoverRatio,
@@ -67,30 +67,32 @@ export function AdaptiveCover({
 }: AdaptiveCoverProps) {
   const manual = typeof aspect === "string" ? parseManualRatio(aspect) : null;
   const inferred = inferCoverRatio(tags);
-  // 建议比例只作为首选比例：真图加载完成前用它占位，加载后由图片自身比例接管。
-  const initial = manual ?? inferred;
   const uniform = uniformAspect ? clampCoverRatio(uniformAspect) : null;
-  const [ratio, setRatio] = useState<number>(clampCoverRatio(initial));
+  const [measured, setMeasured] = useState<{ src: string; ratio: number } | null>(null);
+  const naturalRatio = src && measured?.src === src ? measured.ratio : null;
+  const effectiveRatio =
+    uniform ??
+    (manual !== null ? clampCoverRatio(manual) : null) ??
+    (naturalRatio !== null ? clampCoverRatio(naturalRatio) : clampCoverRatio(inferred));
   const resolvedImgClassName = imgClassName ?? "w-full h-full object-contain";
-  // contain 默认开衬底：留白不再是纯色。调用方改成 cover 时自动关掉（图已铺满）。
-  const showBackdrop = backdrop ?? resolvedImgClassName.includes("object-contain");
+  const showBackdrop =
+    backdrop ??
+    (resolvedImgClassName.includes("object-contain") &&
+      (uniform !== null || manual !== null || (naturalRatio !== null && Math.abs(naturalRatio - effectiveRatio) > 0.02)));
 
-  const handleLoad = useCallback(
-    (e: React.SyntheticEvent<HTMLImageElement>) => {
-      if (manual === null && uniform === null) {
-        const img = e.currentTarget;
-        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          setRatio(clampCoverRatio(img.naturalWidth / img.naturalHeight));
-        }
-      }
+  const handleDimensions = useCallback(
+    (width: number, height: number) => {
+      if (!src || width <= 0 || height <= 0) return;
+      const next = width / height;
+      setMeasured((prev) => (prev?.src === src && Math.abs(prev.ratio - next) < 0.001 ? prev : { src, ratio: next }));
     },
-    [manual, uniform]
+    [src]
   );
 
   return (
     <div
       className={`relative w-full overflow-hidden bg-black/[0.04] dark:bg-black/40 ${className}`}
-      style={{ aspectRatio: `${uniform ?? ratio}`, maxHeight, minHeight }}
+      style={{ aspectRatio: `${effectiveRatio}`, maxHeight, minHeight }}
     >
       <EntityCover
         src={src}
@@ -100,7 +102,7 @@ export function AdaptiveCover({
         id={id}
         loading={loading}
         imgClassName={resolvedImgClassName}
-        onLoad={handleLoad}
+        onDimensions={handleDimensions}
         compact={compact}
         backdrop={showBackdrop}
       />

@@ -18,11 +18,12 @@ test("explore withholds zero totals and pagination while loading", () => {
   assert.doesNotMatch(page, /\{!noResults && \(/);
 });
 
-test("entity cards lock cover aspect and use NeutralCover on failure", () => {
+test("entity cards adapt cover aspect within clamped bounds and use NeutralCover on failure", () => {
   const card = src("src/components/common/EntityCard.tsx");
   assert.match(card, /GRID_COVER_ASPECT/);
+  assert.match(card, /inferCoverRatio/);
+  assert.match(card, /naturalAspect/);
   assert.match(card, /NeutralCover/);
-  assert.doesNotMatch(card, /naturalAspect\s*=\s*\{?true\}?/);
   assert.doesNotMatch(card, /ProceduralCover/);
 
   const cover = src("src/components/common/EntityCover.tsx");
@@ -30,6 +31,7 @@ test("entity cards lock cover aspect and use NeutralCover on failure", () => {
   assert.doesNotMatch(cover, /ProceduralCover/);
 
   const adaptive = src("src/components/common/AdaptiveCardCover.tsx");
+  assert.match(adaptive, /clampCoverRatio/);
   assert.match(adaptive, /NeutralCover/);
 });
 

@@ -168,8 +168,8 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
   return (
     <section id="releases" className="space-y-0">
  <div className="px-3.5 sm:px-4 py-3 border-b border-line-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
- <div className="flex items-center gap-2">
- <span className="w-9 h-9 max-sm:min-h-[44px] grid place-items-center rounded-md bg-sky-500/10 border border-sky-500/20">
+ <div className="flex min-w-0 items-center gap-2">
+ <span className="shrink-0 w-9 h-9 grid place-items-center rounded-md bg-sky-500/10 border border-sky-500/20">
  <Layers className="w-4 h-4 text-sky-500" strokeWidth={1.5} />
  </span>
  <h2 className="font-display text-base font-bold tracking-tight text-text-strong">{t("work.detail.releaseCatalog")}</h2>

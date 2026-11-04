@@ -195,8 +195,8 @@ export function PullRequestDetail({ id }: { id: string }) {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <Link href="/pull-requests" className="text-sm text-primary hover:underline">{t("collaboration.pullRequests")}</Link>
       <button type="button" disabled={loading || busy} onClick={() => void load()}
-        className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50">
-        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />{t("common.refresh")}
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50">
+        <RefreshCw className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{t("common.refresh")}
       </button>
     </div>
     {error && <div role="alert" className="space-y-2 rounded-card border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
@@ -240,7 +240,7 @@ export function PullRequestDetail({ id }: { id: string }) {
               <p className="break-words text-sm text-text-strong">{objectTitle(change.base, change.committed, change.id)}</p>
               <p className="break-all text-xs text-text-muted">{t(`collaboration.${change.target}`)} · {t(change.base === null ? "collaboration.created" : change.committed === null ? "collaboration.deleted" : "collaboration.modified")} · <span className="font-mono">{change.id}</span></p>
             </div>
-            <button type="button" className="shrink-0 rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover" onClick={() => openDiff({ ...change, before: change.base, after: change.committed })}>{t("collaboration.viewDiff")}</button>
+            <button type="button" className="shrink-0 whitespace-nowrap rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover" onClick={() => openDiff({ ...change, before: change.base, after: change.committed })}>{t("collaboration.viewDiff")}</button>
           </li>)}
         </ul>}
       </Card>
@@ -317,10 +317,10 @@ export function PullRequestQueue() {
   return <section className="space-y-4" aria-busy={loading}>
     <header className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="flex items-center gap-2 text-xl font-semibold text-text-strong"><GitPullRequest className="h-5 w-5 text-primary" aria-hidden="true" />{t("collaboration.pullRequests")}</h1>
-      <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />{t("common.refresh")}</button>
+      <button type="button" onClick={() => void load()} disabled={loading} className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{t("common.refresh")}</button>
     </header>
     <div className="flex flex-wrap gap-2" role="group" aria-label={t("collaboration.pullRequests")}>{(user ? ["open", "merged", "closed"] as const : ["merged"] as const).map(value => <button key={value} type="button" aria-pressed={requestedStatus === value}
-      className="rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
+      className="shrink-0 whitespace-nowrap rounded-control border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceHover aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
       onClick={() => { setStatus(value); setPage(0); }}>{t(`collaboration.status.${value}`)}</button>)}</div>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     {loading ? <p className="text-sm text-text-muted">{t("common.loading")}</p> : !error && <>
@@ -331,9 +331,9 @@ export function PullRequestQueue() {
       </Card></li>)}</ul>
     </>}
     <nav className="flex items-center justify-between gap-3 text-xs text-text-muted" aria-label={t("collaboration.pullRequests")}>
-      <button type="button" disabled={page === 0 || loading} onClick={() => setPage(value => value - 1)} className="rounded-control border border-line px-3 py-2 disabled:opacity-40">{t("catalog.prevPage")}</button>
+      <button type="button" disabled={page === 0 || loading} onClick={() => setPage(value => value - 1)} className="shrink-0 whitespace-nowrap rounded-control border border-line px-3 py-2 disabled:opacity-40">{t("catalog.prevPage")}</button>
       <span>{page + 1}</span>
-      <button type="button" disabled={(page + 1) * PAGE_SIZE >= total || loadedFor !== queryKey || loading || !!error} onClick={() => setPage(value => value + 1)} className="rounded-control border border-line px-3 py-2 disabled:opacity-40">{t("catalog.nextPage")}</button>
+      <button type="button" disabled={(page + 1) * PAGE_SIZE >= total || loadedFor !== queryKey || loading || !!error} onClick={() => setPage(value => value + 1)} className="shrink-0 whitespace-nowrap rounded-control border border-line px-3 py-2 disabled:opacity-40">{t("catalog.nextPage")}</button>
     </nav>
   </section>;
 }

@@ -86,7 +86,7 @@ export default function ReportDialog({
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90"
+              className="shrink-0 whitespace-nowrap px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90"
             >
               {t("report.close")}
             </button>
@@ -94,8 +94,8 @@ export default function ReportDialog({
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="text-xs font-mono text-text-faint flex items-center gap-2">
-            <span>{t(`report.target.${targetType}`)}</span>
+          <div className="min-w-0 text-xs font-mono text-text-faint flex items-center gap-2">
+            <span className="shrink-0 whitespace-nowrap">{t(`report.target.${targetType}`)}</span>
             <span className="truncate text-text-muted">{targetId}</span>
           </div>
 
@@ -159,19 +159,19 @@ export default function ReportDialog({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md border border-line text-sm text-text-body hover:text-emphasis disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap px-3.5 h-9 max-sm:min-h-[44px] rounded-md border border-line text-sm text-text-body hover:text-emphasis disabled:opacity-50"
             >
               {t("report.cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="shrink-0 whitespace-nowrap px-3.5 h-9 max-sm:min-h-[44px] rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? t("report.submitting") : t("report.submit")}
             </button>

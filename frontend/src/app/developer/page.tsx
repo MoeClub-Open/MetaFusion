@@ -174,7 +174,7 @@ export default function DeveloperPage() {
   })();
 
   const actionClass =
-    "px-2 py-1 rounded-md bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body hover:text-text-strong text-[11px] transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1";
+    "shrink-0 whitespace-nowrap px-2 py-1 rounded-md bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body hover:text-text-strong text-[11px] transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1";
 
   const badge = (app: DeveloperApp) => {
     const status = appStatus(app);
@@ -201,24 +201,24 @@ export default function DeveloperPage() {
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold text-text-strong">{t("developer.title")}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setTab("mcp")} className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors cursor-pointer">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setTab("mcp")} className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors cursor-pointer">
               {t("developer.mcp.manage")}
             </button>
             <a
               href={`${DOCS_SERVICE_URL}/api-overview`}
               target="_blank"
               rel="noreferrer"
-              className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors duration-fast ease-soft inline-flex items-center gap-1.5"
+              className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-[11px] transition-colors duration-fast ease-soft inline-flex items-center gap-1.5"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
               <span>{t("developer.docsLink")}</span>
             </a>
             <button
               type="button"
               onClick={() => void load()}
               title={t("developer.reload")}
-              className="p-2 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body transition-colors duration-fast ease-soft cursor-pointer"
+              className="shrink-0 p-2 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body transition-colors duration-fast ease-soft cursor-pointer"
             >
               <RefreshCw className={"w-3.5 h-3.5" + (loading ? " animate-spin text-primary" : "")} />
             </button>
@@ -251,7 +251,7 @@ export default function DeveloperPage() {
                     type="button"
                     onClick={() => setTab(item.key)}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors duration-fast ease-soft cursor-pointer ${active ? "bg-primary/10 text-primary font-semibold" : "text-text-muted hover:text-emphasis hover:bg-surfaceHover"}`}
+                    className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors duration-fast ease-soft cursor-pointer ${active ? "bg-primary/10 text-primary font-semibold" : "text-text-muted hover:text-emphasis hover:bg-surfaceHover"}`}
                   >
                     <Icon className="w-4 h-4 shrink-0" strokeWidth={1.8} />
                     <span className="whitespace-nowrap text-xs font-medium">{item.label}</span>
@@ -269,9 +269,9 @@ export default function DeveloperPage() {
                     <button
                       type="button"
                       onClick={() => setCreating(true)}
-                      className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-semibold transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
+                      className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-semibold transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5 shrink-0" />
                       <span>{t("developer.apps.new")}</span>
                     </button>
                   }
@@ -397,21 +397,21 @@ export default function DeveloperPage() {
                 <SectionTitle
                   icon={<KeyRound className="w-4 h-4 text-primary" />}
                   actions={
-                    <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex flex-wrap items-center justify-end gap-2">
                       <a
                         href={`${DOCS_SERVICE_URL}/api-auth`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-primary hover:underline"
+                        className="shrink-0 whitespace-nowrap text-[11px] text-primary hover:underline"
                       >
                         {t("developer.apiKeyViewDevDocs")}
                       </a>
                       <button
                         type="button"
                         onClick={() => setKeyModalOpen(true)}
-                        className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-semibold transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
+                        className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-semibold transition-colors duration-fast ease-soft cursor-pointer inline-flex items-center gap-1.5"
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
                         <span>{t("developer.apiKeys.new")}</span>
                       </button>
                     </span>

@@ -16,6 +16,7 @@ import (
 type RelationshipQueryRequest struct {
 	IDs       []string `json:"ids"`
 	Direction string   `json:"direction,omitempty"`
+	Classes   []string `json:"classes,omitempty"`
 	RuleCodes []string `json:"rule_codes,omitempty"`
 	PeerKinds []string `json:"peer_kinds,omitempty"`
 	Limit     *int     `json:"limit,omitempty"`
@@ -65,19 +66,19 @@ func normalizeRelationshipQuery(in RelationshipQueryRequest) (RelationshipQueryR
 		}
 	}
 	in.IDs = ids
-	if in.Direction == "" {
-		in.Direction = "both"
+	normalized, err := normalizeRelationshipLinkFilters(relationshipFilters{
+		Direction: in.Direction,
+		Classes:   in.Classes,
+		RuleCodes: in.RuleCodes,
+		PeerKinds: in.PeerKinds,
+	})
+	if err != nil {
+		return in, 0, 0, err
 	}
-	if !contains([]string{"both", "outgoing", "incoming"}, in.Direction) {
-		return in, 0, 0, fmt.Errorf("invalid_direction")
-	}
-	for _, kind := range in.PeerKinds {
-		if !contains(Kinds, kind) {
-			return in, 0, 0, fmt.Errorf("invalid_peer_kind")
-		}
-	}
-	in.RuleCodes = uniqueRelationshipFilters(in.RuleCodes)
-	in.PeerKinds = uniqueRelationshipFilters(in.PeerKinds)
+	in.Direction = normalized.Direction
+	in.Classes = normalized.Classes
+	in.RuleCodes = normalized.RuleCodes
+	in.PeerKinds = normalized.PeerKinds
 	limit, offset := 25, 0
 	if in.Limit != nil {
 		limit = *in.Limit
@@ -106,12 +107,39 @@ func uniqueRelationshipFilters(values []string) []string {
 	return out
 }
 
+func normalizeRelationshipLinkFilters(in relationshipFilters) (relationshipFilters, error) {
+	if in.Direction == "" {
+		in.Direction = "both"
+	}
+	if !contains([]string{"both", "outgoing", "incoming"}, in.Direction) {
+		return in, fmt.Errorf("invalid_direction")
+	}
+	for _, class := range in.Classes {
+		if !contains(RelationshipClasses, class) {
+			return in, fmt.Errorf("invalid_class")
+		}
+	}
+	for _, kind := range in.PeerKinds {
+		if !contains(Kinds, kind) {
+			return in, fmt.Errorf("invalid_peer_kind")
+		}
+	}
+	in.Classes = uniqueRelationshipFilters(in.Classes)
+	in.RuleCodes = uniqueRelationshipFilters(in.RuleCodes)
+	in.PeerKinds = uniqueRelationshipFilters(in.PeerKinds)
+	return in, nil
+}
+
 func validateRelationshipQueryRules(in RelationshipQueryRequest, d Definitions) error {
+	return validateRelationshipRuleCodes(in.RuleCodes, d)
+}
+
+func validateRelationshipRuleCodes(codes []string, d Definitions) error {
 	rules := map[string]bool{}
 	for _, rule := range ReadRelationshipRules(d) {
 		rules[rule.Code] = true
 	}
-	for _, code := range in.RuleCodes {
+	for _, code := range codes {
 		if !rules[code] {
 			return fmt.Errorf("invalid_rule_code")
 		}
@@ -189,8 +217,11 @@ func queryRelationshipsFrom(ctx context.Context, q queryer, in RelationshipQuery
 	if err != nil {
 		return out, err
 	}
-	filters := relationshipFilters{Direction: in.Direction, RuleCodes: in.RuleCodes, PeerKinds: in.PeerKinds}
+	filters := relationshipFilters{Direction: in.Direction, Classes: in.Classes, RuleCodes: in.RuleCodes, PeerKinds: in.PeerKinds}
 	// Empty lists mean no filter, including explicitly supplied [] arrays.
+	if len(filters.Classes) == 0 {
+		filters.Classes = nil
+	}
 	if len(filters.RuleCodes) == 0 {
 		filters.RuleCodes = nil
 	}

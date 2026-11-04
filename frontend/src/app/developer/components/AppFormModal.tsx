@@ -277,21 +277,21 @@ export function AppFormModal({
           <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-danger-soft leading-relaxed">{error}</div>
         ) : null}
 
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
+            className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
           >
             {t("developer.form.cancel")}
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
+            className="shrink-0 whitespace-nowrap px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
           >
-            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            {busy ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" /> : null}
             <span>{busy ? t("developer.form.saving") : t("developer.form.save")}</span>
           </button>
         </div>

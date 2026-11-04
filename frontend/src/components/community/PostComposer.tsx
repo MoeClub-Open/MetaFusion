@@ -770,23 +770,23 @@ export default function PostComposer({
           <ComposerEditor contentRef={contentRef} content={newContent} onChange={setNewContent} placeholder={t("community.contentPlaceholder")} t={t} />
 
           <div className="flex items-center justify-end pt-2.5 border-t border-line shrink-0">
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => {
                   clearDraft();
                   onClose();
                 }}
-                className="px-4 h-10 rounded-lg bg-surface hover:bg-surfaceBorder text-text-muted hover:text-emphasis text-sm transition-colors duration-fast ease-soft cursor-pointer"
+                className="shrink-0 whitespace-nowrap px-4 h-10 rounded-lg bg-surface hover:bg-surfaceBorder text-text-muted hover:text-emphasis text-sm transition-colors duration-fast ease-soft cursor-pointer"
               >
                 {t("community.discard")}
               </button>
               <button
                 type="submit"
                 disabled={submitting || !selectedBoardObj}
-                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-primary-foreground font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
+                className="shrink-0 whitespace-nowrap px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-primary-foreground font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4 shrink-0" />
                 <span>{submitting ? t("community.creating") : t("community.createTopic")}</span>
               </button>
             </div>
@@ -796,10 +796,10 @@ export default function PostComposer({
         <form onSubmit={handleReply} className="flex-1 min-h-0 flex flex-col p-4 gap-3.5 overflow-y-auto">
           {/* Quoted banner */}
           {activeQuotedPost && (
-            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-warn-soft text-xs sm:text-sm shrink-0">
-              <span className="flex items-center gap-2">
-                <Quote className="w-4 h-4" />
-                <span>
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-warn-soft text-xs sm:text-sm shrink-0">
+              <span className="flex min-w-0 items-center gap-2">
+                <Quote className="w-4 h-4 shrink-0" />
+                <span className="min-w-0 truncate">
                   {t("community.replyingTo", { n: activeQuotedPost.post_number })}
                   {activeQuotedPost.username ? ` · @${activeQuotedPost.username}` : ""}
                 </span>
@@ -807,7 +807,7 @@ export default function PostComposer({
               <button
                 type="button"
                 onClick={() => setActiveQuotedPost(null)}
-                className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-warn-soft text-xs font-mono cursor-pointer"
+                className="shrink-0 whitespace-nowrap px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-warn-soft text-xs font-mono cursor-pointer"
               >
                 {t("community.cancelReply")}
               </button>
@@ -819,23 +819,23 @@ export default function PostComposer({
           <ComposerEditor contentRef={contentRef} content={newContent} onChange={setNewContent} placeholder={t("community.replyPlaceholder")} t={t} />
 
           <div className="flex items-center justify-end pt-2.5 border-t border-line shrink-0">
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => {
                   clearDraft();
                   onClose();
                 }}
-                className="px-4 h-10 rounded-lg bg-surface hover:bg-surfaceBorder text-text-muted hover:text-emphasis text-sm transition-colors duration-fast ease-soft cursor-pointer"
+                className="shrink-0 whitespace-nowrap px-4 h-10 rounded-lg bg-surface hover:bg-surfaceBorder text-text-muted hover:text-emphasis text-sm transition-colors duration-fast ease-soft cursor-pointer"
               >
                 {t("community.discard")}
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-primary-foreground font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
+                className="shrink-0 whitespace-nowrap px-5 h-10 rounded-lg bg-primary hover:opacity-90 text-primary-foreground font-semibold flex items-center gap-2 transition-colors duration-fast ease-soft disabled:opacity-50 text-sm shadow-xs cursor-pointer"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4 shrink-0" />
                 <span>{submitting ? t("community.creating") : t("community.reply")}</span>
               </button>
             </div>

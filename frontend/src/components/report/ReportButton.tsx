@@ -48,11 +48,11 @@ export default function ReportButton({
         onClick={handleClick}
         title={t("report.action")}
         aria-label={t("report.action")}
-        className={`inline-flex items-center gap-1 whitespace-nowrap transition-colors duration-fast ease-soft text-text-faint hover:text-danger ${
+        className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap transition-colors duration-fast ease-soft text-text-faint hover:text-danger ${
           compact ? "text-[11px]" : "text-xs px-2.5 h-8 max-sm:min-h-[44px] rounded-md border border-line hover:border-danger/40"
         } ${className}`}
       >
-        <Flag className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} strokeWidth={1.6} />
+        <Flag className={compact ? "w-3 h-3 shrink-0" : "w-3.5 h-3.5 shrink-0"} strokeWidth={1.6} />
         <span>{t("report.action")}</span>
       </button>
 

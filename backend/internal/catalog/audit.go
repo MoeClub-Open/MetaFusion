@@ -64,6 +64,7 @@ func AuditExempt() map[string]string {
 		"POST /internal/storage/asset-references":     "存储服务垃圾回收前精确检查私有副本和不可变提交的图片引用，仅查询目录，不改数据",
 		"POST /api/catalog/entities/candidates":       "身份候选查询：POST 承载查重条件，在同一只读快照内查找并解析身份，不写目录数据",
 		"POST /api/catalog/entities/candidates/batch": "批量身份候选查询：POST 承载最多 50 条查重条件，在同一只读快照内查找并评估（context 只排名不筛选），零写入",
+		"POST /api/catalog/entities/batch":            "批量实体读取：POST 承载最多 100 个 id，只读可重复读快照返回完整实体与展示封面，零写入",
 		"POST /api/catalog/expressions/details":       "批量读：POST 只为把最多 500 个 id 放进 body（GET query 会撞 8KB 请求行上限），零写入",
 		"POST /api/catalog/relationships/query":       "批量关系查询：POST 承载实体集合与筛选条件，目录数据仅在只读事务中读取，零写入",
 		"POST /api/catalog/quality/batch":             "批量质量审计：POST 承载最多 100 个 id，按需计算、只读事务、不落库，零写入",

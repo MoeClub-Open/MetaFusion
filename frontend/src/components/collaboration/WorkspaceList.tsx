@@ -61,8 +61,8 @@ export function WorkspaceList() {
     </header>
     <form className="flex flex-wrap items-end gap-3 rounded-panel border border-line bg-surface p-4" onSubmit={e => { e.preventDefault(); void create(); }}>
       <label className="min-w-48 flex-1 space-y-1 text-sm"><span>{t("collaboration.workspaceName")}</span><input maxLength={200} value={name} onChange={e => setName(e.target.value)} placeholder={t("collaboration.optionalName")} disabled={busy}/></label>
-      <button className="cv-primary inline-flex items-center gap-2" disabled={busy}><Plus aria-hidden="true" className="h-4 w-4"/>{t("collaboration.createWorkspace")}</button>
-      <button type="button" className="inline-flex items-center gap-2" disabled={busy} onClick={() => void load()}><RefreshCw aria-hidden="true" className="h-4 w-4"/>{t("common.refresh")}</button>
+      <button className="cv-primary shrink-0 whitespace-nowrap inline-flex items-center gap-2" disabled={busy}><Plus aria-hidden="true" className="h-4 w-4 shrink-0"/>{t("collaboration.createWorkspace")}</button>
+      <button type="button" className="shrink-0 whitespace-nowrap inline-flex items-center gap-2" disabled={busy} onClick={() => void load()}><RefreshCw aria-hidden="true" className="h-4 w-4 shrink-0"/>{t("common.refresh")}</button>
     </form>
     {error && <p role="alert" className="cv-error">{error}</p>}
     {error ? null : (busy && !loaded) || loadedUser !== actor ? <p>{t("common.loading")}</p> : loaded && !items.length ? <p className="rounded-panel border border-dashed border-line p-6 text-text-muted">{t("collaboration.noWorkspaces")}</p> :
@@ -72,9 +72,9 @@ export function WorkspaceList() {
         <p className="mt-2 text-xs text-text-muted">{t("collaboration.workspaceSummary", { dirty: item.dirty_count, members: item.members.length })} · {new Date(item.updated_at).toLocaleString(locale)}</p>
       </li>)}</ul>}
     {loaded && loadedUser === actor && <nav className="flex items-center justify-between gap-3 text-sm" aria-label={t("collaboration.pagination")}>
-      <button disabled={busy || page === 0} onClick={() => setPage(p => p - 1)}>{t("catalog.prevPage")}</button>
+      <button className="shrink-0 whitespace-nowrap" disabled={busy || page === 0} onClick={() => setPage(p => p - 1)}>{t("catalog.prevPage")}</button>
       <span>{t("collaboration.pageCount", { page: page + 1, pages: Math.max(1, Math.ceil(total / 20)) })}</span>
-      <button disabled={busy || (page + 1) * 20 >= total} onClick={() => setPage(p => p + 1)}>{t("catalog.nextPage")}</button>
+      <button className="shrink-0 whitespace-nowrap" disabled={busy || (page + 1) * 20 >= total} onClick={() => setPage(p => p + 1)}>{t("catalog.nextPage")}</button>
     </nav>}
   </section>;
 }

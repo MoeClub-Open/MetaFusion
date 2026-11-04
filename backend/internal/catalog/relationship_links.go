@@ -49,41 +49,96 @@ type EntityLinksPage struct {
 	HasMore        bool              `json:"has_more"`
 }
 
+type fixedEntityLinkBranch struct {
+	code  string
+	class string
+	sql   string
+}
+
 // Each branch reads the existing source of truth. The endpoint never persists
 // copies of these edges in catalog.relations or a second structural table.
-const fixedEntityLinksSQL = `
-SELECT code, source_id::text, target_id::text, position, role, locator, attributes FROM (
- SELECT 'structure:work_content_unit' AS code, x.work_id AS source_id, x.id AS target_id,
-  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes
-  FROM catalog.content_units x JOIN catalog.entities e ON e.id=x.id WHERE x.work_id=$1::uuid OR x.id=$1::uuid
- UNION ALL
- SELECT 'structure:work_expression', x.work_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.expressions x JOIN catalog.entities e ON e.id=x.id WHERE x.work_id=$1::uuid OR x.id=$1::uuid
- UNION ALL
- SELECT 'structure:release_medium', x.release_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.mediums x JOIN catalog.entities e ON e.id=x.id WHERE x.release_id=$1::uuid OR x.id=$1::uuid
- UNION ALL
- SELECT 'structure:medium_track', x.medium_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.tracks x JOIN catalog.entities e ON e.id=x.id WHERE x.medium_id=$1::uuid OR x.id=$1::uuid
- UNION ALL
- SELECT 'structure:content_unit_parent', x.parent_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.content_units x JOIN catalog.entities e ON e.id=x.id WHERE x.parent_id IS NOT NULL AND (x.parent_id=$1::uuid OR x.id=$1::uuid)
- UNION ALL
- SELECT 'structure:content_unit_expression', x.content_unit_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.expressions x JOIN catalog.entities e ON e.id=x.id WHERE x.content_unit_id IS NOT NULL AND (x.content_unit_id=$1::uuid OR x.id=$1::uuid)
- UNION ALL
- SELECT 'structure:medium_parent', x.parent_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.mediums x JOIN catalog.entities e ON e.id=x.id WHERE x.parent_id IS NOT NULL AND (x.parent_id=$1::uuid OR x.id=$1::uuid)
- UNION ALL
- SELECT 'structure:track_parent', x.parent_id, x.id, coalesce((e.document->>'position')::int,0), '', '{}'::jsonb, '{}'::jsonb
-  FROM catalog.tracks x JOIN catalog.entities e ON e.id=x.id WHERE x.parent_id IS NOT NULL AND (x.parent_id=$1::uuid OR x.id=$1::uuid)
- UNION ALL
- SELECT 'structure:release_subject', x.release_id, x.work_id, x.position, x.role, '{}'::jsonb, x.attributes
-  FROM catalog.release_subjects x WHERE x.release_id=$1::uuid OR x.work_id=$1::uuid OR (/* subject references */ false)
- UNION ALL
- SELECT 'structure:track_content', x.track_id, x.expression_id, x.position, '', x.locator, x.attributes
-  FROM catalog.track_contents x WHERE x.track_id=$1::uuid OR x.expression_id=$1::uuid OR (/* content references */ false)
-) links`
+var fixedEntityLinkBranches = []fixedEntityLinkBranch{
+	{
+		code: "structure:work_content_unit", class: "ownership",
+		sql: `SELECT 'structure:work_content_unit' AS code, x.work_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.content_units x JOIN catalog.entities e ON e.id=x.id WHERE x.work_id=$1::uuid OR x.id=$1::uuid`,
+	},
+	{
+		code: "structure:work_expression", class: "ownership",
+		sql: `SELECT 'structure:work_expression' AS code, x.work_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.expressions x JOIN catalog.entities e ON e.id=x.id WHERE x.work_id=$1::uuid OR x.id=$1::uuid`,
+	},
+	{
+		code: "structure:release_medium", class: "ownership",
+		sql: `SELECT 'structure:release_medium' AS code, x.release_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.mediums x JOIN catalog.entities e ON e.id=x.id WHERE x.release_id=$1::uuid OR x.id=$1::uuid`,
+	},
+	{
+		code: "structure:medium_track", class: "ownership",
+		sql: `SELECT 'structure:medium_track' AS code, x.medium_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.tracks x JOIN catalog.entities e ON e.id=x.id WHERE x.medium_id=$1::uuid OR x.id=$1::uuid`,
+	},
+	{
+		code: "structure:content_unit_parent", class: "placement",
+		sql: `SELECT 'structure:content_unit_parent' AS code, x.parent_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.content_units x JOIN catalog.entities e ON e.id=x.id WHERE x.parent_id IS NOT NULL AND (x.parent_id=$1::uuid OR x.id=$1::uuid)`,
+	},
+	{
+		code: "structure:content_unit_expression", class: "placement",
+		sql: `SELECT 'structure:content_unit_expression' AS code, x.content_unit_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.expressions x JOIN catalog.entities e ON e.id=x.id WHERE x.content_unit_id IS NOT NULL AND (x.content_unit_id=$1::uuid OR x.id=$1::uuid)`,
+	},
+	{
+		code: "structure:medium_parent", class: "placement",
+		sql: `SELECT 'structure:medium_parent' AS code, x.parent_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.mediums x JOIN catalog.entities e ON e.id=x.id WHERE x.parent_id IS NOT NULL AND (x.parent_id=$1::uuid OR x.id=$1::uuid)`,
+	},
+	{
+		code: "structure:track_parent", class: "placement",
+		sql: `SELECT 'structure:track_parent' AS code, x.parent_id::text AS source_id, x.id::text AS target_id,
+  coalesce((e.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.tracks x JOIN catalog.entities e ON e.id=x.id WHERE x.parent_id IS NOT NULL AND (x.parent_id=$1::uuid OR x.id=$1::uuid)`,
+	},
+	{
+		code: "structure:release_subject", class: "inclusion",
+		sql: `SELECT 'structure:release_subject' AS code, x.release_id::text AS source_id, x.work_id::text AS target_id,
+  x.position, x.role, '{}'::jsonb AS locator, x.attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.release_subjects x WHERE x.release_id=$1::uuid OR x.work_id=$1::uuid OR (/* subject references */ false)`,
+	},
+	{
+		code: "structure:track_content", class: "inclusion",
+		sql: `SELECT 'structure:track_content' AS code, x.track_id::text AS source_id, x.expression_id::text AS target_id,
+  x.position, ''::text AS role, x.locator, x.attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path
+  FROM catalog.track_contents x WHERE x.track_id=$1::uuid OR x.expression_id=$1::uuid OR (/* content references */ false)`,
+	},
+}
+
+const semanticEntityLinksBranchSQL = `SELECT 'relation:' || r.type AS code, r.source_id::text AS source_id, r.target_id::text AS target_id,
+  coalesce((r.document->>'position')::int,0) AS position, ''::text AS role, '{}'::jsonb AS locator,
+  coalesce(r.document->'attributes','{}'::jsonb) AS attributes, r.id::text AS relation_id, r.document AS relation_document, ''::text AS field_path
+  FROM catalog.relations r WHERE r.source_id=$1::uuid OR r.target_id=$1::uuid
+   OR (/* attribute references */ false)`
+
+const emptyEntityLinksBranchSQL = `SELECT ''::text AS code, NULL::text AS source_id, NULL::text AS target_id,
+  0::int AS position, ''::text AS role, '{}'::jsonb AS locator, '{}'::jsonb AS attributes,
+  ''::text AS relation_id, NULL::jsonb AS relation_document, ''::text AS field_path WHERE false`
 
 // Both endpoint visibility checks run before pagination. Attribute candidates
 // are compiled from published field definitions, then checked against the
@@ -92,15 +147,7 @@ const entityLinksPageSQL = `
 SELECT l.code, l.source_id::text, l.target_id::text, l.position, l.role,
  l.locator, l.attributes, l.relation_id, l.relation_document,l.field_path
 FROM (
- SELECT f.*, ''::text AS relation_id, NULL::jsonb AS relation_document,''::text AS field_path
- FROM (` + fixedEntityLinksSQL + `) f
- UNION ALL
- SELECT 'relation:' || r.type, r.source_id::text, r.target_id::text,
-  coalesce((r.document->>'position')::int,0), ''::text, '{}'::jsonb,
-  coalesce(r.document->'attributes','{}'::jsonb), r.id::text, r.document,''::text
- FROM catalog.relations r WHERE r.source_id=$1::uuid OR r.target_id=$1::uuid
-  OR (/* attribute references */ false)
- /* entity attribute links */
+ /* entity link branches */
 ) l
 JOIN catalog.entities source ON source.id=l.source_id::uuid
 JOIN catalog.entities target ON target.id=l.target_id::uuid
@@ -119,6 +166,18 @@ ORDER BY l.code, l.position, l.source_id, l.target_id, l.role, l.relation_id,l.f
 LIMIT $4 OFFSET $5`
 
 func (s *Store) EntityLinks(ctx context.Context, id string, limit, offset int, u *User) (EntityLinksPage, error) {
+	return s.EntityLinksFiltered(ctx, id, limit, offset, relationshipFilters{Direction: "both"}, u)
+}
+
+func (s *Store) EntityLinksFiltered(ctx context.Context, id string, limit, offset int, filters relationshipFilters, u *User) (EntityLinksPage, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(id)); err != nil {
+		return EntityLinksPage{}, fmt.Errorf("invalid_id")
+	}
+	var err error
+	filters, err = normalizeRelationshipLinkFilters(filters)
+	if err != nil {
+		return EntityLinksPage{}, err
+	}
 	self, err := s.Get(ctx, id, u)
 	if err != nil {
 		return EntityLinksPage{}, err
@@ -127,7 +186,19 @@ func (s *Store) EntityLinks(ctx context.Context, id string, limit, offset int, u
 	if err != nil {
 		return EntityLinksPage{}, err
 	}
-	page, err := entityLinksFrom(ctx, s.DB, self.ID, limit, offset, u, defs, relationshipFilters{Direction: "both"})
+	if err = validateRelationshipRuleCodes(filters.RuleCodes, defs.Document); err != nil {
+		return EntityLinksPage{}, err
+	}
+	if len(filters.Classes) == 0 {
+		filters.Classes = nil
+	}
+	if len(filters.RuleCodes) == 0 {
+		filters.RuleCodes = nil
+	}
+	if len(filters.PeerKinds) == 0 {
+		filters.PeerKinds = nil
+	}
+	page, err := entityLinksFrom(ctx, s.DB, self.ID, limit, offset, u, defs, filters)
 	if err != nil {
 		return page, err
 	}
@@ -174,6 +245,7 @@ func (s *Store) EntityLinks(ctx context.Context, id string, limit, offset int, u
 
 type relationshipFilters struct {
 	Direction string
+	Classes   []string
 	RuleCodes []string
 	PeerKinds []string
 }
@@ -341,29 +413,6 @@ func entityLinksFrom(ctx context.Context, q queryer, id string, limit, offset in
 // the existing relations_document_attributes_gin index. Arbitrary JSON strings
 // are not references; only paths declared by a live relation definition qualify.
 func entityLinksQuery(d Definitions, id string, filters relationshipFilters, args *[]any) string {
-	patterns := map[string]bool{}
-	for _, rule := range d.Relations {
-		for _, code := range rule.Fields {
-			for _, value := range relationshipReferencePatterns(d.Fields[code], id) {
-				patterns[encode(map[string]any{code: value})] = true
-			}
-		}
-	}
-	ordered := make([]string, 0, len(patterns))
-	for pattern := range patterns {
-		ordered = append(ordered, pattern)
-	}
-	sort.Strings(ordered)
-	clauses := []string{}
-	for _, pattern := range ordered {
-		*args = append(*args, pattern)
-		clauses = append(clauses, "r.document->'attributes' @> $"+strconv.Itoa(len(*args))+"::jsonb")
-	}
-	condition := "false"
-	if len(clauses) > 0 {
-		condition = strings.Join(clauses, " OR ")
-	}
-	query := strings.Replace(entityLinksPageSQL, "/* attribute references */ false", condition, 1)
 	recordReferences := func(column string, f Field) string {
 		clauses := []string{}
 		for _, pattern := range relationshipReferencePatterns(f, id) {
@@ -375,10 +424,67 @@ func entityLinksQuery(d Definitions, id string, filters relationshipFilters, arg
 		}
 		return strings.Join(clauses, " OR ")
 	}
-	query = strings.Replace(query, "/* subject references */ false", recordReferences("x.attributes", d.Fields["subject_attributes"]), 1)
-	contentReferences := recordReferences("x.locator", d.Fields["locator"]) + " OR " + recordReferences("x.attributes", d.Fields["inclusion_attributes"])
-	query = strings.Replace(query, "/* content references */ false", contentReferences, 1)
-	return strings.Replace(query, "/* entity attribute links */", attributeEntityLinksSQL(d, filters, args), 1)
+	branches := []string{}
+	for _, branch := range fixedEntityLinkBranches {
+		if len(filters.Classes) > 0 && !contains(filters.Classes, branch.class) {
+			continue
+		}
+		if len(filters.RuleCodes) > 0 && !contains(filters.RuleCodes, branch.code) {
+			continue
+		}
+		branchSQL := branch.sql
+		switch branch.code {
+		case "structure:release_subject":
+			branchSQL = strings.Replace(branchSQL, "/* subject references */ false", recordReferences("x.attributes", d.Fields["subject_attributes"]), 1)
+		case "structure:track_content":
+			contentReferences := recordReferences("x.locator", d.Fields["locator"]) + " OR " + recordReferences("x.attributes", d.Fields["inclusion_attributes"])
+			branchSQL = strings.Replace(branchSQL, "/* content references */ false", contentReferences, 1)
+		}
+		branches = append(branches, branchSQL)
+	}
+	semanticAllowed := len(filters.Classes) == 0 || contains(filters.Classes, "semantic")
+	if semanticAllowed && len(filters.RuleCodes) > 0 {
+		semanticAllowed = false
+		for _, code := range filters.RuleCodes {
+			if strings.HasPrefix(code, "relation:") {
+				semanticAllowed = true
+				break
+			}
+		}
+	}
+	if semanticAllowed {
+		patterns := map[string]bool{}
+		for _, rule := range d.Relations {
+			for _, code := range rule.Fields {
+				for _, value := range relationshipReferencePatterns(d.Fields[code], id) {
+					patterns[encode(map[string]any{code: value})] = true
+				}
+			}
+		}
+		ordered := make([]string, 0, len(patterns))
+		for pattern := range patterns {
+			ordered = append(ordered, pattern)
+		}
+		sort.Strings(ordered)
+		clauses := []string{}
+		for _, pattern := range ordered {
+			*args = append(*args, pattern)
+			clauses = append(clauses, "r.document->'attributes' @> $"+strconv.Itoa(len(*args))+"::jsonb")
+		}
+		condition := "false"
+		if len(clauses) > 0 {
+			condition = strings.Join(clauses, " OR ")
+		}
+		branches = append(branches, strings.Replace(semanticEntityLinksBranchSQL, "/* attribute references */ false", condition, 1))
+	}
+	unionSQL := emptyEntityLinksBranchSQL
+	attrSQL := attributeEntityLinksSQL(d, filters, args)
+	if len(branches) > 0 {
+		unionSQL = strings.Join(branches, "\n UNION ALL\n ") + attrSQL
+	} else if attrSQL != "" {
+		unionSQL = strings.TrimPrefix(strings.TrimSpace(attrSQL), "UNION ALL")
+	}
+	return strings.Replace(entityLinksPageSQL, "/* entity link branches */", unionSQL, 1)
 }
 
 func relationshipReferencePatterns(f Field, id string) []any {
@@ -406,6 +512,18 @@ func relationshipReferencePatterns(f Field, id string) []any {
 }
 
 func sqlPaginatedRelationshipFilters(filters relationshipFilters) bool {
+	if len(filters.Classes) > 0 {
+		direct := true
+		for _, class := range filters.Classes {
+			if class != "ownership" && class != "placement" && class != "reference" {
+				direct = false
+				break
+			}
+		}
+		if direct {
+			return true
+		}
+	}
 	if len(filters.RuleCodes) == 0 {
 		return false
 	}

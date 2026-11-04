@@ -63,7 +63,7 @@ export function fetchEntityRelationshipPreview(subjectId: string, viewerId = "")
 }
 
 function readLinksPage(subjectId: string, offset: number) {
-  return api<EntityLinksPage>(`/catalog/entities/${encodeURIComponent(subjectId)}/links?limit=100&offset=${offset}`);
+  return api<EntityLinksPage>(`/catalog/entities/${encodeURIComponent(subjectId)}/links?classes=semantic,reference&limit=100&offset=${offset}`);
 }
 
 export async function loadEntityRelationships(

@@ -31,6 +31,10 @@ func ownCover(e Entity) string {
 // DisplayCovers batches the current page's references and checks each source's
 // visibility. Cover metadata stays beside items, outside authoritative documents.
 func (s *Store) DisplayCovers(ctx context.Context, items []Entity, u *User) (map[string]DisplayCover, error) {
+	return displayCoversFrom(ctx, s.DB, items, u)
+}
+
+func displayCoversFrom(ctx context.Context, q queryer, items []Entity, u *User) (map[string]DisplayCover, error) {
 	out := map[string]DisplayCover{}
 	entities := map[string]Entity{}
 	seen := map[string]bool{}
@@ -53,7 +57,7 @@ func (s *Store) DisplayCovers(ctx context.Context, items []Entity, u *User) (map
 	if len(missing) > 0 {
 		// Recording occurrences and Release subjects are both visible publication
 		// paths; a release that actually carries artwork is preferred.
-		rows, err := s.DB.QueryContext(ctx, `SELECT root.id::text, occurrence.release_id::text
+		rows, err := q.QueryContext(ctx, `SELECT root.id::text, occurrence.release_id::text
 		FROM unnest($1::uuid[]) root(id)
 		JOIN LATERAL (
 		 SELECT candidate.release_id FROM (
@@ -111,7 +115,7 @@ func (s *Store) DisplayCovers(ctx context.Context, items []Entity, u *User) (map
 		if len(ids) == 0 {
 			break
 		}
-		got, err := s.getMany(ctx, ids, u)
+		got, err := getManyFrom(ctx, q, ids, u)
 		if err != nil {
 			return nil, err
 		}

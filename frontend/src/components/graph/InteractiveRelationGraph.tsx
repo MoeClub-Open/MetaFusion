@@ -283,9 +283,9 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
-  // 类型聚合 hub 的展开态（手风琴：一次只展开一个类型，默认全收起）。
-  // 只在层级布局下生效； radial / force 保持原样平铺。
-  const [expandedHub, setExpandedHub] = useState<string | null>(null);
+  // 节点数适中（<=20）时默认平铺展开真实节点；超大图谱默认按关系聚合，工具栏可随时一键切换。
+  const [groupOverride, setGroupOverride] = useState<boolean | null>(null);
+  const [expandedHubs, setExpandedHubs] = useState<Set<string>>(() => new Set());
 
   // 图谱底色跟随当前主题变量，不另维护一套锌灰/蓝色。
   const themePaint = (name: string, fallback: string) => {
@@ -357,17 +357,22 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   }, [filteredLinks, centerEntityId]);
 
   // 单类型时聚合没有意义（一个 hub 包全部节点，多此一举）：直接平铺。
-  const grouped = layoutMode === "hierarchy" && typeGroups.length > 1;
-  const activeHub = expandedHub && typeGroups.some((g) => g.type === expandedHub) ? expandedHub : null;
+  const canGroup = layoutMode === "hierarchy" && typeGroups.length > 1;
+  const otherNodeCount = Math.max(0, activeNodes.length - 1);
+  const grouped = canGroup && (groupOverride ?? otherNodeCount > 20);
   const hubIdOf = (type: string) => `__hub:${type}`;
 
   // 聚合展示集：中心 + 类型 hub + 展开组的成员。
   const displayNodes = useMemo<GraphNode[]>(() => {
     if (!grouped) return activeNodes;
     const byId = new Map(activeNodes.map((n) => [n.id, n]));
+    const seen = new Set<string>();
     const out: GraphNode[] = [];
     const center = byId.get(centerEntityId);
-    if (center) out.push(center);
+    if (center) {
+      seen.add(center.id);
+      out.push(center);
+    }
     for (const g of typeGroups) {
       out.push({
         id: hubIdOf(g.type),
@@ -377,15 +382,19 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         level: 1,
         role: String(g.memberIds.length),
       });
-      if (g.type === activeHub) {
+      if (expandedHubs.has(g.type)) {
         for (const id of g.memberIds) {
+          if (seen.has(id)) continue;
           const m = byId.get(id);
-          if (m) out.push(m);
+          if (m) {
+            seen.add(id);
+            out.push(m);
+          }
         }
       }
     }
     return out;
-  }, [grouped, activeNodes, typeGroups, activeHub, centerEntityId]);
+  }, [grouped, activeNodes, typeGroups, expandedHubs, centerEntityId]);
 
   // 聚合连边：中心→hub（收起态的唯一可见边）+ hub→成员（展开组）+
   // 两端都可见的游离边。原生的中心→成员边由 hub 边代替，不再绘制。
@@ -402,7 +411,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         label: g.label,
         qualifier: "__hub",
       });
-      if (g.type === activeHub) {
+      if (expandedHubs.has(g.type)) {
         for (const id of g.memberIds) {
           if (!visible.has(id)) continue;
           out.push({
@@ -421,7 +430,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       if (visible.has(link.source) && visible.has(link.target)) out.push(link);
     }
     return out;
-  }, [grouped, filteredLinks, displayNodes, typeGroups, activeHub, centerEntityId]);
+  }, [grouped, filteredLinks, displayNodes, typeGroups, expandedHubs, centerEntityId]);
 
   // 计算节点布局坐标并执行全局几何中心对齐校准 (1000 x 680 基准坐标系)
   const layoutNodes = useMemo<Map<string, LayoutNode>>(() => {
@@ -508,7 +517,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       }
     } else if (layoutMode === "hierarchy") {
       if (grouped) {
-        // 类型聚合布局：中心 → 类型 hub → 成员（手风琴单开，默认全收起）。
+        // 类型聚合布局：中心 → 类型 hub → 已展开类型的成员。
         const hubById = new Map(displayNodes.map((n) => [n.id, n]));
         const hubList = typeGroups;
         const hubRadius = hubList.length <= 8 ? 300 : 350;
@@ -518,10 +527,11 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
           const hy = centerY + hubRadius * Math.sin(angle);
           const hub = hubById.get(hubIdOf(g.type));
           if (hub) map.set(hub.id, { ...hub, x: hx, y: hy, vx: 0, vy: 0, radius: 34 });
-          if (g.type === activeHub) {
+          if (expandedHubs.has(g.type)) {
             const side = hx >= centerX ? 1 : -1;
             const total = g.memberIds.length;
             g.memberIds.forEach((id, j) => {
+              if (map.has(id)) return;
               const m = hubById.get(id);
               if (!m) return;
               map.set(id, {
@@ -534,7 +544,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
           }
         });
       } else {
-      // 层级结构 (Hierarchy) 布局：精细化分类与充裕间距排布
+      // 层级结构 (Hierarchy) 布局：按中心类型自适应四向分区并自动折行/折列
       const topNodes: GraphNode[] = [];
       const bottomReleaseNodes: GraphNode[] = [];
       const bottomMediumNodes: GraphNode[] = [];
@@ -544,6 +554,11 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       otherNodes.forEach((node) => {
         if (node.id === centerEntityId) {
           rightOtherNodes.push(node);
+        } else if (orientation === "agent") {
+          if (node.type === "agent") topNodes.push(node);
+          else if (node.type === "collection") leftArtistNodes.push(node);
+          else if (node.type === "release" || node.type === "medium" || node.type === "track") bottomReleaseNodes.push(node);
+          else rightOtherNodes.push(node);
         } else if (node.type === "agent") {
           leftArtistNodes.push(node);
         } else if (node.type === "medium" || node.type === "track") {
@@ -558,49 +573,41 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         }
       });
 
-      // Top (企划、原作、前作)
-      topNodes.forEach((node, i) => {
-        const span = Math.max(0, (topNodes.length - 1) * 250);
-        const startX = centerX - span / 2 + (topNodes.length > 1 ? (span / (topNodes.length - 1)) * i : 0);
-        map.set(node.id, { ...node, x: startX, y: centerY - 220, vx: 0, vy: 0, radius: 32 });
-      });
-
-      // Bottom 1 (发行版、规格)
-      bottomReleaseNodes.forEach((node, i) => {
-        const span = Math.max(0, (bottomReleaseNodes.length - 1) * 240);
-        const startX =
-          centerX - span / 2 + (bottomReleaseNodes.length > 1 ? (span / (bottomReleaseNodes.length - 1)) * i : 0);
-        map.set(node.id, {
-          ...node,
-          x: startX,
-          y: centerY + (bottomMediumNodes.length > 0 ? 180 : 220),
-          vx: 0,
-          vy: 0,
-          radius: 30,
+      const placeRows = (list: GraphNode[], baseY: number, dirY: 1 | -1, radius: number, maxCols = 5) => {
+        const colGap = 215;
+        const rowGap = 105;
+        list.forEach((node, idx) => {
+          const row = Math.floor(idx / maxCols);
+          const col = idx % maxCols;
+          const rowCount = Math.min(maxCols, list.length - row * maxCols);
+          const span = Math.max(0, (rowCount - 1) * colGap);
+          const x = centerX - span / 2 + (rowCount > 1 ? (span / (rowCount - 1)) * col : 0);
+          const y = baseY + dirY * row * rowGap;
+          map.set(node.id, { ...node, x, y, vx: 0, vy: 0, radius });
         });
-      });
+      };
 
-      // Bottom 2 (分碟载体 Mediums)
-      bottomMediumNodes.forEach((node, i) => {
-        const span = Math.max(0, (bottomMediumNodes.length - 1) * 210);
-        const startX =
-          centerX - span / 2 + (bottomMediumNodes.length > 1 ? (span / (bottomMediumNodes.length - 1)) * i : 0);
-        map.set(node.id, { ...node, x: startX, y: centerY + 280, vx: 0, vy: 0, radius: 28 });
-      });
+      const placeCols = (list: GraphNode[], baseX: number, dirX: 1 | -1, radius: number, maxRows = 6) => {
+        const rowGap = 104;
+        const colGap = 225;
+        list.forEach((node, idx) => {
+          const col = Math.floor(idx / maxRows);
+          const row = idx % maxRows;
+          const colCount = Math.min(maxRows, list.length - col * maxRows);
+          const startY = centerY - ((colCount - 1) * rowGap) / 2;
+          const x = baseX + dirX * col * colGap;
+          const y = startY + row * rowGap;
+          map.set(node.id, { ...node, x, y, vx: 0, vy: 0, radius });
+        });
+      };
 
-      // Left (创作者、演职员、出版机构)
-      leftArtistNodes.forEach((node, i) => {
-        const total = leftArtistNodes.length;
-        const startY = centerY - ((total - 1) * 125) / 2;
-        map.set(node.id, { ...node, x: centerX - 360, y: startY + i * 125, vx: 0, vy: 0, radius: 30 });
-      });
-
-      // Right (跨媒介改编、原声带、衍生品等)
-      rightOtherNodes.forEach((node, i) => {
-        const total = rightOtherNodes.length;
-        const startY = centerY - ((total - 1) * 125) / 2;
-        map.set(node.id, { ...node, x: centerX + 360, y: startY + i * 125, vx: 0, vy: 0, radius: 30 });
-      });
+      placeRows(topNodes, centerY - 220, -1, 32);
+      const releaseBaseY = centerY + (bottomMediumNodes.length > 0 ? 180 : 220);
+      placeRows(bottomReleaseNodes, releaseBaseY, 1, 30);
+      const releaseRows = Math.ceil(bottomReleaseNodes.length / 5);
+      placeRows(bottomMediumNodes, releaseBaseY + Math.max(1, releaseRows) * 105, 1, 28);
+      placeCols(leftArtistNodes, centerX - 340, -1, 30);
+      placeCols(rightOtherNodes, centerX + 340, 1, 30);
       }
     } else {
       // 自然力导向模拟排布 (Force-Directed)
@@ -719,7 +726,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     }
 
     return map;
-  }, [activeNodes, centerEntityId, centerEntityType, layoutMode, filteredLinks, grouped, activeHub, typeGroups, displayNodes]);
+  }, [activeNodes, centerEntityId, centerEntityType, orientation, layoutMode, filteredLinks, grouped, expandedHubs, typeGroups, displayNodes]);
 
   // 渲染用的边集：聚合态用合成边（hub 边无徽章，见 qualifier），平铺态用原边。
   const renderLinks = grouped ? displayLinks : filteredLinks;
@@ -1022,6 +1029,22 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         <div className="flex flex-wrap items-center gap-1.5">
           {headerRightExtra && (
             <div className="mr-1 border-r border-border/60 pr-2">{headerRightExtra}</div>
+          )}
+          {canGroup && (
+            <button
+              type="button"
+              onClick={() => {
+                if (grouped) {
+                  setGroupOverride(false);
+                } else {
+                  setExpandedHubs(new Set());
+                  setGroupOverride(true);
+                }
+              }}
+              className="px-2.5 py-1 rounded-lg border border-border/60 bg-secondary/70 hover:bg-secondary text-[11px] font-medium text-foreground transition-colors"
+            >
+              {grouped ? t("graph.expandAll") : t("graph.groupByType")}
+            </button>
           )}
 
           {/* 拓扑排布模式切换 (层级结构 / 环形放射 / 力导向) */}
@@ -1375,7 +1398,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                 const isCenter = node.id === centerEntityId;
                 const isHub = !isCenter && node.id.startsWith("__hub:");
                 const hubType = isHub ? node.id.slice("__hub:".length) : "";
-                const hubOpen = isHub && activeHub === hubType;
+                const hubOpen = isHub && expandedHubs.has(hubType);
                 const isSelected = selectedNode?.id === node.id;
                 const isHovered = hoveredNodeId === node.id;
                 const r = node.radius;
@@ -1405,9 +1428,13 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                     onMouseLeave={() => setHoveredNodeId(null)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      // hub 点了只展开/收起（手风琴），不进检查器、不导航——它不是实体。
                       if (isHub) {
-                        setExpandedHub(hubOpen ? null : hubType);
+                        setExpandedHubs((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(hubType)) next.delete(hubType);
+                          else next.add(hubType);
+                          return next;
+                        });
                         return;
                       }
                       setSelectedNode(node);
@@ -1646,18 +1673,19 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
           {/* 封面海报大图预览 */}
           {selectedNode.cover_image_url && (
-            <div className="relative w-full aspect-[3/4] rounded-xl overflow-hidden border border-border/60 bg-muted shadow-xs group">
+            <div className="relative w-full max-h-44 rounded-lg overflow-hidden border border-border/60 bg-muted/60 flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={selectedNode.cover_image_url}
                 alt={selectedNode.name}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="w-full h-auto max-h-44 object-contain"
               />
             </div>
           )}
 
           {/* 实体基础属性网格 */}
-          <div className="space-y-1.5 text-xs text-muted-foreground bg-secondary/40 p-2.5 rounded-xl border border-border/40">
+          {(selectedNode.country || selectedNode.disambiguation) && (
+          <div className="space-y-1.5 text-xs text-muted-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/40">
             {selectedNode.country && (
               <div className="flex justify-between items-center">
                 <span className="flex items-center gap-1">
@@ -1675,6 +1703,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
               </div>
             )}
           </div>
+          )}
 
           {/* 图谱中与此节点的关联关系列表 */}
           <div className="space-y-2">

@@ -33,12 +33,12 @@ export function ConfirmDialog({
         <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-danger-soft leading-relaxed">
           {message}
         </div>
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-xs transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
+            className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-surfaceSubtle hover:bg-surfaceHover border border-line text-text-body text-xs transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer"
           >
             {t("common.cancel")}
           </button>
@@ -46,9 +46,9 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="px-4 py-1.5 rounded-lg bg-rose-500/90 hover:bg-rose-500 text-emphasis text-xs font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
+            className="shrink-0 whitespace-nowrap px-4 py-1.5 rounded-lg bg-rose-500/90 hover:bg-rose-500 text-emphasis text-xs font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
           >
-            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            {busy ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" /> : null}
             <span>{confirmLabel}</span>
           </button>
         </div>

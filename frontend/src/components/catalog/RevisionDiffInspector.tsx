@@ -115,10 +115,10 @@ export function RevisionDiffInspector({ base, current, onClose, assetContext, al
   </span>;
 
   const controls = <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-    <div className="inline-flex min-w-0 rounded-lg border border-line bg-surfaceSubtle p-1 text-xs" role="group" aria-label={t("revisions.diffInspector")}>
+    <div className="inline-flex max-w-full flex-wrap rounded-lg border border-line bg-surfaceSubtle p-1 text-xs" role="group" aria-label={t("revisions.diffInspector")}>
       {([['visual', Eye, "revisions.visualView"], ['code', Code, "revisions.unifiedView"]] as const).map(([value, Icon, label]) => <button key={value}
         type="button" aria-pressed={view === value} onClick={() => setView(value)}
-        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-text-muted transition-colors aria-pressed:bg-surface aria-pressed:text-text-strong aria-pressed:shadow-2xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-text-muted transition-colors aria-pressed:bg-surface aria-pressed:text-text-strong aria-pressed:shadow-2xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />{t(label)}
       </button>)}
     </div>
@@ -127,9 +127,9 @@ export function RevisionDiffInspector({ base, current, onClose, assetContext, al
         {copyState === "copied" ? t("common.copied") : copyState === "error" ? t("revisions.copyDiffFailed") : ""}
       </span>
       <button type="button" disabled={copyState === "copying"} onClick={() => void copyDiff()}
-        className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceSubtle disabled:opacity-50"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-2 text-xs text-text-body hover:bg-surfaceSubtle disabled:opacity-50"
         aria-label={t("revisions.copyDiffTitle")} title={t("revisions.copyDiffTitle")}>
-        {copyState === "copied" ? <Check className="h-4 w-4 text-emerald-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+        {copyState === "copied" ? <Check className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" /> : <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />}
         {t("common.copy")}
       </button>
     </div>}

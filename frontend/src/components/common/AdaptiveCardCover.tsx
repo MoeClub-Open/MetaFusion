@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { clampCoverRatio } from "@/lib/cover";
 import { NeutralCover } from "./NeutralCover";
 
 interface AdaptiveCardCoverProps {
@@ -49,7 +50,9 @@ export function AdaptiveCardCover({
   const hasError = image?.src === src && image?.failed;
   const loaded = image?.src === src && !image?.failed && !!image?.ratio;
   const hasValidImage = !!src && !hasError;
-  const displayRatio = naturalAspect && loaded ? image!.ratio : aspectRatio;
+  const displayRatio = naturalAspect && loaded ? clampCoverRatio(image!.ratio) : aspectRatio;
+  const needsBackdrop =
+    !naturalAspect || (loaded && typeof displayRatio === "number" && Math.abs(image!.ratio - displayRatio) > 0.02);
   // 数值比例优先：调用方给了就完全接管容器尺寸，不用再写 aspect-* 类。
   const sizedByNumber = typeof displayRatio === "number" && isFinite(displayRatio) && displayRatio > 0;
 
@@ -68,8 +71,8 @@ export function AdaptiveCardCover({
     >
       {hasValidImage ? (
         <>
-          {/* 固定比例布局才使用衬底；自然比例时容器与原图完全贴合。 */}
-          {!naturalAspect && (
+          {/* 固定比例或超出比例上下限时垫柔化衬底；常规比例容器与原图完全贴合。 */}
+          {needsBackdrop && (
             <img
               src={src!}
               alt=""

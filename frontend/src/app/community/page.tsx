@@ -429,12 +429,12 @@ function CommunityContent() {
 	      <div className="flex items-center gap-2.5">
 	        <button
 	          onClick={() => setSidebarOpen(true)}
-	          aria-label={t("community.boardNav")} className="lg:hidden p-2 rounded-md border border-line bg-surface text-text-muted hover:text-emphasis"
+	          aria-label={t("community.boardNav")} className="lg:hidden shrink-0 h-11 w-11 grid place-items-center rounded-md border border-line bg-surface text-text-muted hover:text-emphasis"
 	        >
 	          <Menu className="w-4 h-4" />
 	        </button>
 
-	        <div className="relative flex-1">
+	        <div className="relative min-w-0 flex-1">
 	          <Search className="w-4 h-4 text-text-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
 	          <input
 	            type="text"
@@ -469,9 +469,9 @@ function CommunityContent() {
 	          <button
 	            onClick={() => setIsComposerOpen(true)}
 	            disabled={!canCreateTopic}
-	            className="px-4 h-11 rounded-lg bg-primary text-primary-foreground text-sm font-bold inline-flex items-center gap-2 shadow-xs hover:opacity-90 transition-opacity shrink-0 disabled:opacity-50"
+	            className="px-3.5 sm:px-4 min-w-11 h-11 rounded-lg bg-primary text-primary-foreground text-sm font-bold inline-flex items-center justify-center gap-2 shadow-xs hover:opacity-90 transition-opacity shrink-0 whitespace-nowrap disabled:opacity-50"
 	          >
-	            <Plus className="w-4 h-4 stroke-[2.5]" />
+	            <Plus className="w-4 h-4 shrink-0 stroke-[2.5]" />
 	            <span className="hidden sm:inline">{t("community.newTopic")}</span>
 	          </button>
 	        )}
@@ -866,12 +866,12 @@ function CommunityContent() {
  {!loading && !loadError && totalPages > 1 && (
  <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-line bg-background/40 text-xs font-mono text-text-faint">
  <span>{t("community.topicItems", { count: total })}</span>
- <div className="flex items-center gap-2">
+ <div className="flex shrink-0 items-center gap-2">
  <button
  type="button"
  disabled={page <= 1}
  onClick={() => goToPage(page - 1)}
- className="px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-surfaceBorder disabled:opacity-40 disabled:pointer-events-none text-text-body transition-colors duration-fast ease-soft"
+ className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-surfaceBorder disabled:opacity-40 disabled:pointer-events-none text-text-body transition-colors duration-fast ease-soft"
  >
  {t("pagination.prev")}
  </button>
@@ -880,7 +880,7 @@ function CommunityContent() {
  type="button"
  disabled={page >= totalPages}
  onClick={() => goToPage(page + 1)}
- className="px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-surfaceBorder disabled:opacity-40 disabled:pointer-events-none text-text-body transition-colors duration-fast ease-soft"
+ className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-surfaceBorder disabled:opacity-40 disabled:pointer-events-none text-text-body transition-colors duration-fast ease-soft"
  >
  {t("pagination.next")}
  </button>

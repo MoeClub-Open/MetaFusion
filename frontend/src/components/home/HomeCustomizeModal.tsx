@@ -1,10 +1,6 @@
 "use client";
 
-// 自定义首页推荐弹窗：分区编辑器。
-// 设计口径（与用户诉求一致）：系统预设就是**首页默认布局本身**——「恢复默认」即清空偏好
-// 回落到它，所以这里不再有第二条"模板"入口：唯一的追加入口是「添加分区」，候选里既列
-// 系统预设分区（把隐藏掉的预设加回列表），也提供空白自建分区；用户改的是自己的偏好副本
-// ——改标题 / 换规则 / 换图标 / 调顺序 / 隐藏，系统货架本身不被改动，也不影响别人。
+// 自定义首页推荐弹窗：管理个人分区顺序、显隐与筛选规则。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
@@ -200,13 +196,13 @@ export function HomeCustomizeModal({
   const footer = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       {shownError && <p role="alert" className="w-full min-w-0 break-words text-[11px] text-danger font-mono">{shownError}</p>}
-      <button type="button" onClick={handleReset} disabled={saving || loading || loadFailed} className="inline-flex min-h-11 items-center gap-1.5 text-xs font-mono text-text-muted hover:text-emphasis transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">
+      <button type="button" onClick={handleReset} disabled={saving || loading || loadFailed} className="shrink-0 whitespace-nowrap inline-flex min-h-11 items-center gap-1.5 text-xs font-mono text-text-muted hover:text-emphasis transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">
         <RotateCcw className="w-3.5 h-3.5 shrink-0" />
         <span>{t("home.customizeReset")}</span>
       </button>
-      <div className="ml-auto flex items-center gap-2">
-        <button type="button" onClick={closeModal} disabled={saving} className="min-h-11 px-3 py-2 rounded-lg border border-line text-xs text-text-body hover:text-emphasis hover:bg-surfaceHover transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{t("catalog.cancel")}</button>
-        <button type="button" onClick={handleSave} disabled={saving || loading || loadFailed} className="min-h-11 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{saving ? t("common.saving") : t("common.save")}</button>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <button type="button" onClick={closeModal} disabled={saving} className="shrink-0 whitespace-nowrap min-h-11 px-3 py-2 rounded-lg border border-line text-xs text-text-body hover:text-emphasis hover:bg-surfaceHover transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{t("catalog.cancel")}</button>
+        <button type="button" onClick={handleSave} disabled={saving || loading || loadFailed} className="shrink-0 whitespace-nowrap min-h-11 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold transition-colors duration-fast ease-soft disabled:opacity-50 cursor-pointer">{saving ? t("common.saving") : t("common.save")}</button>
       </div>
     </div>
   );
@@ -215,14 +211,12 @@ export function HomeCustomizeModal({
     <>
       <Modal open={open} onClose={closeModal} title={t("home.customizeTitle")} icon={<Sliders className="w-4 h-4 shrink-0 text-primary" />} maxWidth="max-w-3xl" footer={footer}>
         <fieldset disabled={saving || loading || loadFailed} className="min-w-0 space-y-3">
-          <p className="text-xs text-text-faint">{t("home.customizeHint")}</p>
-
           <button
             type="button"
             onClick={() => setAdding((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.08] text-xs font-medium text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
+            className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.08] text-xs font-medium text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5 shrink-0" />
             <span>{t("home.customizeAdd")}</span>
           </button>
 
@@ -233,7 +227,7 @@ export function HomeCustomizeModal({
                 <button
                   type="button"
                   onClick={() => setAdding(false)}
-                  className="p-1 rounded hover:bg-surfaceHover text-text-muted hover:text-emphasis cursor-pointer"
+                  className="shrink-0 p-1 rounded hover:bg-surfaceHover text-text-muted hover:text-emphasis cursor-pointer"
                   aria-label={t("catalog.cancel")}
                 >
                   <X className="w-3 h-3" />
@@ -244,9 +238,9 @@ export function HomeCustomizeModal({
                 <button
                   type="button"
                   onClick={addBlank}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.08] text-xs text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.08] text-xs text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5 text-primary" />
+                  <Plus className="w-3.5 h-3.5 shrink-0 text-primary" />
                   <span>{t("home.customizeAddBlank")}</span>
                 </button>
                 {templates.length === 0 ? (
@@ -261,12 +255,12 @@ export function HomeCustomizeModal({
                         key={template.slug}
                         type="button"
                         onClick={() => addPreset(template)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.08] text-xs text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
+                        className="min-w-0 max-w-full inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.08] text-xs text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
                       >
-                        <Icon className="w-3.5 h-3.5 text-primary" />
+                        <Icon className="w-3.5 h-3.5 shrink-0 text-primary" />
                         <span className="min-w-0 break-all">{shelfTitle(template, locale)}</span>
                         {hidden && (
-                          <span className="text-[10px] font-mono text-text-faint">{t("home.customizeAddHidden")}</span>
+                          <span className="shrink-0 whitespace-nowrap text-[10px] font-mono text-text-faint">{t("home.customizeAddHidden")}</span>
                         )}
                       </button>
                     );

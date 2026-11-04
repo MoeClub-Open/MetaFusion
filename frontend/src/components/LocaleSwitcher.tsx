@@ -42,11 +42,11 @@ export function LocaleSwitcher({ compact }: { compact?: boolean }) {
         aria-label={t("locale.switchTitle")}
  className={
  compact
- ? "w-9 h-9 max-sm:min-h-[44px] grid place-items-center rounded-control bg-black/5 dark:bg-white/[0.04] hover:bg-black/10 dark:hover:bg-white/[0.08] border border-line text-text-body transition-colors duration-fast ease-soft"
- : "inline-flex items-center gap-2 h-10 max-sm:min-h-[44px] px-3 rounded-control bg-black/5 dark:bg-white/[0.04] hover:bg-black/10 dark:hover:bg-white/[0.08] border border-line text-sm font-mono text-text-body transition-colors duration-fast ease-soft"
+ ? "shrink-0 w-9 h-9 max-sm:min-w-[44px] max-sm:min-h-[44px] grid place-items-center rounded-control bg-black/5 dark:bg-white/[0.04] hover:bg-black/10 dark:hover:bg-white/[0.08] border border-line text-text-body transition-colors duration-fast ease-soft"
+ : "shrink-0 whitespace-nowrap inline-flex items-center gap-2 h-10 max-sm:min-h-[44px] px-3 rounded-control bg-black/5 dark:bg-white/[0.04] hover:bg-black/10 dark:hover:bg-white/[0.08] border border-line text-sm font-mono text-text-body transition-colors duration-fast ease-soft"
  }
  >
- <Languages className="w-4 h-4" strokeWidth={1.6} />
+ <Languages className="w-4 h-4 shrink-0" strokeWidth={1.6} />
  {!compact && <span>{t("locale.currentLabel")}</span>}
  </button>
 

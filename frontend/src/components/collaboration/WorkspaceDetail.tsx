@@ -23,8 +23,8 @@ import { ConflictValue } from "./ConflictValue";
 import { WorkspaceVersionTools } from "./WorkspaceVersionTools";
 
 const panel = "rounded-panel border border-line bg-surface p-4 sm:p-5";
-const button = "inline-flex items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-text-body hover:bg-surfaceSubtle disabled:cursor-default disabled:opacity-50";
-const primary = "inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-emphasis hover:opacity-90 disabled:cursor-default disabled:opacity-50";
+const button = "shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-text-body hover:bg-surfaceSubtle disabled:cursor-default disabled:opacity-50";
+const primary = "shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-emphasis hover:opacity-90 disabled:cursor-default disabled:opacity-50";
 const input = "w-full min-w-0 rounded-md border border-line bg-background px-3 py-2 text-sm text-text-body focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

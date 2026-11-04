@@ -25,7 +25,6 @@ import { fetchEntityRelationshipPreview, fetchEntityRelationships, type EntityRe
 import { useAuth } from "@/lib/authContext";
 import { canEditEntity } from "@/lib/permissions";
 import { useI18n } from "@/i18n/I18nProvider";
-import { isDistinctOriginalTitle } from "@/lib/titles";
 import { isNotFoundError, localizeCatalogError } from "@/lib/catalogErrors";
 import { EntityLoadError } from "@/components/catalog/EntityLoadError";
 
@@ -46,6 +45,7 @@ import type { EntityComment, EntityCollectionRef } from "@/lib/api";
 import { EntityRevisions } from "./EntityRevisions";
 import { QualityBadge } from "./QualityBadge";
 import { EntityRelationDirectory } from "@/components/entity/EntityRelationDirectory";
+import { EntityRelationOverview } from "@/components/entity/EntityRelationOverview";
 import { PageShell, PageContainer } from "@/components/ui/PageShell";
 import { TabPanel } from "@/components/ui/TabPanel";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -511,6 +511,7 @@ export function EntityDetailView({ id }: { id: string }) {
         category: e?.kind || "related",
         level,
         cover_image_url: coverUrl(e) || undefined,
+        disambiguation: e?.attributes?.disambiguation ? String(e.attributes.disambiguation) : undefined,
       };
     };
     const nodes: GraphNode[] = [
@@ -526,8 +527,11 @@ export function EntityDetailView({ id }: { id: string }) {
         nodes.push(nodeOf(nid, 1));
       }
       links.push({
+        id: r.id,
         source: r.source_id,
         target: r.target_id,
+        source_type: relatedEntities[r.source_id]?.kind || (r.source_id === centerId ? entity.kind : undefined),
+        target_type: relatedEntities[r.target_id]?.kind || (r.target_id === centerId ? entity.kind : undefined),
         type: r.type,
         label: getRelationName(defs, r.type, true, locale, relationshipRules),
       });
@@ -667,11 +671,6 @@ export function EntityDetailView({ id }: { id: string }) {
     [categorizedRelations, defs]
   );
 
-  // Direct peer agents can form an overview roster; relation codes and labels stay server-defined.
-  const overviewRelations = useMemo(() => entity?.kind === "agent" ? mediaRelations.filter((row) =>
-    (row.isIncoming || row.isOutgoing) && row.target?.kind === "agent" && defs?.relations?.[row.type]?.participant_slot === "peer") : [],
-    [entity?.kind, mediaRelations, defs]);
-
   // 分类展示顺序：按实体 kind 与已有字段匹配的模板声明 relation_groups。
   const relationGroupOrder = useMemo(() => {
     const ordered: string[] = [];
@@ -797,22 +796,22 @@ export function EntityDetailView({ id }: { id: string }) {
   if (editing) {
     return (
       <div className="min-h-screen relative flex flex-col overflow-clip">
-        <PageContainer className="sticky top-[var(--mf-header-h)] z-30 bg-surface/90 backdrop-blur-md border-b border-line py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <PageContainer className="sticky top-[var(--mf-header-h)] z-30 bg-surface/90 backdrop-blur-md border-b border-line py-2.5 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-line text-xs font-medium text-text-body hover:bg-surfaceHover transition-colors cursor-pointer"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-line text-xs font-medium text-text-body hover:bg-surfaceHover transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
               <span>{t("entity.detail.backToDetail")}</span>
             </button>
-            <span className="font-mono text-xs text-text-muted">/</span>
-            <span className="font-medium text-xs text-text-strong truncate max-w-md">
+            <span className="shrink-0 font-mono text-xs text-text-muted">/</span>
+            <span className="min-w-0 font-medium text-xs text-text-strong truncate max-w-md">
               {title(entity, locale, titleOrder)}
             </span>
           </div>
-          <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary text-[10px] font-mono font-semibold uppercase">
+          <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-chip bg-primary/10 text-primary text-[10px] font-mono font-semibold uppercase">
             {t("entity.detail.editEntity")}
           </span>
         </PageContainer>
@@ -999,22 +998,22 @@ export function EntityDetailView({ id }: { id: string }) {
                   href={getStorageEntityUrl(entity.id || id)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-control border border-info/25 bg-info/10 text-xs font-medium text-info hover:bg-info/20 transition-colors cursor-pointer"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3.5 py-2 rounded-control border border-info/25 bg-info/10 text-xs font-medium text-info hover:bg-info/20 transition-colors cursor-pointer"
                   title={t("entity.page.openResourceDownload")}
                 >
-                  <HardDrive className="w-3.5 h-3.5" />
+                  <HardDrive className="w-3.5 h-3.5 shrink-0" />
                   <span>{t("entity.page.resourceStation")}</span>
-                  <ArrowUpRight className="w-3 h-3 opacity-70" />
+                  <ArrowUpRight className="w-3 h-3 shrink-0 opacity-70" />
                 </a>
               )}
 
               <button
                 type="button"
                 onClick={copyShareLink}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-control border border-line bg-surface text-xs font-medium text-text-faint hover:text-emphasis transition-colors cursor-pointer"
+                className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-2 rounded-control border border-line bg-surface text-xs font-medium text-text-faint hover:text-emphasis transition-colors cursor-pointer"
                 title={t("entity.page.share")}
               >
-                <Share2 className="w-3.5 h-3.5" />
+                <Share2 className="w-3.5 h-3.5 shrink-0" />
                 <span>{t("entity.page.share")}</span>
               </button>
               {/* 成功反馈只走 role=status，避免按钮文案与 live region 双重播报。 */}
@@ -1048,7 +1047,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 id={entity.id}
                 tags={Array.isArray(entity.attributes?.tags) ? (entity.attributes.tags as string[]) : undefined}
                 minHeight={96}
-                maxHeight="min(45vh, 320px)"
+                maxHeight={380}
                 className="w-full h-auto"
               />
             </Card>
@@ -1230,40 +1229,6 @@ export function EntityDetailView({ id }: { id: string }) {
                   />
                 </div>
               )}
-              {/* Mother Work Direct Card */}
-              {motherWork && (
-                <Card tone="subtle" padding="none" className="hover:border-primary/50 transition-all mt-2">
-                  <Link
-                    href={`/catalog/${motherWork.id}`}
-                    className="group flex items-center gap-3.5 p-3 w-full"
-                  >
-                    <div className="w-12 h-12 rounded-lg overflow-hidden dark:bg-white/5 shrink-0 border border-line">
-                      <AdaptiveCover
-                        src={coverUrl(motherWork) || resolvedCover.url}
-                        alt={title(motherWork, locale, titleOrder)}
-                        title={title(motherWork, locale, titleOrder)}
-                        id={motherWork.id}
-                        aspect="2:3"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-mono text-[10px] text-primary uppercase tracking-wider font-semibold">
-                        {t("entity.detail.partOfWork")}
-                      </div>
-                      <div className="font-display text-sm font-bold text-text-strong group-hover:text-primary truncate">
-                        {title(motherWork, locale, titleOrder)}
-                      </div>
-                      {isDistinctOriginalTitle(motherWork.title, title(motherWork, locale, titleOrder)) && (
-                        <div className="font-mono text-xs text-text-muted truncate">
-                          {motherWork.title}
-                        </div>
-                      )}
-                    </div>
-                    <ArrowUpRight className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors duration-fast ease-soft shrink-0" />
-                  </Link>
-                </Card>
-              )}
 
               {/* Store Bonuses Highlight */}
               {storeBonuses.length > 0 && (
@@ -1291,31 +1256,88 @@ export function EntityDetailView({ id }: { id: string }) {
             </Card>
             )}
 
-            {active === "overview" && overviewRelations.length > 0 && (
-              <Card padding="section" className="shadow-soft">
-                <EntityRelationDirectory subjectId={entity.id || id} relations={overviewRelations} entities={relatedEntities} groupOrder={relationGroupOrder} summary />
-              </Card>
+            {active === "overview" && categorizedRelations.length > 0 && (
+              <EntityRelationOverview
+                subjectId={entity.id || id}
+                relations={categorizedRelations}
+                entities={relatedEntities}
+                groupOrder={relationGroupOrder}
+                truncated={relationsTruncated}
+                onOpenGraph={() => {
+                  setRelationViewMode("graph");
+                  select(mediaRelations.length > 0 ? "relations" : "staff");
+                }}
+                onOpenType={(type) => {
+                  setRelationViewMode("cards");
+                  select(isCreditRelation(defs, type) ? "staff" : "relations");
+                }}
+              />
             )}
 
             {/* ============================================================ */}
             {/* Section 2: Staff & Credits (演职人员与创作者)                 */}
             {/* ============================================================ */}
             {active === "staff" && (staffCredits.length > 0 || staffRelations.length > 0) && (
-              <div id="staff" className="space-y-4">
-                {staffCredits.length > 0 && <StaffCharacterSection credits={staffCredits} />}
-                {staffRelations.length > 0 && (
-                  <Card padding="section" className="space-y-4 shadow-soft">
-                    <SectionTitle icon={<Users className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
-                      {t("entity.page.navStaff")}
-                      <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                        {relationCount(staffRelations.length)}
-                      </span>
-                    </SectionTitle>
-                    <EntityRelationDirectory subjectId={entity.id || id} relations={staffRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
-                    {loadAllRelationsButton}
-                  </Card>
+              <Card id="staff" padding="section" className="space-y-4 shadow-soft">
+                <SectionTitle
+                  icon={<Users className="w-4 h-4 text-primary" strokeWidth={1.5} />}
+                  actions={
+                    <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
+                      <button
+                        type="button"
+                        onClick={() => setRelationViewMode("cards")}
+                        className={`px-2.5 py-1 rounded-md transition-all ${
+                          relationViewMode === "cards"
+                            ? "bg-surface text-text-strong font-semibold shadow-xs"
+                            : "text-text-faint hover:text-gray-900 dark:hover:text-white"
+                        }`}
+                      >
+                        {t("relations.directory.view")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRelationViewMode("graph")}
+                        className={`px-2.5 py-1 rounded-md transition-all ${
+                          relationViewMode === "graph"
+                            ? "bg-surface text-text-strong font-semibold shadow-xs"
+                            : "text-text-faint hover:text-gray-900 dark:hover:text-white"
+                        }`}
+                      >
+                        {t("entity.page.viewGraph")}
+                      </button>
+                    </div>
+                  }
+                >
+                  {t("entity.page.navStaff")}
+                  <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                    {relationCount(staffCredits.length + staffRelations.length)}
+                  </span>
+                </SectionTitle>
+                {relationViewMode === "graph" ? (
+                  <InteractiveRelationGraph
+                    height="clamp(360px, 65dvh, 640px)"
+                    centerEntityId={entity.id || id}
+                    centerEntityType={entity.kind}
+                    orientation={
+                      entity.kind === "release" || entity.kind === "medium" || entity.kind === "track"
+                        ? "release"
+                        : entity.kind === "agent"
+                        ? "agent"
+                        : "work"
+                    }
+                    nodes={graphNodes}
+                    links={graphLinks}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    {staffCredits.length > 0 && <StaffCharacterSection credits={staffCredits} />}
+                    {staffRelations.length > 0 && (
+                      <EntityRelationDirectory subjectId={entity.id || id} relations={staffRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
+                    )}
+                  </div>
                 )}
-              </div>
+                {loadAllRelationsButton}
+              </Card>
             )}
 
             {/* Section 3: Contents & Tracklist (内容目录与曲目结构)          */}
@@ -1541,11 +1563,6 @@ export function EntityDetailView({ id }: { id: string }) {
                       }
                       nodes={graphNodes}
                       links={graphLinks}
-                      onNodeClick={(n) => {
-                        if (n.id && n.id !== entity.id) {
-                          window.location.href = `/catalog/${n.id}`;
-                        }
-                      }}
                     />
                 ) : (
                   <EntityRelationDirectory subjectId={entity.id || id} relations={mediaRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
@@ -1639,23 +1656,23 @@ export function EntityDetailView({ id }: { id: string }) {
                 {commentError && (
                   <div className="text-xs text-rose-500 font-mono">{commentError}</div>
                 )}
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-[11px] text-text-muted">
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <span className="min-w-0 flex-1 text-[11px] text-text-muted">
                     {t("entity.page.syncNotice")}
                   </span>
                   {user ? (
                     <button
                       type="submit"
                       disabled={submittingComment || !newCommentBody.trim()}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                      className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
                     >
-                      <Send className="w-3.5 h-3.5" />
+                      <Send className="w-3.5 h-3.5 shrink-0" />
                       <span>{submittingComment ? t("entity.page.posting") : t("entity.page.postComment")}</span>
                     </button>
                   ) : (
                     <a
                       href={getAuthLoginUrl()}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-all duration-base ease-soft"
+                      className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-all duration-base ease-soft"
                     >
                       <span>{t("entity.page.sendAfterLogin")}</span>
                     </a>

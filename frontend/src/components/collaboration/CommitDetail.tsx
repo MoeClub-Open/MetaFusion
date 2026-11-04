@@ -50,7 +50,7 @@ export function CommitDetail({ id }: { id: string }) {
       <h2 className="font-semibold">{t("collaboration.changeCount", { count: data.changes.length })}</h2>
       <ul className="space-y-2">{data.changes.map(change => <li key={`${change.target}:${change.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-line bg-surface p-4">
         <div className="min-w-0"><p className="break-words font-medium">{String(change.after?.title || change.before?.title || change.id)}</p><p className="text-xs text-text-muted">{t(`collaboration.${change.target}`)} · {t(`collaboration.${change.before === null ? "created" : change.after === null ? "deleted" : "modified"}`)}</p></div>
-        <button className="rounded-control border border-line px-3 py-2 text-sm" onClick={() => setDiff(change)}>{t("collaboration.viewDiff")}</button>
+        <button className="shrink-0 whitespace-nowrap rounded-control border border-line px-3 py-2 text-sm" onClick={() => setDiff(change)}>{t("collaboration.viewDiff")}</button>
       </li>)}</ul>
     </>}
     {diff && <RevisionDiffInspector base={diff.before === null ? null : { label: t("collaboration.base"), snapshot: diff.before, version: diff.base_version }}

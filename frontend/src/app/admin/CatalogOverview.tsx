@@ -61,9 +61,9 @@ export function CatalogOverview() {
   ];
   return <div className="space-y-3">
     <div className="flex items-center justify-between gap-3">
-      <h2 className="text-base font-semibold text-text-strong">{t("admin.console.sysOverview")}</h2>
-      <button type="button" disabled={loading} onClick={() => { setNonce(value => value + 1); void refresh(); }} className="inline-flex items-center gap-2 rounded-control border border-line px-3 py-2 text-xs disabled:opacity-50">
-        <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />{t("common.refresh")}
+      <h2 className="min-w-0 text-base font-semibold text-text-strong">{t("admin.console.sysOverview")}</h2>
+      <button type="button" disabled={loading} onClick={() => { setNonce(value => value + 1); void refresh(); }} className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 rounded-control border border-line px-3 py-2 text-xs disabled:opacity-50">
+        <RefreshCw className={`size-4 shrink-0 ${loading ? "animate-spin" : ""}`} />{t("common.refresh")}
       </button>
     </div>
     {failed && <p role="alert" className="text-xs text-danger">{t("admin.console.overviewFailed")}</p>}

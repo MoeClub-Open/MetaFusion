@@ -224,8 +224,8 @@ export default function TopicDetailPage() {
  <PageShell width="page">
  {boardsFailed && (
  <div role="alert" className="mb-4 rounded-lg border border-line p-4 flex items-center justify-between gap-3">
- <p className="text-sm text-danger-soft">{t("community.boardsLoadFailed")}</p>
- <button onClick={() => void loadBoards(true)} className="text-sm text-text-body hover:text-emphasis">
+ <p className="min-w-0 flex-1 text-sm text-danger-soft">{t("community.boardsLoadFailed")}</p>
+ <button onClick={() => void loadBoards(true)} className="shrink-0 whitespace-nowrap text-sm text-text-body hover:text-emphasis">
  {t("common.retry")}
  </button>
  </div>

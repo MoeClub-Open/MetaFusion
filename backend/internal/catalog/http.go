@@ -422,6 +422,11 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		// kinds 支持多次出现或逗号分隔：多值命中在 SQL 侧完成。
 		o.Kinds = queryList(c, "kinds")
+		o.IDs, err = parseEntityQueryIDs(c)
+		if err != nil {
+			respond(c, nil, err)
+			return
+		}
 		o.TagsMode = c.Query("tags_mode")
 		if o.TagsMode != "" && o.TagsMode != "any" && o.TagsMode != "all" {
 			respond(c, nil, errParam(codeInvalidQueryParam))
@@ -478,6 +483,16 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	cat.GET("/entities/stats", required(PermissionLifecycleManage), func(c *gin.Context) {
 		stats, err := s.StateCounts(c.Request.Context())
 		respond(c, stats, err)
+	})
+	cat.POST("/entities/batch", func(c *gin.Context) {
+		var in EntityBatchRequest
+		if !body(c, &in) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
+		v, err := s.EntityBatch(ctx, in, user(c))
+		respond(c, v, err)
 	})
 	cat.GET("/entities/:id", func(c *gin.Context) { e, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); respond(c, e, err) })
 	cat.GET("/entities/:id/quality", func(c *gin.Context) {
@@ -608,12 +623,22 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		respond(c, v, err)
 	})
 	cat.GET("/entities/:id/links", func(c *gin.Context) {
+		if err := validateTextQuery(c, "direction", "classes", "rule_codes", "peer_kinds"); err != nil {
+			respond(c, nil, err)
+			return
+		}
 		limit, offset, err := listPagination(c)
 		if err != nil {
 			respond(c, nil, err)
 			return
 		}
-		page, err := s.EntityLinks(c.Request.Context(), c.Param("id"), limit, offset, user(c))
+		filters := relationshipFilters{
+			Direction: strings.TrimSpace(c.Query("direction")),
+			Classes:   queryList(c, "classes"),
+			RuleCodes: queryList(c, "rule_codes"),
+			PeerKinds: queryList(c, "peer_kinds"),
+		}
+		page, err := s.EntityLinksFiltered(c.Request.Context(), c.Param("id"), limit, offset, filters, user(c))
 		respond(c, page, err)
 	})
 	cat.POST("/entities/candidates", func(c *gin.Context) {

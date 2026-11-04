@@ -22,7 +22,7 @@ interface PublicSourceSettings {
 }
 
 const inputClass = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text-strong focus:border-info focus:outline-none disabled:opacity-60";
-const buttonClass = "inline-flex items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs text-text-strong hover:bg-surfaceSubtle disabled:cursor-not-allowed disabled:opacity-50";
+const buttonClass = "shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs text-text-strong hover:bg-surfaceSubtle disabled:cursor-not-allowed disabled:opacity-50";
 
 export function PublicSourcesAdmin() {
   const { t } = useI18n();

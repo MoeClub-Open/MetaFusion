@@ -731,6 +731,8 @@ func undeclaredReleaseSubject(ctx context.Context, tx *sql.Tx, e Entity) (bool, 
 
 type ListOptions struct {
 	Kind, Query, State, WorkID, ContentUnitID, ReleaseID, MediumID, ParentID, Field, Value string
+	// IDs 过滤指定的一批实体 UUID（1-100）；未显式指定 sort 时按传入顺序返回。
+	IDs []string
 	// SearchIDs 是 OpenSearch 提供的候选 ID 顺序。它仅由 HTTP 列表处理器内部填写，
 	// 最终查询仍用数据库可见性和筛选谓词收口，不作为外部参数暴露。
 	SearchIDs []string
@@ -904,6 +906,10 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 	if o.Query != "" {
 		return nil, fmt.Errorf("text_query_requires_search")
 	}
+	if len(o.IDs) > 0 {
+		*args = append(*args, pq.Array(o.IDs))
+		parts = append(parts, fmt.Sprintf("id = ANY($%d::uuid[])", len(*args)))
+	}
 	if len(o.SearchIDs) > 0 {
 		*args = append(*args, pq.Array(o.SearchIDs))
 		parts = append(parts, fmt.Sprintf("id = ANY($%d::uuid[])", len(*args)))
@@ -1057,6 +1063,10 @@ func entityListOrderClause(o ListOptions, args *[]any) (string, error) {
 		}
 		if len(o.SearchIDs) > 0 {
 			*args = append(*args, pq.Array(o.SearchIDs))
+			return fmt.Sprintf("array_position($%d::uuid[], id), id", len(*args)), nil
+		}
+		if len(o.IDs) > 0 {
+			*args = append(*args, pq.Array(o.IDs))
 			return fmt.Sprintf("array_position($%d::uuid[], id), id", len(*args)), nil
 		}
 		return "updated_at DESC, id", nil

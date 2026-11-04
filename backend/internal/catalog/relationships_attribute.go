@@ -75,6 +75,9 @@ func attributeReferenceProjections(d Definitions) []attributeReferenceProjection
 }
 
 func attributeEntityLinksSQL(d Definitions, filters relationshipFilters, args *[]any) string {
+	if len(filters.Classes) > 0 && !contains(filters.Classes, "reference") {
+		return ""
+	}
 	bind := func(value any) string {
 		*args = append(*args, value)
 		return "$" + strconv.Itoa(len(*args))

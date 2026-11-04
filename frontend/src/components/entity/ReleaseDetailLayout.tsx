@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, Entity, mapLimit, title as entityTitle } from "@/components/catalog/api";
@@ -10,9 +11,11 @@ import { canEditEntity } from "@/lib/permissions";
 import {
   useDefinitions,
   getKindName,
+  getRelationName,
   getTermName,
   resolveLocalizedName,
   blocksForEntity,
+  templatesForEntity,
 } from "@/lib/definitions";
 import { orderedTracksWithDepth } from "@/lib/trackTree";
 import { PageShell } from "@/components/ui/PageShell";
@@ -21,13 +24,18 @@ import { QualityBadge } from "@/components/catalog/QualityBadge";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EntityStaffSection } from "@/components/entity/EntityStaffSection";
+import { EntityRelationDirectory } from "@/components/entity/EntityRelationDirectory";
+import { EntityRelationOverview } from "@/components/entity/EntityRelationOverview";
+import { isCreditRelation } from "@/components/entity/staffCredits";
 import { AggregateRelationList } from "@/components/catalog/AggregateRelationList";
 import { classifyLoadFailure, DetailNotFound, DetailUnavailable, type LoadFailureKind } from "@/components/common/DetailLoadStates";
 import { RecordList, GroupAttributeInline, LocatorInline } from "@/components/catalog/TemplateAttributeSections";
 import { EntityLink } from "@/components/catalog/Fields";
 import { formatDuration as formatDurationShared } from "@/lib/duration";
 import { AdaptiveCardCover } from "@/components/common/AdaptiveCardCover";
-import { resolveCover } from "@/lib/cover";
+import { coverUrl, resolveCover } from "@/lib/cover";
+import { fetchEntityRelationshipPreview, type RelationshipRecord } from "@/lib/catalogRelationships";
+import type { GraphLink, GraphNode } from "@/lib/api";
 import { EntityArticle } from "@/components/catalog/EntityArticle";
 import { ARTICLE_ANCHOR_TABS } from "@/lib/catalogArticle";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
@@ -37,6 +45,11 @@ import { TabBar, useHashTab, type TabItem } from "@/components/catalog/DetailTab
 import { ExternalAuthorityLinks } from "@/components/entity/ExternalAuthorityLinks";
 import { EntityRevisions } from "@/components/catalog/EntityRevisions";
 import { EntityCommentsPanel } from "@/components/entity/EntityCommentsPanel";
+
+const InteractiveRelationGraph = dynamic(
+  () => import("@/components/graph/InteractiveRelationGraph").then((m) => m.InteractiveRelationGraph),
+  { ssr: false },
+);
 
 /** 页签没有数据时的统一占位。 */
 function EmptyPanel() {
@@ -152,7 +165,7 @@ export default function ReleaseDetailLayout() {
   const titleOrder = useTitleDisplayOrder();
   // 定义一律走 lib/definitions.ts 的缓存（与 /catalog 路由同源）——定义从来不住在 CatalogProvider 里
   // （Provider 只留模块状态与实例初始化状态），以前这里读 Provider 的 definition 恒为 undefined，字段名只能显示裸码。
-  const { definitions: dynamicDefs, kinds } = useDefinitions();
+  const { definitions: dynamicDefs, kinds, relationshipRules } = useDefinitions();
 
   const [release, setRelease] = useState<Entity | null>(null);
   const [media, setMedia] = useState<{ medium: Entity; tracks: Entity[] }[]>([]);
@@ -421,6 +434,95 @@ export default function ReleaseDetailLayout() {
   const [commentCount, setCommentCount] = useState<number | null>(null);
   const [revisions, setRevisions] = useState<any[]>([]);
   const [revisionsState, setRevisionsState] = useState<"loading" | "ready" | "error">("loading");
+  const [releaseRelItems, setReleaseRelItems] = useState<RelationshipRecord[]>([]);
+  const [releaseRelEntities, setReleaseRelEntities] = useState<Record<string, Entity>>({});
+  const [releaseRelTruncated, setReleaseRelTruncated] = useState(false);
+  const [releaseRelView, setReleaseRelView] = useState<"cards" | "graph">("cards");
+
+  useEffect(() => {
+    if (!releaseId) return;
+    let alive = true;
+    fetchEntityRelationshipPreview(releaseId, user?.id || "")
+      .then((res) => {
+        if (!alive) return;
+        setReleaseRelItems(Array.isArray(res.items) ? res.items : []);
+        setReleaseRelEntities(res.entities || {});
+        setReleaseRelTruncated(!!res.truncated);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setReleaseRelItems([]);
+        setReleaseRelEntities({});
+        setReleaseRelTruncated(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [releaseId, user?.id, reloadKey]);
+
+  const releaseRelationGroupOrder = useMemo(() => {
+    const ordered: string[] = [];
+    for (const tpl of templatesForEntity(dynamicDefs, "release", release?.attributes)) {
+      for (const g of tpl?.relation_groups || []) {
+        if (!ordered.includes(g)) ordered.push(g);
+      }
+    }
+    return ordered;
+  }, [dynamicDefs, release?.attributes]);
+
+  const overviewReleaseRelations = useMemo(
+    () =>
+      releaseRelItems.filter(
+        (r) =>
+          !(r.type === "edition_of" && siblingReleases.length > 1) &&
+          dynamicDefs?.relations?.[r.type]?.aggregate !== true,
+      ),
+    [releaseRelItems, siblingReleases.length, dynamicDefs],
+  );
+
+  const extraReleaseRelations = useMemo(
+    () => overviewReleaseRelations.filter((r) => !isCreditRelation(dynamicDefs, r.type)),
+    [overviewReleaseRelations, dynamicDefs],
+  );
+
+  const { releaseGraphNodes, releaseGraphLinks } = useMemo(() => {
+    if (!release) return { releaseGraphNodes: [] as GraphNode[], releaseGraphLinks: [] as GraphLink[] };
+    const centerId = release.id || releaseId;
+    const nodeOf = (nid: string, level: number): GraphNode => {
+      const e = releaseRelEntities[nid] || works[nid] || (nid === centerId ? release : undefined);
+      return {
+        id: nid,
+        name: e ? entityTitle(e, locale, titleOrder) || e.title || nid : nid.slice(0, 8),
+        original_name: e ? e.title || "" : "",
+        type: e?.kind || "related",
+        category: e?.kind || "related",
+        level,
+        cover_image_url: coverUrl(e) || undefined,
+        disambiguation: e?.attributes?.disambiguation ? String(e.attributes.disambiguation) : undefined,
+      };
+    };
+    const nodes: GraphNode[] = [nodeOf(centerId, 0)];
+    const links: GraphLink[] = [];
+    const seen = new Set<string>([centerId]);
+    for (const r of releaseRelItems) {
+      for (const nid of [r.source_id, r.target_id]) {
+        if (!nid || seen.has(nid)) continue;
+        seen.add(nid);
+        nodes.push(nodeOf(nid, 1));
+      }
+      links.push({
+        id: r.id,
+        source: r.source_id,
+        target: r.target_id,
+        source_type: releaseRelEntities[r.source_id]?.kind || (r.source_id === centerId ? release.kind : undefined),
+        target_type: releaseRelEntities[r.target_id]?.kind || (r.target_id === centerId ? release.kind : undefined),
+        type: r.type,
+        label: getRelationName(dynamicDefs, r.type, true, locale, relationshipRules),
+      });
+    }
+    return { releaseGraphNodes: nodes, releaseGraphLinks: links };
+  }, [release, releaseId, releaseRelItems, releaseRelEntities, works, locale, titleOrder, dynamicDefs, relationshipRules]);
+
   useEffect(() => {
     if (!releaseId) return;
     let alive = true;
@@ -434,7 +536,7 @@ export default function ReleaseDetailLayout() {
     { id: "overview", label: t("entity.page.navOverview"), icon: <BookOpen className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "mediums", label: t("release.detail.tabMediums"), badge: media.length, icon: <Disc className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "credits", label: t("release.detail.tabCredits"), badge: releaseStaffLoaded ? releaseStaffCount : undefined, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "relations", label: t("entity.page.navRelations"), badge: aggregateCount === null ? undefined : aggregateCount + expressionIds.length, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "relations", label: t("entity.page.navRelations"), badge: aggregateCount === null ? undefined : aggregateCount + expressionIds.length + extraReleaseRelations.length, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "comments", label: t("entity.page.communityTitle"), badge: commentCount ?? undefined, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("release.detail.tabRevisions"), badge: revisionsState === "ready" ? revisions.length : undefined, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ];
@@ -802,10 +904,8 @@ export default function ReleaseDetailLayout() {
             </div>
             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
               {cover.url && (
-                <div className="w-24 shrink-0">
-                  <div className="w-full aspect-[3/4] rounded-md overflow-hidden border border-line">
-                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} aspectClassName="w-full h-full" />
-                  </div>
+                <div className="w-24 sm:w-28 shrink-0">
+                  <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
                 </div>
               )}
             </div>
@@ -828,6 +928,28 @@ export default function ReleaseDetailLayout() {
             <SectionTitle icon={<BookOpen className="w-4 h-4 text-primary" strokeWidth={1.5} />}>{t("entity.page.overviewTitle")}</SectionTitle>
             <EntityArticle entity={release} titleOrder={titleOrder} />
           </Card>
+
+        {overviewReleaseRelations.length > 0 && (
+          <EntityRelationOverview
+            subjectId={release.id || releaseId}
+            relations={overviewReleaseRelations}
+            entities={releaseRelEntities}
+            groupOrder={releaseRelationGroupOrder}
+            truncated={releaseRelTruncated}
+            onOpenGraph={() => {
+              setReleaseRelView("graph");
+              selectSection("relations");
+            }}
+            onOpenType={(type) => {
+              if (isCreditRelation(dynamicDefs, type)) {
+                selectSection("credits");
+              } else {
+                setReleaseRelView("cards");
+                selectSection("relations");
+              }
+            }}
+          />
+        )}
 
         {editionsError && <div className="space-y-2"><ErrorMessage error={editionsError}/><button type="button" onClick={() => setReloadKey((key) => key+1)}>{t("catalog.retry")}</button></div>}
         {blocksForEntity(dynamicDefs,"release",release.attributes).includes("editions") && siblingReleases.length > 1 && (
@@ -1171,7 +1293,64 @@ export default function ReleaseDetailLayout() {
         )}
 
                 <AggregateRelationList entityId={releaseId} onCount={setAggregateCount} />
-        {aggregateCount === 0 && expressionIds.length === 0 && <EmptyPanel />}
+        {(extraReleaseRelations.length > 0 || (releaseRelView === "graph" && releaseRelItems.length > 0)) && (
+          <Card padding="section" className="space-y-4">
+            <SectionTitle
+              icon={<Network className="w-4 h-4 text-primary" strokeWidth={1.5} />}
+              actions={
+                releaseRelItems.length > 0 ? (
+                  <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
+                    <button
+                      type="button"
+                      onClick={() => setReleaseRelView("cards")}
+                      className={`px-2.5 py-1 rounded-md transition-all ${
+                        releaseRelView === "cards"
+                          ? "bg-surface text-text-strong font-semibold shadow-xs"
+                          : "text-text-faint hover:text-gray-900 dark:hover:text-white"
+                      }`}
+                    >
+                      {t("relations.directory.view")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReleaseRelView("graph")}
+                      className={`px-2.5 py-1 rounded-md transition-all ${
+                        releaseRelView === "graph"
+                          ? "bg-surface text-text-strong font-semibold shadow-xs"
+                          : "text-text-faint hover:text-gray-900 dark:hover:text-white"
+                        }`}
+                    >
+                      {t("entity.page.viewGraph")}
+                    </button>
+                  </div>
+                ) : undefined
+              }
+            >
+              {t("entity.page.relationsTitle")}
+              <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                {releaseRelView === "graph" ? releaseRelItems.length : extraReleaseRelations.length}
+              </span>
+            </SectionTitle>
+            {releaseRelView === "graph" ? (
+              <InteractiveRelationGraph
+                height="clamp(360px, 65dvh, 640px)"
+                centerEntityId={release.id || releaseId}
+                centerEntityType="release"
+                orientation="release"
+                nodes={releaseGraphNodes}
+                links={releaseGraphLinks}
+              />
+            ) : (
+              <EntityRelationDirectory
+                subjectId={release.id || releaseId}
+                relations={extraReleaseRelations}
+                entities={releaseRelEntities}
+                groupOrder={releaseRelationGroupOrder}
+              />
+            )}
+          </Card>
+        )}
+        {aggregateCount === 0 && expressionIds.length === 0 && extraReleaseRelations.length === 0 && !(releaseRelView === "graph" && releaseRelItems.length > 0) && <EmptyPanel />}
         </div>
 
         <div role="tabpanel" id="panel-comments" aria-labelledby="tab-comments" hidden={activeSection !== "comments"} className="space-y-4">

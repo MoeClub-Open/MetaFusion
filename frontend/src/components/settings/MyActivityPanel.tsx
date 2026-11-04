@@ -12,7 +12,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { ActivityDetail, ActivityResult } from "./ActivityDetail";
 
 const CONTROL = "h-9 w-full min-w-0 rounded-control border border-line bg-background px-2.5 text-sm text-text-body focus-visible:outline-primary";
-const BUTTON = "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-control border border-line px-3 text-sm text-text-body hover:bg-surfaceSubtle focus-visible:outline-primary disabled:opacity-40";
+const BUTTON = "shrink-0 whitespace-nowrap inline-flex min-h-9 items-center justify-center gap-1.5 rounded-control border border-line px-3 text-sm text-text-body hover:bg-surfaceSubtle focus-visible:outline-primary disabled:opacity-40";
 const EMPTY_FILTERS = { service: "", action: "", result: "", from: "", to: "", target_id: "", request_id: "", per_page: AUDIT_PAGE_SIZE };
 type Filters = typeof EMPTY_FILTERS;
 
@@ -141,7 +141,7 @@ function ViewerActivityPanel({ userId }: { userId: string }) {
       </form>
 
       {error ? <div role="alert" className="flex items-center gap-2 rounded-control border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
-        <AlertCircle className="size-4 shrink-0" /><span className="flex-1">{error}</span>
+        <AlertCircle className="size-4 shrink-0" /><span className="min-w-0 flex-1">{error}</span>
         <button type="button" className={BUTTON} onClick={() => setReload((n) => n + 1)}>{t("common.retry")}</button>
       </div> : loading ? <div role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-text-muted"><Loader2 className="size-4 animate-spin" />{t("common.loading")}</div>
         : items.length === 0 ? <div role="status" className="rounded-control border border-line-subtle py-12 text-center text-sm text-text-muted"><History className="mx-auto mb-3 size-6 text-text-faint" />{t(filtered ? "settings.activity.noMatches" : "settings.activity.empty")}</div>

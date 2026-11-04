@@ -27,6 +27,8 @@ func TestRelationshipQueryValidation(t *testing.T) {
 		{"bad id", RelationshipQueryRequest{IDs: []string{"broken"}}, "invalid_id"},
 		{"empty id", RelationshipQueryRequest{IDs: []string{id, ""}}, "invalid_id"},
 		{"direction", RelationshipQueryRequest{IDs: []string{id}, Direction: "recursive"}, "invalid_direction"},
+		{"class", RelationshipQueryRequest{IDs: []string{id}, Classes: []string{"unknown"}}, "invalid_class"},
+		{"empty class", RelationshipQueryRequest{IDs: []string{id}, Classes: []string{""}}, "invalid_class"},
 		{"peer kind", RelationshipQueryRequest{IDs: []string{id}, PeerKinds: []string{"album"}}, "invalid_peer_kind"},
 		{"zero limit", RelationshipQueryRequest{IDs: []string{id}, Limit: queryInt(0)}, "invalid_limit"},
 		{"negative limit", RelationshipQueryRequest{IDs: []string{id}, Limit: queryInt(-1)}, "invalid_limit"},
@@ -43,10 +45,11 @@ func TestRelationshipQueryValidation(t *testing.T) {
 	}
 	in, limit, offset, err := normalizeRelationshipQuery(RelationshipQueryRequest{
 		IDs:       []string{strings.ToUpper(id), " " + id + " "},
+		Classes:   []string{"semantic", "semantic"},
 		RuleCodes: []string{"structure:release_subject", "structure:release_subject"},
 		PeerKinds: []string{"work", "work"},
 	})
-	if err != nil || len(in.IDs) != 1 || in.IDs[0] != id || in.Direction != "both" || limit != 25 || offset != 0 || len(in.RuleCodes) != 1 || len(in.PeerKinds) != 1 {
+	if err != nil || len(in.IDs) != 1 || in.IDs[0] != id || in.Direction != "both" || limit != 25 || offset != 0 || len(in.Classes) != 1 || len(in.RuleCodes) != 1 || len(in.PeerKinds) != 1 {
 		t.Fatalf("normalized=%+v, limit=%d offset=%d err=%v", in, limit, offset, err)
 	}
 	_, limit, offset, err = normalizeRelationshipQuery(RelationshipQueryRequest{IDs: []string{id}, Limit: queryInt(100), Offset: queryInt(10100)})
@@ -67,6 +70,64 @@ func TestRelationshipQueryUsesDynamicRegistry(t *testing.T) {
 	for _, code := range []string{"new_gui_rule", "structure:missing", "relation:missing", ""} {
 		if err := validateRelationshipQueryRules(RelationshipQueryRequest{RuleCodes: []string{code}}, d); err == nil || err.Error() != "invalid_rule_code" {
 			t.Fatalf("invalid registry code %q: %v", code, err)
+		}
+	}
+}
+
+func TestEntityLinksQueryPrunesBranchesByClassAndRule(t *testing.T) {
+	d := Defaults()
+	id := uuid.NewString()
+
+	args := []any{id}
+	semanticRefSQL := entityLinksQuery(d, id, relationshipFilters{Direction: "both", Classes: []string{"semantic", "reference"}}, &args)
+	for _, forbidden := range []string{"catalog.content_units", "catalog.tracks", "catalog.release_subjects", "catalog.track_contents"} {
+		if strings.Contains(semanticRefSQL, forbidden) {
+			t.Fatalf("semantic+reference query must prune fixed structural branch %s: %s", forbidden, semanticRefSQL)
+		}
+	}
+	if !strings.Contains(semanticRefSQL, "FROM catalog.relations r") || !strings.Contains(semanticRefSQL, "ref_target") {
+		t.Fatalf("semantic+reference query missing semantic or attribute branch: %s", semanticRefSQL)
+	}
+
+	args = []any{id}
+	ownershipSQL := entityLinksQuery(d, id, relationshipFilters{Direction: "outgoing", Classes: []string{"ownership"}}, &args)
+	if strings.Contains(ownershipSQL, "FROM catalog.relations r") || strings.Contains(ownershipSQL, "ref_target") || strings.Contains(ownershipSQL, "catalog.release_subjects") {
+		t.Fatalf("ownership query must prune semantic, reference and inclusion branches: %s", ownershipSQL)
+	}
+	if !sqlPaginatedRelationshipFilters(relationshipFilters{Classes: []string{"ownership", "reference"}}) {
+		t.Fatal("ownership+reference should use direct SQL pagination")
+	}
+	if sqlPaginatedRelationshipFilters(relationshipFilters{Classes: []string{"semantic"}}) {
+		t.Fatal("semantic class requires reference visibility check before pagination")
+	}
+
+	args = []any{id}
+	disjointSQL := entityLinksQuery(d, id, relationshipFilters{Direction: "both", Classes: []string{"semantic"}, RuleCodes: []string{"structure:work_expression"}}, &args)
+	if !strings.Contains(disjointSQL, "WHERE false") {
+		t.Fatalf("disjoint class and rule filter must emit empty branch: %s", disjointSQL)
+	}
+}
+
+func TestEntityLinksHTTPFilterValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	HTTP{Store: &Store{}}.Register(r)
+	id := uuid.NewString()
+	for _, tc := range []struct {
+		path string
+		code string
+	}{
+		{"/api/catalog/entities/not-a-uuid/links", "invalid_id"},
+		{"/api/catalog/entities/" + id + "/links?direction=sideways", "invalid_direction"},
+		{"/api/catalog/entities/" + id + "/links?classes=bogus", "invalid_class"},
+		{"/api/catalog/entities/" + id + "/links?peer_kinds=album", "invalid_peer_kind"},
+	} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.RemoteAddr = "198.51.100.43:12345"
+		r.ServeHTTP(w, req)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), tc.code) {
+			t.Fatalf("%s: got %d %s, want 400 %s", tc.path, w.Code, w.Body.String(), tc.code)
 		}
 	}
 }
@@ -298,7 +359,7 @@ func TestOpenAPIRelationshipQuery(t *testing.T) {
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
 	request := schemas["RelationshipQueryRequest"].(map[string]any)
 	props := request["properties"].(map[string]any)
-	if request["additionalProperties"] != false || props["ids"].(map[string]any)["maxItems"] != 20 || props["limit"].(map[string]any)["default"] != 25 || props["offset"].(map[string]any)["maximum"] != nil {
+	if request["additionalProperties"] != false || props["ids"].(map[string]any)["maxItems"] != 20 || props["classes"] == nil || props["limit"].(map[string]any)["default"] != 25 || props["offset"].(map[string]any)["maximum"] != nil {
 		t.Fatalf("query schema constraints drift: %+v", request)
 	}
 	entity := schemas["RelationshipEntity"].(map[string]any)["properties"].(map[string]any)

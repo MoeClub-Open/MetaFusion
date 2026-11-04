@@ -33,9 +33,9 @@ export function EntityActionToolbar({
           <button
             type="button"
             onClick={onEdit}
-            className="inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-amber-400 hover:bg-amber-300 text-black font-semibold transition-all shadow-xs active:scale-95"
+            className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-amber-400 hover:bg-amber-300 text-black font-semibold transition-all shadow-xs active:scale-95"
           >
-            <Edit3 className="w-3.5 h-3.5" />
+            <Edit3 className="w-3.5 h-3.5 shrink-0" />
             {t("entity.toolbar.edit", { entityType: label })}
           </button>
 
@@ -43,9 +43,9 @@ export function EntityActionToolbar({
             <button
               type="button"
               onClick={onMerge}
-              className="inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-alt-soft hover:text-alt-soft transition-all active:scale-95"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-alt-soft hover:text-alt-soft transition-all active:scale-95"
             >
-              <GitMerge className="w-3.5 h-3.5" />
+              <GitMerge className="w-3.5 h-3.5 shrink-0" />
               {t("entity.toolbar.merge", { entityType: label })}
             </button>
           )}

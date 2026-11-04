@@ -159,9 +159,9 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => void openCustomize()}
-              className="mf-focus inline-flex items-center gap-1.5 px-3.5 h-9 max-sm:min-h-[44px] rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.07] text-xs font-medium text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
+              className="mf-focus shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3.5 h-9 max-sm:min-h-[44px] rounded-lg border border-line bg-emphasis/[0.03] hover:bg-emphasis/[0.07] text-xs font-medium text-text-body hover:text-emphasis transition-colors duration-fast ease-soft cursor-pointer"
             >
-              <Sliders className="w-3.5 h-3.5" />
+              <Sliders className="w-3.5 h-3.5 shrink-0" />
               <span>{t("home.customize")}</span>
             </button>
           )}
@@ -170,7 +170,7 @@ export default function HomePage() {
         {failed && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-warn-soft text-xs">
             <span>{t("catalog.connectionError")}</span>
-            <button type="button" onClick={() => void loadFeed()} className="mf-focus min-h-9 px-2 text-primary hover:underline">{t("catalog.retry")}</button>
+            <button type="button" onClick={() => void loadFeed()} className="mf-focus shrink-0 whitespace-nowrap min-h-9 px-2 text-primary hover:underline">{t("catalog.retry")}</button>
           </div>
         )}
 
@@ -195,7 +195,7 @@ export default function HomePage() {
               href="/new"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors duration-fast ease-soft"
             >
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
               <span>{t("home.addFirst")}</span>
             </Link>
           </div>
@@ -208,15 +208,15 @@ export default function HomePage() {
                   id={`shelf-title-${shelf.slug}`}
                   actions={
                     <>
-                      <span className="px-2 py-0.5 rounded-chip bg-emphasis/[0.06] text-text-muted text-xs font-mono">
+                      <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-chip bg-emphasis/[0.06] text-text-muted text-xs font-mono">
                         {t("home.itemCount", { count: (total ?? items.length).toString() })}
                       </span>
                       <Link
                         href={"/explore?" + shelfExploreParam(shelf)}
-                        className="mf-focus inline-flex items-center gap-1 min-h-9 text-xs text-primary hover:underline"
+                        className="mf-focus shrink-0 whitespace-nowrap inline-flex items-center gap-1 min-h-9 text-xs text-primary hover:underline"
                       >
                         <span>{t("home.viewAll")}</span>
-                        <ArrowRight className="w-3.5 h-3.5" aria-hidden />
+                        <ArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden />
                       </Link>
                     </>
                   }

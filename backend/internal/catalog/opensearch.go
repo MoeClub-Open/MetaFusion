@@ -126,6 +126,7 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 	}
 	term("kind", o.Kind)
 	terms("kind", o.Kinds)
+	terms("entity_id", o.IDs)
 	term("state", o.State)
 	term("original_language", o.OriginalLanguage)
 	term("work_ids", o.WorkID)

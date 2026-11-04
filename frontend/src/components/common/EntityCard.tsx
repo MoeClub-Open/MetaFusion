@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { AdaptiveCardCover } from "./AdaptiveCardCover";
 import { NeutralCover } from "./NeutralCover";
-import { GRID_COVER_ASPECT } from "@/lib/cover";
+import { GRID_COVER_ASPECT, inferCoverRatio } from "@/lib/cover";
 
 export interface EntityCardProps {
   id: string;
@@ -54,8 +54,8 @@ export function EntityCard({
       <AdaptiveCardCover
         src={pictureUrl}
         alt={title}
-        /* 固定 3:4，避免封面加载后卡片高度跳动。 */
-        aspectRatio={GRID_COVER_ASPECT}
+        naturalAspect
+        aspectRatio={pictureUrl ? inferCoverRatio(tags) : GRID_COVER_ASPECT}
         badge={
           <span className="px-2 py-0.5 rounded-chip bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
             <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />

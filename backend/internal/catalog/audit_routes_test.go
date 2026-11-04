@@ -135,11 +135,11 @@ func TestAuditActionCodesAreStable(t *testing.T) {
 // 却因为在豁免表里而静默不留痕。
 func TestAuditExemptRoutesAreReadOnlyByDesign(t *testing.T) {
 	exempt := AuditExempt()
-	if len(exempt) != 11 {
+	if len(exempt) != 12 {
 		t.Fatalf("豁免表条数变了（%d）：新增豁免要在测试里说明它为什么零写入", len(exempt))
 	}
 	// 来源 query/fetch/wiki 仅出站读取公开资料；其他豁免仅执行只读事务。
-	for _, key := range []string{"POST /internal/storage/asset-references", "POST /api/catalog/expressions/details", "POST /api/external-sources/query", "POST /api/external-sources/fetch", "POST /api/external-sources/wiki", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/entities/candidates/batch", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
+	for _, key := range []string{"POST /internal/storage/asset-references", "POST /api/catalog/entities/batch", "POST /api/catalog/expressions/details", "POST /api/external-sources/query", "POST /api/external-sources/fetch", "POST /api/external-sources/wiki", "POST /api/catalog/entities/identity", "POST /api/catalog/entities/candidates", "POST /api/catalog/entities/candidates/batch", "POST /api/catalog/relationships/query", "POST /api/catalog/quality/batch", "POST /api/admin/catalog-definitions/impact"} {
 		if strings.TrimSpace(exempt[key]) == "" {
 			t.Fatalf("%s 必须带豁免理由", key)
 		}

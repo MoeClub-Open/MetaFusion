@@ -311,12 +311,12 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
             onChange={(e) => setInputContent(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t("users.profile.typeMessage")}
-            className="flex-1 px-3.5 py-2.5 bg-background border border-line rounded-xl text-emphasis text-sm placeholder-gray-500 focus:outline-none focus:border-primary resize-none font-sans leading-relaxed"
+            className="min-w-0 flex-1 px-3.5 py-2.5 bg-background border border-line rounded-xl text-emphasis text-sm placeholder-gray-500 focus:outline-none focus:border-primary resize-none font-sans leading-relaxed"
           />
           <button
             type="submit"
             disabled={!inputContent.trim() || sending}
-            className="h-11 px-4 rounded-xl bg-primary hover:opacity-90 disabled:opacity-40 text-primary-foreground text-sm font-bold flex items-center justify-center gap-1.5 transition-all shrink-0 shadow-soft cursor-pointer"
+            className="h-11 min-w-11 px-4 rounded-xl bg-primary hover:opacity-90 disabled:opacity-40 text-primary-foreground text-sm font-bold flex items-center justify-center gap-1.5 transition-all shrink-0 whitespace-nowrap shadow-soft cursor-pointer"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />

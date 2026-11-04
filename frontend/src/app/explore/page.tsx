@@ -655,7 +655,7 @@ function ExploreInner() {
                 {/* 加载中不报「约 0 项」：总数未到前只显示加载文案。出错时下方 alert 已给说明。 */}
                 {loading ? t("catalog.loading") : loadError ? null : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
               </p>
-              <div className="flex w-full sm:w-auto items-center gap-2">
+              <div className="flex flex-wrap sm:flex-nowrap w-full sm:w-auto items-center gap-2">
                 {/* 每页条数：写回 URL（?page_size=），与请求的 limit、offset 和总页数同源。
                     默认 60 是 2/3/4/5 列的公倍数，四种列宽下末排都不会缺一格。 */}
                 <div className="shrink-0 w-28 sm:w-32">
@@ -670,7 +670,7 @@ function ExploreInner() {
                   />
                 </div>
                 {/* 排序：取值写回 URL（?sort=&order=），可深链、后退键保持；后端按白名单校验。 */}
-                <div className="min-w-0 flex-1 sm:w-48">
+                <div className="min-w-[8.5rem] flex-1 sm:w-48">
                   <Select
                     value={sortValue}
                     aria-label={t("catalog.sort")}
@@ -695,7 +695,7 @@ function ExploreInner() {
                     aria-label={t("catalog.gridView")}
                     aria-pressed={viewMode === "grid"}
                     className={
-                      "mf-focus p-2.5 min-h-10 max-sm:min-h-[44px] rounded-lg border text-xs transition-colors duration-fast ease-soft cursor-pointer " +
+                      "mf-focus inline-grid place-items-center p-2.5 min-w-10 min-h-10 max-sm:min-w-[44px] max-sm:min-h-[44px] rounded-lg border text-xs transition-colors duration-fast ease-soft cursor-pointer " +
                       (viewMode === "grid"
                         ? "bg-primary/15 border-primary/40 text-primary font-bold"
                         : "bg-surface border-line text-text-muted hover:text-text-strong")
@@ -710,7 +710,7 @@ function ExploreInner() {
                     aria-label={t("catalog.listView")}
                     aria-pressed={viewMode === "list"}
                     className={
-                      "mf-focus p-2.5 min-h-10 max-sm:min-h-[44px] rounded-lg border text-xs transition-colors duration-fast ease-soft cursor-pointer " +
+                      "mf-focus inline-grid place-items-center p-2.5 min-w-10 min-h-10 max-sm:min-w-[44px] max-sm:min-h-[44px] rounded-lg border text-xs transition-colors duration-fast ease-soft cursor-pointer " +
                       (viewMode === "list"
                         ? "bg-primary/15 border-primary/40 text-primary font-bold"
                         : "bg-surface border-line text-text-muted hover:text-text-strong")

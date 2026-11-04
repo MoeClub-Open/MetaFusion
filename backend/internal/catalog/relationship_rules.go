@@ -5,6 +5,8 @@ import "sort"
 // RelationshipRule describes one readable edge. Fixed structural rules are
 // read-only views over their existing foreign keys or inclusion tables; ordinary
 // relations remain governed by the published definitions document.
+var RelationshipClasses = []string{"ownership", "placement", "inclusion", "semantic", "reference"}
+
 type RelationshipRule struct {
 	Code         string   `json:"code"`
 	Class        string   `json:"class"`
