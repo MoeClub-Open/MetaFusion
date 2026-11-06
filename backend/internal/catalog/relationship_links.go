@@ -148,7 +148,7 @@ SELECT l.code, l.source_id::text, l.target_id::text, l.position, l.role,
  l.locator, l.attributes, l.relation_id, l.relation_document,l.field_path
 FROM (
  /* entity link branches */
-) l
+) AS l(code, source_id, target_id, position, role, locator, attributes, relation_id, relation_document, field_path)
 JOIN catalog.entities source ON source.id=l.source_id::uuid
 JOIN catalog.entities target ON target.id=l.target_id::uuid
 WHERE ($2::boolean OR source.state='active' OR source.created_by=$3::uuid)

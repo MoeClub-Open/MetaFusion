@@ -210,7 +210,7 @@ func TestPostgresReleaseMediumFormatsAndNonofficialCandidates(t *testing.T) {
 	rel := f.save(Entity{
 		Kind:     "release",
 		Title:    "First Press",
-		Subjects: []Subject{{WorkID: work.ID, Role: "main", Position: 1}},
+		Subjects: []Subject{{WorkID: work.ID, Role: "primary", Position: 1}},
 		Translations: map[string]Translation{
 			"zh-CN": {Title: "初回限定盘", Nonofficial: true, NonofficialAliases: []string{"初限盘"}},
 		},
