@@ -217,17 +217,17 @@ func TestPostgresReleaseMediumFormatsAndNonofficialCandidates(t *testing.T) {
 	})
 	f.save(Entity{Kind: "medium", Title: "Disc 1", ReleaseID: rel.ID, Position: 1, Attributes: map[string]any{"format": "cd"}})
 	f.save(Entity{Kind: "medium", Title: "Disc 2", ReleaseID: rel.ID, Position: 2, Attributes: map[string]any{"format": "cd"}})
-	f.save(Entity{Kind: "medium", Title: "Bonus BD", ReleaseID: rel.ID, Position: 3, Attributes: map[string]any{"format": "blu_ray"}})
+	f.save(Entity{Kind: "medium", Title: "Bonus BD", ReleaseID: rel.ID, Position: 3, Attributes: map[string]any{"format": "bd"}})
 
 	got, err := f.s.Get(ctx, rel.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.MediumFormats["cd"] != 2 || got.MediumFormats["blu_ray"] != 1 {
+	if got.MediumFormats["cd"] != 2 || got.MediumFormats["bd"] != 1 {
 		t.Fatalf("Get medium_formats mismatch: %+v", got.MediumFormats)
 	}
 	listed, err := f.s.List(ctx, ListOptions{Kind: "release", WorkID: work.ID}, nil)
-	if err != nil || len(listed) != 1 || listed[0].MediumFormats["cd"] != 2 || listed[0].MediumFormats["blu_ray"] != 1 {
+	if err != nil || len(listed) != 1 || listed[0].MediumFormats["cd"] != 2 || listed[0].MediumFormats["bd"] != 1 {
 		t.Fatalf("List medium_formats mismatch: %+v %v", listed, err)
 	}
 	var storedHasMediumFormats bool

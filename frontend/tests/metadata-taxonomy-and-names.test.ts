@@ -77,7 +77,7 @@ test("normalizeEditorEntity strips medium_formats projection and keeps nonoffici
     ...emptyEntity("release"),
     id: "rel-1",
     title: "First Press",
-    medium_formats: { cd: 2, blu_ray: 1 },
+    medium_formats: { cd: 2, bd: 1 },
     translations: {
       "zh-CN": { title: "初回盘", nonofficial: true, aliases: null as unknown as string[], nonofficial_aliases: ["初限盘"] },
     },
