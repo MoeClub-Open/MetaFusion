@@ -322,15 +322,18 @@ func (c *OpenSearchClient) setInitialized(ctx context.Context) error {
 }
 
 func (c *OpenSearchClient) clearEntityDocuments(ctx context.Context) error {
-	body, _ := json.Marshal(map[string]any{"query": map[string]any{"terms": map[string]any{"record_type": []string{"entity", "state"}}}})
-	status, _, err := c.request(ctx, http.MethodPost, "/"+openSearchIndex+"/_delete_by_query?conflicts=proceed&refresh=true", body, "application/json")
+	// An interrupted rebuild must discard version tombstones too. Deleting
+	// documents increments their versions, causing external_gte replay of the
+	// unchanged PostgreSQL rows to conflict and silently omit those records.
+	// Only an uninitialized generation reaches this path, under the index lock.
+	status, _, err := c.request(ctx, http.MethodDelete, "/"+openSearchIndex, nil, "")
 	if err != nil {
 		return err
 	}
-	if status < 200 || status >= 300 {
+	if status != http.StatusNotFound && (status < 200 || status >= 300) {
 		return fmt.Errorf("OpenSearch index reset returned HTTP %d", status)
 	}
-	return nil
+	return c.ensureIndex(ctx)
 }
 
 func (s *Store) rebuildOpenSearchIndex(ctx context.Context, c *OpenSearchClient) error {

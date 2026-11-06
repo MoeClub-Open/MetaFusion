@@ -211,6 +211,36 @@ func TestEnsureIndexUsesCurrentGeneration(t *testing.T) {
 	}
 }
 
+func TestInterruptedRebuildResetsIndexVersions(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.Method {
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodHead:
+			w.WriteHeader(http.StatusNotFound)
+		case http.MethodPut:
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected index recovery method: %s", r.Method)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	client, err := NewOpenSearchClient(server.URL, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.clearEntityDocuments(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := "DELETE /" + openSearchIndex + ",HEAD /" + openSearchIndex + ",PUT /" + openSearchIndex
+	if strings.Join(calls, ",") != want {
+		t.Fatalf("recovery retained document version tombstones: %v", calls)
+	}
+}
+
 func TestIndexDocumentsWaitsForRefreshAndSendsExternalVersions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/_bulk" || r.URL.Query().Get("refresh") != "wait_for" {

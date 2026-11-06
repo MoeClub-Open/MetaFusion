@@ -41,6 +41,8 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 随后启动匹配后端、前端与 MCP，并同步技能和公开文档。搜索进程重建 v6 索引，覆盖新增别名检索和官方题名优先排序；旧 v5 的已初始化状态不复用。等待 `/health.search_ready=true` 后验收关键词筛选。回读账本39、definitions 中的 `agent_type` 与主体模板、实际命中的系统货架规则，并核对实体及历史数量、关键归属和内容。只更新文档、重启服务或看到健康响应，均不表示已完成旧库升级；目标实例尚未具备新契约时，客户端不能提前写入新字段。
 
+首次搜索重建被中断时，仅重建未初始化的当前索引代际，丢弃该索引的旧文档版本后重新写入；不能用按文档删除来重置，否则版本墓碑会使未变更的实体被跳过。重建后将 `record_type=entity` 的 `_count` 与 `catalog.entities` 总数对照（包含 deleted/merged 的索引投影），同时核关键词筛选，全部一致后才删除旧代际索引。普通健康响应不能代替此完整性验收。
+
 `mf-migrate` 的操作超时默认 15 分钟；大库应先在备份恢复库测量 022 建索引和 023 引用规范化的耗时，必要时调整。全局 `-timeout` 必须放在命令前，例如 `mf-migrate -timeout 30m up`、`mf-migrate -timeout 30m check-refs -json`，不接受零或负时长。直接使用 Compose 时同样放在命令前：`docker compose -f deploy/docker-compose.yml run --rm --no-deps backend-migrate -timeout 30m up`，并先停写。
 
 `deploy.sh migrate up/down` 也会先停止 `backend`，完成后不自动启动。迁移、账本、种子或引用检查失败时，保持所有目录写入端停写，核对失败原因、账本与备份并处理；不得仅重启旧后端继续写入新协议数据。
