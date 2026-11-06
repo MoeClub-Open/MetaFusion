@@ -53,7 +53,51 @@ func getManyFrom(ctx context.Context, q queryer, ids []string, u *User) (map[str
 	if err = filterVisibleTrackContents(ctx, q, out, u); err != nil {
 		return nil, err
 	}
+	if err = attachReleaseMediumFormats(ctx, q, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+func attachReleaseMediumFormats(ctx context.Context, q queryer, out map[string]Entity) error {
+	releaseIDs := make([]string, 0)
+	for id, e := range out {
+		if e.Kind == "release" {
+			releaseIDs = append(releaseIDs, id)
+		}
+	}
+	if len(releaseIDs) == 0 {
+		return nil
+	}
+	rows, err := q.QueryContext(ctx, `
+		SELECT m.release_id::text, BTRIM(e.document->'attributes'->>'format') AS fmt, count(*)::int
+		FROM catalog.mediums m
+		JOIN catalog.entities e ON e.id = m.id
+		WHERE m.release_id = ANY($1::uuid[])
+		  AND e.state = 'active'
+		  AND COALESCE(BTRIM(e.document->'attributes'->>'format'), '') <> ''
+		GROUP BY m.release_id, fmt`, pq.Array(releaseIDs))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var releaseID, format string
+		var count int
+		if err = rows.Scan(&releaseID, &format, &count); err != nil {
+			return err
+		}
+		rel, ok := out[releaseID]
+		if !ok || format == "" {
+			continue
+		}
+		if rel.MediumFormats == nil {
+			rel.MediumFormats = map[string]int{}
+		}
+		rel.MediumFormats[format] += count
+		out[releaseID] = rel
+	}
+	return rows.Err()
 }
 
 // entityDocuments loads facts without applying a public read projection.

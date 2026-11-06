@@ -29,7 +29,7 @@ type RetentionPolicy struct {
 }
 
 func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error) {
-	p := RetentionPolicy{OutboxDays: 7, IdempotencyDays: 30, Interval: time.Hour,
+	p := RetentionPolicy{OutboxDays: 7, IdempotencyDays: 7, Interval: time.Hour,
 		RequiredConsumers: []string{openSearchConsumer}}
 	if value := strings.TrimSpace(getenv("CATALOG_OUTBOX_RETENTION_DAYS")); value != "" {
 		parsed, err := strconv.Atoi(value)

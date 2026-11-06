@@ -135,10 +135,22 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 	term("medium_id", o.MediumID)
 	term("parent_id", o.ParentID)
 	if o.Field != "" {
+		valClause := map[string]any{"term": map[string]any{"fields.value": o.Value}}
+		if len(o.Values) > 0 {
+			valClause = map[string]any{"terms": map[string]any{"fields.value": o.Values}}
+		}
 		filters = append(filters, map[string]any{"nested": map[string]any{
 			"path": "fields", "query": map[string]any{"bool": map[string]any{"filter": []any{
 				map[string]any{"term": map[string]any{"fields.path": o.Field}},
-				map[string]any{"term": map[string]any{"fields.value": o.Value}},
+				valClause,
+			}}},
+		}})
+	}
+	if o.ExcludeField != "" && len(o.ExcludeValues) > 0 {
+		mustNot = append(mustNot, map[string]any{"nested": map[string]any{
+			"path": "fields", "query": map[string]any{"bool": map[string]any{"filter": []any{
+				map[string]any{"term": map[string]any{"fields.path": o.ExcludeField}},
+				map[string]any{"terms": map[string]any{"fields.value": o.ExcludeValues}},
 			}}},
 		}})
 	}

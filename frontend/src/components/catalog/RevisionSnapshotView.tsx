@@ -74,9 +74,15 @@ export function RevisionSnapshotContent({ snapshot, definitions, kinds = {}, ass
       <div className="space-y-3">{translations.map(([lang, row]) => <details key={lang} open className="rounded-lg border border-line bg-surface p-3 sm:p-4">
         <summary className="cursor-pointer text-sm font-medium text-text-strong">{languageLabel(lang)}</summary>
         <div lang={lang} className="mt-3 min-w-0 space-y-3">
-          {row.title && <h5 className="break-words text-base font-semibold text-text-strong">{row.title}</h5>}
+          {row.title && <h5 className="break-words text-base font-semibold text-text-strong">
+            {row.title}
+            {row.nonofficial && <span className="ml-2 rounded border border-line bg-surfaceSubtle px-1.5 py-0.5 text-xs font-normal text-text-muted">{t("entity.titles.nonofficialBadge")}</span>}
+          </h5>}
           {Array.isArray(row.aliases) && row.aliases.length > 0 && <div className="text-sm text-text-muted">
             <span>{t("revisions.snapshotAliases")}: </span>{row.aliases.join(" · ")}
+          </div>}
+          {Array.isArray(row.nonofficial_aliases) && row.nonofficial_aliases.length > 0 && <div className="text-sm text-text-muted">
+            <span>{t("revisions.snapshotNonofficialAliases")}: </span>{row.nonofficial_aliases.join(" · ")}
           </div>}
           {row.summary && <p className="whitespace-pre-line text-sm leading-relaxed text-text-body">{row.summary}</p>}
           {row.body && <CatalogArticle content={row.body} lang={lang} idPrefix={`revision-${entity.version || 0}-${lang}`} />}

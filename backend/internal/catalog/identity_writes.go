@@ -9,7 +9,11 @@ import (
 func identityWriteDocument(e Entity) map[string]any {
 	translations := map[string]map[string]any{}
 	for locale, t := range e.Translations {
-		translations[locale] = map[string]any{"title": t.Title, "aliases": t.Aliases}
+		row := map[string]any{"title": t.Title, "aliases": t.Aliases}
+		if len(t.NonofficialAliases) > 0 {
+			row["nonofficial_aliases"] = t.NonofficialAliases
+		}
+		translations[locale] = row
 	}
 	return map[string]any{"title": e.Title, "translations": translations, "external_links": e.ExternalLinks}
 }

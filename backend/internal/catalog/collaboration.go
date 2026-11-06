@@ -394,6 +394,7 @@ func normalizeWorkspaceDocument(raw, current json.RawMessage, target, id string,
 			if !contains(Kinds, e.Kind) {
 				return nil, fmt.Errorf("invalid_kind")
 			}
+			e.MediumFormats = nil
 			e.ID = id
 			return json.RawMessage(encode(e)), nil
 		}
@@ -404,6 +405,7 @@ func normalizeWorkspaceDocument(raw, current json.RawMessage, target, id string,
 		if (e.ID != "" && e.ID != id) || e.Kind != old.Kind || e.WorkID != old.WorkID || e.ReleaseID != old.ReleaseID || e.MediumID != old.MediumID {
 			return nil, fmt.Errorf("immutable_scope")
 		}
+		old.MediumFormats = nil
 		out := commitMap(old)
 		for _, key := range entityCommitFields {
 			delete(out, key)

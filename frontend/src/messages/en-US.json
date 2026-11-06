@@ -2702,5 +2702,12 @@
   "admin.capability.community": "Community",
   "admin.capability.storage": "Resource storage",
   "settings.activity.action.board.created": "Created board",
-  "admin.ratelimits.policyHelp": "Policy notes"
+  "admin.ratelimits.policyHelp": "Policy notes",
+  "entity.titles.nonofficialBadge": "Unofficial",
+  "catalog.nonofficialTitle": "Unofficial translation",
+  "catalog.nonofficialAliases": "Unofficial aliases (one per line)",
+  "catalog.nonofficialAliasesShort": "Unofficial aliases",
+  "revisions.snapshotNonofficialAliases": "Unofficial aliases",
+  "catalog.excludeSongTracks": "Hide individual songs",
+  "catalog.excludedFilter": "Exclude {field}: {value}"
 }

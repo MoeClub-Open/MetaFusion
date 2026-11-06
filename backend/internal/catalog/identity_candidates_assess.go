@@ -229,6 +229,9 @@ func formalTitleNorms(e IdentityCandidateEntity) map[string]bool {
 		out[n] = true
 	}
 	for _, t := range e.Translations {
+		if t.Nonofficial {
+			continue
+		}
 		if n := identityTitle(t.Title); n != "" {
 			out[n] = true
 		}
@@ -239,7 +242,17 @@ func formalTitleNorms(e IdentityCandidateEntity) map[string]bool {
 func aliasTitleNorms(e IdentityCandidateEntity) map[string]bool {
 	out := map[string]bool{}
 	for _, t := range e.Translations {
+		if t.Nonofficial {
+			if n := identityTitle(t.Title); n != "" {
+				out[n] = true
+			}
+		}
 		for _, a := range t.Aliases {
+			if n := identityTitle(a); n != "" {
+				out[n] = true
+			}
+		}
+		for _, a := range t.NonofficialAliases {
 			if n := identityTitle(a); n != "" {
 				out[n] = true
 			}
@@ -389,6 +402,15 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 			summary["catalog_number"] = nums[0]
 		} else {
 			summary["catalog_number"] = nums
+		}
+	}
+	if agentTypes := attributeValues(e.Attributes, "agent_type"); len(agentTypes) > 0 {
+		summary["agent_type"] = agentTypes[0]
+		for _, attr := range in.Attributes {
+			if attr.Key == "agent_type" && strings.TrimSpace(attr.Value) != "" && !containsFold(agentTypes, attr.Value) {
+				conflicts = append(conflicts, "agent_type_mismatch")
+				break
+			}
 		}
 	}
 

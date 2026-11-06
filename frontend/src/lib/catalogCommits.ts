@@ -124,9 +124,11 @@ export function normalizeEditorEntity(document: unknown): Entity {
   const entity: Entity = { ...emptyEntity(raw.kind), ...raw,
     attributes: raw.attributes ?? {}, translations: raw.translations ?? {}, pictures: raw.pictures ?? [],
     external_links: raw.external_links ?? [], contents: raw.contents ?? [], subjects: raw.subjects ?? [] };
+  delete entity.medium_formats;
   if (entity.translations && typeof entity.translations === "object" && !Array.isArray(entity.translations)) {
     for (const row of Object.values(entity.translations)) if (row && typeof row === "object") {
       if (row.aliases === null) row.aliases = [];
+      if (row.nonofficial_aliases === null) row.nonofficial_aliases = [];
     }
   }
   if (Array.isArray(entity.pictures)) entity.pictures = entity.pictures.map((picture) => picture && typeof picture === "object"
@@ -198,8 +200,10 @@ function validEditorEntity(entity: Entity): boolean {
   if (typeof entity.title !== "string" || typeof entity.original_language !== "string" || typeof entity.number !== "string" || !Number.isFinite(entity.position)) return false;
   if (!record(entity.attributes) || !record(entity.translations)) return false;
   if (!Object.values(entity.translations).every((row) => record(row) && typeof row.title === "string" &&
+    (row.nonofficial === undefined || typeof row.nonofficial === "boolean") &&
     (row.body === undefined || typeof row.body === "string") && (row.summary === undefined || typeof row.summary === "string") &&
-    (row.aliases === undefined || Array.isArray(row.aliases) && row.aliases.every((alias) => typeof alias === "string")))) return false;
+    (row.aliases === undefined || Array.isArray(row.aliases) && row.aliases.every((alias) => typeof alias === "string")) &&
+    (row.nonofficial_aliases === undefined || Array.isArray(row.nonofficial_aliases) && row.nonofficial_aliases.every((alias) => typeof alias === "string")))) return false;
   if (!Array.isArray(entity.pictures) || !entity.pictures.every((picture) => record(picture) && typeof picture.url === "string" && names(picture.caption) &&
     (picture.source === undefined || record(picture.source) && typeof picture.source.kind === "string" && typeof picture.source.citation === "string"))) return false;
   if (!Array.isArray(entity.external_links) || !entity.external_links.every((link) => record(link) && typeof link.kind === "string" && typeof link.url === "string")) return false;

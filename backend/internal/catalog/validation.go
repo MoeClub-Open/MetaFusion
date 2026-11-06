@@ -15,7 +15,7 @@ import (
 )
 
 var codePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-var reserved = map[string]bool{"id": true, "kind": true, "version": true, "status": true, "state": true, "review_status": true, "created_by": true, "work_id": true, "parent_id": true, "release_id": true, "medium_id": true, "content_unit_id": true, "contents": true, "subjects": true, "redirect_id": true}
+var reserved = map[string]bool{"id": true, "kind": true, "version": true, "status": true, "state": true, "review_status": true, "created_by": true, "work_id": true, "parent_id": true, "release_id": true, "medium_id": true, "content_unit_id": true, "contents": true, "subjects": true, "medium_formats": true, "redirect_id": true}
 
 // StructuralAttributeFields 是"记录级动态结构"的入口字段码：收录位置（locator）、
 // 收录附加属性、发行对象附加属性。它们不是普通实体属性，没有独立 Go 字段或数据库列，
@@ -1036,14 +1036,26 @@ func (e Entity) structuralRefs() map[string]string {
 // Store.Save 与提交校验共用内容验证。
 // historical 语义与 Save 一致（true：停用的码与词表项不断读，只影响新增使用）。
 func (d Definitions) validateEntityContent(e Entity, reference func(string, []string) error, historical bool) error {
+	var originalTag language.Tag
 	if e.OriginalLanguage != "" {
-		if _, err := language.Parse(e.OriginalLanguage); err != nil {
+		var err error
+		if originalTag, err = language.Parse(e.OriginalLanguage); err != nil {
 			return fmt.Errorf("invalid_locale")
 		}
 	}
 	for loc, tr := range e.Translations {
-		if _, err := language.Parse(loc); err != nil || strings.TrimSpace(tr.Title) == "" {
+		localeTag, err := language.Parse(loc)
+		if err != nil || strings.TrimSpace(tr.Title) == "" {
 			return fmt.Errorf("invalid_translation")
+		}
+		if tr.Nonofficial && e.OriginalLanguage != "" {
+			originalBase, _ := originalTag.Base()
+			localeBase, _ := localeTag.Base()
+			originalScript, _ := originalTag.Script()
+			localeScript, _ := localeTag.Script()
+			if originalBase == localeBase && originalScript == localeScript {
+				return fmt.Errorf("invalid_translation")
+			}
 		}
 		if len(tr.Title) > 2000 || len(tr.Summary) > maxTextLen {
 			return fmt.Errorf("translation_too_long")
@@ -1055,6 +1067,11 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 			return fmt.Errorf("article_too_long")
 		}
 		for _, a := range tr.Aliases {
+			if len(a) > 500 {
+				return fmt.Errorf("translation_too_long")
+			}
+		}
+		for _, a := range tr.NonofficialAliases {
 			if len(a) > 500 {
 				return fmt.Errorf("translation_too_long")
 			}

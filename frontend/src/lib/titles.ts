@@ -22,8 +22,12 @@ export interface LocaleTitleGroup {
   locale: string;
   /** 该语种主标题（翻译行 title/name） */
   primary: string;
+  /** 主标题是否标为非官方译名 */
+  nonofficial?: boolean;
   /** 该语种并列标题（翻译行 aliases） */
   aliases: string[];
+  /** 该语种非官方别名（翻译行 nonofficial_aliases） */
+  nonofficialAliases: string[];
   /** 是否为原始语言（由 original_language 推导） */
   isOriginal: boolean;
 }
@@ -62,7 +66,7 @@ function normalizeOriginalLocale(originalLanguage?: string | null): string {
  * 输入为统一 DTO 的 translations（按 locale 分组的对象：{loc:{title,aliases}}）。
  */
 export function groupTitlesByLocale(
-  translations: Record<string, { title?: string; name?: string; aliases?: string[] }> | undefined,
+  translations: Record<string, { title?: string; name?: string; nonofficial?: boolean; aliases?: string[]; nonofficial_aliases?: string[] }> | undefined,
   originalLanguage?: string | null,
 ): LocaleTitleGroup[] {
   const origLocale = normalizeOriginalLocale(originalLanguage);
@@ -74,14 +78,19 @@ export function groupTitlesByLocale(
     const aliases = Array.isArray(row?.aliases)
       ? row!.aliases!.map((a) => String(a ?? "").trim()).filter(Boolean)
       : [];
-    if (!primary && aliases.length === 0) continue;
+    const nonofficialAliases = Array.isArray(row?.nonofficial_aliases)
+      ? row!.nonofficial_aliases!.map((a) => String(a ?? "").trim()).filter(Boolean)
+      : [];
+    if (!primary && aliases.length === 0 && nonofficialAliases.length === 0) continue;
     const key = `${loc}\u0000${primary.toLocaleLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     groups.push({
       locale: loc,
       primary: primary || aliases[0] || "",
+      nonofficial: !!row?.nonofficial && !!primary,
       aliases: primary ? aliases : aliases.slice(1),
+      nonofficialAliases,
       isOriginal: !!origLocale && sameLanguage(loc, origLocale),
     });
   }
@@ -250,26 +259,33 @@ export function findRowForLocale<
 /** 翻译行为 Record<string, {title/name/summary/biography}> 形态时的统一标题选取。 */
 export function pickRecordTitle(
   uiLocale: string,
-  translations: Record<string, { title?: string; name?: string; summary?: string; biography?: string } | undefined | null> | undefined,
+  translations: Record<string, { title?: string; name?: string; nonofficial?: boolean; summary?: string; biography?: string } | undefined | null> | undefined,
   fallbackTitle: string,
   opts?: TitlePickOptions,
 ): string {
   const rec = translations || {};
   const rows = Object.entries(rec)
     .filter(([loc, row]) => loc && row && (((row.title || row.name || "").trim())))
-    .map(([loc, row]) => ({ locale: loc, title: (row!.title || row!.name || "").trim() }));
+    .map(([loc, row]) => ({ locale: loc, title: (row!.title || row!.name || "").trim(), nonofficial: !!row!.nonofficial }));
   const chain = buildTitleChain(uiLocale, opts, rows.map((r) => r.locale));
+  const officialRows = rows.filter((r) => !r.nonofficial);
+  for (const loc of chain) {
+    const row = findRowForLocale(officialRows, loc);
+    if (row && row.title) return row.title;
+  }
+  const base = (fallbackTitle || "").trim();
+  if (base) return base;
   for (const loc of chain) {
     const row = findRowForLocale(rows, loc);
     if (row && row.title) return row.title;
   }
-  return (fallbackTitle || "").trim();
+  return "";
 }
 
 /** Record 形态翻译行的标题+简介选取（详情/预览链共用）。 */
 export function pickRecordEntry(
   uiLocale: string,
-  translations: Record<string, { title?: string; name?: string; summary?: string; biography?: string } | undefined | null> | undefined,
+  translations: Record<string, { title?: string; name?: string; nonofficial?: boolean; summary?: string; biography?: string } | undefined | null> | undefined,
   fallbackTitle: string,
   fallbackBody?: string,
   opts?: TitlePickOptions,
@@ -283,19 +299,15 @@ export function pickRecordEntry(
       body: ((row!.summary || row!.biography || "").trim()),
     }));
   const chain = buildTitleChain(uiLocale, opts, rows.map((r) => r.locale));
+  const resolvedTitle = pickRecordTitle(uiLocale, translations, fallbackTitle, opts);
   for (const loc of chain) {
     const row = findRowForLocale(rows, loc);
-    if (row && (row.title || row.body)) {
-      return { title: row.title || fallbackTitle, body: row.body || fallbackBody || "" };
+    if (row && row.body) {
+      return { title: resolvedTitle, body: row.body };
     }
   }
   return {
-    title: (fallbackTitle || "").trim(),
+    title: resolvedTitle,
     body: (fallbackBody || "").trim(),
   };
 }
-
-/**
- * 实体级 aliases 过滤：已在任一翻译标题（主标题或同语种并列标题）中
- * 出现过的值不再作为别名展示——原语言标题归属翻译行，不进别名。
- */

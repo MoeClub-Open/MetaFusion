@@ -574,3 +574,47 @@ export function getTagNames(
 ): string[] {
   return (tags || []).map((tag) => getTagName(defs, tag, locale)).filter((name) => !!name);
 }
+
+const PRIMARY_CLASSIFICATION_FIELD: Record<string, string> = {
+  work: "creation_form",
+  agent: "agent_type",
+  release: "edition_type",
+  medium: "format",
+  content_unit: "entry_role",
+};
+
+/**
+ * getEntityTagLabels：卡片/列表副行与封面比例推断使用的展示标签列表。
+ * 先放该层级的主分类受控词项（如作品的 creation_form、主体的 agent_type），
+ * 再拼自由标签 attributes.tags 并忽略大小写去重。仅用于展示与比例推断，不回写筛选参数。
+ */
+export function getEntityTagLabels(
+  defs: DynamicDefinitions | null | undefined,
+  kind: string,
+  attributes: Record<string, unknown> | null | undefined,
+  locale: string,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(trimmed);
+  };
+
+  const primaryField = PRIMARY_CLASSIFICATION_FIELD[kind];
+  const rawPrimary = primaryField ? attributes?.[primaryField] : undefined;
+  if (primaryField && typeof rawPrimary === "string" && rawPrimary.trim()) {
+    const vocabCode = defs?.fields?.[primaryField]?.vocabulary || primaryField;
+    push(getTermName(defs, vocabCode, rawPrimary.trim(), locale));
+  }
+
+  const rawTags = Array.isArray(attributes?.tags) ? attributes.tags : undefined;
+  for (const name of getTagNames(defs, rawTags, locale)) {
+    push(name);
+  }
+  return out;
+}

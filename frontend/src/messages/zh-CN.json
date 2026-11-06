@@ -2702,5 +2702,12 @@
   "admin.capability.community": "社区",
   "admin.capability.storage": "资源存储",
   "settings.activity.action.board.created": "创建板块",
-  "admin.ratelimits.policyHelp": "规则说明"
+  "admin.ratelimits.policyHelp": "规则说明",
+  "entity.titles.nonofficialBadge": "非官方",
+  "catalog.nonofficialTitle": "非官方译名",
+  "catalog.nonofficialAliases": "非官方别名（每行一个）",
+  "catalog.nonofficialAliasesShort": "非官方别名",
+  "revisions.snapshotNonofficialAliases": "非官方别名",
+  "catalog.excludeSongTracks": "隐藏单曲曲目",
+  "catalog.excludedFilter": "排除 {field}：{value}"
 }

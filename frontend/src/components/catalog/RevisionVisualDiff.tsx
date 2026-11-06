@@ -60,7 +60,14 @@ export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definiti
     }
     if (key.startsWith("translations.")) {
       const [, lang, field] = key.split(".");
-      const names: Record<string, string> = { title: t("catalog.title"), summary: t("catalog.summary"), body: t("catalog.article.body"), aliases: t("catalog.aliases") };
+      const names: Record<string, string> = {
+        title: t("catalog.title"),
+        nonofficial: t("catalog.nonofficialTitle"),
+        summary: t("catalog.summary"),
+        body: t("catalog.article.body"),
+        aliases: t("catalog.aliases"),
+        nonofficial_aliases: t("catalog.nonofficialAliasesShort"),
+      };
       return t("revisions.fieldTranslation", { lang: languageLabel(lang), field: names[field] || field });
     }
     const structural = definitions?.structure?.[entityKind]?.fields?.find((field) => field.code === key);

@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { fetchApi } from "@/lib/api";
-import { Entity, fetchAllPages, mapLimit, title as entityTitle } from "@/components/catalog/api";
+import { Entity, fetchAllPages, title as entityTitle } from "@/components/catalog/api";
 import { useDefinitions, getTermName } from "@/lib/definitions";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ArrowLeft, Search, ChevronLeft, ChevronRight, ArrowUpRight, X } from "lucide-react";
@@ -29,8 +29,6 @@ export default function WorkReleasesPage() {
   const { definitions } = useDefinitions();
   const [work, setWork] = useState<Entity | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
-  // 每个发行版的介质格式计数（按实际 Medium 聚合），供筛选与规格列展示。
-  const [formatCounts, setFormatCounts] = useState<Record<string, Record<string, number>>>({});
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -56,22 +54,7 @@ export default function WorkReleasesPage() {
         const kw = keyword.trim().toLowerCase();
         items = items.filter((e) => (e.title || "").toLowerCase().includes(kw) || JSON.stringify(e.attributes || {}).toLowerCase().includes(kw));
       }
-      // 介质格式按实际 Medium 全量聚合（并发受控），不再截断首屏/首格式。
-      const counts = await mapLimit(items, 8, async (e) => {
-        try {
-          const ms = await fetchAllPages<Entity>(`/catalog/entities?kind=medium&release_id=${encodeURIComponent(e.id!)}`);
-          const c: Record<string, number> = {};
-          for (const m of ms) {
-            const f = String(m.attributes?.format || "").trim();
-            if (f) c[f] = (c[f] || 0) + 1;
-          }
-          return c;
-        } catch { return {}; }
-      });
-      const fmtMap: Record<string, Record<string, number>> = {};
-      items.forEach((e, i) => { fmtMap[e.id!] = counts[i] || {}; });
       setEntities(items);
-      setFormatCounts(fmtMap);
       setTotal(items.length);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
@@ -80,9 +63,9 @@ export default function WorkReleasesPage() {
 
   const onSearch = (e: React.FormEvent) => { e.preventDefault(); setPage(1); setQ(qInput); };
   // format 候选来自实际 Medium 聚合：多介质发行版（CD＋BD）可被任一组成格式筛中。
-  const formatCodesOf = (e: Entity): string[] => Object.keys(formatCounts[e.id!] || {});
+  const formatCodesOf = (e: Entity): string[] => Object.keys(e.medium_formats || {});
   const formatSummaryOf = (e: Entity): string => {
-    const entries = Object.entries(formatCounts[e.id!] || {});
+    const entries = Object.entries(e.medium_formats || {}).sort(([a], [b]) => a.localeCompare(b));
     if (entries.length === 0) return "";
     const joiner = locale.startsWith("zh") ? "＋" : " + ";
     return entries
@@ -100,12 +83,12 @@ export default function WorkReleasesPage() {
     if (formatFilter && !formatCodesOf(e).includes(formatFilter)) return false;
     if (countryFilter && country !== countryFilter) return false;
     return true;
-  }), [entities, formatCounts, editionFilter, batchFilter, formatFilter, countryFilter]);
+  }), [entities, editionFilter, batchFilter, formatFilter, countryFilter]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
   const editionOptions = useMemo(() => Array.from(new Set(entities.map((e) => String(e.attributes?.edition_type || "").trim()).filter(Boolean))), [entities]);
   const batchOptions = useMemo(() => Array.from(new Set(entities.map((e) => String(e.attributes?.edition_batch || "").trim()).filter(Boolean))), [entities]);
-  const formatOptions = useMemo(() => Array.from(new Set(entities.flatMap(formatCodesOf).filter(Boolean))), [entities, formatCounts]);
+  const formatOptions = useMemo(() => Array.from(new Set(entities.flatMap(formatCodesOf).filter(Boolean))), [entities]);
   const countryOptions = useMemo(() => Array.from(new Set(entities.map((e) => String(e.attributes?.country || "").trim()).filter(Boolean))), [entities]);
 
   return (

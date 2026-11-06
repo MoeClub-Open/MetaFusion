@@ -138,15 +138,15 @@ func makeSearchDocument(e Entity) searchDocument {
 	}
 	titleMap := map[string]string{}
 	for locale, row := range e.Translations {
-		if sortLocaleOK(locale) && row.Title != "" {
+		if !row.Nonofficial && sortLocaleOK(locale) && row.Title != "" {
 			titleMap[locale] = row.Title
 		}
 	}
 	sortTitle := e.Title
-	if row, ok := e.Translations["en-US"]; ok && row.Title != "" {
+	if row, ok := e.Translations["en-US"]; ok && !row.Nonofficial && row.Title != "" {
 		sortTitle = row.Title
 	}
-	if row, ok := e.Translations[e.OriginalLanguage]; ok && row.Title != "" {
+	if row, ok := e.Translations[e.OriginalLanguage]; ok && !row.Nonofficial && row.Title != "" {
 		sortTitle = row.Title
 	}
 	add := func(dst *[]string, value string) {
@@ -185,6 +185,9 @@ func makeSearchDocument(e Entity) searchDocument {
 			addText(chunk)
 		}
 		for _, alias := range translation.Aliases {
+			addText(alias)
+		}
+		for _, alias := range translation.NonofficialAliases {
 			addText(alias)
 		}
 	}

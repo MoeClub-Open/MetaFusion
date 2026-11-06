@@ -390,7 +390,13 @@ func (s *Store) GetManyVisible(ctx context.Context, ids []string, u *User) (map[
 			out[id] = e
 		}
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	if err := attachReleaseMediumFormats(ctx, s.DB, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 func (s *Store) Get(ctx context.Context, id string, u *User) (Entity, error) {
 	if _, err := uuid.Parse(id); err != nil {
@@ -403,7 +409,15 @@ func (s *Store) Get(ctx context.Context, id string, u *User) (Entity, error) {
 	if err != nil {
 		return e, err
 	}
-	return visibleEntityContents(ctx, s.DB, e, u)
+	e, err = visibleEntityContents(ctx, s.DB, e, u)
+	if err != nil || e.Kind != "release" {
+		return e, err
+	}
+	m := map[string]Entity{e.ID: e}
+	if err = attachReleaseMediumFormats(ctx, s.DB, m); err != nil {
+		return Entity{}, err
+	}
+	return m[e.ID], nil
 }
 
 // reference 是写侧身份归一：merged/deleted 行的引用一律拒绝（invalid_reference），
@@ -457,6 +471,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 	if err = json.Unmarshal(raw, &e); err != nil {
 		return e, err
 	}
+	e.MediumFormats = nil
 	if err = validateSources(input.Sources); err != nil {
 		return e, err
 	}
@@ -608,6 +623,7 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		stored.ParentID = ""
 		stored.Contents = nil
 		stored.Subjects = nil
+		stored.MediumFormats = nil
 		// 乐观并发的"版本检查 + 写入"必须是**一次原子操作**：原先是"先读版本、再无条件写"，
 		// READ COMMITTED 下两个并发写各自读到同一版本、都通过检查，后写覆盖先写 = 丢更新。
 		// 版本条件进 WHERE 后，后到者先在行锁上排队，锁释放时重算条件、版本已变 → 0 行 →
@@ -731,6 +747,9 @@ func undeclaredReleaseSubject(ctx context.Context, tx *sql.Tx, e Entity) (bool, 
 
 type ListOptions struct {
 	Kind, Query, State, WorkID, ContentUnitID, ReleaseID, MediumID, ParentID, Field, Value string
+	Values                                                                                 []string
+	ExcludeField                                                                           string
+	ExcludeValues                                                                          []string
 	// IDs 过滤指定的一批实体 UUID（1-100）；未显式指定 sort 时按传入顺序返回。
 	IDs []string
 	// SearchIDs 是 OpenSearch 提供的候选 ID 顺序。它仅由 HTTP 列表处理器内部填写，
@@ -776,7 +795,7 @@ func nestedQuoteKey(k string) string { return "'" + strings.ReplaceAll(k, "'", "
 // 叶子一律按现有等值语义做 ->> 文本比较。base 为叶子父级的 JSON 表达式，
 // lookup 为首段的查表域（实体属性表或某结构组的子字段表），seed 为链路上
 // 已确认的祖先字段（含入口本身）。
-func compileNestedPath(base string, lookup map[string]Field, seed []Field, path []string, value string, args *[]any) (string, error) {
+func compileNestedPath(base string, lookup map[string]Field, seed []Field, path []string, value string, values []string, args *[]any) (string, error) {
 	parent := base
 	node := Field{}
 	chain := append([]Field{}, seed...)
@@ -826,8 +845,14 @@ func compileNestedPath(base string, lookup map[string]Field, seed []Field, path 
 	if !node.Searchable {
 		return "", fmt.Errorf("field_not_searchable")
 	}
-	*args = append(*args, value)
-	cond := fmt.Sprintf("%s->>%s=$%d", parent, nestedQuoteKey(path[len(path)-1]), len(*args))
+	var cond string
+	if len(values) > 0 {
+		*args = append(*args, pq.Array(values))
+		cond = fmt.Sprintf("%s->>%s = ANY($%d::text[])", parent, nestedQuoteKey(path[len(path)-1]), len(*args))
+	} else {
+		*args = append(*args, value)
+		cond = fmt.Sprintf("%s->>%s=$%d", parent, nestedQuoteKey(path[len(path)-1]), len(*args))
+	}
 	if len(froms) == 0 {
 		return cond, nil
 	}
@@ -839,8 +864,8 @@ func compileNestedPath(base string, lookup map[string]Field, seed []Field, path 
 // catalog.track_contents / catalog.release_subjects 的 EXISTS 子查询，
 // kind 显式不匹配时谓词恒假（返回空集）而不是报错；其余路径命中实体
 // document->'attributes'，group 逐层下钻、list 中途节点按任一元素命中。
-func nestedFieldPredicate(doc Definitions, o ListOptions, args *[]any) (string, error) {
-	segs := strings.Split(o.Field, ".")
+func nestedFieldPredicate(doc Definitions, field, value string, values []string, o ListOptions, args *[]any) (string, error) {
+	segs := strings.Split(field, ".")
 	for _, sg := range segs {
 		if sg == "" || !codePattern.MatchString(sg) {
 			return "", fmt.Errorf("unknown_field")
@@ -860,7 +885,7 @@ func nestedFieldPredicate(doc Definitions, o ListOptions, args *[]any) (string, 
 		} else if segs[0] == "inclusion_attributes" {
 			base = "tc.attributes"
 		}
-		cond, err := compileNestedPath(base, root.Fields, []Field{root}, segs[1:], o.Value, args)
+		cond, err := compileNestedPath(base, root.Fields, []Field{root}, segs[1:], value, values, args)
 		if err != nil {
 			return "", err
 		}
@@ -872,8 +897,24 @@ func nestedFieldPredicate(doc Definitions, o ListOptions, args *[]any) (string, 
 		}
 		return "EXISTS(SELECT 1 FROM " + table + " WHERE " + corr + " AND (" + cond + "))", nil
 	default:
-		return compileNestedPath("document->'attributes'", doc.Fields, nil, segs, o.Value, args)
+		return compileNestedPath("document->'attributes'", doc.Fields, nil, segs, value, values, args)
 	}
+}
+
+func buildFieldPredicate(doc Definitions, field, value string, values []string, o ListOptions, args *[]any) (string, error) {
+	if !strings.Contains(field, ".") {
+		f, ok := doc.Fields[field]
+		if !ok || !f.Searchable {
+			return "", fmt.Errorf("field_not_searchable")
+		}
+		if len(values) > 0 {
+			*args = append(*args, field, pq.Array(values))
+			return fmt.Sprintf("document->'attributes'->>$%d = ANY($%d::text[])", len(*args)-1, len(*args)), nil
+		}
+		*args = append(*args, field, value)
+		return fmt.Sprintf("document->'attributes'->>$%d=$%d", len(*args)-1, len(*args)), nil
+	}
+	return nestedFieldPredicate(doc, field, value, values, o, args)
 }
 
 func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]any) ([]string, error) {
@@ -929,7 +970,13 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 	if o.ParentID != "" {
 		add("id IN(SELECT id FROM catalog.content_units WHERE parent_id=$%[1]d UNION ALL SELECT id FROM catalog.mediums WHERE parent_id=$%[1]d UNION ALL SELECT id FROM catalog.tracks WHERE parent_id=$%[1]d)", o.ParentID)
 	}
-	if o.Field != "" {
+	if len(o.Values) > 0 && (o.Field == "" || o.Value != "") {
+		return nil, fmt.Errorf("invalid_query_param")
+	}
+	if (o.ExcludeField != "") != (len(o.ExcludeValues) > 0) {
+		return nil, fmt.Errorf("invalid_query_param")
+	}
+	if o.Field != "" || o.ExcludeField != "" {
 		// definitions 快照默认读已发布版本；纯 SQL 构造（如单测）可经 ctx
 		// 显式携带快照（withListFilterDefinitions），避免离线断言依赖数据库。
 		var doc Definitions
@@ -942,19 +989,19 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 			}
 			doc = v.Document
 		}
-		if !strings.Contains(o.Field, ".") {
-			f, ok := doc.Fields[o.Field]
-			if !ok || !f.Searchable {
-				return nil, fmt.Errorf("field_not_searchable")
-			}
-			*args = append(*args, o.Field, o.Value)
-			parts = append(parts, fmt.Sprintf("document->'attributes'->>$%d=$%d", len(*args)-1, len(*args)))
-		} else {
-			cond, ferr := nestedFieldPredicate(doc, o, args)
+		if o.Field != "" {
+			cond, ferr := buildFieldPredicate(doc, o.Field, o.Value, o.Values, o, args)
 			if ferr != nil {
 				return nil, ferr
 			}
 			parts = append(parts, cond)
+		}
+		if o.ExcludeField != "" {
+			cond, ferr := buildFieldPredicate(doc, o.ExcludeField, "", o.ExcludeValues, o, args)
+			if ferr != nil {
+				return nil, ferr
+			}
+			parts = append(parts, "NOT COALESCE((" + cond + "), false)")
 		}
 	}
 	if len(o.Tags) > 0 {
@@ -1076,10 +1123,9 @@ func entityListOrderClause(o ListOptions, args *[]any) (string, error) {
 		return "id " + dir, nil
 	case "title":
 		// 多语言题名：请求语种 → 原文语种 → en-US → 基础题名，与前端 lib/titles.ts
-		// 的选取链同序（首位由调用方按界面语言传入）。只按基础题名排会让日文/中文界面
-		// 看到"顺序与显示的题名无关"，这里让排序键与页面显示的题名是同一个值。
+		// 的选取链同序（首位由调用方按界面语言传入）；标为 nonofficial 的非官方译名不抢占官方题名。
 		*args = append(*args, o.Locale)
-		return fmt.Sprintf("COALESCE(NULLIF(document->'translations'->$%d::text->>'title',''), NULLIF(document->'translations'->(document->>'original_language')->>'title',''), NULLIF(document->'translations'->'en-US'->>'title',''), title) %s, id", len(*args), dir), nil
+		return fmt.Sprintf("COALESCE(CASE WHEN (document->'translations'->$%[1]d::text->'nonofficial') IS DISTINCT FROM 'true'::jsonb THEN NULLIF(document->'translations'->$%[1]d::text->>'title','') END, CASE WHEN (document->'translations'->(document->>'original_language')->'nonofficial') IS DISTINCT FROM 'true'::jsonb THEN NULLIF(document->'translations'->(document->>'original_language')->>'title','') END, CASE WHEN (document->'translations'->'en-US'->'nonofficial') IS DISTINCT FROM 'true'::jsonb THEN NULLIF(document->'translations'->'en-US'->>'title','') END, NULLIF(title,''), NULLIF(document->'translations'->$%[1]d::text->>'title',''), title) %[2]s, id", len(*args), dir), nil
 	}
 	return "", fmt.Errorf("invalid_sort")
 }

@@ -137,7 +137,7 @@ export type Entity = {
   original_language: string;
   translations: Record<
     string,
-    { title: string; summary?: string; body?: string; aliases?: string[] }
+    { title: string; nonofficial?: boolean; summary?: string; body?: string; aliases?: string[]; nonofficial_aliases?: string[] }
   >;
   attributes: Record<string, any>;
   external_links: ExternalLink[];
@@ -178,6 +178,8 @@ export type Entity = {
     position: number;
     attributes?: Record<string, any>;
   }[];
+  /** 仅发行版读取投影返回：活动子载体按 format 统计的数量。 */
+  medium_formats?: Record<string, number>;
   updated_at?: string;
 };
 export type Source = { kind: string; citation: string; url?: string; key?: string; pointers?: string[]; scope?: string };

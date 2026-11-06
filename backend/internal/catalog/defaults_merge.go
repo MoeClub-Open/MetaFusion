@@ -1,9 +1,12 @@
 package catalog
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // mergeSeedDefinitions 把种子里**新增**的定义并进当前定义：只补当前缺失的键
-// 已存在的字段/词表/关系/模板/方案一律原样保留。
+// 已有人工配置保留；本次新增字段的模板展示位置等增量扩展按下面规则补齐。
 //
 // 为什么需要它：定义种子原先只在空库播种，存量实例拿不到新版本新增的关系码与字段，
 // 只能靠导入预检兜底。但"只空库播种"的初衷是怕覆盖人工编目决策（禁用某关系码、
@@ -38,9 +41,11 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 	}
 
 	var added []string
+	newFields := make(map[string]bool)
 	for k, v := range seed.Fields {
 		if _, ok := out.Fields[k]; !ok {
 			out.Fields[k] = v
+			newFields[k] = true
 			added = append(added, "fields."+k)
 		}
 	}
@@ -118,6 +123,79 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 		out.Templates[code] = cur
 		added = append(added, "templates."+code+".match")
 	}
+	// 存量模板引用本次新补入的种子字段时（如存量 agent_profile 获得新增字段 agent_type），
+	// 只把本次新增字段补进其徽章、分面与对应分区；第二次运行该字段已在 current.Fields 中，
+	// 不再改动任何已有或人工调整过的模板配置。
+	if len(newFields) > 0 {
+		for code, seedTemplate := range seed.Templates {
+			if _, existed := current.Templates[code]; !existed {
+				continue
+			}
+			cur := out.Templates[code]
+			changed := false
+			for _, f := range seedTemplate.BadgeFields {
+				if newFields[f] && !contains(cur.BadgeFields, f) {
+					cur.BadgeFields = append(append([]string{}, cur.BadgeFields...), f)
+					added = append(added, "templates."+code+".badge_fields."+f)
+					changed = true
+				}
+			}
+			for _, f := range seedTemplate.FacetFields {
+				if newFields[f] && !contains(cur.FacetFields, f) {
+					cur.FacetFields = append(append([]string{}, cur.FacetFields...), f)
+					added = append(added, "templates."+code+".facet_fields."+f)
+					changed = true
+				}
+			}
+			for seedIdx, seedSec := range seedTemplate.Sections {
+				var missing []string
+				for _, f := range seedSec.Fields {
+					if newFields[f] && !templateHasSectionField(cur, f) {
+						missing = append(missing, f)
+					}
+				}
+				if len(missing) == 0 {
+					continue
+				}
+				sections := append([]Section{}, cur.Sections...)
+				secKey := strings.TrimSpace(seedSec.Names["en-US"])
+				matchIdx := -1
+				if secKey != "" {
+					for i, s := range sections {
+						if strings.TrimSpace(s.Names["en-US"]) == secKey {
+							matchIdx = i
+							break
+						}
+					}
+				}
+				if matchIdx >= 0 {
+					sec := sections[matchIdx]
+					sec.Fields = append(append([]string{}, sec.Fields...), missing...)
+					sections[matchIdx] = sec
+				} else {
+					namesCopy := make(Names, len(seedSec.Names))
+					for loc, val := range seedSec.Names {
+						namesCopy[loc] = val
+					}
+					pos := seedIdx
+					if pos > len(sections) {
+						pos = len(sections)
+					}
+					sections = append(sections, Section{})
+					copy(sections[pos+1:], sections[pos:])
+					sections[pos] = Section{Names: namesCopy, Fields: missing}
+				}
+				cur.Sections = sections
+				for _, f := range missing {
+					added = append(added, "templates."+code+".sections.fields."+f)
+				}
+				changed = true
+			}
+			if changed {
+				out.Templates[code] = cur
+			}
+		}
+	}
 	for k, v := range seed.Schemes {
 		if _, ok := out.Schemes[k]; !ok {
 			out.Schemes[k] = v
@@ -184,4 +262,13 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 	added = append(added, backfillTranslations(&out, seed)...)
 	sort.Strings(added)
 	return out, added
+}
+
+func templateHasSectionField(t Template, fieldCode string) bool {
+	for _, s := range t.Sections {
+		if contains(s.Fields, fieldCode) {
+			return true
+		}
+	}
+	return false
 }

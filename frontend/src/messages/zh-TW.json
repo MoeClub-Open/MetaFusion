@@ -2702,5 +2702,12 @@
   "admin.capability.community": "社群",
   "admin.capability.storage": "資源儲存",
   "settings.activity.action.board.created": "建立板塊",
-  "admin.ratelimits.policyHelp": "規則說明"
+  "admin.ratelimits.policyHelp": "規則說明",
+  "entity.titles.nonofficialBadge": "非官方",
+  "catalog.nonofficialTitle": "非官方譯名",
+  "catalog.nonofficialAliases": "非官方別名（每行一個）",
+  "catalog.nonofficialAliasesShort": "非官方別名",
+  "revisions.snapshotNonofficialAliases": "非官方別名",
+  "catalog.excludeSongTracks": "隱藏單曲曲目",
+  "catalog.excludedFilter": "排除 {field}：{value}"
 }

@@ -69,7 +69,7 @@ import { TrackDirectory } from "./TrackDirectory";
 import { GroupAttributeInline, LocatorInline } from "./TemplateAttributeSections";
 import { EntityLink } from "./Fields";
 import { useInclusionExpressions } from "./useInclusionExpressions";
-import { useDefinitions, getKindName, getRelationName, getTermName, getTagName, tagCode, resolveLocalizedName, templatesForEntity, blocksForEntity } from "@/lib/definitions";
+import { useDefinitions, getEntityTagLabels, getKindName, getRelationName, getTermName, getTagName, tagCode, resolveLocalizedName, templatesForEntity, blocksForEntity } from "@/lib/definitions";
 import {
   getAuthLoginUrl,
   getForumEntityUrl,
@@ -1045,7 +1045,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 title={localizedTitle}
                 originalTitle={entity.title}
                 id={entity.id}
-                tags={Array.isArray(entity.attributes?.tags) ? (entity.attributes.tags as string[]) : undefined}
+                tags={getEntityTagLabels(dynamicDefs, entity.kind, entity.attributes, locale)}
                 minHeight={96}
                 maxHeight={380}
                 className="w-full h-auto"

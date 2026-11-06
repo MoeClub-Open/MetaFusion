@@ -328,20 +328,27 @@ export function EntityEditor({
   const activeLocale =
     localePick || e.original_language || Object.keys(e.translations)[0] || "";
   const isOriginalLocale = !!activeLocale && activeLocale === e.original_language;
-  const activeTr = e.translations[activeLocale] || { title: "", summary: "", aliases: [] };
-  const setTranslation = (v: { title?: string; summary?: string; body?: string; aliases?: string[] }) => {
+  const activeTr = e.translations[activeLocale] || { title: "", summary: "", aliases: [], nonofficial_aliases: [] };
+  const setTranslation = (v: { title?: string; nonofficial?: boolean; summary?: string; body?: string; aliases?: string[]; nonofficial_aliases?: string[] }) => {
     if (!activeLocale) return;
+    const nextNonofficial = isOriginalLocale ? false : (v.nonofficial ?? activeTr.nonofficial ?? false);
+    const nextRow: Entity["translations"][string] = {
+      ...activeTr,
+      // 原始语言的题名就是实体基础题名（在身份区维护），这里不覆盖它。
+      title: isOriginalLocale ? e.title : v.title ?? activeTr.title ?? "",
+      summary: v.summary ?? activeTr.summary ?? "",
+      body: v.body ?? activeTr.body ?? "",
+      aliases: v.aliases ?? activeTr.aliases ?? [],
+    };
+    if (nextNonofficial) nextRow.nonofficial = true;
+    else delete nextRow.nonofficial;
+    const nextNonoffAliases = v.nonofficial_aliases ?? activeTr.nonofficial_aliases;
+    if (nextNonoffAliases && nextNonoffAliases.length > 0) nextRow.nonofficial_aliases = nextNonoffAliases;
+    else delete nextRow.nonofficial_aliases;
     patch({
       translations: {
         ...e.translations,
-        [activeLocale]: {
-          ...activeTr,
-          // 原始语言的题名就是实体基础题名（在身份区维护），这里不覆盖它。
-          title: isOriginalLocale ? e.title : v.title ?? activeTr.title ?? "",
-          summary: v.summary ?? activeTr.summary ?? "",
-          body: v.body ?? activeTr.body ?? "",
-          aliases: v.aliases ?? activeTr.aliases ?? [],
-        },
+        [activeLocale]: nextRow,
       },
     });
   };
@@ -854,6 +861,16 @@ export function EntityEditor({
                 onChange={(x) => setTranslation({ title: x.target.value })}
               />
             </label>
+            {!isOriginalLocale && (
+              <label className="inline-flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={!!activeTr.nonofficial}
+                  onChange={(x) => setTranslation({ nonofficial: x.target.checked })}
+                />
+                <span>{t("catalog.nonofficialTitle")}</span>
+              </label>
+            )}
             <label>
               {t("catalog.summary")}
               <textarea
@@ -869,6 +886,16 @@ export function EntityEditor({
                 value={(activeTr.aliases || []).join("\n")}
                 onChange={(x) =>
                   setTranslation({ aliases: x.target.value.split("\n").filter(Boolean) })
+                }
+              />
+            </label>
+            <label>
+              {t("catalog.nonofficialAliases")}
+              <textarea
+                aria-label={`${activeLocale} · ${t("catalog.nonofficialAliases")}`}
+                value={(activeTr.nonofficial_aliases || []).join("\n")}
+                onChange={(x) =>
+                  setTranslation({ nonofficial_aliases: x.target.value.split("\n").filter(Boolean) })
                 }
               />
             </label>

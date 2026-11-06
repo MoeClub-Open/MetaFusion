@@ -41,7 +41,7 @@ const (
 // （limit/offset/page）不在此列，由 listPagination 单独判定。
 var listTextParams = []string{
 	"q", "kind", "kinds", "state", "sort", "order", "locale",
-	"work_id", "content_unit_id", "release_id", "medium_id", "parent_id", "field", "value", "tags",
+	"work_id", "content_unit_id", "release_id", "medium_id", "parent_id", "field", "value", "values", "exclude_field", "exclude_values", "tags",
 	"original_language", "has_pictures", "tags_mode",
 }
 

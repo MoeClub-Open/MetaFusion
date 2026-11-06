@@ -346,7 +346,7 @@ func feedShelves(items []feedEntry) []Shelf {
 // 自建分区追加在后并标 custom，order/hidden 对两类都生效，未知 order slug 不再让保存失败。
 func TestPostgresShelfFeedMergesHomeSections(t *testing.T) {
 	f := newFixture(t)
-	f.save(Entity{Kind: "work", Title: "首页分区电影", Attributes: map[string]any{"tags": []any{"film"}}})
+	f.save(Entity{Kind: "work", Title: "首页分区电影", Attributes: map[string]any{"creation_form": "film", "tags": []any{"film"}}})
 	f.save(Entity{Kind: "work", Title: "首页分区独立游戏", Attributes: map[string]any{"tags": []any{"indie_game"}}})
 
 	key := testKey(t)

@@ -14,7 +14,15 @@ import { kindIcon } from "@/lib/kindIcons";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { can, CATALOG_ENTITY_EDIT } from "@/lib/permissions";
-import { useDefinitions, getKindName, getTagName, getTagNames } from "@/lib/definitions";
+import {
+  useDefinitions,
+  getEntityTagLabels,
+  getFieldName,
+  getKindName,
+  getTagName,
+  getTermName,
+  resolveLocalizedName,
+} from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
 import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover";
 import { PageShell, PageHeader } from "@/components/ui/PageShell";
@@ -51,12 +59,15 @@ interface EntityItem extends CoverBearing {
   kind: string;
   title: string;
   original_language?: string;
-  attributes?: { tags?: string[] };
+  attributes?: Record<string, unknown>;
   state: string;
   version: number;
   work_id?: string;
   release_id?: string;
-  translations?: Record<string, { title: string; summary?: string; aliases?: string[] }>;
+  translations?: Record<
+    string,
+    { title: string; nonofficial?: boolean; summary?: string; aliases?: string[]; nonofficial_aliases?: string[] }
+  >;
 }
 
 // 各 kind 的图标统一由 lib/kindIcons 提供（卡片、列表、搜索联想共用同一份）。
@@ -96,6 +107,24 @@ function ExploreInner() {
   const currentOriginalLanguage = searchParams.get("original_language") || "";
   // 仅有封面：document->'pictures' 为非空数组。
   const currentHasPictures = searchParams.get("has_pictures") === "1";
+  const currentField = (searchParams.get("field") || "").trim();
+  const currentValue = searchParams.get("value") || "";
+  const currentValues = useMemo(
+    () => searchParams.getAll("values").flatMap((v) => v.split(",")).map((s) => s.trim()).filter(Boolean),
+    [searchParams],
+  );
+  const activeFieldValues = useMemo(() => {
+    if (!currentField) return [];
+    const merged = currentValues.length > 0 ? currentValues : currentValue.trim() ? [currentValue.trim()] : [];
+    return Array.from(new Set(merged));
+  }, [currentField, currentValue, currentValues]);
+  const currentExcludeField = (searchParams.get("exclude_field") || "").trim();
+  const currentExcludeValues = useMemo(
+    () => searchParams.getAll("exclude_values").flatMap((v) => v.split(",")).map((s) => s.trim()).filter(Boolean),
+    [searchParams],
+  );
+  const excludingSongs =
+    currentExcludeField === "creation_form" && currentExcludeValues.includes("song");
   // 页码解析必须挡住 NaN：`?page=abc` 经 parseInt 得到 NaN，Math.max(1, NaN) 仍是 NaN，
   // 于是 offset=NaN 被原样发给服务端（现在会被按非法参数 400 拒绝，页面就以"加载失败"告终）。
   // 非数字或小于 1 一律当第 1 页；数字但超出结果范围的越界页另有可读提示（见 outOfRange）。
@@ -135,6 +164,7 @@ function ExploreInner() {
   const [loadError, setLoadError] = useState<"" | "rate_limited" | "invalid_params" | "search_expired" | "failed">("");
   const [reloadKey, setReloadKey] = useState(0);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [facetExpandedFor, setFacetExpandedFor] = useState("");
   const [topTags, setTopTags] = useState<{ name: string; count: number }[]>([]);
   // 默认展示数与搜索上限：面板不展开长云，冷门标签走搜索框（搜索池见下面的 limit=100）。
   const TAG_COLLAPSED_COUNT = 8;
@@ -217,6 +247,11 @@ function ExploreInner() {
     if (currentTagsMode !== "any") params.set("tags_mode", currentTagsMode);
     if (currentOriginalLanguage) params.set("original_language", currentOriginalLanguage);
     if (currentHasPictures) params.set("has_pictures", "1");
+    if (currentField) params.set("field", currentField);
+    if (currentValue) params.set("value", currentValue);
+    currentValues.forEach((v) => params.append("values", v));
+    if (currentExcludeField) params.set("exclude_field", currentExcludeField);
+    currentExcludeValues.forEach((v) => params.append("exclude_values", v));
     if (sortParam) params.set("sort", sortParam);
     if (orderParam) params.set("order", orderParam);
     // title 排序由服务端按请求语种取题名（请求语种 → 原文语种 → en-US → 基础题名），
@@ -271,7 +306,27 @@ function ExploreInner() {
       })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [currentKind, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures, cursorParam, offset, sortParam, orderParam, locale, searchLocale, reloadKey, router]);
+  }, [
+    currentKind,
+    currentQ,
+    currentTags,
+    currentTagsMode,
+    currentOriginalLanguage,
+    currentHasPictures,
+    currentField,
+    currentValue,
+    currentValues,
+    currentExcludeField,
+    currentExcludeValues,
+    cursorParam,
+    offset,
+    sortParam,
+    orderParam,
+    locale,
+    searchLocale,
+    reloadKey,
+    router,
+  ]);
 
   // 探索页质量圆点：仅编辑者 + partial；匿名不露「有缺项」。接口失败整页不显示。
   useEffect(() => {
@@ -321,6 +376,126 @@ function ExploreInner() {
     router.push("/explore?" + params.toString());
   };
 
+  const selectKind = (code: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (code) next.set("kind", code);
+    else next.delete("kind");
+    if (currentField) {
+      const applicable = definitions?.fields?.[currentField]?.applicable_kinds;
+      if (applicable?.length && (!code || !applicable.includes(code))) {
+        next.delete("field");
+        next.delete("value");
+        next.delete("values");
+      }
+    }
+    if (currentExcludeField && code) {
+      const applicable = definitions?.fields?.[currentExcludeField]?.applicable_kinds;
+      if (applicable?.length && !applicable.includes(code)) {
+        next.delete("exclude_field");
+        next.delete("exclude_values");
+      }
+    }
+    next.delete("page");
+    next.delete("cursor");
+    router.push(next.size ? "/explore?" + next.toString() : "/explore");
+  };
+
+  const writeFieldValues = (fieldCode: string, nextValues: string[]) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("field");
+    params.delete("value");
+    params.delete("values");
+    if (nextValues.length === 1) {
+      params.set("field", fieldCode);
+      params.set("value", nextValues[0]);
+    } else if (nextValues.length > 1) {
+      params.set("field", fieldCode);
+      nextValues.forEach((v) => params.append("values", v));
+    }
+    params.delete("page");
+    params.delete("cursor");
+    router.push(params.size ? "/explore?" + params.toString() : "/explore");
+  };
+
+  const toggleFieldValue = (fieldCode: string, termCode: string) => {
+    const next = new Set(currentField === fieldCode ? activeFieldValues : []);
+    if (next.has(termCode)) next.delete(termCode);
+    else next.add(termCode);
+    writeFieldValues(fieldCode, Array.from(next));
+  };
+
+  const removeExcludeValue = (val: string) => {
+    const remaining = currentExcludeValues.filter((v) => v !== val);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("exclude_values");
+    if (remaining.length > 0 && currentExcludeField) {
+      remaining.forEach((v) => params.append("exclude_values", v));
+    } else {
+      params.delete("exclude_field");
+    }
+    params.delete("page");
+    params.delete("cursor");
+    router.push(params.size ? "/explore?" + params.toString() : "/explore");
+  };
+
+  const toggleExcludeSongs = () => {
+    if (excludingSongs) {
+      removeExcludeValue("song");
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("exclude_field", "creation_form");
+    params.delete("exclude_values");
+    const next =
+      currentExcludeField === "creation_form"
+        ? Array.from(new Set([...currentExcludeValues, "song"]))
+        : ["song"];
+    next.forEach((v) => params.append("exclude_values", v));
+    params.delete("page");
+    params.delete("cursor");
+    router.push("/explore?" + params.toString());
+  };
+
+  const activeFacetFieldCode =
+    currentKind === "work" ? "creation_form" : currentKind === "agent" ? "agent_type" : "";
+  const activeFacetField = activeFacetFieldCode ? definitions?.fields?.[activeFacetFieldCode] : undefined;
+  const activeFacetVocabCode = activeFacetField?.vocabulary || activeFacetFieldCode;
+  const activeFacetTerms = useMemo(() => {
+    if (!activeFacetFieldCode || activeFacetField?.enabled === false) return [];
+    const terms = definitions?.vocabularies?.[activeFacetVocabCode]?.terms;
+    if (!terms) return [];
+    return Object.entries(terms)
+      .filter(([, term]) => term?.enabled !== false)
+      .map(([code, term]) => ({
+        code,
+        label: resolveLocalizedName(term.names, locale, code),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, locale));
+  }, [activeFacetFieldCode, activeFacetField, activeFacetVocabCode, definitions, locale]);
+  const FACET_COLLAPSED_COUNT = 10;
+  const isFacetExpanded = facetExpandedFor === activeFacetFieldCode;
+  const visibleFacetTerms = useMemo(() => {
+    if (isFacetExpanded || activeFacetTerms.length <= FACET_COLLAPSED_COUNT) {
+      return activeFacetTerms;
+    }
+    const top = activeFacetTerms.slice(0, FACET_COLLAPSED_COUNT);
+    if (currentField !== activeFacetFieldCode || activeFieldValues.length === 0) {
+      return top;
+    }
+    const extraSelected = activeFacetTerms
+      .slice(FACET_COLLAPSED_COUNT)
+      .filter((term) => activeFieldValues.includes(term.code));
+    return [...extraSelected, ...top];
+  }, [activeFacetTerms, isFacetExpanded, currentField, activeFacetFieldCode, activeFieldValues]);
+  const hiddenFacetCount = Math.max(0, activeFacetTerms.length - visibleFacetTerms.length);
+
+  const formatFieldValue = (fieldCode: string, val: string): string => {
+    const vocabCode = definitions?.fields?.[fieldCode]?.vocabulary;
+    if (vocabCode) return getTermName(definitions, vocabCode, val, locale);
+    if (fieldCode === "tags") return getTagName(definitions, val, locale);
+    return val;
+  };
+
   // 实体类型（八骨架 kind）显示名：服务端 definitions 的 kinds 优先，前端字典兜底。
   // 左栏筛选与卡片角标都用它——"分类"不在这里，分类由货架承担。
   const kindLabel = (id: string) => getKindName(kinds, id, locale, tr("catalog.kind." + id, id));
@@ -331,7 +506,17 @@ function ExploreInner() {
     appliedFilters.push({ id: "q", label: `${t("search.submit")}: ${currentQ}`, remove: () => updateFilters({ q: "" }) });
   }
   if (currentKind !== "all") {
-    appliedFilters.push({ id: "kind", label: kindLabel(currentKind), remove: () => updateFilters({ kind: "" }) });
+    appliedFilters.push({ id: "kind", label: kindLabel(currentKind), remove: () => selectKind("") });
+  }
+  if (currentField && activeFieldValues.length > 0) {
+    const fieldLabel = getFieldName(definitions, currentField, locale);
+    for (const val of activeFieldValues) {
+      appliedFilters.push({
+        id: `field:${currentField}:${val}`,
+        label: `${fieldLabel}: ${formatFieldValue(currentField, val)}`,
+        remove: () => writeFieldValues(currentField, activeFieldValues.filter((v) => v !== val)),
+      });
+    }
   }
 
   for (const tag of Array.from(new Set(currentTags))) {
@@ -347,10 +532,40 @@ function ExploreInner() {
   if (currentHasPictures) {
     appliedFilters.push({ id: "has_pictures", label: t("catalog.hasPicturesFilter"), remove: () => updateFilters({ has_pictures: "" }) });
   }
+  if (currentExcludeField && currentExcludeValues.length > 0) {
+    const fieldLabel = getFieldName(definitions, currentExcludeField, locale);
+    for (const val of Array.from(new Set(currentExcludeValues))) {
+      appliedFilters.push({
+        id: `exclude:${currentExcludeField}:${val}`,
+        label: t("catalog.excludedFilter", {
+          field: fieldLabel,
+          value: formatFieldValue(currentExcludeField, val),
+        }),
+        remove: () => removeExcludeValue(val),
+      });
+    }
+  }
 
   const clearFilters = () => {
     const next = new URLSearchParams(searchParams.toString());
-    for (const key of ["q", "kind", "status", "tags", "tags_mode", "original_language", "has_pictures", "page", "cursor"]) next.delete(key);
+    for (const key of [
+      "q",
+      "kind",
+      "status",
+      "field",
+      "value",
+      "values",
+      "exclude_field",
+      "exclude_values",
+      "tags",
+      "tags_mode",
+      "original_language",
+      "has_pictures",
+      "page",
+      "cursor",
+    ]) {
+      next.delete(key);
+    }
     router.push(next.size ? "/explore?" + next.toString() : "/explore");
   };
 
@@ -383,7 +598,17 @@ function ExploreInner() {
     // 无筛选时用一次公开统计；有筛选时各种类相对当前条件计数（只换 kind 维）。
     const codes = ["all", ...kindOptions];
     let cancelled = false;
-    const filtered = Boolean(currentQ || currentTags.length || currentOriginalLanguage || currentHasPictures);
+    const filtered = Boolean(
+      currentQ ||
+        currentTags.length ||
+        currentOriginalLanguage ||
+        currentHasPictures ||
+        currentField ||
+        currentValue ||
+        currentValues.length ||
+        currentExcludeField ||
+        currentExcludeValues.length,
+    );
     const apply = (next: Record<string, number>) => { if (!cancelled) setKindCounts(next); };
     if (!filtered) {
       fetch("/api/catalog/stats", { credentials: "same-origin" })
@@ -407,6 +632,11 @@ function ExploreInner() {
     if (currentTagsMode !== "any") base.set("tags_mode", currentTagsMode);
     if (currentOriginalLanguage) base.set("original_language", currentOriginalLanguage);
     if (currentHasPictures) base.set("has_pictures", "1");
+    if (currentField) base.set("field", currentField);
+    if (currentValue) base.set("value", currentValue);
+    currentValues.forEach((v) => base.append("values", v));
+    if (currentExcludeField) base.set("exclude_field", currentExcludeField);
+    currentExcludeValues.forEach((v) => base.append("exclude_values", v));
     base.set("limit", "1");
 
     Promise.all(
@@ -429,7 +659,19 @@ function ExploreInner() {
     return () => {
       cancelled = true;
     };
-  }, [kindOptions, currentQ, currentTags, currentTagsMode, currentOriginalLanguage, currentHasPictures]);
+  }, [
+    kindOptions,
+    currentQ,
+    currentTags,
+    currentTagsMode,
+    currentOriginalLanguage,
+    currentHasPictures,
+    currentField,
+    currentValue,
+    currentValues,
+    currentExcludeField,
+    currentExcludeValues,
+  ]);
 
   // 列表容器 key：视图与筛选变化时重挂载、重放 .mf-tabpanel；
   // 顶栏尚未提交的搜索输入不参与，否则打字过程会一直闪。
@@ -437,8 +679,14 @@ function ExploreInner() {
     viewMode,
     currentKind,
     currentQ,
+    currentField,
+    activeFieldValues.join(","),
+    currentExcludeField,
+    currentExcludeValues.join(","),
     currentTags.join(","),
     currentTagsMode,
+    currentOriginalLanguage,
+    currentHasPictures ? "1" : "0",
     currentPage,
     limit,
     sortKey,
@@ -491,7 +739,7 @@ function ExploreInner() {
                       type="button"
                       data-kind={code || "all"}
                       aria-current={active ? "true" : undefined}
-                      onClick={() => updateFilters({ kind: code })}
+                      onClick={() => selectKind(code)}
                       className={
                         "shrink-0 lg:w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap border transition-colors duration-fast ease-soft cursor-pointer " +
                         (active
@@ -509,6 +757,59 @@ function ExploreInner() {
                 })}
               </nav>
             </Card>
+
+            {activeFacetFieldCode && activeFacetTerms.length > 0 && (
+              <Card padding="none" className="order-2 col-span-2 shadow-xs overflow-hidden">
+                <div className="px-3.5 py-2.5 border-b border-line-subtle flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-text-faint">
+                    {getFieldName(definitions, activeFacetFieldCode, locale)}
+                  </span>
+                  {currentField === activeFacetFieldCode && activeFieldValues.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => writeFieldValues(activeFacetFieldCode, [])}
+                      className="text-[11px] text-primary hover:underline cursor-pointer"
+                    >
+                      {t("catalog.clear")}
+                    </button>
+                  )}
+                </div>
+                <div className="p-2.5 flex flex-wrap gap-1.5">
+                  {visibleFacetTerms.map((term) => {
+                    const on = currentField === activeFacetFieldCode && activeFieldValues.includes(term.code);
+                    return (
+                      <button
+                        key={term.code}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggleFieldValue(activeFacetFieldCode, term.code)}
+                        className={
+                          "px-2 py-1 rounded-md text-[11px] border transition-colors duration-150 cursor-pointer " +
+                          (on
+                            ? "bg-primary/15 text-primary border-primary/30 font-semibold"
+                            : "text-text-body border-line-subtle hover:bg-black/[0.04] dark:hover:bg-surfaceHover font-medium")
+                        }
+                      >
+                        {term.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {activeFacetTerms.length > FACET_COLLAPSED_COUNT && (
+                  <div className="px-2.5 pb-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setFacetExpandedFor(isFacetExpanded ? "" : activeFacetFieldCode)}
+                      className="text-[11px] text-primary hover:underline cursor-pointer"
+                    >
+                      {isFacetExpanded
+                        ? t("common.collapse")
+                        : t("relations.directory.more", { count: String(hiddenFacetCount) })}
+                    </button>
+                  </div>
+                )}
+              </Card>
+            )}
 
             {/* 标签筛选：与种类筛选叠加生效；来源为真实标签聚合
                 （/catalog/tags 聚合自各实体的 attributes.tags）。 */}
@@ -627,7 +928,7 @@ function ExploreInner() {
             </Card>
 
             {/* 封面：只留 pictures 非空数组的条目。 */}
-            <Card padding="none" className="order-5 col-span-2 shadow-xs overflow-hidden">
+            <Card padding="none" className="order-5 col-span-2 shadow-xs overflow-hidden divide-y divide-line-subtle">
               <button
                 type="button"
                 onClick={() => updateFilters({ has_pictures: currentHasPictures ? "" : "1" })}
@@ -644,6 +945,24 @@ function ExploreInner() {
                 </span>
                 <span className="text-xs text-text-body">{t("catalog.hasPicturesFilter")}</span>
               </button>
+              {(currentKind === "work" || currentKind === "all") && (
+                <button
+                  type="button"
+                  onClick={toggleExcludeSongs}
+                  aria-pressed={excludingSongs}
+                  className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+                >
+                  <span
+                    className={
+                      "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors " +
+                      (excludingSongs ? "bg-primary border-primary text-primary-foreground" : "border-line text-transparent")
+                    }
+                  >
+                    <Check className="w-3 h-3" />
+                  </span>
+                  <span className="text-xs text-text-body">{t("catalog.excludeSongTracks")}</span>
+                </button>
+              )}
             </Card>
           </aside>
           </div>
@@ -860,7 +1179,7 @@ function ExploreInner() {
                         badgeLabel={badgeLabel}
                         title={displayTitle}
                         baseTitle={item.title}
-                        tags={getTagNames(definitions, item.attributes?.tags, locale)}
+                        tags={getEntityTagLabels(definitions, item.kind, item.attributes, locale)}
                         pictureUrl={cover.url}
                         qualityStatus={qualityById[item.id]}
                       />
@@ -912,7 +1231,7 @@ function ExploreInner() {
                           </div>
                           <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
                             {/* 列表行标签同样是本地化展示名；筛选值仍在 URL 的 tags 参数里。 */}
-                            <span className="line-clamp-1">{getTagNames(definitions, item.attributes?.tags, locale).slice(0, 3).join(" · ")}</span>
+                            <span className="line-clamp-1">{getEntityTagLabels(definitions, item.kind, item.attributes, locale).slice(0, 3).join(" · ")}</span>
                           </div>
                         </div>
                       </div>

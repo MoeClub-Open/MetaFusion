@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import { Entity, fetchAllPages, mapLimit, title as entityTitle } from "@/components/catalog/api";
+import { Entity, fetchAllPages, title as entityTitle } from "@/components/catalog/api";
 import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
 import { useDefinitions, getFieldName, getTermName, templatesForEntity, resolveLocalizedName } from "@/lib/definitions";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -36,8 +36,6 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
   const { definitions: defs } = useDefinitions();
 
   const [releaseEntities, setReleaseEntities] = useState<Entity[]>([]);
-  // 每个发行版的介质格式计数（按实际 Medium 聚合）：CD+BD 组合不再被"首个格式"吞掉。
-  const [releaseFormatCounts, setReleaseFormatCounts] = useState<Record<string, Record<string, number>>>({});
   // 筛选条件：键为字段码，值选中项。字段集合由模板 facet_fields 声明。
   const [facetValues, setFacetValues] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
@@ -54,22 +52,7 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
     setReleasesFailed(false);
     try {
       const entities = await fetchAllPages<Entity>(`/catalog/entities?kind=release&work_id=${encodeURIComponent(workId)}`);
-      // 载体格式从实际 Medium 全量聚合（受并发上限约束），不再截断在首屏 50 条。
-      const counts = await mapLimit(entities, 8, async (e) => {
-        try {
-          const ms = await fetchAllPages<Entity>(`/catalog/entities?kind=medium&release_id=${encodeURIComponent(e.id!)}`);
-          const c: Record<string, number> = {};
-          for (const m of ms) {
-            const f = String(m.attributes?.format || "").trim();
-            if (f) c[f] = (c[f] || 0) + 1;
-          }
-          return c;
-        } catch { return {}; }
-      });
-      const fmtMap: Record<string, Record<string, number>> = {};
-      entities.forEach((e, i) => { fmtMap[e.id!] = counts[i] || {}; });
       setReleaseEntities(entities);
-      setReleaseFormatCounts(fmtMap);
     } catch {
       // 列表取数失败不能落成「暂无发行版。」：那是在替服务端断言"这部作品没有发行版"。
       setReleasesFailed(true);
@@ -104,7 +87,7 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
     const own = e.attributes?.[code];
     const ownList = own !== undefined && own !== null && own !== "" ? [String(own).trim()] : [];
     if (code !== "format") return ownList;
-    const derived = Object.keys(releaseFormatCounts[e.id!] || {});
+    const derived = Object.keys(e.medium_formats || {});
     return Array.from(new Set([...ownList, ...derived]));
   };
   // 某 facet 的全部候选值（来自全量发行版集合）。
@@ -114,8 +97,7 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
   // 介质格式汇总展示（"CD×1＋BD×1"）：仅当有实际 Medium 聚合结果时返回；
   // 无载体数据时返回空串，由调用方回退发行版自身 format 属性的正常渲染。
   const formatSummaryOf = (e: Entity): string => {
-    const counts = releaseFormatCounts[e.id!] || {};
-    const entries = Object.entries(counts);
+    const entries = Object.entries(e.medium_formats || {}).sort(([a], [b]) => a.localeCompare(b));
     if (entries.length === 0) return "";
     const joiner = locale.startsWith("zh") ? "＋" : " + ";
     return entries
@@ -139,7 +121,7 @@ export function WorkReleasesSection({ workId, onCountChange }: Props) {
     });
     // facetCandidatesOf/依赖项与作品页一致；releaseFormatCounts 参与 format 候选计算
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [releaseEntities, q, facetValues, releaseFacets, releaseFormatCounts]);
+  }, [releaseEntities, q, facetValues, releaseFacets]);
 
   const total = filteredReleases.length;
 

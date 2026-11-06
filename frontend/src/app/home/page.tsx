@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { useI18n } from "@/i18n/I18nProvider";
-import { useDefinitions, getKindName, getTagNames, type KindMap } from "@/lib/definitions";
+import { useDefinitions, getEntityTagLabels, getKindName, type KindMap } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
 import { displayCover, withDisplayCovers, type CoverBearing, type ResolvedCover } from "@/lib/cover";
 import { PageContainer, PageShell } from "@/components/ui/PageShell";
@@ -19,6 +19,7 @@ import { HomeCustomizeModal } from "@/components/home/HomeCustomizeModal";
 import {
   EMPTY_PREFERENCES,
   normalizePreferences,
+  shelfExploreParam,
   shelfTitle,
   type HomePreferences,
   type ShelfLike,
@@ -31,8 +32,11 @@ type EntityItem = CoverBearing & {
   kind: string;
   title: string;
   original_language?: string;
-  translations?: Record<string, { title?: string; summary?: string; aliases?: string[] }>;
-  attributes?: { tags?: string[] };
+  translations?: Record<
+    string,
+    { title?: string; nonofficial?: boolean; summary?: string; aliases?: string[]; nonofficial_aliases?: string[] }
+  >;
+  attributes?: Record<string, unknown>;
   version?: number;
 };
 
@@ -243,7 +247,7 @@ export default function HomePage() {
                         badgeLabel={badge}
                         title={displayTitle}
                         baseTitle={item.title}
-                        tags={getTagNames(definitions, item.attributes?.tags, locale)}
+                        tags={getEntityTagLabels(definitions, item.kind, item.attributes, locale)}
                         pictureUrl={cover.url}
                       />
                     );
@@ -286,13 +290,6 @@ export default function HomePage() {
       </footer>
     </div>
   );
-}
-
-// 分区“查看全部”进入探索页，使用规则的全部开放标签。
-function shelfExploreParam(shelf: ShelfLike): string {
-  const params = new URLSearchParams({ kind: "work" });
-  for (const tag of shelf.query?.tags || []) if (tag) params.append("tags", tag);
-  return params.toString();
 }
 
 // 卡片左上角角标 = 实体类型（八骨架 kind），名称取服务端 definitions 的多语言 kinds，

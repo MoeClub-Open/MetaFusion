@@ -11,7 +11,7 @@ import { languageNativeName } from "@/lib/languages";
 
 interface Props {
   /** 统一 DTO 的 translations：按 locale 分组的对象（{loc:{title,aliases}}）。 */
-  translations?: Record<string, { title?: string; name?: string; summary?: string; aliases?: string[] }>;
+  translations?: Record<string, { title?: string; name?: string; nonofficial?: boolean; summary?: string; aliases?: string[]; nonofficial_aliases?: string[] }>;
   /** 实体内容语言（ISO 639-1），用于标记原始语言分组 */
   originalLanguage?: string | null;
   /** 主标题行已展示的标题：分组内重复时自动隐藏 */
@@ -53,11 +53,14 @@ export function LocalizedTitleGroups({
     () =>
       groupTitlesByLocale(translations, originalLanguage).flatMap((group) => {
         // 只去掉别处已展示的标题值；整组过滤会连原语言标题一起隐藏。
-        const titles = [group.primary, ...group.aliases]
+        const officialCandidates = [...(group.nonofficial ? [] : [group.primary]), ...group.aliases]
           .map((value) => value.trim())
           .filter((value) => value && !known.has(value.toLocaleLowerCase()));
-        return titles.length
-          ? [{ ...group, primary: titles[0], aliases: titles.slice(1) }]
+        const unofficialCandidates = [...(group.nonofficial ? [group.primary] : []), ...group.nonofficialAliases]
+          .map((value) => value.trim())
+          .filter((value) => value && !known.has(value.toLocaleLowerCase()));
+        return officialCandidates.length || unofficialCandidates.length
+          ? [{ ...group, official: officialCandidates, unofficial: unofficialCandidates }]
           : [];
       }),
     [translations, originalLanguage, known],
@@ -86,13 +89,30 @@ export function LocalizedTitleGroups({
         // 字典没配该语种时用语言表的自称（cy 显示 Cymraeg 而不是裸代码）；语言表也没有才回落原始代码。
         const labelKey = titleLocaleLabelKey(g.locale);
         const localeLabel = labelKey ? t(labelKey) : languageNativeName(g.locale) || g.locale;
-        const titles = joinUnique([g.primary, ...g.aliases]);
+        const officialTitles = joinUnique(g.official);
+        const unofficialTitles = joinUnique(
+          g.unofficial.filter((v) => !g.official.some((o) => o.toLocaleLowerCase() === v.toLocaleLowerCase())),
+        );
+        const mainText = officialTitles || unofficialTitles;
         return (
           <p key={g.locale} className={cls}>
             {t(g.isOriginal ? "entity.titles.groupOriginal" : "entity.titles.group", {
               locale: localeLabel,
-              titles,
+              titles: mainText,
             })}
+            {!officialTitles && unofficialTitles && (
+              <span className="ml-1.5 inline-block rounded border border-line bg-surfaceSubtle px-1.5 py-0.5 text-[10px] text-text-muted">
+                {t("entity.titles.nonofficialBadge")}
+              </span>
+            )}
+            {officialTitles && unofficialTitles && (
+              <span className="ml-2 inline-flex flex-wrap items-center gap-1">
+                <span className="rounded border border-line bg-surfaceSubtle px-1.5 py-0.5 text-[10px] text-text-muted">
+                  {t("entity.titles.nonofficialBadge")}
+                </span>
+                <span>{unofficialTitles}</span>
+              </span>
+            )}
           </p>
         );
       })}

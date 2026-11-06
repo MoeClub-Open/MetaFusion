@@ -143,6 +143,30 @@ export function shelfTitle(shelf: ShelfLike, locale: string): string {
   return resolveLocalizedName(shelf.names || undefined, locale, shelf.slug);
 }
 
+/** 分区“查看全部”进入探索页的参数编码：透传开放标签与首个非空词表/字段条件。 */
+export function shelfExploreParam(shelf: ShelfLike): string {
+  const params = new URLSearchParams({ kind: "work" });
+  for (const tag of shelf.query?.tags || []) {
+    const trimmed = tag.trim();
+    if (trimmed) params.append("tags", trimmed);
+  }
+  for (const map of [shelf.query?.vocab_terms, shelf.query?.fields]) {
+    if (!map) continue;
+    let matched = false;
+    for (const key of Object.keys(map).sort()) {
+      const vals = (map[key] || []).map((v) => v.trim()).filter(Boolean);
+      if (!key || vals.length === 0) continue;
+      params.set("field", key);
+      if (vals.length === 1) params.set("value", vals[0]);
+      else vals.forEach((v) => params.append("values", v));
+      matched = true;
+      break;
+    }
+    if (matched) break;
+  }
+  return params.toString();
+}
+
 /** 规则摘要：开放标签保留原文，字段/词表项/关系使用本地化名。 */
 export function describeRule(
   query: ShelfQuery,

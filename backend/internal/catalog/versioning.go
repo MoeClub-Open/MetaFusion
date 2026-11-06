@@ -694,6 +694,7 @@ func (s *Store) versionSaveObject(ctx context.Context, tx *sql.Tx, wid string, o
 					}
 					e.State = "active"
 					e.RedirectID = ""
+					e.MediumFormats = nil
 					o.Document = json.RawMessage(encode(e))
 				}
 			}
@@ -712,6 +713,7 @@ func (s *Store) versionSaveObject(ctx context.Context, tx *sql.Tx, wid string, o
 				e.CreatedBy = ""
 				e.ReviewStatus = ""
 				e.RedirectID = ""
+				e.MediumFormats = nil
 				raw, err := normalizeWorkspaceDocument(json.RawMessage(encode(e)), nil, o.Target, o.ID, true)
 				if err != nil {
 					return err

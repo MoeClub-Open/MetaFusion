@@ -255,3 +255,57 @@ func TestListFilterTagsBindValidJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestListFilterMultiValuesAndExclusion(t *testing.T) {
+	d := listFilterSearchDefinitions()
+	joined, args := listFilterSearchSQL(t, d, ListOptions{
+		Kind:          "work",
+		Field:         "creation_form",
+		Values:        []string{"original_album", "single"},
+		ExcludeField:  "creation_form",
+		ExcludeValues: []string{"song"},
+	})
+	if !strings.Contains(joined, "document->'attributes'->>$2 = ANY($3::text[])") {
+		t.Fatalf("values should compile to ANY($n::text[]), got: %s", joined)
+	}
+	if !strings.Contains(joined, "NOT COALESCE((document->'attributes'->>$4 = ANY($5::text[])), false)") {
+		t.Fatalf("exclude_field should guard NULL with NOT COALESCE, got: %s (args=%v)", joined, args)
+	}
+
+	for _, bad := range []ListOptions{
+		{Values: []string{"film"}},
+		{Field: "creation_form", Value: "film", Values: []string{"tv_drama"}},
+		{ExcludeField: "creation_form"},
+		{ExcludeValues: []string{"song"}},
+	} {
+		a := []any{}
+		if _, err := listFilter(listFilterSearchCtx(d), &Store{}, bad, nil, &a); err == nil || err.Error() != "invalid_query_param" {
+			t.Fatalf("expected invalid_query_param for %+v, got %v", bad, err)
+		}
+	}
+}
+
+func TestMakeSearchDocumentNonofficialTitlesAndAliases(t *testing.T) {
+	doc := makeSearchDocument(Entity{
+		ID:               "00000000-0000-0000-0000-000000000001",
+		Kind:             "work",
+		Title:            "Original JP",
+		OriginalLanguage: "ja",
+		Translations: map[string]Translation{
+			"ja":    {Title: "Original JP", NonofficialAliases: []string{"JP Nickname"}},
+			"zh-CN": {Title: "社区译名", Nonofficial: true, NonofficialAliases: []string{"民间简称"}},
+		},
+	})
+	if _, exists := doc.Titles["zh-CN"]; exists {
+		t.Fatalf("nonofficial translation must not populate official sort Titles map: %+v", doc.Titles)
+	}
+	if doc.Titles["ja"] != "Original JP" || doc.SortTitle != "Original JP" {
+		t.Fatalf("official original title must remain sort title: %+v %q", doc.Titles, doc.SortTitle)
+	}
+	joined := strings.Join(doc.SearchText, "|")
+	for _, want := range []string{"社区译名", "民间简称", "JP Nickname"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("search text missing %q: %s", want, joined)
+		}
+	}
+}

@@ -15,10 +15,12 @@ type Names map[string]string
 const MaxArticleLength = 100000
 
 type Translation struct {
-	Title   string   `json:"title"`
-	Summary string   `json:"summary,omitempty"`
-	Body    string   `json:"body,omitempty"`
-	Aliases []string `json:"aliases,omitempty"`
+	Title              string   `json:"title"`
+	Nonofficial        bool     `json:"nonofficial,omitempty"`
+	Summary            string   `json:"summary,omitempty"`
+	Body               string   `json:"body,omitempty"`
+	Aliases            []string `json:"aliases,omitempty"`
+	NonofficialAliases []string `json:"nonofficial_aliases,omitempty"`
 }
 type Source struct {
 	Kind     string `json:"kind"`
@@ -135,6 +137,8 @@ type Entity struct {
 	Number           string                 `json:"number"`
 	Contents         []Inclusion            `json:"contents"`
 	Subjects         []Subject              `json:"subjects"`
+	// MediumFormats 仅在发行版（kind=release）读取投影时按活动子载体聚合各格式数量，不落库、不进快照。
+	MediumFormats    map[string]int         `json:"medium_formats,omitempty"`
 	UpdatedAt        time.Time              `json:"updated_at"`
 }
 type Edit struct {

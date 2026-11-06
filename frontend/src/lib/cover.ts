@@ -20,19 +20,26 @@ export function parseManualRatio(aspect?: string | null): number | null {
   return w / h;
 }
 
-const SQUARE_EXACT = [
-  "album", "single", "ep", "lp", "cd", "ost",
-  "专辑", "单曲", "迷你专辑", "原声带", "原声", "配乐", "唱片", "音乐",
+const SQUARE_WORD_RE = /(?:^|[\s/_-])(ep|lp|cd|ost)(?:$|[\s/_-])/i;
+const POSTER_WORD_RE = /(?:^|[\s/_-])(tv|ova)(?:$|[\s/_-])/i;
+
+const SQUARE_KEYWORDS = [
+  "album", "single", "song", "music", "soundtrack", "audio drama", "radio drama",
+  "专辑", "專輯", "单曲", "單曲", "歌曲", "原声", "原聲", "配乐", "配樂", "唱片",
+  "音乐", "音樂", "音楽", "楽曲", "アルバム", "シングル", "サウンドトラック",
+  "音声作品", "音聲作品", "广播剧", "廣播劇", "ラジオドラマ",
 ];
 
 const POSTER_KEYWORDS = [
-  "movie", "film", "series", "anime", "tv", "theatrical", "ova", "special",
-  "电影", "影片", "剧场版", "映画", "动画", "動畫", "剧集", "電視劇", "电视剧", "特摄", "特攝", "海报", "海報",
+  "movie", "film", "series", "anime", "animation", "theatrical", "drama", "poster",
+  "电影", "電影", "影片", "剧场", "劇場", "映画", "动画", "動畫", "アニメ",
+  "剧集", "劇集", "电视剧", "電視劇", "テレビドラマ", "特摄", "特攝", "海报", "海報",
 ];
 
 const BOOK_KEYWORDS = [
-  "novel", "book", "comic", "manga", "light novel",
-  "小说", "小說", "轻小说", "輕小說", "漫画", "漫畫", "书籍", "書籍", "文库", "文庫", "画集", "畫集",
+  "novel", "book", "comic", "manga", "light novel", "literature", "photobook", "photography",
+  "小说", "小說", "轻小说", "輕小說", "漫画", "漫畫", "マンガ", "単行本", "书籍", "書籍",
+  "文库", "文庫", "文学", "文學", "写真", "寫真", "画集", "畫集",
 ];
 
 function normalizeTags(tags?: CoverTagInput[]): string[] {
@@ -50,14 +57,14 @@ export function inferCoverRatio(tags?: CoverTagInput[]): number {
   if (names.length === 0) return 3 / 4;
 
   const hasSquare = names.some(
-    (n) => SQUARE_EXACT.includes(n) || (n.length > 4 && SQUARE_EXACT.some((k) => n.includes(k)))
+    (n) => SQUARE_WORD_RE.test(n) || SQUARE_KEYWORDS.some((k) => n === k || n.includes(k))
   );
   if (hasSquare) return 1;
 
-  const hitAny = (keywords: string[]) =>
-    names.some((n) => keywords.some((k) => n === k || n.includes(k)));
+  const hitAny = (keywords: string[], wordRe?: RegExp) =>
+    names.some((n) => (wordRe ? wordRe.test(n) : false) || keywords.some((k) => n === k || n.includes(k)));
 
-  if (hitAny(POSTER_KEYWORDS)) return 2 / 3;
+  if (hitAny(POSTER_KEYWORDS, POSTER_WORD_RE)) return 2 / 3;
   if (hitAny(BOOK_KEYWORDS)) return 3 / 4;
   return 3 / 4;
 }

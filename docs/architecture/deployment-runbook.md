@@ -35,6 +35,12 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 038 将旧目录请求日志汇总后删除明细，并建立四服务 API 日统计。升级先构建全部目标镜像，再停目录、MCP 和账号入口，执行匹配的 backend-migrate up、auth-migrate；重跑 `roles-least-privilege.sql` 和 `verify-role-isolation.sql`，确认统计表更新权限及清理函数只允许 mf_auth 执行后再启动。互动/存储随后按自身嵌入迁移记账；不要把旧后端接回 038 之后的库。网关及四服务关闭逐请求访问输出，保留错误输出、操作审计与日统计。后台清理不可恢复，按[审计契约](./audit-log.md#api-统计与日志清理)执行；业务历史和 OAuth 事务记录不参与清理。
 
+039 升级身份候选函数并重建其索引，使 `nonofficial_aliases` 参与同步查重；只将查询仍符合内置旧规则的六个系统货架改为 `creation_form` 词项筛选，音乐货架同时识别早期的 `song/album` 和后来的 `music/song/album` 两种规则，保留人工增设的字段、词项和关系条件。该迁移不改实体、关系、修订或工作副本中的编目事实，不按自由标签猜测作品类型、主体类型或译名性质；迁移不可逆，契约版本为39。
+
+存量升级必须依次执行匹配版本的 `up` → `status` → `seed` → `check-refs`。`seed` 补入 `agent_type` 字段、词表及四个主体细分模板；仅当该字段本次首次补入时，将其加入已有 `agent_profile` 的徽章、分面和对应分区，既有字段位置与人工配置保留，重复执行不恢复管理员随后移除的展示项。缺失的主体类型仍保持空值，旧译名不自动标记为官方或非官方，历史名称和语言键不批量改写。`medium_formats` 从活动子载体现算，不迁移为持久化属性。
+
+随后启动匹配后端、前端与 MCP，并同步技能和公开文档。搜索进程重建 v5 索引，覆盖新增别名检索和官方题名优先排序；等待 `/health.search_ready=true` 后验收关键词筛选。回读账本39、definitions 中的 `agent_type` 与主体模板、实际命中的系统货架规则，并核对实体及历史数量、关键归属和内容。只更新文档、重启服务或看到健康响应，均不表示已完成旧库升级；目标实例尚未具备新契约时，客户端不能提前写入新字段。
+
 `mf-migrate` 的操作超时默认 15 分钟；大库应先在备份恢复库测量 022 建索引和 023 引用规范化的耗时，必要时调整。全局 `-timeout` 必须放在命令前，例如 `mf-migrate -timeout 30m up`、`mf-migrate -timeout 30m check-refs -json`，不接受零或负时长。直接使用 Compose 时同样放在命令前：`docker compose -f deploy/docker-compose.yml run --rm --no-deps backend-migrate -timeout 30m up`，并先停写。
 
 `deploy.sh migrate up/down` 也会先停止 `backend`，完成后不自动启动。迁移、账本、种子或引用检查失败时，保持所有目录写入端停写，核对失败原因、账本与备份并处理；不得仅重启旧后端继续写入新协议数据。
@@ -84,7 +90,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 026 切换必须先停止所有旧目录写入端，再迁移并启动匹配的服务端。旧镜像不能单独回退到契约26；恢复必须使用迁移前数据库备份及对应镜像/配置。原始 SQL 改父节点也须 SERIALIZABLE；连接异常不能作为可自动重放 COMMIT 的依据。
 
-切换时停旧写入端，依次执行 up、seed、check-refs，随后启动当前版本与 OpenSearch。新版建立 v4 物理索引，重建现有条目的正文与外链检索内容，完成后原子切换搜索别名；旧索引不自动删除，确认当前索引及备份后由运维按名称清理。首次重建或故障期间 q 返回503，无关键词浏览仍可用。
+切换时停旧写入端，依次执行 up、seed、check-refs，随后启动当前版本与 OpenSearch。新版建立 v5 物理索引，重建现有条目的正文、外链、非官方别名与题名排序内容，完成后原子切换搜索别名；旧索引不自动删除，确认当前索引及备份后由运维按名称清理。首次重建或故障期间 q 返回503，无关键词浏览仍可用。
 
 四个运行 DSN 均显式必填；DB_* 只供数据库容器、迁移或运维，不能代替运行配置。RustFS 凭据统一使用 `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`，同步更新备份配置；不再注入旧 ROOT 别名。内置 OpenSearch 单节点配置供起步使用，生产节点数、副本、认证和资源预算须按实测确定，见[核心实现与容量边界](./catalog-core-implementation.md#查询规模费用与接口边界)。
 
@@ -98,7 +104,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 `deploy.sh` 的目录结构迁移入口统一停止 `backend` 与 `mcp`，停止失败时不执行迁移；后续迁移、账本或引用检查失败也不自动重启两者。完整发布在所有迁移和检查通过后统一启动应用组；单独执行 `migrate` 或 `fast backend` 后，MCP 保持停止，须待匹配的 MCP 镜像与迁移就绪再启动，不能恢复旧 MCP 写入端。
 
-工作副本、提交、原始请求、修订和贡献关联永久保留，恢复不能只回滚实体表。`CATALOG_OUTBOX_RETENTION_DAYS=7`、`CATALOG_IDEMPOTENCY_RETENTION_DAYS=30` 可设0永久保留，允许0–36500天；防重复创建记录只用于短期重试识别，超期按批删除。`CATALOG_RETENTION_INTERVAL_SECONDS=3600`，允许60–86400秒。清理每轮共享30秒预算，最多20批，每事务每类最多500条，事件只删已确认部分；未确认消费者事件保留。删除/合并贡献独立记录，不依赖队列长期存在。来源资格策略与提交载荷过期清理配置均已移除。
+工作副本、提交、原始请求、修订和贡献关联永久保留，恢复不能只回滚实体表。`CATALOG_OUTBOX_RETENTION_DAYS=7`、`CATALOG_IDEMPOTENCY_RETENTION_DAYS=7` 可设0永久保留，允许0–36500天；防重复创建记录只用于短期重试识别，超期按批删除。`CATALOG_RETENTION_INTERVAL_SECONDS=3600`，允许60–86400秒。清理每轮共享30秒预算，最多20批，每事务每类最多500条，事件只删已确认部分；未确认消费者事件保留。删除/合并贡献独立记录，不依赖队列长期存在。来源资格策略与提交载荷过期清理配置均已移除。
 
 自托管封面的副本保留、私有预览与合入绑定要求目录配置 `STORAGE_URL`，目录与存储两侧显式填写同值的 `STORAGE_CATALOG_LIFECYCLE_SECRET`；没有自动生成或共享密钥的机制。默认空值仅适用于不使用自托管封面的安装，涉及资产的副本操作会明确返回 `503 storage_unavailable`。主编排提供内部存储 URL，metadata-only 可接外部存储服务；上线前同时执行存储 011 迁移。内部接口和资产回收验收见[存储运行约定](./storage-operations.md)。
 
