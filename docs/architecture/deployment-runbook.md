@@ -39,7 +39,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 存量升级必须依次执行匹配版本的 `up` → `status` → `seed` → `check-refs`。`seed` 补入 `agent_type` 字段、词表及四个主体细分模板；仅当该字段本次首次补入时，将其加入已有 `agent_profile` 的徽章、分面和对应分区，既有字段位置与人工配置保留，重复执行不恢复管理员随后移除的展示项。缺失的主体类型仍保持空值，旧译名不自动标记为官方或非官方，历史名称和语言键不批量改写。`medium_formats` 从活动子载体现算，不迁移为持久化属性。
 
-随后启动匹配后端、前端与 MCP，并同步技能和公开文档。搜索进程重建 v5 索引，覆盖新增别名检索和官方题名优先排序；等待 `/health.search_ready=true` 后验收关键词筛选。回读账本39、definitions 中的 `agent_type` 与主体模板、实际命中的系统货架规则，并核对实体及历史数量、关键归属和内容。只更新文档、重启服务或看到健康响应，均不表示已完成旧库升级；目标实例尚未具备新契约时，客户端不能提前写入新字段。
+随后启动匹配后端、前端与 MCP，并同步技能和公开文档。搜索进程重建 v6 索引，覆盖新增别名检索和官方题名优先排序；旧 v5 的已初始化状态不复用。等待 `/health.search_ready=true` 后验收关键词筛选。回读账本39、definitions 中的 `agent_type` 与主体模板、实际命中的系统货架规则，并核对实体及历史数量、关键归属和内容。只更新文档、重启服务或看到健康响应，均不表示已完成旧库升级；目标实例尚未具备新契约时，客户端不能提前写入新字段。
 
 `mf-migrate` 的操作超时默认 15 分钟；大库应先在备份恢复库测量 022 建索引和 023 引用规范化的耗时，必要时调整。全局 `-timeout` 必须放在命令前，例如 `mf-migrate -timeout 30m up`、`mf-migrate -timeout 30m check-refs -json`，不接受零或负时长。直接使用 Compose 时同样放在命令前：`docker compose -f deploy/docker-compose.yml run --rm --no-deps backend-migrate -timeout 30m up`，并先停写。
 
@@ -90,7 +90,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 026 切换必须先停止所有旧目录写入端，再迁移并启动匹配的服务端。旧镜像不能单独回退到契约26；恢复必须使用迁移前数据库备份及对应镜像/配置。原始 SQL 改父节点也须 SERIALIZABLE；连接异常不能作为可自动重放 COMMIT 的依据。
 
-切换时停旧写入端，依次执行 up、seed、check-refs，随后启动当前版本与 OpenSearch。新版建立 v5 物理索引，重建现有条目的正文、外链、非官方别名与题名排序内容，完成后原子切换搜索别名；旧索引不自动删除，确认当前索引及备份后由运维按名称清理。首次重建或故障期间 q 返回503，无关键词浏览仍可用。
+切换时停旧写入端，依次执行 up、seed、check-refs，随后启动当前版本与 OpenSearch。新版建立 v6 物理索引，重建现有条目的正文、外链、非官方别名与题名排序内容，完成后原子切换搜索别名；旧索引不自动删除，确认当前索引及备份后由运维按名称清理。首次重建或故障期间 q 返回503，无关键词浏览仍可用。
 
 四个运行 DSN 均显式必填；DB_* 只供数据库容器、迁移或运维，不能代替运行配置。RustFS 凭据统一使用 `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`，同步更新备份配置；不再注入旧 ROOT 别名。内置 OpenSearch 单节点配置供起步使用，生产节点数、副本、认证和资源预算须按实测确定，见[核心实现与容量边界](./catalog-core-implementation.md#查询规模费用与接口边界)。
 

@@ -23,9 +23,9 @@ import (
 
 const (
 	openSearchAlias           = "metafusion-entities"
-	openSearchIndex           = "metafusion-entities-v5"
+	openSearchIndex           = "metafusion-entities-v6"
 	openSearchConsumer        = "opensearch"
-	openSearchIndexGeneration = "v5"
+	openSearchIndexGeneration = "v6"
 	openSearchLockID          = int64(740219)
 	openSearchResultWindow    = 10000
 )
