@@ -566,7 +566,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 			return nil, errors.New("invalid_limit")
 		}
 		if in.Limit == 0 {
-			in.Limit = 10
+			in.Limit = 5
 		}
 		return s.QueryExternalSource(ctx, in)
 	case "public_fetch":

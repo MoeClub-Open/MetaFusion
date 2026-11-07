@@ -164,7 +164,7 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 			return tc
 		}
 
-		isPlanner := strings.Contains(sys, "Planner")
+		isPlanner := strings.Contains(sys, "规划器（Planner）")
 		if isPlanner {
 			if strings.Contains(userPrompt, "唤醒原因: init") {
 				if last.Role == "user" {
@@ -235,7 +235,7 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 			case 0:
 				return reply("",
 					call("w-edit-search-trace", "search_worker_traces", map[string]any{"query": "Verified Mission Body"}),
-					call("w-edit-ws", "catalog_workspace_create", map[string]any{"name": "Mission Edit Work"}),
+					call("w-edit-ws", "catalog_workspace_create", map[string]any{"name": "Mission Edit Work", "entity_ids": []string{work.ID}}),
 				)
 			case 1:
 				var created struct {
@@ -253,7 +253,7 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 						"target": "entity",
 						"action": "update",
 						"id":     work.ID,
-						"patch":  []any{map[string]any{"op": "replace", "path": "/translations/en-US/body", "value": "Verified Mission Body"}},
+						"patch":  []any{map[string]any{"path": "/translations/en-US/body", "value": "Verified Mission Body"}},
 					}},
 				}))
 			case 2:
@@ -286,6 +286,7 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 					"workspace_id":     curWS,
 					"expected_version": ws.Version,
 					"expected_head":    commitID,
+					"title":            "补充经核实的简介",
 				}))
 			case 4:
 				return reply("", call("w-edit-rep", "worker_report", map[string]any{
