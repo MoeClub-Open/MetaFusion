@@ -8,7 +8,7 @@
 -- 角色模型（每个服务一组）：
 --   | 服务 | 运行角色（登录，写进连接串） | 结构归属角色（NOLOGIN） | schema    |
 --   | ---- | ---------------------------- | ----------------------- | --------- |
---   | 目录 | mf_catalog                   | mf_catalog_owner        | catalog / assistant |
+--   | 目录 | mf_catalog                   | mf_catalog_owner        | catalog / assistant / curator |
 --   | 账号 | mf_auth                      | mf_auth_owner           | auth      |
 --   | 互动 | mf_community                 | mf_community_owner      | community |
 --   | 存储 | mf_storage                   | mf_storage_owner        | storage   |
@@ -114,6 +114,7 @@ BEGIN
     SELECT * FROM (VALUES
       ('catalog',   'mf_catalog_owner'),
       ('assistant', 'mf_catalog_owner'),
+      ('curator',   'mf_catalog_owner'),
       ('auth',      'mf_auth_owner'),
       ('community', 'mf_community_owner'),
       ('storage',   'mf_storage_owner')
@@ -295,6 +296,7 @@ BEGIN
     SELECT * FROM (VALUES
       ('mf_catalog',   'mf_catalog_owner',   'catalog'),
       ('mf_catalog',   'mf_catalog_owner',   'assistant'),
+      ('mf_catalog',   'mf_catalog_owner',   'curator'),
       ('mf_auth',      'mf_auth_owner',      'auth'),
       ('mf_community', 'mf_community_owner', 'community'),
       ('mf_storage',   'mf_storage_owner',   'storage')
@@ -329,12 +331,12 @@ BEGIN
 
     -- 别的业务 schema：一条都不给（含 schema 使用权）
     FOR other IN
-      SELECT unnest(ARRAY['catalog', 'assistant', 'auth', 'community', 'storage']) AS schema_name
+      SELECT unnest(ARRAY['catalog', 'assistant', 'curator', 'auth', 'community', 'storage']) AS schema_name
     LOOP
-      -- assistant 是同一目录进程的模块，catalog 两个 schema 共享一个运行身份。
+      -- assistant / curator 是同一目录进程的模块，catalog 三个 schema 共享一个运行身份。
       -- 不能按当前行单个 schema 撤权，否则处理 assistant 时会撤回 catalog 的授权。
       CONTINUE WHEN other.schema_name = g.schema_name
-        OR (g.app_role = 'mf_catalog' AND other.schema_name IN ('catalog', 'assistant'));
+        OR (g.app_role = 'mf_catalog' AND other.schema_name IN ('catalog', 'assistant', 'curator'));
       IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = other.schema_name) THEN
         EXECUTE format('REVOKE ALL ON SCHEMA %I FROM %I', other.schema_name, g.app_role);
         EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', other.schema_name, g.app_role);

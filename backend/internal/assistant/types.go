@@ -116,14 +116,21 @@ type TokenUsage struct {
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 }
 type ReserveRequest struct {
-	ID              string `json:"id"`
-	UserID          string `json:"user_id"`
-	ModelID         string `json:"model_id"`
-	BYOCredentialID string `json:"byo_credential_id,omitempty"`
-	InputTokens     int64  `json:"input_tokens"`
-	OutputTokens    int64  `json:"output_tokens"`
-	Purpose         string `json:"purpose"`
-	EntityID        string `json:"entity_id,omitempty"`
+	ID              string        `json:"id"`
+	UserID          string        `json:"user_id"`
+	ModelID         string        `json:"model_id"`
+	BYOCredentialID string        `json:"byo_credential_id,omitempty"`
+	InputTokens     int64         `json:"input_tokens"`
+	OutputTokens    int64         `json:"output_tokens"`
+	Purpose         string        `json:"purpose"`
+	EntityID        string        `json:"entity_id,omitempty"`
+	CreditBudget    *CreditBudget `json:"-"`
+}
+
+// CreditBudget is supplied by an internal caller, never by an API payload.
+type CreditBudget struct {
+	PurposePrefix string
+	MonthlyLimit  int64
 }
 type Reservation struct {
 	ReserveRequest

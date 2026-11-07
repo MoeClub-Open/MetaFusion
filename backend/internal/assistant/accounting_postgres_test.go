@@ -46,6 +46,52 @@ func accountingFixture(t *testing.T) (*Store, Model, string) {
 	return s, models[0], ownerID
 }
 
+func TestPostgresCuratorCapIncludesReservationsAndIgnoresExtraCredits(t *testing.T) {
+	s, model, owner := accountingFixture(t)
+	ctx := t.Context()
+	if _, err := s.AdjustCredits(ctx, CreditAdjustment{ID: uuid.NewString(), UserID: owner, Credits: 1000, Note: "extra balance cannot extend curator cap"}); err != nil {
+		t.Fatal(err)
+	}
+	request := func() ReserveRequest {
+		return ReserveRequest{ID: uuid.NewString(), UserID: owner, ModelID: model.ID, InputTokens: 10, OutputTokens: 10, Purpose: "curator:test", CreditBudget: &CreditBudget{PurposePrefix: "curator:", MonthlyLimit: 30}}
+	}
+	first := request()
+	if _, err := s.Reserve(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var successes atomic.Int32
+	for range 4 {
+		wg.Go(func() {
+			if _, err := s.Reserve(ctx, request()); err == nil {
+				successes.Add(1)
+			} else if !errors.Is(err, ErrBudgetExceeded) {
+				t.Errorf("reserve: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	if successes.Load() != 0 {
+		t.Fatal("extra balance allowed concurrent calls above the cap")
+	}
+	if _, err := s.Settle(ctx, first.ID, TokenUsage{InputTokens: 5, OutputTokens: 5}, "completed", ""); err != nil {
+		t.Fatal(err)
+	}
+	second := request()
+	if _, err := s.Reserve(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reserve(ctx, request()); !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("spent plus pending exceeded cap: %v", err)
+	}
+	if _, err := s.Settle(ctx, second.ID, TokenUsage{}, "cancelled", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reserve(ctx, request()); err != nil {
+		t.Fatalf("released reservation was still counted: %v", err)
+	}
+}
+
 func TestPostgresConcurrentBudgetAndIdempotentSettlement(t *testing.T) {
 	s, m, ownerID := accountingFixture(t)
 	ctx := context.Background()

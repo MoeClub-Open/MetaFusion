@@ -293,6 +293,24 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 		if b.AvailableCredits < credits {
 			return Reservation{}, ErrInsufficientCredits
 		}
+		if in.CreditBudget != nil {
+			budget := in.CreditBudget
+			if budget.MonthlyLimit <= 0 || budget.PurposePrefix == "" || !strings.HasPrefix(in.Purpose, budget.PurposePrefix) {
+				return Reservation{}, ErrBudgetExceeded
+			}
+			var committed int64
+			// The account row above serializes concurrent reservations. Include
+			// outstanding calls so rewards or top-ups cannot bypass this cap.
+			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(sum(CASE WHEN status='reserved' THEN reserved_credits ELSE credits END),0)
+				FROM assistant.usage WHERE user_id=$1 AND starts_with(purpose,$2) AND budget_month=$3
+				AND status IN ('reserved','completed','failed','unknown')`, in.UserID, budget.PurposePrefix, month).Scan(&committed); err != nil {
+				return Reservation{}, err
+			}
+			total, e := addAmounts(committed, credits)
+			if e != nil || total > budget.MonthlyLimit {
+				return Reservation{}, ErrBudgetExceeded
+			}
+		}
 		if _, err = tx.ExecContext(ctx, `UPDATE assistant.accounts SET reserved_credits=reserved_credits+$2,updated_at=now() WHERE user_id=$1`, in.UserID, credits); err != nil {
 			return Reservation{}, err
 		}

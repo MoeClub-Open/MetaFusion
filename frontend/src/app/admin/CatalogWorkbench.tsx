@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { PullRequestQueue } from "@/components/catalog/PullRequestReview";
 import { AssistantAdmin } from "@/components/assistant/AssistantAdmin";
+import { CuratorAdmin } from "@/components/curator/CuratorAdmin";
 import { PublicSourcesAdmin } from "@/components/admin/PublicSourcesAdmin";
 import { DefinitionsEditor } from "@/components/catalog/DefinitionsEditor";
 import { ChangeNote } from "@/components/catalog/Fields";
@@ -37,6 +38,7 @@ import {
   ArrowUpRight,
   Globe,
   Gauge,
+  Bot,
 } from "lucide-react";
 
 import { CatalogOverview } from "./CatalogOverview";
@@ -57,6 +59,7 @@ const NAV_GROUPS: { labelKey: string; tabs: { id: AdminTab; labelKey: string; ic
     { id: "publicSources", labelKey: "admin.publicSources.title", icon: Globe },
   ] },
   { labelKey: "admin.nav.operations", tabs: [
+    { id: "curator", labelKey: "admin.tab.curator", icon: Bot },
     { id: "assistant", labelKey: "assistant.admin.title", icon: Cpu },
     { id: "ratelimits", labelKey: "admin.tab.ratelimits", icon: Gauge },
     { id: "exchange", labelKey: "admin.tab.exchange", icon: ArrowUpRight },
@@ -546,6 +549,7 @@ export function CatalogWorkbench({ active }: { active: boolean }) {
           )}
 
           {currentTab === "exchange" && <ExchangeTab />}
+          {currentTab === "curator" && <CuratorAdmin />}
           {currentTab === "assistant" && <AssistantAdmin />}
           {currentTab === "publicSources" && <PublicSourcesAdmin />}
           </div>

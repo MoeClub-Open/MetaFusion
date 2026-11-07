@@ -27,6 +27,10 @@ type ChatRequest struct {
 	ClientRequestID     string `json:"client_request_id"`
 	credentialSpecified bool
 	checkpoint          func(CompletionRun) error
+	creditBudget        *CreditBudget
+	beforeTool          func(ToolCall) (ToolCall, error)
+	afterTool           func(ToolCall, any, error) error
+	beforeCompletion    func() error
 }
 
 type CompletionRun struct {
@@ -74,13 +78,88 @@ func chatMessages(history []Message, message string) []Message {
 }
 
 func completionTools() ([]Tool, error) {
+	return completionToolsFiltered(nil)
+}
+
+func completionToolsFiltered(allowed []string) ([]Tool, error) {
 	b, err := json.Marshal(assistantToolDefinitions())
 	if err != nil {
 		return nil, err
 	}
 	var tools []Tool
-	err = json.Unmarshal(b, &tools)
-	return tools, err
+	if err = json.Unmarshal(b, &tools); err != nil {
+		return nil, err
+	}
+	if allowed == nil {
+		return tools, nil
+	}
+	set := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		set[name] = true
+	}
+	out := make([]Tool, 0, len(allowed))
+	for _, tool := range tools {
+		if set[tool.Function.Name] {
+			out = append(out, tool)
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("assistant_no_tools")
+	}
+	return out, nil
+}
+
+// AgentOptions configures a non-interactive assistant run. The caller supplies
+// a catalog identity; the model cannot choose an actor, grant permissions or
+// use tools outside AllowedTools.
+type AgentOptions struct {
+	User             catalog.User
+	ModelID          string
+	SystemPrompt     string
+	Task             string
+	Purpose          string
+	EntityID         string
+	RequestID        string
+	AllowedTools     []string
+	MaxRounds        int
+	Timeout          time.Duration
+	CreditBudget     *CreditBudget
+	BeforeTool       func(ToolCall) (ToolCall, error)
+	AfterTool        func(ToolCall, any, error) error
+	BeforeCompletion func() error
+}
+
+// RunAgent executes one bounded tool-using agent turn for background work.
+func RunAgent(ctx context.Context, backend *Store, cat *catalog.Store, opt AgentOptions) (CompletionRun, error) {
+	if backend == nil || cat == nil {
+		return CompletionRun{}, errors.New("assistant_unavailable")
+	}
+	if strings.TrimSpace(opt.SystemPrompt) == "" || strings.TrimSpace(opt.Task) == "" || strings.TrimSpace(opt.Purpose) == "" {
+		return CompletionRun{}, errors.New("assistant_invalid_agent_request")
+	}
+	if len(opt.AllowedTools) == 0 {
+		return CompletionRun{}, errors.New("assistant_no_tools")
+	}
+	if _, err := uuid.Parse(opt.RequestID); err != nil {
+		return CompletionRun{}, errors.New("assistant_request_id_required")
+	}
+	tools, err := completionToolsFiltered(opt.AllowedTools)
+	if err != nil {
+		return CompletionRun{}, err
+	}
+	allowed := map[string]bool{}
+	for _, name := range opt.AllowedTools {
+		allowed[name] = true
+	}
+	messages := []Message{
+		{Role: "system", Content: opt.SystemPrompt},
+		{Role: "user", Content: opt.Task},
+	}
+	return runCompletionInternal(ctx, backend, cat, opt.User, ChatRequest{
+		ModelID: opt.ModelID, ClientRequestID: opt.RequestID, creditBudget: opt.CreditBudget,
+		beforeTool: opt.BeforeTool, afterTool: opt.AfterTool,
+		beforeCompletion: opt.BeforeCompletion,
+	}, messages, tools, opt.MaxRounds, opt.Timeout, allowed, opt.Purpose, opt.EntityID)
 }
 
 func (h HTTP) complete(ctx context.Context, u catalog.User, req ChatRequest, messages []Message, toolsEnabled bool, purpose, entityID string) (run CompletionRun, err error) {
@@ -88,9 +167,22 @@ func (h HTTP) complete(ctx context.Context, u catalog.User, req ChatRequest, mes
 }
 
 func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.Store, u catalog.User, req ChatRequest, messages []Message, toolsEnabled bool, purpose, entityID string) (run CompletionRun, err error) {
+	var tools []Tool
+	if toolsEnabled {
+		if tools, err = completionTools(); err != nil {
+			return run, err
+		}
+	}
+	return runCompletionInternal(ctx, backend, cat, u, req, messages, tools, 0, 120*time.Second, nil, purpose, entityID)
+}
+
+func runCompletionInternal(ctx context.Context, backend completionBackend, cat *catalog.Store, u catalog.User, req ChatRequest, messages []Message, tools []Tool, maxRounds int, timeout time.Duration, allowedTools map[string]bool, purpose, entityID string) (run CompletionRun, err error) {
 	// Leave time inside the module's 150-second request deadline for token
 	// settlement, balance refresh and durable response persistence.
-	ctx, cancelAll := context.WithTimeout(ctx, 120*time.Second)
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	ctx, cancelAll := context.WithTimeout(ctx, timeout)
 	defer cancelAll()
 	if u.ID == "" || u.IsThirdParty {
 		return run, errors.New("assistant_forbidden")
@@ -127,14 +219,11 @@ func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.
 	if model.ID == "" {
 		return run, ErrNotFound
 	}
-	var tools []Tool
-	if toolsEnabled {
-		if tools, err = completionTools(); err != nil {
-			return run, err
-		}
-	}
 	rounds := settings.MaxToolRounds
-	if !toolsEnabled {
+	if maxRounds > 0 {
+		rounds = maxRounds
+	}
+	if len(tools) == 0 {
 		rounds = 1
 	}
 	if rounds < 1 {
@@ -145,6 +234,11 @@ func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.
 	}
 	run.Messages = append([]Message(nil), messages...)
 	for round := 0; round < rounds; round++ {
+		if req.beforeCompletion != nil {
+			if err = req.beforeCompletion(); err != nil {
+				return run, err
+			}
+		}
 		input := completionInputBound(run.Messages, tools)
 		if input+model.MaxOutputTokens > model.ContextWindow {
 			return run, errors.New("assistant_context_limit")
@@ -153,7 +247,7 @@ func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.
 		// Provider tokenizers and hidden protocol tokens differ. The configured
 		// context window is the enforceable upper bound; release the difference
 		// only after receiving the provider's measured usage.
-		reservation, e := backend.Reserve(ctx, ReserveRequest{ID: id, UserID: u.ID, ModelID: model.ID, BYOCredentialID: req.CredentialID, InputTokens: model.ContextWindow - model.MaxOutputTokens, OutputTokens: model.MaxOutputTokens, Purpose: purpose, EntityID: entityID})
+		reservation, e := backend.Reserve(ctx, ReserveRequest{ID: id, UserID: u.ID, ModelID: model.ID, BYOCredentialID: req.CredentialID, InputTokens: model.ContextWindow - model.MaxOutputTokens, OutputTokens: model.MaxOutputTokens, Purpose: purpose, EntityID: entityID, CreditBudget: req.creditBudget})
 		if e != nil {
 			return run, e
 		}
@@ -186,7 +280,7 @@ func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.
 			run.Answer = response.Message.Content
 			return run, nil
 		}
-		if !toolsEnabled || len(response.Message.ToolCalls) > 8 {
+		if len(tools) == 0 || len(response.Message.ToolCalls) > 8 {
 			return run, errors.New("assistant_tool_limit")
 		}
 		if req.checkpoint != nil {
@@ -198,7 +292,24 @@ func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.
 			if ctx.Err() != nil {
 				return run, ctx.Err()
 			}
-			result, toolErr := runCatalogTool(ctx, cat, u, call.Function.Name, json.RawMessage(call.Function.Arguments))
+			var result any
+			var toolErr error
+			if allowedTools != nil && !allowedTools[call.Function.Name] {
+				toolErr = errors.New("assistant_tool_not_allowed")
+			} else {
+				if req.beforeTool != nil {
+					call, err = req.beforeTool(call)
+					if err != nil {
+						return run, err
+					}
+				}
+				result, toolErr = runCatalogTool(ctx, cat, u, call.Function.Name, json.RawMessage(call.Function.Arguments))
+			}
+			if req.afterTool != nil {
+				if err = req.afterTool(call, result, toolErr); err != nil {
+					return run, err
+				}
+			}
 			if toolErr != nil {
 				details := map[string]any{"error": safeRuntimeCode(toolErr)}
 				if details["error"] == "workspace_conflict" {

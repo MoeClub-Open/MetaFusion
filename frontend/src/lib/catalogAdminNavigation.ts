@@ -6,7 +6,7 @@ import {
 import type { User } from "./api";
 
 export type CatalogAdminTab = "overview" | "entities" | "definitions" | "reviews"
-  | "merge" | "extdb" | "shelves" | "exchange" | "ratelimits" | "assistant" | "publicSources";
+  | "merge" | "extdb" | "shelves" | "exchange" | "ratelimits" | "assistant" | "curator" | "publicSources";
 
 const sectionPermissions: Partial<Record<CatalogAdminTab, string>> = {
   definitions: CATALOG_DEFINITIONS_MANAGE,
@@ -17,6 +17,7 @@ const sectionPermissions: Partial<Record<CatalogAdminTab, string>> = {
   entities: CATALOG_LIFECYCLE_MANAGE,
   merge: CATALOG_LIFECYCLE_MANAGE,
   assistant: ASSISTANT_MANAGE,
+  curator: ASSISTANT_MANAGE,
 };
 
 // 管理台入口不授予所有工作面的权限；写入授权仍由各服务端点负责。

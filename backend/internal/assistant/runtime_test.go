@@ -117,3 +117,25 @@ func TestValidateChatRequiresStableRequestID(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAgentCheckpointFailureStopsBeforeCatalogMutation(t *testing.T) {
+	call := ToolCall{ID: "write", Type: "function"}
+	call.Function.Name, call.Function.Arguments = "catalog_workspace_create", `{}`
+	f := &runtimeFixture{response: CompletionResponse{Message: Message{ToolCalls: []ToolCall{call}}}}
+	checkpointErr := errors.New("checkpoint unavailable")
+	req := ChatRequest{ClientRequestID: uuid.NewString(), beforeTool: func(ToolCall) (ToolCall, error) { return call, checkpointErr }}
+	_, err := runCompletion(context.Background(), f, nil, catalog.User{ID: "owner"}, req, nil, true, "curator:test", "")
+	if !errors.Is(err, checkpointErr) || !reflect.DeepEqual(f.events, []string{"reserve", "complete", "settle"}) {
+		t.Fatalf("catalog mutation was not stopped at the failed checkpoint: %v %v", err, f.events)
+	}
+}
+
+func TestAgentRechecksScopeBeforeBuyingAnotherCall(t *testing.T) {
+	f := &runtimeFixture{}
+	paused := errors.New("curator_scope_inactive")
+	req := ChatRequest{beforeCompletion: func() error { return paused }}
+	_, err := runCompletion(context.Background(), f, nil, catalog.User{ID: "owner"}, req, nil, false, "curator:test", "")
+	if !errors.Is(err, paused) || len(f.events) != 0 {
+		t.Fatalf("paused work reserved credits or reached provider: %v %v", err, f.events)
+	}
+}

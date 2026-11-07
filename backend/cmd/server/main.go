@@ -17,6 +17,7 @@ import (
 	"github.com/metafusion/metafusion-app/internal/audit"
 	"github.com/metafusion/metafusion-app/internal/capabilities"
 	"github.com/metafusion/metafusion-app/internal/catalog"
+	"github.com/metafusion/metafusion-app/internal/curator"
 	"github.com/metafusion/metafusion-app/internal/httplog"
 	"github.com/metafusion/metafusion-app/internal/nettrust"
 	"github.com/metafusion/metafusion-app/internal/telemetry"
@@ -191,6 +192,13 @@ func main() {
 	catalog.RegisterOpenAPIModule("assistant", assistant.AddOpenAPI)
 	catalogHTTP.Register(r)
 	catalogHTTP.RegisterModule(r, assistant.HTTP{Store: aiStore, Catalog: s}.Register)
+
+	// 持续审核：确定性检测器入队，后台 Agent 逐条核实，只通过工作副本写入；
+	// 低风险白名单由服务端二次比对后再自动合入，其余一律停留在 PR。
+	curatorService := curator.New(s, aiStore)
+	go curatorService.Run(ctx)
+	catalog.RegisterOpenAPIModule("curator", curator.AddOpenAPI)
+	catalogHTTP.RegisterModule(r, curator.HTTP{Service: curatorService}.Register)
 
 	// 能力清单是**部署态声明**：子系统拆出去之后，能力由部署配置声明（见 capabilities 包），
 	// 目录不探测上游、不发任何出站请求，清单只有 {id, enabled}。它是唯一的公开只读端点，
