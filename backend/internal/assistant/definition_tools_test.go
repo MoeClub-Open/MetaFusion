@@ -45,3 +45,14 @@ func TestDefinitionLookupKeepsLargeUIAndVocabulariesOutOfContext(t *testing.T) {
 		t.Fatal("unknown code became an invented definition")
 	}
 }
+
+func TestChatCompletionInputBoundFits32KContextWindow(t *testing.T) {
+	tools, err := completionTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := completionInputBound(chatMessages(nil, "Use my own model"), tools)
+	if bound+1280 > 32768 {
+		t.Fatalf("chat tool schema + prompt bound %d leaves insufficient room in a 32768 context window", bound)
+	}
+}

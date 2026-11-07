@@ -25,9 +25,18 @@ func assistantVersionToolDefinitions() []map[string]any {
 				}
 			}
 			for k, item := range v {
-				if k != "$ref" {
-					out[k] = expand(item)
+				if k == "$ref" || k == "example" || k == "readOnly" {
+					continue
 				}
+				if k == "description" {
+					if s, ok := item.(string); ok && len(s) > 120 {
+						if dot := strings.Index(s, ". "); dot > 0 && dot < 120 {
+							out[k] = s[:dot+1]
+							continue
+						}
+					}
+				}
+				out[k] = expand(item)
 			}
 			return out
 		case []any:

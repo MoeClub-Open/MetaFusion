@@ -275,8 +275,8 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 	if rounds < 1 {
 		rounds = 1
 	}
-	if rounds > 12 {
-		rounds = 12
+	if rounds > 16 {
+		rounds = 16
 	}
 	run.Messages = append([]Message(nil), messages...)
 	for round := 0; round < rounds; round++ {
