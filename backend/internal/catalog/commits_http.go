@@ -15,6 +15,29 @@ func collaborationViewer(c *gin.Context) User {
 	return User{}
 }
 
+func CollaborationErrorDetails(err error) map[string]any {
+	if err == nil {
+		return nil
+	}
+	var conflict *workspaceConflictError
+	if errors.As(err, &conflict) {
+		return map[string]any{"error": "workspace_conflict", "applied": false, "conflicts": conflict.Conflicts}
+	}
+	var operation *commitOperationError
+	var shape *documentShapeError
+	if errors.As(err, &shape) {
+		out := map[string]any{"error": shape.Error(), "pointer": shape.Pointer, "applied": false}
+		if errors.As(err, &operation) {
+			out["operation"] = operation.Index
+		}
+		return out
+	}
+	if errors.As(err, &operation) && !internalFailure(operation.Cause) {
+		return map[string]any{"error": firstCode(operation.Error()), "operation": operation.Index, "applied": false}
+	}
+	return nil
+}
+
 func respondCollaboration(c *gin.Context, value any, err error) {
 	c.Header("Cache-Control", "no-store")
 	var conflict *workspaceConflictError

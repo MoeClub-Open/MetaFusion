@@ -38,6 +38,11 @@ func selectDefinitions[T any](items map[string]T, codes []string) (map[string]T,
 	return out, nil
 }
 
+var entityTopLevelFields = []string{
+	"title", "original_language", "translations", "attributes", "external_links",
+	"pictures", "position", "number", "contents", "subjects",
+}
+
 func assistantDefinitionOutput(config catalog.DefinitionConfig, in definitionQuery) (map[string]any, error) {
 	defs := config.Document
 	section := in.Section
@@ -61,6 +66,7 @@ func assistantDefinitionOutput(config catalog.DefinitionConfig, in definitionQue
 			}
 		}
 		out["kinds"] = catalog.KindNameRecords()
+		out["entity_top_level_fields"] = entityTopLevelFields
 		out["field_codes"], out["relation_codes"] = definitionCodes(fields), definitionCodes(relations)
 		out["vocabulary_codes"], out["structure_kinds"] = definitionCodes(defs.Vocabularies), definitionCodes(defs.Structure)
 		return out, nil
@@ -93,4 +99,21 @@ func assistantDefinitionOutput(config catalog.DefinitionConfig, in definitionQue
 	}
 	out["definitions"] = value
 	return out, nil
+}
+
+func assistantExternalDatabasesOutput(items []catalog.ExternalDatabase, codes []string) (map[string]map[string]any, error) {
+	byCode := make(map[string]map[string]any, len(items))
+	for _, d := range items {
+		byCode[d.Code] = map[string]any{
+			"code":             d.Code,
+			"names":            d.Names,
+			"category":         d.Category,
+			"url_pattern":      d.URLPattern,
+			"validation_regex": d.ValidationRegex,
+		}
+	}
+	if len(codes) == 0 {
+		return byCode, nil
+	}
+	return selectDefinitions(byCode, codes)
 }

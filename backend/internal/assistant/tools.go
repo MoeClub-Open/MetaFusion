@@ -58,8 +58,8 @@ func assistantToolDefinitions() []map[string]any {
 		"target": map[string]any{"type": "string", "enum": []string{"entity", "relation"}},
 		"action": map[string]any{"type": "string", "enum": []string{"create", "update", "delete", "content"}},
 		"id":     map[string]any{"type": "string", "description": "Existing stable UUID or @local:ref returned by an earlier create in this staging request.", "anyOf": []any{map[string]any{"format": "uuid"}, map[string]any{"pattern": "^@local:[A-Za-z][A-Za-z0-9_-]{0,63}$"}}}, "ref": str("Required local reference for create; omit id when creating. Updates accept document or patch, never both."),
-		"document":       map[string]any{"type": "object", "additionalProperties": true, "description": "Object document following published definitions. New objects receive stable IDs returned in refs."},
-		"patch":          list(object(map[string]any{"path": str("JSON Pointer; arrays are atomic."), "value": map[string]any{}, "remove": map[string]any{"type": "boolean"}}, "path"), 100),
+		"document":       map[string]any{"type": "object", "additionalProperties": true, "description": "Object document. Entity top-level fields: kind, title, original_language, translations ({\"<locale>\":{\"title\":\"...\",\"summary\":\"...\",\"body\":\"...\",\"aliases\":[...],\"nonofficial\":bool,\"nonofficial_aliases\":[...]}} where every locale must include non-empty title), attributes (dynamic codes from catalog_definitions field_codes), external_links ([{\"kind\":\"<external_databases code e.g. official_website>\",\"url\":\"https://...\",\"external_id\":\"...\",\"role\":\"official|primary|secondary|operator\"}] — use url, never value), pictures, subjects, contents. Relation document: type, source_id, target_id, position, attributes."},
+		"patch":          list(object(map[string]any{"path": str("JSON Pointer (e.g. /translations/ja-JP/summary, /translations/zh-CN with full {\"title\":...,\"summary\":...}, /external_links, /attributes/<code_from_fields>); arrays are replaced atomically."), "value": map[string]any{}, "remove": map[string]any{"type": "boolean"}}, "path"), 100),
 		"content_change": object(map[string]any{"action": map[string]any{"type": "string", "enum": []string{"add", "replace", "delete"}}, "position": integer(0, 1000000), "inclusion": map[string]any{"type": "object", "additionalProperties": true}}, "action", "position"),
 	}, "target", "action")
 	version := map[string]any{"type": "integer", "minimum": 1, "description": "Exact current workspace or pull request version. A stale version is a conflict; refresh before retrying."}
@@ -101,8 +101,8 @@ func assistantToolDefinitions() []map[string]any {
 			"work_id":        uuid("Work scope."), "release_id": uuid("Release scope."), "medium_id": uuid("Medium scope."), "limit": integer(1, 1000),
 			"context": object(map[string]any{"creator": list(uuid("Known creator entity ID."), 20), "performer": list(uuid("Known performer entity ID."), 20), "label": list(uuid("Known label entity ID."), 20), "catalog_number": list(str("Known catalog number."), 20)}),
 		}, "kind")),
-		tool("catalog_definitions", "Read authoritative catalog definitions without UI templates. Start with section=index, optionally scoped by kind; then request the needed codes from fields, relations, structure or vocabularies. Vocabulary metadata lists term_codes; read selected terms with section=terms and vocabulary. Preserve the etag and do not invent codes.", object(map[string]any{
-			"section": map[string]any{"type": "string", "enum": []string{"index", "fields", "relations", "structure", "vocabularies", "terms"}},
+		tool("catalog_definitions", "Read authoritative catalog definitions without UI templates. Start with section=index, optionally scoped by kind (note: entity_top_level_fields like translations and external_links are fixed schema fields on all entities, while field_codes are dynamic keys under /attributes). Request needed codes from fields, relations, structure, vocabularies or external_databases (valid kind codes for external_links). Read vocabulary terms with section=terms and vocabulary.", object(map[string]any{
+			"section": map[string]any{"type": "string", "enum": []string{"index", "fields", "relations", "structure", "vocabularies", "terms", "external_databases"}},
 			"kind":    str("Optional entity kind for the index."), "codes": list(str("Definition or term code to read."), maxAssistantToolItems),
 			"vocabulary": str("Vocabulary code when section=terms."),
 		})),
@@ -551,7 +551,31 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err != nil {
 			return nil, err
 		}
-		return assistantDefinitionOutput(defs, in)
+		if in.Section == "external_databases" {
+			if s.DB == nil {
+				return map[string]any{"etag": defs.ETag, "section": "external_databases", "definitions": map[string]any{}}, nil
+			}
+			items, dbErr := s.ListExternalDatabases(ctx, in.Kind, true)
+			if dbErr != nil {
+				return nil, dbErr
+			}
+			selected, selErr := assistantExternalDatabasesOutput(items, in.Codes)
+			if selErr != nil {
+				return nil, selErr
+			}
+			return map[string]any{"etag": defs.ETag, "section": "external_databases", "definitions": selected}, nil
+		}
+		out, err := assistantDefinitionOutput(defs, in)
+		if err == nil && (in.Section == "" || in.Section == "index") && s.DB != nil {
+			if items, dbErr := s.ListExternalDatabases(ctx, in.Kind, true); dbErr == nil {
+				extCodes := make([]string, 0, len(items))
+				for _, item := range items {
+					extCodes = append(extCodes, item.Code)
+				}
+				out["external_database_codes"] = extCodes
+			}
+		}
+		return out, err
 	case "external_sources":
 		if err := decodeAssistantToolArgs(args, &struct{}{}); err != nil {
 			return nil, err

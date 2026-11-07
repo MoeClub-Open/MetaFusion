@@ -388,15 +388,11 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 				}
 			}
 			if toolErr != nil {
-				details := map[string]any{"error": safeRuntimeCode(toolErr)}
-				if details["error"] == "workspace_conflict" {
-					b, _ := json.Marshal(toolErr)
-					var structured map[string]any
-					if json.Unmarshal(b, &structured) == nil && len(structured) > 0 {
-						details["details"] = structured
-					}
+				if structured := catalog.CollaborationErrorDetails(toolErr); len(structured) > 0 {
+					result = structured
+				} else {
+					result = map[string]any{"error": safeRuntimeCode(toolErr)}
 				}
-				result = details
 			}
 			if receipt, ok := result.(catalog.WorkspacePushResult); ok {
 				run.PushReceipts = append(run.PushReceipts, receipt)

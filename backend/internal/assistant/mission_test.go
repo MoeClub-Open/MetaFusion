@@ -91,6 +91,20 @@ func TestMissionExecutableFrontierAndPermissions(t *testing.T) {
 	if rep.Summary != "核实完成" || len(rep.AnchorEntityIDs) != 2 || len(rep.Discoveries) != 1 || len(rep.Sources) != 1 {
 		t.Fatalf("unexpected extracted worker report: %+v", rep)
 	}
+
+	hits := searchTraceTasks([]MissionTask{{
+		ID:            t1,
+		Seq:           2,
+		Role:          "research",
+		Status:        "completed",
+		Title:         "核实重点歌曲的官方资料来源",
+		ResultSummary: "已读取官方页面正文，确认 Ave Mujica《KiLLKiSS》2025-01-08 发行",
+		Sources:       []string{"https://bang-dream.com/discographies/3919/"},
+		Messages:      []Message{{Role: "tool", Content: strings.Repeat("header ", 120) + "Ave Mujica KiLLKiSS TVアニメオープニングテーマ"}},
+	}}, "3919 KiLLKiSS 官方 页面 正文")
+	if len(hits) != 1 || hits[0]["task_id"] != t1 {
+		t.Fatalf("multi-term searchTraceTasks failed: %+v", hits)
+	}
 }
 
 func TestPostgresMissionTotalBudgetCap(t *testing.T) {

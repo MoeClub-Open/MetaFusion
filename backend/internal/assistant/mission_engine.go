@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/metafusion/metafusion-app/internal/catalog"
@@ -40,7 +42,10 @@ const workerSystemPrompt = `你是 MetaFusion 自主任务执行单元（Worker�
 - 来源核实：优先官方站点、权利方资料与外部权威库（如 external_source_query 的 bangumi 适配器）；Wikipedia/萌娘百科仅作辅助核对。必须读取正文内容核实，不得仅凭搜索摘要写入目录。无可靠依据的字段保持不变，严禁编造事实、ID 或译名。
 - 名称规范：正式中文译名须有官方或授权本地化依据；无官方译名时主标题保留原名，通行译名仅允许设置 nonofficial: true（非原始语言）或写入 nonofficial_aliases，严禁在标题文本中拼接「非官方」字样。
 - 工作副本编辑规范（仅 role=edit）：
-  - 先按 kind/codes 分步读取所需 catalog_definitions，严禁臆造字段码、关系码或词项。
+  - 区分固定顶层字段与动态属性：title、original_language、translations、external_links、pictures 是所有实体固有的顶层字段（不在 field_codes 中）：
+    - 多语简介/正文写入 /translations/<locale>（已有语种可直接 patch /translations/ja-JP/summary；新增语种对象必须同时带非空 title，如 {"title":"原名或官方译名","summary":"..."}）。
+    - 外部链接写入 /external_links 数组，元素结构为 {"kind":"<external_databases 预设码，如 official_website、bangumi、musicbrainz、youtube>","url":"https://...","external_id":"...","role":"official"}（字段名是 url 而非 value；预设码可通过 catalog_definitions 的 section="external_databases" 查询，追加时保留原有链接）。
+    - 实体 /attributes/<field_code>、关系码与词表项须先按 kind/codes 读取 catalog_definitions，严禁臆造动态字段码、关系码或词项。
   - 新建实体前先调用 catalog_candidates 核查是否已存在同名/同外部链接条目；修改已有实体前先调用 catalog_get 读取最新状态。
   - 统一通过 catalog_workspace_create / checkout -> catalog_workspace_stage -> catalog_workspace_commit -> catalog_workspace_push 提交，提交说明注明修改内容与来源 URL。遇到冲突或未知结果先回读工作副本、提交或 PR，不得盲目重放。
 - 每轮最多调用 8 个工具；完成任务后请调用 worker_report 提交结构化结果（summary、anchor_entity_ids、discoveries、sources）。`
@@ -884,6 +889,12 @@ func (e *MissionEngine) runSingleWorker(ctx context.Context, m Mission, task Mis
 	if m.SearchBYOProviderID != "" && m.BYOOwnerID != "" {
 		searchBilling = m.BYOOwnerID
 	}
+	workerMaxRounds := 10
+	workerTimeout := 210 * time.Second
+	if task.Role == "edit" {
+		workerMaxRounds = 14
+		workerTimeout = 240 * time.Second
+	}
 
 	result, runErr := RunAgent(ctx, e.Store, e.Catalog, AgentOptions{
 		BillingUserID:       workerBilling,
@@ -898,8 +909,8 @@ func (e *MissionEngine) runSingleWorker(ctx context.Context, m Mission, task Mis
 		RequestID:           reqID,
 		AllowedTools:        allowed,
 		CustomTools:         custom,
-		MaxRounds:           10,
-		Timeout:             210 * time.Second,
+		MaxRounds:           workerMaxRounds,
+		Timeout:             workerTimeout,
 		CreditBudget:        budget,
 		AfterTool: func(call ToolCall, val any, toolErr error) error {
 			if toolErr != nil {
@@ -1219,46 +1230,121 @@ func (e *MissionEngine) missionTraceTools(missionID string) []AgentTool {
 				if json.Unmarshal(raw, &in) != nil || strings.TrimSpace(in.Query) == "" {
 					return nil, errors.New("assistant_invalid_search_query")
 				}
-				q := strings.ToLower(strings.TrimSpace(in.Query))
 				tasks, err := e.Store.missionTasks(ctx, missionID, true)
 				if err != nil {
 					return nil, err
 				}
-				hits := []map[string]any{}
-				for _, t := range tasks {
-					matched := []string{}
-					for _, candidate := range append([]string{t.Title, t.ResultSummary}, append(t.Discoveries, t.Sources...)...) {
-						if strings.Contains(strings.ToLower(candidate), q) {
-							matched = append(matched, truncateUTF8(candidate, 400))
-						}
-					}
-					for _, msg := range t.Messages {
-						if msg.Role != "system" && msg.Role != "user" && strings.Contains(strings.ToLower(msg.Content), q) {
-							matched = append(matched, truncateUTF8(msg.Content, 400))
-							if len(matched) >= 4 {
-								break
-							}
-						}
-					}
-					if len(matched) > 0 {
-						hits = append(hits, map[string]any{
-							"task_id":           t.ID,
-							"seq":               t.Seq,
-							"role":              t.Role,
-							"status":            t.Status,
-							"title":             t.Title,
-							"anchor_entity_ids": t.AnchorEntityIDs,
-							"matches":           matched,
-						})
-					}
-					if len(hits) >= 12 {
-						break
-					}
-				}
-				return map[string]any{"hits": hits}, nil
+				return map[string]any{"hits": searchTraceTasks(tasks, in.Query)}, nil
 			},
 		},
 	}
+}
+
+func searchTraceTasks(tasks []MissionTask, query string) []map[string]any {
+	rawTerms := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+	terms := make([]string, 0, len(rawTerms))
+	seenTerm := map[string]bool{}
+	for _, term := range rawTerms {
+		if term != "" && !seenTerm[term] {
+			seenTerm[term] = true
+			terms = append(terms, term)
+		}
+	}
+	if len(terms) == 0 {
+		return []map[string]any{}
+	}
+	minMatchedTerms := len(terms)
+	if len(terms) >= 3 {
+		minMatchedTerms = (len(terms) + 1) / 2
+	}
+	type scoredHit struct {
+		score int
+		seq   int
+		entry map[string]any
+	}
+	scored := []scoredHit{}
+	for _, t := range tasks {
+		candidates := append([]string{t.Title, t.ResultSummary}, append(t.Discoveries, t.Sources...)...)
+		for _, msg := range t.Messages {
+			if msg.Role != "system" && msg.Role != "user" && msg.Content != "" {
+				candidates = append(candidates, msg.Content)
+			}
+		}
+		taskTerms := map[string]bool{}
+		matched := []string{}
+		for _, c := range candidates {
+			if c == "" {
+				continue
+			}
+			lower := strings.ToLower(c)
+			firstPos := -1
+			for _, term := range terms {
+				if idx := strings.Index(lower, term); idx >= 0 {
+					taskTerms[term] = true
+					if firstPos < 0 || idx < firstPos {
+						firstPos = idx
+					}
+				}
+			}
+			if firstPos >= 0 && len(matched) < 4 {
+				matched = append(matched, excerptAroundByteOffset(c, firstPos, 400))
+			}
+		}
+		if len(taskTerms) >= minMatchedTerms && len(matched) > 0 {
+			scored = append(scored, scoredHit{
+				score: len(taskTerms),
+				seq:   t.Seq,
+				entry: map[string]any{
+					"task_id":           t.ID,
+					"seq":               t.Seq,
+					"role":              t.Role,
+					"status":            t.Status,
+					"title":             t.Title,
+					"anchor_entity_ids": t.AnchorEntityIDs,
+					"matches":           matched,
+				},
+			})
+		}
+	}
+	slices.SortFunc(scored, func(a, b scoredHit) int {
+		if a.score != b.score {
+			return b.score - a.score
+		}
+		return a.seq - b.seq
+	})
+	if len(scored) > 12 {
+		scored = scored[:12]
+	}
+	hits := make([]map[string]any, 0, len(scored))
+	for _, h := range scored {
+		hits = append(hits, h.entry)
+	}
+	return hits
+}
+
+func excerptAroundByteOffset(s string, bytePos, maxChars int) string {
+	if len(s) <= maxChars {
+		return s
+	}
+	if bytePos < 0 {
+		bytePos = 0
+	}
+	if bytePos > len(s) {
+		bytePos = len(s)
+	}
+	runePrefix := utf8.RuneCountInString(s[:bytePos])
+	runes := []rune(s)
+	if len(runes) <= maxChars {
+		return s
+	}
+	start := runePrefix - maxChars/4
+	if start < 0 {
+		start = 0
+	}
+	if start+maxChars > len(runes) {
+		start = len(runes) - maxChars
+	}
+	return string(runes[start : start+maxChars])
 }
 
 func buildPlannerPrompt(m Mission, tasks []MissionTask, trigger string) string {

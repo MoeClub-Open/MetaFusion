@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -176,6 +178,106 @@ func documentTypePointer(raw []byte, offset int64) string {
 	return walk("")
 }
 
+var jsonUnmarshalerType = reflect.TypeFor[json.Unmarshaler]()
+
+func documentUnknownFieldPointer(raw []byte, dst any) string {
+	var root any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if dec.Decode(&root) != nil {
+		return ""
+	}
+	var walk func(any, reflect.Type, string) string
+	walk = func(v any, t reflect.Type, path string) string {
+		if v == nil || t == nil {
+			return ""
+		}
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		if t.Implements(jsonUnmarshalerType) || reflect.PointerTo(t).Implements(jsonUnmarshalerType) {
+			return ""
+		}
+		switch t.Kind() {
+		case reflect.Struct:
+			obj, ok := v.(map[string]any)
+			if !ok {
+				return ""
+			}
+			fields := map[string]reflect.Type{}
+			for i := 0; i < t.NumField(); i++ {
+				f := t.Field(i)
+				if !f.IsExported() {
+					continue
+				}
+				tag := strings.Split(f.Tag.Get("json"), ",")[0]
+				if tag == "-" {
+					continue
+				}
+				if tag == "" {
+					tag = f.Name
+				}
+				fields[tag] = f.Type
+			}
+			keys := make([]string, 0, len(obj))
+			for k := range obj {
+				keys = append(keys, k)
+			}
+			slices.Sort(keys)
+			for _, k := range keys {
+				part := strings.ReplaceAll(strings.ReplaceAll(k, "~", "~0"), "/", "~1")
+				childPath := path + "/" + part
+				ft, found := fields[k]
+				if !found {
+					for fk, fType := range fields {
+						if strings.EqualFold(fk, k) {
+							ft, found = fType, true
+							break
+						}
+					}
+				}
+				if !found {
+					return childPath
+				}
+				if p := walk(obj[k], ft, childPath); p != "" {
+					return p
+				}
+			}
+		case reflect.Slice, reflect.Array:
+			arr, ok := v.([]any)
+			if !ok {
+				return ""
+			}
+			for i, item := range arr {
+				if p := walk(item, t.Elem(), path+"/"+strconv.Itoa(i)); p != "" {
+					return p
+				}
+			}
+		case reflect.Map:
+			if t.Elem().Kind() == reflect.Interface {
+				return ""
+			}
+			obj, ok := v.(map[string]any)
+			if !ok {
+				return ""
+			}
+			keys := make([]string, 0, len(obj))
+			for k := range obj {
+				keys = append(keys, k)
+			}
+			slices.Sort(keys)
+			for _, k := range keys {
+				part := strings.ReplaceAll(strings.ReplaceAll(k, "~", "~0"), "/", "~1")
+				if p := walk(obj[k], t.Elem(), path+"/"+part); p != "" {
+					return p
+				}
+			}
+		}
+		return ""
+	}
+	return walk(root, reflect.TypeOf(dst), "")
+}
+
 func strictCommitDocument(raw []byte, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -183,6 +285,11 @@ func strictCommitDocument(raw []byte, dst any) error {
 		var valueType *json.UnmarshalTypeError
 		if errors.As(err, &valueType) {
 			return &documentShapeError{Pointer: documentTypePointer(raw, valueType.Offset)}
+		}
+		if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			if p := documentUnknownFieldPointer(raw, dst); p != "" {
+				return &documentShapeError{Pointer: p}
+			}
 		}
 		return fmt.Errorf("invalid_document")
 	}

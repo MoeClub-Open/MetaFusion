@@ -66,3 +66,15 @@ func TestCommitFieldConflictKinds(t *testing.T) {
 	}
 
 }
+
+func TestStrictCommitDocumentUnknownFieldPointer(t *testing.T) {
+	var e Entity
+	err := strictCommitDocument([]byte(`{"kind":"work","title":"KiLLKiSS","attributes":{"custom_allowed":"ok"},"external_links":[{"kind":"official_website","value":"https://bang-dream.com"}]}`), &e)
+	if err == nil {
+		t.Fatal("expected unknown field error")
+	}
+	details := CollaborationErrorDetails(&commitOperationError{Index: 0, Cause: err})
+	if details["error"] != "invalid_document" || details["pointer"] != "/external_links/0/value" || details["operation"] != 0 {
+		t.Fatalf("unexpected error details: %+v", details)
+	}
+}
