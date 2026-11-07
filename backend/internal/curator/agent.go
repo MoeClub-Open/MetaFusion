@@ -37,13 +37,16 @@ const curatorSystemPrompt = `你是 MetaFusion 元数据目录的自动审核员
 
 var curatorTools = []string{
 	"catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_definitions",
-	"external_sources", "external_source_query", "public_fetch", "public_wiki",
+	"external_sources", "external_source_query", "public_fetch", "public_wiki", "web_search", "web_fetch",
 	"catalog_workspace_create", "catalog_workspace_list", "catalog_workspace_get", "catalog_workspace_checkout",
 	"catalog_workspace_stage", "catalog_workspace_commit", "catalog_workspace_commits", "catalog_workspace_push",
 	"catalog_pull_request_list", "catalog_pull_request_get", "catalog_commit_get", "catalog_version_read",
 }
 
 func (s *Service) RunFinding(ctx context.Context, finding Finding, trigger string) (Run, error) {
+	return s.runFinding(ctx, finding, trigger, "", taskRole(finding), "")
+}
+func (s *Service) runFinding(ctx context.Context, finding Finding, trigger, parent, role, instruction string) (Run, error) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	settings, err := s.executionSettings(ctx, finding.Code)
@@ -57,7 +60,7 @@ func (s *Service) RunFinding(ctx context.Context, finding Finding, trigger strin
 		return Run{}, err
 	}
 	initial, _ := json.Marshal(progress)
-	run, err := s.CreateRun(ctx, kindAgent, trigger, &finding, initial)
+	run, err := s.createRun(ctx, kindAgent, trigger, &finding, initial, parent, role)
 	if err != nil {
 		return Run{}, err
 	}
@@ -109,7 +112,10 @@ func (s *Service) RunFinding(ctx context.Context, finding Finding, trigger strin
 				return fail(safeCode(err), backoff(finding.Attempts))
 			}
 		}
-		entity, err := s.Catalog.Get(ctx, finding.EntityID, nil)
+		var entity catalog.Entity
+		if finding.EntityID != "" {
+			entity, err = s.Catalog.Get(ctx, finding.EntityID, nil)
+		}
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				run.Status, run.Decision, run.Reason = "completed", "skipped", "entity_no_longer_active"
@@ -117,7 +123,10 @@ func (s *Service) RunFinding(ctx context.Context, finding Finding, trigger strin
 			}
 			return fail("curator_entity_read_failed", backoff(finding.Attempts))
 		}
-		modelID := settings.ModelID
+		modelID := settings.Execution.ChildModelID
+		if modelID == "" {
+			modelID = settings.ModelID
+		}
 		if modelID == "" {
 			as, e := s.Assistant.GetSettings(ctx)
 			if e != nil {
@@ -136,7 +145,10 @@ func (s *Service) RunFinding(ctx context.Context, finding Finding, trigger strin
 		}
 		result, err = assistant.RunAgent(ctx, s.Assistant, s.Catalog, assistant.AgentOptions{
 			User: user, ModelID: modelID, SystemPrompt: curatorSystemPrompt,
-			Task: buildTask(finding, entity) + progress.taskContext(), Purpose: "curator:" + finding.Code,
+			BillingUserID: s.modelBillingUser(ctx, settings, modelID),
+			SearchProviderID: settings.Execution.SearchProviderID, SearchBYOProviderID: settings.Execution.SearchBYOProviderID, SearchUserID: searchBillingUser(settings),
+			Checkpoint: func(result assistant.CompletionRun) error { return s.checkpointRun(ctx, &run, result) },
+			Task:       buildTask(finding, entity) + progress.taskContext() + "\n主 Agent 分工补充：" + instruction, Purpose: "curator:" + finding.Code,
 			EntityID: finding.EntityID, RequestID: run.ID, AllowedTools: curatorTools,
 			MaxRounds: 10, Timeout: 150 * time.Second, CreditBudget: budget, BeforeCompletion: active,
 			BeforeTool: func(call assistant.ToolCall) (assistant.ToolCall, error) {
@@ -205,7 +217,10 @@ func (s *Service) RunFinding(ctx context.Context, finding Finding, trigger strin
 			run.Reason = truncate(run.Reason+" | auto_merge_skipped: "+reason, 2000)
 		}
 	}
-	still, recheckErr := s.EntityStillHas(ctx, finding)
+	still, recheckErr := true, error(nil)
+	if finding.Code != CodeManualTask {
+		still, recheckErr = s.EntityStillHas(ctx, finding)
+	}
 	if recheckErr != nil {
 		still = true
 	}
@@ -268,7 +283,11 @@ func buildTask(f Finding, e catalog.Entity) string {
 	fmt.Fprintf(&b, "- 实体: %s (%s)\n", e.Title, e.Kind)
 	fmt.Fprintf(&b, "- entity_id: %s\n- 当前版本: %d\n", e.ID, e.Version)
 	fmt.Fprintf(&b, "- code: %s\n- severity: %s\n", f.Code, f.Severity)
-	fmt.Fprintf(&b, "- details: %s\n", truncate(string(f.Details), 4000))
+	limit := 4000
+	if f.Code == CodeManualTask {
+		limit = 18000
+	}
+	fmt.Fprintf(&b, "- details: %s\n", truncate(string(f.Details), limit))
 	if f.WorkspaceID != "" {
 		fmt.Fprintf(&b, "- previous_workspace_id: %s\n", f.WorkspaceID)
 	}
@@ -284,6 +303,8 @@ func buildTask(f Finding, e catalog.Entity) string {
 
 func findingInstruction(code string) string {
 	switch code {
+	case CodeManualTask:
+		return "按 details.instruction 完成管理员布置的任务。先查询定位对象并逐条查证来源，再做最小副本修改；没有 entity_id 时用查询定位，不得批量导入未经阅读的资料。只读任务使用 no_change 报告实际结果。"
 	case CodeTrackPositionGap:
 		return "核对同一 medium 的顶层曲目与完整官方曲目表。确认只是编号问题时保留当前相对顺序并提出修正 PR；缺轨或数量无法确认时 no_change，不重新编号来掩盖缺轨。曲序修改不自动合入。"
 	case CodeDuplicateTagValues:

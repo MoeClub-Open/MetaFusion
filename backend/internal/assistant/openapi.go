@@ -97,19 +97,22 @@ func AddOpenAPI(paths, schemas map[string]any) {
 			panic("unsupported assistant OpenAPI field: " + t.String())
 		}
 	}
-	for _, value := range []any{Settings{}, Provider{}, Model{}, BYOCredential{}, Balance{}, CreditEntry{}, TokenUsage{}, UsageRecord{}, BudgetUsage{}, Message{}, Conversation{}, GeneratedOverview{}, ChatRequest{}, ContextRequest{}, ContextPreview{}} {
+	for _, value := range []any{Settings{}, SearchProvider{}, SearchProviderInput{}, SearchRequestRecord{}, SearchResponse{}, WebSearchRequest{}, Provider{}, Model{}, BYOProvider{}, BYOModel{}, Balance{}, CreditEntry{}, TokenUsage{}, UsageRecord{}, BudgetUsage{}, Message{}, Conversation{}, GeneratedOverview{}, ChatRequest{}, ContextRequest{}, ContextPreview{}, MissionPlanItem{}, Mission{}, MissionTask{}, MissionPlannerRun{}, MissionDetail{}, MissionCreateRequest{}, MissionSteerRequest{}} {
 		schema(reflect.TypeOf(value))
 	}
 	props := func(name string) map[string]any {
 		return schemas["Assistant"+name].(map[string]any)["properties"].(map[string]any)
 	}
-	for _, name := range []string{"Provider", "Model", "BYOCredential", "CreditEntry", "UsageRecord", "Conversation", "GeneratedOverview"} {
+	for _, name := range []string{"Provider", "Model", "BYOProvider", "BYOModel", "CreditEntry", "UsageRecord", "Conversation", "GeneratedOverview", "Mission", "MissionTask", "MissionPlannerRun"} {
 		props(name)["id"] = id()
 	}
-	for _, name := range []string{"Provider", "BYOCredential"} {
+	props("MissionTask")["mission_id"] = id()
+	props("MissionPlannerRun")["mission_id"] = id()
+	props("MissionCreateRequest")["client_request_id"] = id()
+	for _, name := range []string{"Provider", "BYOProvider"} {
 		props(name)["protocol"] = map[string]any{"type": "string", "enum": []string{"openai_compatible", "openai_responses", "anthropic_messages", "gemini_generate_content"}, "default": "openai_compatible", "description": "Explicit upstream wire format. Chat Completions, Responses, Anthropic Messages or Gemini GenerateContent; one request only, no protocol probing or fallback."}
 	}
-	for _, name := range []string{"Provider", "BYOCredential"} {
+	for _, name := range []string{"Provider", "BYOProvider"} {
 		props(name)["base_url"] = map[string]any{"type": "string", "format": "uri", "description": "Public HTTPS API base URL for the selected protocol, including the service's version prefix. Private, loopback and metadata destinations are rejected."}
 		props(name)["key_hint"] = map[string]any{"type": "string", "description": "Redacted hint only. API key plaintext is never returned."}
 	}
@@ -119,11 +122,15 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	for _, name := range []string{"input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million", "input_credits_per_million", "output_credits_per_million"} {
 		props("Model")[name] = natural()
 	}
-	props("Model")["provider_id"] = id()
-	props("Model")["max_tokens_parameter"] = map[string]any{"type": "string", "enum": []string{"max_tokens", "max_completion_tokens"}, "default": "max_tokens", "description": "Chat Completions output-limit parameter. Other protocols automatically use their native max_output_tokens, max_tokens or maxOutputTokens field."}
-	props("BYOCredential")["upstream_model"] = map[string]any{"type": "string", "maxLength": 200, "description": "Optional upstream model override for this BYO endpoint. The selected platform model's context and output limits still apply; BYO calls spend zero platform credits."}
-	props("Model")["max_output_tokens"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1}
-	props("Model")["context_window"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1, "maximum": 10000000, "description": "Must be at least max_output_tokens."}
+	for _, name := range []string{"Model", "BYOModel"} {
+		props(name)["provider_id"] = id()
+		props(name)["upstream_model"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 200}
+		props(name)["max_tokens_parameter"] = map[string]any{"type": "string", "enum": []string{"max_tokens", "max_completion_tokens"}, "default": "max_tokens", "description": "Chat Completions output-limit parameter. Other protocols automatically use their native max_output_tokens, max_tokens or maxOutputTokens field."}
+		props(name)["max_output_tokens"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1}
+		props(name)["context_window"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1, "maximum": 10000000, "description": "Must be at least max_output_tokens."}
+	}
+	props("Conversation")["active_request_id"] = id()
+	props("UsageRecord")["byo_provider_id"] = id()
 	props("Model")["cached_input_price_microusd_per_million"].(map[string]any)["description"] = "Provider price per million cached input tokens in millionths of one USD. Platform credits are a separate unit."
 	props("UsageRecord")["status"] = map[string]any{"type": "string", "enum": []string{"reserved", "completed", "failed", "cancelled", "unknown"}, "description": "unknown means the upstream call may have run but authoritative usage was unavailable; usage_estimated distinguishes conservative reservation-based settlement from reported usage."}
 	props("UsageRecord")["usage_estimated"] = map[string]any{"type": "boolean", "description": "When true, usage and billed amounts were conservatively settled from the reservation bounds because provider usage was unknown. They are estimates, not provider-reported token counts; the request remains sealed against a repeated upstream call."}
@@ -147,18 +154,21 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	}
 	input("ProviderInput", "Provider", []string{"name", "base_url", "protocol", "enabled", "monthly_budget_microusd"}, "name", "base_url")
 	input("ModelInput", "Model", []string{"provider_id", "upstream_model", "max_tokens_parameter", "name", "enabled", "input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million", "input_credits_per_million", "output_credits_per_million", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name", "max_output_tokens", "context_window")
-	input("CredentialInput", "BYOCredential", []string{"name", "base_url", "protocol", "upstream_model", "enabled"}, "name", "base_url")
+	input("BYOProviderInput", "BYOProvider", []string{"name", "base_url", "protocol", "enabled"}, "name", "base_url")
+	input("BYOModelInput", "BYOModel", []string{"provider_id", "upstream_model", "max_tokens_parameter", "name", "enabled", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name")
 	input("SettingsInput", "Settings", []string{"enabled", "default_model_id", "registration_credits", "accepted_edit_credits", "reward_effective_at", "monthly_budget_microusd", "max_tool_rounds"}, "enabled", "registration_credits", "accepted_edit_credits", "reward_effective_at", "monthly_budget_microusd", "max_tool_rounds")
-	for _, name := range []string{"ProviderInput", "CredentialInput"} {
-		props(name)["api_key"] = map[string]any{"type": "string", "writeOnly": true, "maxLength": 16000, "description": "Omit to keep the existing encrypted key. A new BYO credential requires a nonempty key; an empty provider key clears it. Never returned in any response."}
+	for _, name := range []string{"ProviderInput", "BYOProviderInput", "SearchProviderInput"} {
+		props(name)["api_key"] = map[string]any{"type": "string", "writeOnly": true, "maxLength": 16000, "description": "Omit to keep the existing encrypted key. A new BYO provider requires a nonempty key; an empty platform provider key clears it. Never returned in any response."}
 	}
 	schemas["AssistantAccount"] = object(map[string]any{"balance": ref("Balance"), "registration_credits": natural(), "accepted_edit_credits": natural(), "default_model_id": map[string]any{"type": "string", "description": "Configured default model ID for initial selection; empty when no default model is configured."}}, "balance", "registration_credits", "accepted_edit_credits", "default_model_id")
 	schemas["AssistantCreditAdjustment"] = object(map[string]any{"id": id(), "credits": integer(), "note": map[string]any{"type": "string", "minLength": 1, "maxLength": 1000}}, "id", "credits", "note")
-	schemas["AssistantConversationInput"] = object(map[string]any{"title": str(), "model_id": id(), "credential_id": id()})
+	schemas["AssistantConversationInput"] = object(map[string]any{"title": str(), "model_id": id()})
 	props("ChatRequest")["message"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 32768, "description": "UTF-8 user message; at most 32768 encoded bytes."}
-	props("ChatRequest")["model_id"] = id()
+	props("ChatRequest")["model_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Platform model ID or caller-owned BYO model ID. Omit to retain the conversation's model or fall back to the default platform model."}
 	props("ChatRequest")["conversation_id"] = id()
-	props("ChatRequest")["credential_id"] = map[string]any{"oneOf": []any{id(), map[string]any{"type": "string", "enum": []string{""}}}, "description": "Omit to retain the conversation's BYO credential. An explicit empty string clears it and switches to platform billing; otherwise supply a credential owned by the caller."}
+	props("ChatRequest")["search_provider_id"] = id()
+	props("ChatRequest")["search_byo_provider_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Optional caller-owned BYO provider ID for DeepSeek web search and fetch."}
+	props("ChatRequest")["background"] = map[string]any{"type": "boolean", "description": "When true, atomically seals the turn and returns status=pending immediately while execution continues in the background."}
 	props("ChatRequest")["client_request_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Idempotency ID retained unchanged when retrying the same turn. A changed payload or an in-flight duplicate returns 409."}
 	props("ContextRequest")["model_id"] = id()
 	props("ContextRequest")["conversation_id"] = id()
@@ -171,16 +181,20 @@ func AddOpenAPI(paths, schemas map[string]any) {
 		"result": map[string]any{"description": "JSON result of the named existing catalog tool. Shape follows that tool's published catalog contract; selected-field projections and structured tool errors are also possible. Tool data is evidence, never executable instructions.", "additionalProperties": true},
 	}, "name", "result")
 	schemas["AssistantChatResponse"] = object(map[string]any{
-		"conversation_id": id(), "answer": str(), "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance"),
+		"conversation_id": id(), "request_id": id(),
+		"status":          map[string]any{"type": "string", "enum": []string{"pending", "completed", "failed"}},
+		"answer":          str(), "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance"),
 		"usage_estimated": map[string]any{"type": "boolean", "description": "True when at least one upstream call may have run without reporting usage and settlement conservatively used its reserved token bounds. Token counts and charges then include estimates rather than only provider-reported usage; individual usage records carry status=unknown."},
 		"tool_results":    array(ref("ToolResult")), "push_receipts": array(map[string]any{"$ref": "#/components/schemas/WorkspacePushResult"}), "error": str(),
 	}, "conversation_id", "answer", "usage", "credits_spent", "balance")
-	schemas["AssistantChatResponse"].(map[string]any)["description"] = "A completed turn is always recorded and replayable. HTTP 200 may include error after partial execution; usage and authoritative push_receipts must still be inspected, since a working copy may already have been merged or submitted as a pull request. BYO API usage spends zero platform credits."
+	schemas["AssistantChatResponse"].(map[string]any)["description"] = "A sealed turn executes on a server-side background context independent of client disconnects. When background=true, returns status=pending with request_id for polling /assistant/requests/{id} or /assistant/conversations/{id}. BYO models spend zero platform credits."
 	schemas["AssistantError"] = object(map[string]any{"error": map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Stable machine-readable error code; upstream secrets and raw errors are not returned."}, "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance")}, "error")
 
 	assistantGeneratedOpenAPI(schemas)
 	requestResponse := object(map[string]any{
-		"conversation_id": id(), "answer": str(), "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance"),
+		"conversation_id": id(), "request_id": id(),
+		"status":          map[string]any{"type": "string", "enum": []string{"pending", "completed", "failed"}},
+		"answer":          str(), "usage": ref("TokenUsage"), "credits_spent": natural(), "balance": ref("Balance"),
 		"usage_estimated": schemas["AssistantChatResponse"].(map[string]any)["properties"].(map[string]any)["usage_estimated"],
 		"tool_results":    array(ref("ToolResult")), "push_receipts": array(map[string]any{"$ref": "#/components/schemas/WorkspacePushResult"}),
 		"item": map[string]any{"allOf": []any{ref("GeneratedOverview")}, "nullable": true}, "stale": map[string]any{"type": "boolean"},
@@ -195,7 +209,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	}, "id", "owner_id", "status", "created_at", "updated_at")
 	schemas["AssistantChatRequestRecord"].(map[string]any)["description"] = "Sealed request ID and execution state. List responses omit the potentially large response field; the detail endpoint returns recorded results. Records are not deleted when a conversation is removed."
 	schemas["AssistantRequestCancel"] = object(map[string]any{"note": map[string]any{"type": "string", "maxLength": 1000}})
-	for _, name := range []string{"Model", "Provider", "BYOCredential", "UsageRecord", "Conversation", "Balance", "CreditEntry", "BudgetUsage", "GeneratedOverview", "ChatRequestRecord"} {
+	for _, name := range []string{"Model", "Provider", "BYOProvider", "BYOModel", "UsageRecord", "Conversation", "Balance", "CreditEntry", "BudgetUsage", "GeneratedOverview", "ChatRequestRecord", "Mission"} {
 		schemas["Assistant"+name+"Page"] = object(map[string]any{"items": array(ref(name)), "total": natural(), "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 200}, "offset": natural()}, "items", "total", "limit", "offset")
 	}
 	pageParams := []any{
@@ -247,23 +261,54 @@ func AddOpenAPI(paths, schemas map[string]any) {
 		paths[path].(map[string]any)[method] = op
 		return op
 	}
+	schemas["AssistantSearchProviderList"] = array(ref("SearchProvider"))
+	schemas["AssistantSearchRequestRecordPage"] = object(map[string]any{"items": array(ref("SearchRequestRecord")), "total": natural(), "limit": integer(), "offset": natural()}, "items", "total", "limit", "offset")
+	add("/assistant/search/providers", "get", "List enabled web search providers", "", "SearchProviderList", "self", false)
+	searchOp := add("/assistant/search/{operation}", "post", "Search or fetch public web content with a sealed per-request bill", "WebSearchRequest", "SearchResponse", "self", false)
+	searchOp["parameters"] = []any{map[string]any{"name": "operation", "in": "path", "required": true, "schema": map[string]any{"type": "string", "enum": []string{"search", "fetch"}}}}
+	add("/assistant/search/requests", "get", "List own search bills and outcomes", "", "SearchRequestRecordPage", "self", true)
+	add("/assistant/admin/search/providers", "get", "List web search configuration", "", "SearchProviderList", "admin", false)
+	add("/assistant/admin/search/providers", "post", "Create web search provider", "SearchProviderInput", "SearchProvider", "admin", false)
+	add("/assistant/admin/search/providers/{id}", "put", "Update provider, default and credits per successful request", "SearchProviderInput", "SearchProvider", "admin", false)
+	add("/assistant/admin/search/requests", "get", "List search bills in credits and original CNY", "", "SearchRequestRecordPage", "admin", true)
 	filterUser := func(op map[string]any) {
 		p, _ := op["parameters"].([]any)
 		op["parameters"] = append(p, map[string]any{"name": "user_id", "in": "query", "schema": str(), "description": "Optional exact owner filter; omit to list all accounts' records."})
 	}
 	add("/assistant/models", "get", "List enabled models from enabled providers", "", "ModelPage", "public", true)
 	add("/assistant/account", "get", "Synchronize eligible rewards and read the caller's credit balance", "", "Account", "self", false)
-	add("/assistant/credentials", "get", "List the caller's BYO API credentials without plaintext keys", "", "BYOCredentialPage", "self", true)
-	add("/assistant/credentials", "post", "Create a BYO API credential for the current account", "CredentialInput", "BYOCredential", "self", false)
-	add("/assistant/credentials/{id}", "put", "Replace the caller's credential configuration and optionally rotate its key", "CredentialInput", "BYOCredential", "self", false)
-	add("/assistant/credentials/{id}", "delete", "Delete the caller's BYO API credential", "", "", "self", false)
+	add("/assistant/byo/providers", "get", "List the caller's BYO API providers without plaintext keys", "", "BYOProviderPage", "self", true)
+	add("/assistant/byo/providers", "post", "Create a BYO API provider for the current account", "BYOProviderInput", "BYOProvider", "self", false)
+	add("/assistant/byo/providers/{id}", "put", "Update the caller's BYO API provider and optionally rotate its key", "BYOProviderInput", "BYOProvider", "self", false)
+	add("/assistant/byo/providers/{id}", "delete", "Delete the caller's BYO API provider and its models", "", "", "self", false)
+	add("/assistant/byo/models", "get", "List the caller's BYO models", "", "BYOModelPage", "self", true)
+	add("/assistant/byo/models", "post", "Create a BYO model under one of the caller's BYO providers", "BYOModelInput", "BYOModel", "self", false)
+	add("/assistant/byo/models/{id}", "put", "Update the caller's BYO model", "BYOModelInput", "BYOModel", "self", false)
+	add("/assistant/byo/models/{id}", "delete", "Delete the caller's BYO model", "", "", "self", false)
 	add("/assistant/usage", "get", "List the caller's metered token and credit usage", "", "UsageRecordPage", "self", true)
 	add("/assistant/conversations", "get", "List the caller's conversations (message bodies omitted)", "", "ConversationPage", "self", true)
 	add("/assistant/conversations", "post", "Create a conversation", "ConversationInput", "Conversation", "self", false)
 	add("/assistant/conversations/{id}", "get", "Read the caller's conversation and messages", "", "Conversation", "self", false)
 	add("/assistant/conversations/{id}", "delete", "Delete the caller's conversation unless a turn is in progress", "", "", "self", false)
+	selfRequests := add("/assistant/requests", "get", "List the caller's sealed chat and overview generation requests", "", "ChatRequestRecordPage", "self", true)
+	selfRequests["parameters"] = append(selfRequests["parameters"].([]any),
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"pending", "completed", "failed"}}},
+		map[string]any{"name": "conversation_id", "in": "query", "schema": id()},
+	)
+	add("/assistant/requests/{id}", "get", "Inspect the caller's sealed request and live or final progress", "", "ChatRequestRecord", "self", false)
 	add("/assistant/chat", "post", "Ask the catalog assistant and execute requested edits as the current user", "ChatRequest", "ChatResponse", "self", false)
 	add("/assistant/context", "post", "Preview the caller's next chat context without saving or invoking a model", "ContextRequest", "ContextPreview", "self", false)
+	selfMissions := add("/assistant/missions", "get", "List the caller's autonomous Planner-Worker missions", "", "MissionPage", "self", true)
+	selfMissions["parameters"] = append(selfMissions["parameters"].([]any), map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"running", "paused", "completed", "stopped", "failed"}}})
+	add("/assistant/missions", "post", "Create and start an autonomous Planner-Worker mission with explicit scope and budget", "MissionCreateRequest", "MissionDetail", "self", false)
+	add("/assistant/missions/{id}", "get", "Read mission status, persistent plan, Frontier tasks and Planner rounds", "", "MissionDetail", "self", false)
+	add("/assistant/missions/{id}", "delete", "Delete a non-running mission and its exploration trace", "", "", "self", false)
+	add("/assistant/missions/{id}/tasks/{task_id}", "get", "Read one Worker task with its full tool execution trace", "", "MissionTask", "self", false)
+	add("/assistant/missions/{id}/planner-runs/{run_id}", "get", "Read one Planner round with its full tool trace", "", "MissionPlannerRun", "self", false)
+	add("/assistant/missions/{id}/steer", "post", "Append user steering instructions or adjust mission budget", "MissionSteerRequest", "Mission", "self", false)
+	add("/assistant/missions/{id}/pause", "post", "Pause scheduling further steps for a running mission", "", "Mission", "self", false)
+	add("/assistant/missions/{id}/resume", "post", "Resume a paused or interrupted mission", "", "Mission", "self", false)
+	add("/assistant/missions/{id}/stop", "post", "Stop a mission immediately and skip remaining queued tasks", "", "Mission", "self", false)
 	getGenerated := add("/assistant/generated/{entity_id}", "get", "Read the cached generated overview of public catalog facts", "", "GeneratedResponse", "public", false)
 	getGenerated["description"] = "Reads only content based on public catalog facts. A first-party caller's private BYO cache is preferred; other callers can only read shared platform-generated content. A read never invokes an LLM or spends credits. A changed context returns item=null and stale=true."
 	getGenerated["parameters"] = append(getGenerated["parameters"].([]any), map[string]any{"name": "locale", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"zh-CN", "zh-TW", "en-US", "ja-JP"}, "default": "zh-CN"}})
@@ -285,7 +330,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	for _, item := range []struct {
 		path, response string
 		ownerFilter    bool
-	}{{"credentials", "BYOCredentialPage", true}, {"usage", "UsageRecordPage", true}, {"accounts", "BalancePage", false}, {"ledger", "CreditEntryPage", true}, {"conversations", "ConversationPage", true}, {"generated", "GeneratedOverviewPage", false}, {"budgets", "BudgetUsagePage", false}} {
+	}{{"byo/providers", "BYOProviderPage", true}, {"byo/models", "BYOModelPage", true}, {"usage", "UsageRecordPage", true}, {"accounts", "BalancePage", false}, {"ledger", "CreditEntryPage", true}, {"conversations", "ConversationPage", true}, {"generated", "GeneratedOverviewPage", false}, {"budgets", "BudgetUsagePage", false}} {
 		op := add("/assistant/admin/"+item.path, "get", "List assistant "+item.path, "", item.response, "admin", true)
 		if item.ownerFilter {
 			filterUser(op)
@@ -298,18 +343,31 @@ func AddOpenAPI(paths, schemas map[string]any) {
 			op["description"] = "Requires a signed-in first-party account with assistant.manage. Lists at most the latest 1000 persisted monthly budget buckets; limit/offset page within this window."
 		}
 	}
-	add("/assistant/admin/credentials/{id}", "put", "Update a user's BYO credential while preserving its owner", "CredentialInput", "BYOCredential", "admin", false)
-	add("/assistant/admin/credentials/{id}", "delete", "Delete a user's BYO credential", "", "", "admin", false)
+	add("/assistant/admin/byo/providers/{id}", "put", "Update a user's BYO provider while preserving its owner", "BYOProviderInput", "BYOProvider", "admin", false)
+	add("/assistant/admin/byo/providers/{id}", "delete", "Delete a user's BYO provider", "", "", "admin", false)
+	add("/assistant/admin/byo/models/{id}", "put", "Update a user's BYO model while preserving its owner", "BYOModelInput", "BYOModel", "admin", false)
+	add("/assistant/admin/byo/models/{id}", "delete", "Delete a user's BYO model", "", "", "admin", false)
 	add("/assistant/admin/accounts/{user_id}/adjust", "post", "Apply an idempotent credit adjustment with an audit note", "CreditAdjustment", "Balance", "admin", false)
 	add("/assistant/admin/conversations/{id}", "get", "Read a conversation and messages for administration", "", "Conversation", "admin", false)
 	add("/assistant/admin/conversations/{id}", "delete", "Delete a conversation unless a turn is in progress", "", "", "admin", false)
 	add("/assistant/admin/generated/{id}", "delete", "Delete generated cached content", "", "", "admin", false)
 	requests := add("/assistant/admin/requests", "get", "List sealed chat and overview generation requests without response bodies", "", "ChatRequestRecordPage", "admin", true)
 	filterUser(requests)
-	requests["parameters"] = append(requests["parameters"].([]any), map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"pending", "completed", "failed"}}, "description": "Optional exact execution-state filter."})
+	requests["parameters"] = append(requests["parameters"].([]any),
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"pending", "completed", "failed"}}, "description": "Optional exact execution-state filter."},
+		map[string]any{"name": "conversation_id", "in": "query", "schema": id()},
+	)
 	add("/assistant/admin/requests/{id}", "get", "Inspect a sealed request and its persisted response or partial progress", "", "ChatRequestRecord", "admin", false)
 	cancel := add("/assistant/admin/requests/{id}/cancel", "post", "Seal an abandoned pending request as failed while retaining recorded results", "RequestCancel", "ChatRequestRecord", "admin", false)
 	cancel["description"] = "Requires a signed-in first-party account with assistant.manage. Only pending requests created more than ten minutes ago can be cancelled; other requests return 409. Existing usage, result data and the idempotency ID are retained. This does not undo completed catalog edits, resend an upstream call or grant a new retry."
+	adminMissions := add("/assistant/admin/missions", "get", "List autonomous missions across users and curator", "", "MissionPage", "admin", true)
+	filterUser(adminMissions)
+	adminMissions["parameters"] = append(adminMissions["parameters"].([]any),
+		map[string]any{"name": "scope", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"user", "curator"}}},
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"running", "paused", "completed", "stopped", "failed"}}},
+	)
+	add("/assistant/admin/missions/{id}", "get", "Inspect any autonomous mission for administration", "", "MissionDetail", "admin", false)
+	add("/assistant/admin/missions/{id}/stop", "post", "Stop an active mission for administration", "", "Mission", "admin", false)
 }
 
 // assistantGeneratedOpenAPI keeps generated rich content explicit: the renderer
@@ -336,6 +394,6 @@ func assistantGeneratedOpenAPI(schemas map[string]any) {
 		typed("timeline", map[string]any{"events": array(object(map[string]any{"date": str(64), "title": str(200), "description": str(2000), "entity_id": map[string]any{"type": "string", "format": "uuid"}}, "date", "title"), 100)}, "events"),
 		typed("chart", map[string]any{"chart_type": map[string]any{"type": "string", "enum": []string{"bar", "line"}}, "labels": array(str(200), 100), "series": array(object(map[string]any{"name": str(200), "values": array(map[string]any{"type": "number"}, 100)}, "name", "values"), 8)}, "chart_type", "labels", "series"),
 	}}
-	schemas["AssistantGenerateRequest"] = object(map[string]any{"model_id": map[string]any{"type": "string", "format": "uuid", "description": "Omit to use the configured default model."}, "credential_id": map[string]any{"type": "string", "format": "uuid"}, "locale": map[string]any{"type": "string", "enum": []string{"zh-CN", "zh-TW", "en-US", "ja-JP"}, "default": "zh-CN"}, "regenerate": map[string]any{"type": "boolean"}, "client_request_id": map[string]any{"type": "string", "format": "uuid", "description": "Optional idempotency key retained when retrying; a duplicate sealed generation request returns 409 and never sends a second completion upstream."}})
+	schemas["AssistantGenerateRequest"] = object(map[string]any{"model_id": map[string]any{"type": "string", "format": "uuid", "description": "Platform model ID or caller-owned BYO model ID. Omit to use the configured default platform model."}, "locale": map[string]any{"type": "string", "enum": []string{"zh-CN", "zh-TW", "en-US", "ja-JP"}, "default": "zh-CN"}, "regenerate": map[string]any{"type": "boolean"}, "client_request_id": map[string]any{"type": "string", "format": "uuid", "description": "Optional idempotency key retained when retrying; a duplicate sealed generation request returns 409 and never sends a second completion upstream."}})
 	schemas["AssistantGeneratedResponse"] = object(map[string]any{"item": map[string]any{"allOf": []any{ref("GeneratedOverview")}, "nullable": true}, "stale": map[string]any{"type": "boolean"}, "usage": ref("TokenUsage"), "credits_spent": map[string]any{"type": "integer", "format": "int64", "minimum": 0}, "balance": ref("Balance")}, "item", "stale")
 }

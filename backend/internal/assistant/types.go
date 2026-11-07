@@ -70,22 +70,35 @@ type Model struct {
 	UpdatedAt                          time.Time `json:"updated_at"`
 }
 
-type BYOCredential struct {
-	ID            string    `json:"id"`
-	OwnerID       string    `json:"owner_id"`
-	Name          string    `json:"name"`
-	BaseURL       string    `json:"base_url"`
-	Protocol      string    `json:"protocol"`
-	UpstreamModel string    `json:"upstream_model"`
-	Enabled       bool      `json:"enabled"`
-	HasKey        bool      `json:"has_key"`
-	KeyHint       string    `json:"key_hint"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+type BYOProvider struct {
+	ID        string    `json:"id"`
+	OwnerID   string    `json:"owner_id"`
+	Name      string    `json:"name"`
+	BaseURL   string    `json:"base_url"`
+	Protocol  string    `json:"protocol"`
+	Enabled   bool      `json:"enabled"`
+	HasKey    bool      `json:"has_key"`
+	KeyHint   string    `json:"key_hint"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
-type BYOCredentialInput struct {
-	BYOCredential
+type BYOProviderInput struct {
+	BYOProvider
 	APIKey *string `json:"api_key,omitempty"`
+}
+
+type BYOModel struct {
+	ID                 string    `json:"id"`
+	OwnerID            string    `json:"owner_id"`
+	ProviderID         string    `json:"provider_id"`
+	UpstreamModel      string    `json:"upstream_model"`
+	Name               string    `json:"name"`
+	Enabled            bool      `json:"enabled"`
+	MaxOutputTokens    int64     `json:"max_output_tokens"`
+	MaxTokensParameter string    `json:"max_tokens_parameter"`
+	ContextWindow      int64     `json:"context_window"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type Balance struct {
@@ -116,38 +129,41 @@ type TokenUsage struct {
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 }
 type ReserveRequest struct {
-	ID              string        `json:"id"`
-	UserID          string        `json:"user_id"`
-	ModelID         string        `json:"model_id"`
-	BYOCredentialID string        `json:"byo_credential_id,omitempty"`
-	InputTokens     int64         `json:"input_tokens"`
-	OutputTokens    int64         `json:"output_tokens"`
-	Purpose         string        `json:"purpose"`
-	EntityID        string        `json:"entity_id,omitempty"`
-	CreditBudget    *CreditBudget `json:"-"`
+	ID           string        `json:"id"`
+	UserID       string        `json:"user_id"`
+	ModelID      string        `json:"model_id"`
+	InputTokens  int64         `json:"input_tokens"`
+	OutputTokens int64         `json:"output_tokens"`
+	Purpose      string        `json:"purpose"`
+	EntityID     string        `json:"entity_id,omitempty"`
+	CreditBudget *CreditBudget `json:"-"`
 }
 
 // CreditBudget is supplied by an internal caller, never by an API payload.
 type CreditBudget struct {
 	PurposePrefix string
 	MonthlyLimit  int64
+	TotalPrefix   string
+	EnforceTotal  bool
+	TotalLimit    int64
 }
 type Reservation struct {
 	ReserveRequest
 	Model                Model     `json:"model"`
 	ProviderID           string    `json:"provider_id"`
+	BYOProviderID        string    `json:"byo_provider_id,omitempty"`
 	ReservedCredits      int64     `json:"reserved_credits"`
 	ReservedCostMicroUSD int64     `json:"reserved_cost_microusd"`
 	Status               string    `json:"status"`
 	CreatedAt            time.Time `json:"created_at"`
 }
 type UsageRecord struct {
-	ID              string     `json:"id"`
-	UserID          string     `json:"user_id"`
-	ProviderID      string     `json:"provider_id"`
-	ModelID         string     `json:"model_id"`
-	BYOCredentialID string     `json:"byo_credential_id,omitempty"`
-	Purpose         string     `json:"purpose"`
+	ID            string     `json:"id"`
+	UserID        string     `json:"user_id"`
+	ProviderID    string     `json:"provider_id"`
+	ModelID       string     `json:"model_id"`
+	BYOProviderID string     `json:"byo_provider_id,omitempty"`
+	Purpose       string     `json:"purpose"`
 	EntityID        string     `json:"entity_id,omitempty"`
 	Status          string     `json:"status"`
 	Error           string     `json:"error,omitempty"`
@@ -213,7 +229,7 @@ type Conversation struct {
 	OwnerID         string    `json:"owner_id"`
 	Title           string    `json:"title"`
 	ModelID         string    `json:"model_id"`
-	BYOCredentialID string    `json:"byo_credential_id,omitempty"`
+	ActiveRequestID string    `json:"active_request_id,omitempty"`
 	Messages        []Message `json:"messages"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`

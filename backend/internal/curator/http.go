@@ -27,8 +27,19 @@ func (h HTTP) Register(api *gin.RouterGroup) {
 	g.GET("/findings", h.findings)
 	g.GET("/runs", h.runs)
 	g.GET("/runs/:id", h.run)
+	g.GET("/missions", h.missions)
+	g.GET("/missions/:id", h.mission)
+	g.GET("/missions/:id/tasks/:task_id", h.missionTask)
+	g.GET("/missions/:id/planner-runs/:run_id", h.missionPlannerRun)
 	write := g.Group("", h.adminIdentity(true))
 	write.PUT("/settings", h.saveSettings)
+	write.POST("/tasks", h.addTask)
+	write.POST("/missions", h.createMission)
+	write.POST("/missions/:id/steer", h.steerMission)
+	write.POST("/missions/:id/pause", h.changeMissionStatus("paused", "curator.mission_paused"))
+	write.POST("/missions/:id/resume", h.changeMissionStatus("running", "curator.mission_resumed"))
+	write.POST("/missions/:id/stop", h.changeMissionStatus("stopped", "curator.mission_stopped"))
+	g.GET("/runs/:id/children", h.children)
 	write.POST("/pause", h.pause)
 	write.POST("/resume", h.resume)
 	write.POST("/sweep", h.sweep)
@@ -78,7 +89,7 @@ func (h HTTP) saveSettings(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
-	v, err := h.Service.SaveSettings(ctx, in)
+	v, err := h.Service.SaveSettingsForUser(ctx, in, *catalog.RequestUser(c))
 	if err == nil {
 		h.Service.Wake()
 		h.audit(c, "curator.settings_updated", "curator_settings", "", map[string]any{
@@ -138,7 +149,7 @@ func (h HTTP) runs(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 	limit, offset := pageArgs(c)
-	v, err := h.Service.Runs(ctx, RunFilter{Kind: c.Query("kind")}, limit, offset)
+	v, err := h.Service.Runs(ctx, RunFilter{Kind: c.Query("kind"), ParentID: c.Query("parent_run_id")}, limit, offset)
 	respond(c, v, err)
 }
 
@@ -235,4 +246,73 @@ func pageArgs(c *gin.Context) (int, int) {
 		}
 	}
 	return pageBounds(limit, offset)
+}
+
+func (h HTTP) addTask(c *gin.Context) {
+	var in TaskInput
+	if c.ShouldBindJSON(&in) != nil {
+		respond(c, nil, ErrInvalidSettings)
+		return
+	}
+	v, err := h.Service.AddTask(c.Request.Context(), in, catalog.RequestUser(c).ID)
+	if err == nil {
+		h.Service.Wake()
+		h.audit(c, "curator.task_created", "finding", v.ID, nil)
+	}
+	respond(c, v, err)
+}
+func (h HTTP) children(c *gin.Context) {
+	v, e := h.Service.Children(c.Request.Context(), c.Param("id"))
+	respond(c, v, e)
+}
+
+func (h HTTP) missions(c *gin.Context) {
+	l, o := pageArgs(c)
+	v, e := h.Service.Missions(c.Request.Context(), c.Query("status"), l, o)
+	respond(c, v, e)
+}
+func (h HTTP) createMission(c *gin.Context) {
+	var in MissionInput
+	if c.ShouldBindJSON(&in) != nil {
+		respond(c, nil, ErrInvalidSettings)
+		return
+	}
+	v, err := h.Service.CreateMission(c.Request.Context(), in)
+	if err == nil {
+		h.audit(c, "curator.mission_created", "mission", v.Mission.ID, map[string]any{"budget_credits": v.Mission.BudgetCredits})
+	}
+	respond(c, v, err)
+}
+func (h HTTP) mission(c *gin.Context) {
+	v, e := h.Service.GetMission(c.Request.Context(), c.Param("id"))
+	respond(c, v, e)
+}
+func (h HTTP) missionTask(c *gin.Context) {
+	v, e := h.Service.GetMissionTask(c.Request.Context(), c.Param("id"), c.Param("task_id"))
+	respond(c, v, e)
+}
+func (h HTTP) missionPlannerRun(c *gin.Context) {
+	v, e := h.Service.GetMissionPlannerRun(c.Request.Context(), c.Param("id"), c.Param("run_id"))
+	respond(c, v, e)
+}
+func (h HTTP) steerMission(c *gin.Context) {
+	var in assistant.MissionSteerRequest
+	if c.ShouldBindJSON(&in) != nil {
+		respond(c, nil, ErrInvalidSettings)
+		return
+	}
+	v, err := h.Service.SteerMission(c.Request.Context(), c.Param("id"), in)
+	if err == nil {
+		h.audit(c, "curator.mission_steered", "mission", v.ID, nil)
+	}
+	respond(c, v, err)
+}
+func (h HTTP) changeMissionStatus(status, action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		v, err := h.Service.SetMissionStatus(c.Request.Context(), c.Param("id"), status)
+		if err == nil {
+			h.audit(c, action, "mission", v.ID, nil)
+		}
+		respond(c, v, err)
+	}
 }

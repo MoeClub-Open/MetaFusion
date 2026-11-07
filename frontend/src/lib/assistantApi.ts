@@ -21,6 +21,17 @@ export interface AssistantProvider {
   created_at: string; updated_at: string;
 }
 
+export interface SearchProvider {
+  id: string; name: string; kind: "duckduckgo" | "deepseek"; base_url: string;
+  enabled: boolean; is_default: boolean; has_key: boolean; key_hint: string;
+  credits_per_request: number; updated_at: string;
+}
+
+export interface SearchRequestRecord {
+  id: string; user_id: string; provider_id: string; byo_provider_id?: string; purpose: string; operation: string;
+  status: string; credits: number; upstream_cost_microcny: number; error: string; created_at: string;
+}
+
 export interface AssistantModel {
   id: string; provider_id: string; upstream_model: string; name: string; enabled: boolean;
   input_price_microusd_per_million: number; cached_input_price_microusd_per_million: number;
@@ -36,9 +47,15 @@ export interface AssistantSettings {
   max_tool_rounds: number; updated_at: string;
 }
 
-export interface AssistantCredential {
+export interface AssistantBYOProvider {
   id: string; owner_id: string; name: string; base_url: string; protocol: AssistantProtocol; enabled: boolean;
-  has_key: boolean; key_hint: string; upstream_model: string; created_at: string; updated_at: string;
+  has_key: boolean; key_hint: string; created_at: string; updated_at: string;
+}
+
+export interface AssistantBYOModel {
+  id: string; owner_id: string; provider_id: string; upstream_model: string; name: string; enabled: boolean;
+  max_output_tokens: number; max_tokens_parameter: "max_tokens" | "max_completion_tokens"; context_window: number;
+  created_at: string; updated_at: string;
 }
 
 export interface AssistantAccount {
@@ -54,7 +71,7 @@ export interface AssistantTokenUsage {
 }
 
 export interface AssistantUsage {
-  id: string; user_id: string; provider_id: string; model_id: string; byo_credential_id?: string;
+  id: string; user_id: string; provider_id: string; model_id: string; byo_provider_id?: string;
   purpose: string; entity_id?: string; status: string; error?: string; usage: AssistantTokenUsage;
   usage_estimated: boolean; credits: number; cost_microusd: number; price_snapshot: AssistantModel; created_at: string; settled_at?: string;
 }
@@ -70,7 +87,7 @@ export interface AssistantMessage {
 }
 
 export interface AssistantConversation {
-  id: string; owner_id: string; title: string; model_id: string; byo_credential_id?: string;
+  id: string; owner_id: string; title: string; model_id: string; active_request_id?: string;
   messages: AssistantMessage[]; created_at: string; updated_at: string;
 }
 
@@ -96,4 +113,95 @@ export interface AssistantGeneratedOverview {
   definitions_etag: string; blocks: unknown;
   sources: { entity_id: string; title: string; url: string; version: number }[];
   partial: boolean; partial_reasons?: string[]; usage: AssistantTokenUsage;
+}
+
+export interface MissionPlanItem {
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+}
+
+export type MissionStatus = "running" | "paused" | "completed" | "stopped" | "failed";
+export type MissionTaskRole = "recon" | "research" | "edit" | "review";
+export type MissionTaskStatus = "queued" | "running" | "completed" | "failed" | "skipped";
+
+export interface Mission {
+  id: string;
+  owner_id: string;
+  scope: "user" | "curator";
+  title: string;
+  goal: string;
+  steering?: string;
+  pending_steer?: boolean;
+  status: MissionStatus;
+  model_id: string;
+  worker_model_id?: string;
+  search_provider_id?: string;
+  search_byo_provider_id?: string;
+  prefer_pull_request: boolean;
+  budget_credits: number;
+  spent_credits: number;
+  max_workers: number;
+  max_tasks: number;
+  planner_rounds: number;
+  max_planner_rounds: number;
+  plan: MissionPlanItem[];
+  summary?: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+  finished_at?: string;
+}
+
+export interface MissionTask {
+  id: string;
+  mission_id: string;
+  seq: number;
+  role: MissionTaskRole;
+  title: string;
+  objective: string;
+  depends_on: string[];
+  anchor_entity_ids: string[];
+  status: MissionTaskStatus;
+  priority: number;
+  result_summary?: string;
+  discoveries: string[];
+  sources: string[];
+  workspace_id?: string;
+  pull_request_id?: string;
+  merged: boolean;
+  model_id?: string;
+  input_tokens: number;
+  output_tokens: number;
+  credits: number;
+  messages?: AssistantMessage[];
+  error?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MissionPlannerRun {
+  id: string;
+  mission_id: string;
+  round: number;
+  trigger: string;
+  status: "running" | "completed" | "failed";
+  summary?: string;
+  model_id?: string;
+  input_tokens: number;
+  output_tokens: number;
+  credits: number;
+  messages?: AssistantMessage[];
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+}
+
+export interface MissionDetail {
+  mission: Mission;
+  tasks: MissionTask[];
+  planner_runs: MissionPlannerRun[];
+  balance?: AssistantAccount;
 }

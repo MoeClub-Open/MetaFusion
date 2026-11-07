@@ -2,8 +2,6 @@ package curator
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -113,33 +111,31 @@ func (s *Service) schedule(ctx context.Context) {
 		if s.checkLease(ctx) != nil {
 			return
 		}
+		if err = s.recoverInterrupted(ctx); err != nil {
+			slog.Warn("curator recovery failed", "err", err)
+			s.wait(ctx, 30*time.Second)
+			continue
+		}
 		runs, err := s.countRunsLastHour(ctx)
 		if err != nil || runs >= int64(settings.MaxRunsPerHour) {
 			s.wait(ctx, time.Minute)
 			continue
 		}
-		if s.forceSweep.Swap(false) {
+		if err = s.discoverReviews(ctx, settings); err != nil {
+			slog.Warn("curator review discovery failed", "err", err)
+		}
+		forced := s.forceSweep.Swap(false)
+		if pending, e := s.PendingCount(ctx, settings); e == nil && (forced || pending < sweepBacklogLimit) {
 			s.runSweep(ctx, settings)
-			continue
 		}
-		finding, err := s.ClaimFinding(ctx, settings)
-		switch {
-		case err == nil:
-			if _, err = s.RunFinding(ctx, finding, triggerSchedule); err != nil && ctx.Err() == nil {
-				slog.Warn("curator run persistence failed", "finding", finding.ID, "err", err)
+		tasks, e := s.dueTasks(ctx, settings)
+		if e != nil {
+			slog.Warn("curator task discovery failed", "err", e)
+		} else if len(tasks) > 0 {
+			if _, e = s.runManager(ctx, settings, tasks); e != nil {
+				slog.Warn("curator manager failed", "err", e)
 			}
-			continue
-		case errors.Is(err, sql.ErrNoRows):
-		default:
-			slog.Warn("curator claim failed", "err", err)
 		}
-		// 队列还有积压时不再扫描新候选：检测一次可能入队上百条，而 Agent 受每小时
-		// 上限与月额度约束；无上限地扫描只会堆积永远处理不完的候选。
-		if pending, err := s.PendingCount(ctx, settings); err == nil && pending >= sweepBacklogLimit {
-			s.wait(ctx, time.Duration(settings.IntervalSeconds)*time.Second)
-			continue
-		}
-		s.runSweep(ctx, settings)
 		s.wait(ctx, time.Duration(settings.IntervalSeconds)*time.Second)
 	}
 }
@@ -156,7 +152,9 @@ func (s *Service) runSweep(ctx context.Context, settings Settings) {
 			// Keep the quality cursor for a later retry, but let other detectors run.
 			_ = s.SetSweepState(ctx, 0)
 		}
-		s.RecordSweep(ctx, kindQuality, detail, started, errText)
+		if n > 0 || err != nil {
+			s.RecordSweep(ctx, kindQuality, detail, started, errText)
+		}
 		return
 	}
 	next, n, err := s.SweepDetector(ctx, settings, settings.SweepDetector)
@@ -166,7 +164,9 @@ func (s *Service) runSweep(ctx context.Context, settings Settings) {
 		errText = safeCode(err)
 		slog.Warn("curator detector failed", "detector", settings.SweepDetector, "err", err)
 	}
-	s.RecordSweep(ctx, kindSweep, detail, started, errText)
+	if n > 0 || err != nil {
+		s.RecordSweep(ctx, kindSweep, detail, started, errText)
+	}
 	_ = s.SetSweepState(ctx, next)
 }
 

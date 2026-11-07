@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,7 @@ type assistantE2E struct {
 func assistantE2EFixture(t *testing.T) *assistantE2E {
 	t.Helper()
 	s, model, owner := accountingFixture(t)
+	t.Cleanup(s.Wait)
 	cat := &catalog.Store{DB: s.DB}
 	if err := cat.Initialize(context.Background()); err != nil {
 		t.Fatal(err)
@@ -165,7 +167,7 @@ func (f *assistantE2E) provider(owner, key, model string, next func(int, e2eProv
 		var pending int
 		var reservedCredits, reservedCost int64
 		var byo bool
-		if err := f.s.DB.QueryRow(`SELECT count(*),coalesce(sum(reserved_credits),0),coalesce(sum(reserved_cost_microusd),0),coalesce(bool_or(byo_credential_id IS NOT NULL),false) FROM assistant.usage WHERE user_id=$1 AND status='reserved' AND invoked_at IS NOT NULL`, owner).Scan(&pending, &reservedCredits, &reservedCost, &byo); err != nil || pending != 1 {
+		if err := f.s.DB.QueryRow(`SELECT count(*),coalesce(sum(reserved_credits),0),coalesce(sum(reserved_cost_microusd),0),coalesce(bool_or(byo_provider_id IS NOT NULL),false) FROM assistant.usage WHERE user_id=$1 AND status='reserved' AND invoked_at IS NOT NULL`, owner).Scan(&pending, &reservedCredits, &reservedCost, &byo); err != nil || pending != 1 {
 			f.t.Fatalf("provider called without exactly one claimed reservation: %d %v", pending, err)
 		}
 		if !byo && (reservedCredits <= 0 || reservedCost <= 0) || byo && (reservedCredits != 0 || reservedCost != 0) {
@@ -448,19 +450,24 @@ func TestPostgresAssistantHTTPWorkspaceUsesCallerPermissionsAndPreservesAuthorsh
 func TestPostgresAssistantHTTPBYOCredentialAccountingAndIsolation(t *testing.T) {
 	f := assistantE2EFixture(t)
 	secret := "user-key-never-public-123456789"
-	w := f.request(&f.user, "POST", "/credentials", map[string]any{"name": "My API", "base_url": "https://93.184.216.34/v1", "upstream_model": "my-upstream", "enabled": true, "api_key": secret, "owner_id": f.other.ID}, 200)
-	credential := e2eDecode[BYOCredential](t, w)
-	if credential.OwnerID != f.user.ID || !credential.HasKey || strings.Contains(w.Body.String(), secret) {
-		t.Fatalf("credential leaked or accepted an impersonated owner: %s", w.Body.String())
+	w := f.request(&f.user, "POST", "/byo/providers", map[string]any{"name": "My API", "base_url": "https://93.184.216.34/v1", "enabled": true, "api_key": secret, "owner_id": f.other.ID}, 200)
+	provider := e2eDecode[BYOProvider](t, w)
+	if provider.OwnerID != f.user.ID || !provider.HasKey || strings.Contains(w.Body.String(), secret) {
+		t.Fatalf("BYO provider leaked or accepted an impersonated owner: %s", w.Body.String())
 	}
 	var ciphertext []byte
-	if err := f.s.DB.QueryRow(`SELECT encrypted_key FROM assistant.byo_credentials WHERE id=$1`, credential.ID).Scan(&ciphertext); err != nil || bytes.Contains(ciphertext, []byte(secret)) {
+	if err := f.s.DB.QueryRow(`SELECT encrypted_key FROM assistant.byo_providers WHERE id=$1`, provider.ID).Scan(&ciphertext); err != nil || bytes.Contains(ciphertext, []byte(secret)) {
 		t.Fatal("BYO key was not encrypted at rest")
 	}
+	byoModel := e2eDecode[BYOModel](t, f.request(&f.user, "POST", "/byo/models", map[string]any{"provider_id": provider.ID, "name": "My Model", "upstream_model": "my-upstream", "enabled": true, "max_output_tokens": 1024, "context_window": 32768, "owner_id": f.other.ID}, 200))
+	if byoModel.OwnerID != f.user.ID || byoModel.ProviderID != provider.ID {
+		t.Fatalf("BYO model owner/provider mismatch: %+v", byoModel)
+	}
+	f.request(&f.other, "POST", "/byo/models", map[string]any{"provider_id": provider.ID, "name": "Stolen", "upstream_model": "my-upstream", "enabled": true}, 404)
 	calls := f.provider(f.user.ID, secret, "my-upstream", func(_ int, _ e2eProviderPayload) Message {
 		return Message{Role: "assistant", Content: "Answer using your API."}
 	})
-	response := e2eDecode[ChatResponse](t, f.request(&f.user, "POST", "/chat", ChatRequest{Message: "Use my own model", CredentialID: credential.ID, ClientRequestID: uuid.NewString()}, 200))
+	response := e2eDecode[ChatResponse](t, f.request(&f.user, "POST", "/chat", ChatRequest{Message: "Use my own model", ModelID: byoModel.ID, ClientRequestID: uuid.NewString()}, 200))
 	if response.Error != "" || response.CreditsSpent != 0 || response.Usage.InputTokens != 40 || *calls != 1 {
 		t.Fatalf("BYO chat was not accounted separately: %+v calls=%d", response, *calls)
 	}
@@ -472,18 +479,60 @@ func TestPostgresAssistantHTTPBYOCredentialAccountingAndIsolation(t *testing.T) 
 	if err != nil || len(budgets) != 0 {
 		t.Fatalf("BYO spent platform budget: %+v %v", budgets, err)
 	}
-	list := f.request(&f.user, "GET", "/credentials", nil, 200)
+	list := f.request(&f.user, "GET", "/byo/providers", nil, 200)
 	if strings.Contains(list.Body.String(), secret) || strings.Contains(list.Body.String(), "encrypted_key") {
 		t.Fatalf("credential list exposed secret material: %s", list.Body.String())
 	}
-	otherList := e2eDecode[Page[BYOCredential]](t, f.request(&f.other, "GET", "/credentials", nil, 200))
+	otherList := e2eDecode[Page[BYOProvider]](t, f.request(&f.other, "GET", "/byo/providers", nil, 200))
 	if otherList.Total != 0 {
 		t.Fatalf("other account can enumerate credentials: %+v", otherList)
 	}
-	f.request(&f.other, "DELETE", "/credentials/"+credential.ID, nil, 404)
-	denied := e2eDecode[ChatResponse](t, f.request(&f.other, "POST", "/chat", ChatRequest{Message: "Use another account's key", CredentialID: credential.ID, ClientRequestID: uuid.NewString()}, 200))
+	f.request(&f.other, "DELETE", "/byo/models/"+byoModel.ID, nil, 404)
+	f.request(&f.other, "DELETE", "/byo/providers/"+provider.ID, nil, 404)
+	denied := e2eDecode[ChatResponse](t, f.request(&f.other, "POST", "/chat", ChatRequest{Message: "Use another account's key", ModelID: byoModel.ID, ClientRequestID: uuid.NewString()}, 200))
 	if denied.Error != "assistant_not_found" || *calls != 1 {
 		t.Fatalf("other account used the credential: %+v calls=%d", denied, *calls)
+	}
+}
+
+func TestPostgresAssistantHTTPBackgroundChatAndCheckpointPolling(t *testing.T) {
+	f := assistantE2EFixture(t)
+	gate := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(gate) }) }
+	defer release()
+	entered := make(chan struct{})
+	_ = f.provider(f.user.ID, "integration-test-secret", "test-model", func(_ int, _ e2eProviderPayload) Message {
+		close(entered)
+		<-gate
+		return Message{Role: "assistant", Content: "Background answer completed."}
+	})
+	reqID := uuid.NewString()
+	initial := e2eDecode[ChatResponse](t, f.request(&f.user, "POST", "/chat", ChatRequest{
+		Message: "Run in background", ClientRequestID: reqID, Background: true,
+	}, 200))
+	if initial.Status != "pending" || initial.RequestID != reqID || initial.ConversationID == "" {
+		t.Fatalf("background chat did not return pending: %+v", initial)
+	}
+	<-entered
+	convWhileRunning := e2eDecode[Conversation](t, f.request(&f.user, "GET", "/conversations/"+initial.ConversationID, nil, 200))
+	if convWhileRunning.ActiveRequestID != reqID || len(convWhileRunning.Messages) != 1 || convWhileRunning.Messages[0].Content != "Run in background" {
+		t.Fatalf("conversation did not expose active background request and user message: %+v", convWhileRunning)
+	}
+	reqWhileRunning := e2eDecode[ChatRequestRecord](t, f.request(&f.user, "GET", "/requests/"+reqID, nil, 200))
+	if reqWhileRunning.Status != "pending" {
+		t.Fatalf("request status was not pending: %+v", reqWhileRunning)
+	}
+	f.request(&f.other, "GET", "/requests/"+reqID, nil, 404)
+	release()
+	f.s.Wait()
+	reqDone := e2eDecode[ChatRequestRecord](t, f.request(&f.user, "GET", "/requests/"+reqID, nil, 200))
+	if reqDone.Status != "completed" {
+		t.Fatalf("background request did not finish: %+v", reqDone)
+	}
+	convDone := e2eDecode[Conversation](t, f.request(&f.user, "GET", "/conversations/"+initial.ConversationID, nil, 200))
+	if convDone.ActiveRequestID != "" || len(convDone.Messages) != 2 || convDone.Messages[1].Content != "Background answer completed." {
+		t.Fatalf("completed background conversation mismatch: %+v", convDone)
 	}
 }
 
@@ -527,11 +576,12 @@ func TestPostgresAssistantHTTPGeneratedCacheIsFreeAndBYOPrivate(t *testing.T) {
 				t.Fatalf("creator credit fixture merge: %+v %v", receipt, err)
 			}
 
-			key, upstream, credentialID := "integration-test-secret", "test-model", ""
+			key, upstream, modelID := "integration-test-secret", "test-model", ""
 			if byo {
 				key, upstream = "private-generation-key", "personal-model"
-				credential := e2eDecode[BYOCredential](t, f.request(&f.user, "POST", "/credentials", map[string]any{"name": "Private", "base_url": "https://93.184.216.34/v1", "upstream_model": upstream, "enabled": true, "api_key": key}, 200))
-				credentialID = credential.ID
+				byoProvider := e2eDecode[BYOProvider](t, f.request(&f.user, "POST", "/byo/providers", map[string]any{"name": "Private", "base_url": "https://93.184.216.34/v1", "enabled": true, "api_key": key}, 200))
+				byoModel := e2eDecode[BYOModel](t, f.request(&f.user, "POST", "/byo/models", map[string]any{"provider_id": byoProvider.ID, "name": "Private Model", "upstream_model": upstream, "enabled": true}, 200))
+				modelID = byoModel.ID
 			}
 			calls := f.provider(f.user.ID, key, upstream, func(_ int, payload e2eProviderPayload) Message {
 				if len(payload.Tools) != 0 || !strings.Contains(payload.Messages[len(payload.Messages)-1].Content, work.Title) {
@@ -540,7 +590,10 @@ func TestPostgresAssistantHTTPGeneratedCacheIsFreeAndBYOPrivate(t *testing.T) {
 				return Message{Role: "assistant", Content: `{"markdown":"Original Work is recorded in the catalog."}`}
 			})
 			path := "/generated/" + work.ID
-			input := map[string]any{"locale": "en-US", "client_request_id": uuid.NewString(), "credential_id": credentialID}
+			input := map[string]any{"locale": "en-US", "client_request_id": uuid.NewString(), "model_id": modelID}
+			if modelID == "" {
+				delete(input, "model_id")
+			}
 			var generated struct {
 				Item         *GeneratedOverview `json:"item"`
 				CreditsSpent int64              `json:"credits_spent"`

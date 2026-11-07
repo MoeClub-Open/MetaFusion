@@ -1,7 +1,10 @@
 package curator
 
 func (s *Service) enabledCodes(settings Settings) []string {
-	codes := []string{}
+	codes := []string{CodeManualTask}
+	if settings.Execution.AllowReviews {
+		codes = append(codes, CodeReview)
+	}
 	for _, detector := range s.enabledDetectors(settings) {
 		codes = append(codes, detector.code)
 	}

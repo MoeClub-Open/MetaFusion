@@ -43,30 +43,32 @@ const (
 )
 
 type Settings struct {
-	Enabled                bool       `json:"enabled"`
-	ModelID                string     `json:"model_id"`
-	IntervalSeconds        int        `json:"interval_seconds"`
-	MaxRunsPerHour         int        `json:"max_runs_per_hour"`
-	MonthlyCreditAllowance int64      `json:"monthly_credit_allowance"`
-	AutoMergeLowRisk       bool       `json:"auto_merge_low_risk"`
-	AllowStructures        bool       `json:"allow_structures"`
-	AllowSources           bool       `json:"allow_sources"`
-	AllowNames             bool       `json:"allow_names"`
-	AllowDedupe            bool       `json:"allow_dedupe"`
-	SystemUserID           string     `json:"system_user_id"`
-	ReviewerUserID         string     `json:"reviewer_user_id"`
-	Paused                 bool       `json:"paused"`
-	PausedReason           string     `json:"paused_reason"`
-	ConsecutiveFailures    int        `json:"consecutive_failures"`
-	SweepCursorUpdatedAt   *time.Time `json:"sweep_cursor_updated_at,omitempty"`
-	SweepCursorID          string     `json:"sweep_cursor_id,omitempty"`
-	SweepDetector          int        `json:"sweep_detector"`
-	LastSweepAt            *time.Time `json:"last_sweep_at,omitempty"`
-	LastRunAt              *time.Time `json:"last_run_at,omitempty"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	Execution              ExecutionConfig `json:"execution"`
+	Enabled                bool            `json:"enabled"`
+	ModelID                string          `json:"model_id"`
+	IntervalSeconds        int             `json:"interval_seconds"`
+	MaxRunsPerHour         int             `json:"max_runs_per_hour"`
+	MonthlyCreditAllowance int64           `json:"monthly_credit_allowance"`
+	AutoMergeLowRisk       bool            `json:"auto_merge_low_risk"`
+	AllowStructures        bool            `json:"allow_structures"`
+	AllowSources           bool            `json:"allow_sources"`
+	AllowNames             bool            `json:"allow_names"`
+	AllowDedupe            bool            `json:"allow_dedupe"`
+	SystemUserID           string          `json:"system_user_id"`
+	ReviewerUserID         string          `json:"reviewer_user_id"`
+	Paused                 bool            `json:"paused"`
+	PausedReason           string          `json:"paused_reason"`
+	ConsecutiveFailures    int             `json:"consecutive_failures"`
+	SweepCursorUpdatedAt   *time.Time      `json:"sweep_cursor_updated_at,omitempty"`
+	SweepCursorID          string          `json:"sweep_cursor_id,omitempty"`
+	SweepDetector          int             `json:"sweep_detector"`
+	LastSweepAt            *time.Time      `json:"last_sweep_at,omitempty"`
+	LastRunAt              *time.Time      `json:"last_run_at,omitempty"`
+	UpdatedAt              time.Time       `json:"updated_at"`
 }
 
 type Finding struct {
+	ReviewPRID    string          `json:"review_pr_id,omitempty"`
 	ID            string          `json:"id"`
 	EntityID      string          `json:"entity_id"`
 	EntityKind    string          `json:"entity_kind"`
@@ -95,29 +97,32 @@ type Finding struct {
 }
 
 type Run struct {
-	ID            string          `json:"id"`
-	FindingID     string          `json:"finding_id,omitempty"`
-	EntityID      string          `json:"entity_id,omitempty"`
-	Kind          string          `json:"kind"`
-	Trigger       string          `json:"trigger"`
-	Status        string          `json:"status"`
-	ModelID       string          `json:"model_id,omitempty"`
-	Decision      string          `json:"decision"`
-	Reason        string          `json:"reason"`
-	Sources       json.RawMessage `json:"sources"`
-	ToolTrace     json.RawMessage `json:"tool_trace"`
-	Detail        json.RawMessage `json:"detail"`
-	WorkspaceID   string          `json:"workspace_id,omitempty"`
-	PullRequestID string          `json:"pull_request_id,omitempty"`
-	Merged        bool            `json:"merged"`
-	AutoMerged    bool            `json:"auto_merged"`
-	Error         string          `json:"error"`
-	InputTokens   int64           `json:"input_tokens"`
-	OutputTokens  int64           `json:"output_tokens"`
-	Credits       int64           `json:"credits"`
-	StartedAt     time.Time       `json:"started_at"`
-	FinishedAt    *time.Time      `json:"finished_at,omitempty"`
-	CreatedAt     time.Time       `json:"created_at"`
+	ParentRunID   string              `json:"parent_run_id,omitempty"`
+	Role          string              `json:"role"`
+	Messages      []assistant.Message `json:"messages,omitempty"`
+	ID            string              `json:"id"`
+	FindingID     string              `json:"finding_id,omitempty"`
+	EntityID      string              `json:"entity_id,omitempty"`
+	Kind          string              `json:"kind"`
+	Trigger       string              `json:"trigger"`
+	Status        string              `json:"status"`
+	ModelID       string              `json:"model_id,omitempty"`
+	Decision      string              `json:"decision"`
+	Reason        string              `json:"reason"`
+	Sources       json.RawMessage     `json:"sources"`
+	ToolTrace     json.RawMessage     `json:"tool_trace"`
+	Detail        json.RawMessage     `json:"detail"`
+	WorkspaceID   string              `json:"workspace_id,omitempty"`
+	PullRequestID string              `json:"pull_request_id,omitempty"`
+	Merged        bool                `json:"merged"`
+	AutoMerged    bool                `json:"auto_merged"`
+	Error         string              `json:"error"`
+	InputTokens   int64               `json:"input_tokens"`
+	OutputTokens  int64               `json:"output_tokens"`
+	Credits       int64               `json:"credits"`
+	StartedAt     time.Time           `json:"started_at"`
+	FinishedAt    *time.Time          `json:"finished_at,omitempty"`
+	CreatedAt     time.Time           `json:"created_at"`
 }
 
 type FindingFilter struct {
@@ -127,7 +132,8 @@ type FindingFilter struct {
 }
 
 type RunFilter struct {
-	Kind string
+	ParentID string
+	Kind     string
 }
 
 type Page[T any] struct {

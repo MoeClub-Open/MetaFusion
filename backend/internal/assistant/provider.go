@@ -26,15 +26,15 @@ func (s *Store) Complete(ctx context.Context, in CompletionRequest) (CompletionR
 	if r.Status != "reserved" {
 		return CompletionResponse{}, ErrConflict
 	}
-	if len(in.Messages) == 0 || len(in.Messages) > 200 || len(in.Tools) > 32 {
+	if len(in.Messages) == 0 || len(in.Messages) > 200 || len(in.Tools) > 128 {
 		return CompletionResponse{}, fmt.Errorf("assistant_invalid_messages")
 	}
 	var baseURL, protocol string
 	var encrypted []byte
 	identity := "provider:" + r.ProviderID
-	if r.BYOCredentialID != "" {
-		identity = "byo:" + r.BYOCredentialID
-		err = s.DB.QueryRowContext(ctx, `SELECT base_url,protocol,encrypted_key FROM assistant.byo_credentials WHERE id=$1 AND owner_id=$2 AND enabled`, r.BYOCredentialID, r.UserID).Scan(&baseURL, &protocol, &encrypted)
+	if r.BYOProviderID != "" {
+		identity = "byo:" + r.BYOProviderID
+		err = s.DB.QueryRowContext(ctx, `SELECT base_url,protocol,encrypted_key FROM assistant.byo_providers WHERE id=$1 AND owner_id=$2 AND enabled`, r.BYOProviderID, r.UserID).Scan(&baseURL, &protocol, &encrypted)
 	} else {
 		err = s.DB.QueryRowContext(ctx, `SELECT base_url,protocol,encrypted_key FROM assistant.providers WHERE id=$1 AND enabled`, r.ProviderID).Scan(&baseURL, &protocol, &encrypted)
 	}

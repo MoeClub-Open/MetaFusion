@@ -191,11 +191,13 @@ func main() {
 	}()
 	catalog.RegisterOpenAPIModule("assistant", assistant.AddOpenAPI)
 	catalogHTTP.Register(r)
-	catalogHTTP.RegisterModule(r, assistant.HTTP{Store: aiStore, Catalog: s}.Register)
+	missionEngine := aiStore.EnsureMissionEngine(s)
+	catalogHTTP.RegisterModule(r, assistant.HTTP{Store: aiStore, Catalog: s, Missions: missionEngine}.Register)
 
 	// 持续审核：确定性检测器入队，后台 Agent 逐条核实，只通过工作副本写入；
 	// 低风险白名单由服务端二次比对后再自动合入，其余一律停留在 PR。
 	curatorService := curator.New(s, aiStore)
+	go missionEngine.Run(ctx)
 	go curatorService.Run(ctx)
 	catalog.RegisterOpenAPIModule("curator", curator.AddOpenAPI)
 	catalogHTTP.RegisterModule(r, curator.HTTP{Service: curatorService}.Register)

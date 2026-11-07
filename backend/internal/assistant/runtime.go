@@ -23,9 +23,13 @@ type ChatRequest struct {
 	ConversationID      string `json:"conversation_id,omitempty"`
 	Message             string `json:"message"`
 	ModelID             string `json:"model_id"`
-	CredentialID        string `json:"credential_id,omitempty"`
 	ClientRequestID     string `json:"client_request_id"`
-	credentialSpecified bool
+	SearchProviderID    string `json:"search_provider_id,omitempty"`
+	SearchBYOProviderID string `json:"search_byo_provider_id,omitempty"`
+	Background          bool   `json:"background,omitempty"`
+	billingUserID       string
+	searchUserID        string
+	customTools         map[string]AgentTool
 	checkpoint          func(CompletionRun) error
 	creditBudget        *CreditBudget
 	beforeTool          func(ToolCall) (ToolCall, error)
@@ -46,6 +50,8 @@ type CompletionRun struct {
 
 type ChatResponse struct {
 	ConversationID string `json:"conversation_id"`
+	RequestID      string `json:"request_id,omitempty"`
+	Status         string `json:"status,omitempty"`
 	CompletionRun
 	Error string `json:"error,omitempty"`
 }
@@ -90,6 +96,7 @@ func completionToolsFiltered(allowed []string) ([]Tool, error) {
 	if err = json.Unmarshal(b, &tools); err != nil {
 		return nil, err
 	}
+	tools = append(tools, searchTools()...)
 	if allowed == nil {
 		return tools, nil
 	}
@@ -103,30 +110,37 @@ func completionToolsFiltered(allowed []string) ([]Tool, error) {
 			out = append(out, tool)
 		}
 	}
-	if len(out) == 0 {
-		return nil, errors.New("assistant_no_tools")
-	}
 	return out, nil
 }
 
-// AgentOptions configures a non-interactive assistant run. The caller supplies
-// a catalog identity; the model cannot choose an actor, grant permissions or
-// use tools outside AllowedTools.
+// AgentTool is a capability installed by trusted server code, never the model.
+type AgentTool struct {
+	Definition Tool
+	Run        func(context.Context, json.RawMessage) (any, error)
+}
+
+// AgentOptions keeps the catalog actor independent of the billing owner.
 type AgentOptions struct {
-	User             catalog.User
-	ModelID          string
-	SystemPrompt     string
-	Task             string
-	Purpose          string
-	EntityID         string
-	RequestID        string
-	AllowedTools     []string
-	MaxRounds        int
-	Timeout          time.Duration
-	CreditBudget     *CreditBudget
-	BeforeTool       func(ToolCall) (ToolCall, error)
-	AfterTool        func(ToolCall, any, error) error
-	BeforeCompletion func() error
+	BillingUserID       string
+	SearchProviderID    string
+	SearchBYOProviderID string
+	SearchUserID        string
+	CustomTools         []AgentTool
+	Checkpoint          func(CompletionRun) error
+	User                catalog.User
+	ModelID             string
+	SystemPrompt        string
+	Task                string
+	Purpose             string
+	EntityID            string
+	RequestID           string
+	AllowedTools        []string
+	MaxRounds           int
+	Timeout             time.Duration
+	CreditBudget        *CreditBudget
+	BeforeTool          func(ToolCall) (ToolCall, error)
+	AfterTool           func(ToolCall, any, error) error
+	BeforeCompletion    func() error
 }
 
 // RunAgent executes one bounded tool-using agent turn for background work.
@@ -137,7 +151,7 @@ func RunAgent(ctx context.Context, backend *Store, cat *catalog.Store, opt Agent
 	if strings.TrimSpace(opt.SystemPrompt) == "" || strings.TrimSpace(opt.Task) == "" || strings.TrimSpace(opt.Purpose) == "" {
 		return CompletionRun{}, errors.New("assistant_invalid_agent_request")
 	}
-	if len(opt.AllowedTools) == 0 {
+	if len(opt.AllowedTools) == 0 && len(opt.CustomTools) == 0 {
 		return CompletionRun{}, errors.New("assistant_no_tools")
 	}
 	if _, err := uuid.Parse(opt.RequestID); err != nil {
@@ -151,12 +165,25 @@ func RunAgent(ctx context.Context, backend *Store, cat *catalog.Store, opt Agent
 	for _, name := range opt.AllowedTools {
 		allowed[name] = true
 	}
+	custom := map[string]AgentTool{}
+	for _, t := range opt.CustomTools {
+		name := t.Definition.Function.Name
+		if allowed[name] || custom[name].Run != nil {
+			return CompletionRun{}, errors.New("assistant_duplicate_tool")
+		}
+		custom[name] = t
+		allowed[name] = true
+		tools = append(tools, t.Definition)
+	}
 	messages := []Message{
 		{Role: "system", Content: opt.SystemPrompt},
 		{Role: "user", Content: opt.Task},
 	}
 	return runCompletionInternal(ctx, backend, cat, opt.User, ChatRequest{
 		ModelID: opt.ModelID, ClientRequestID: opt.RequestID, creditBudget: opt.CreditBudget,
+		billingUserID: opt.BillingUserID, searchUserID: opt.SearchUserID,
+		SearchProviderID: opt.SearchProviderID, SearchBYOProviderID: opt.SearchBYOProviderID,
+		customTools: custom, checkpoint: opt.Checkpoint,
 		beforeTool: opt.BeforeTool, afterTool: opt.AfterTool,
 		beforeCompletion: opt.BeforeCompletion,
 	}, messages, tools, opt.MaxRounds, opt.Timeout, allowed, opt.Purpose, opt.EntityID)
@@ -168,12 +195,14 @@ func (h HTTP) complete(ctx context.Context, u catalog.User, req ChatRequest, mes
 
 func runCompletion(ctx context.Context, backend completionBackend, cat *catalog.Store, u catalog.User, req ChatRequest, messages []Message, toolsEnabled bool, purpose, entityID string) (run CompletionRun, err error) {
 	var tools []Tool
+	timeout := 120 * time.Second
 	if toolsEnabled {
+		timeout = 270 * time.Second
 		if tools, err = completionTools(); err != nil {
 			return run, err
 		}
 	}
-	return runCompletionInternal(ctx, backend, cat, u, req, messages, tools, 0, 120*time.Second, nil, purpose, entityID)
+	return runCompletionInternal(ctx, backend, cat, u, req, messages, tools, 0, timeout, nil, purpose, entityID)
 }
 
 func runCompletionInternal(ctx context.Context, backend completionBackend, cat *catalog.Store, u catalog.User, req ChatRequest, messages []Message, tools []Tool, maxRounds int, timeout time.Duration, allowedTools map[string]bool, purpose, entityID string) (run CompletionRun, err error) {
@@ -187,10 +216,19 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 	if u.ID == "" || u.IsThirdParty {
 		return run, errors.New("assistant_forbidden")
 	}
+	billingUserID := req.billingUserID
+	if billingUserID == "" {
+		billingUserID = u.ID
+	}
 	defer func() {
+		if req.checkpoint != nil {
+			if e := req.checkpoint(run); e != nil {
+				err = errors.Join(err, e)
+			}
+		}
 		balanceCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		balance, e := backend.SyncCredits(balanceCtx, u.ID)
+		balance, e := backend.SyncCredits(balanceCtx, billingUserID)
 		if e == nil {
 			run.Balance = balance
 		}
@@ -214,6 +252,14 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 		if m.ID == req.ModelID {
 			model = m
 			break
+		}
+	}
+	if model.ID == "" && req.ModelID != "" {
+		if store, ok := backend.(*Store); ok {
+			model, _, err = store.ResolveBYOModel(ctx, req.ModelID, billingUserID, true)
+			if err != nil {
+				return run, err
+			}
 		}
 	}
 	if model.ID == "" {
@@ -247,7 +293,7 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 		// Provider tokenizers and hidden protocol tokens differ. The configured
 		// context window is the enforceable upper bound; release the difference
 		// only after receiving the provider's measured usage.
-		reservation, e := backend.Reserve(ctx, ReserveRequest{ID: id, UserID: u.ID, ModelID: model.ID, BYOCredentialID: req.CredentialID, InputTokens: model.ContextWindow - model.MaxOutputTokens, OutputTokens: model.MaxOutputTokens, Purpose: purpose, EntityID: entityID, CreditBudget: req.creditBudget})
+		reservation, e := backend.Reserve(ctx, ReserveRequest{ID: id, UserID: billingUserID, ModelID: model.ID, InputTokens: model.ContextWindow - model.MaxOutputTokens, OutputTokens: model.MaxOutputTokens, Purpose: purpose, EntityID: entityID, CreditBudget: req.creditBudget})
 		if e != nil {
 			return run, e
 		}
@@ -307,7 +353,34 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 						return run, err
 					}
 				}
-				result, toolErr = runCatalogTool(ctx, cat, u, call.Function.Name, json.RawMessage(call.Function.Arguments))
+				if custom, ok := req.customTools[call.Function.Name]; ok {
+					result, toolErr = custom.Run(ctx, json.RawMessage(call.Function.Arguments))
+				} else if call.Function.Name == "web_search" || call.Function.Name == "web_fetch" {
+					store, ok := backend.(*Store)
+					if !ok {
+						toolErr = errors.New("assistant_search_unavailable")
+					} else {
+						var input SearchInput
+						if json.Unmarshal([]byte(call.Function.Arguments), &input) != nil {
+							toolErr = errors.New("assistant_invalid_search_request")
+						} else {
+							operation := "search"
+							if call.Function.Name == "web_fetch" {
+								operation = "fetch"
+							}
+							searchUser := req.searchUserID
+							if searchUser == "" {
+								searchUser = u.ID
+							}
+							searchID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(id+":"+call.ID+":"+fmt.Sprint(index))).String()
+							response, e := store.WebSearch(ctx, SearchOptions{RequestID: searchID, UserID: searchUser, ProviderID: req.SearchProviderID, BYOProviderID: req.SearchBYOProviderID, Purpose: purpose, Budget: req.creditBudget}, operation, input)
+							result, toolErr = response, e
+							run.CreditsSpent += response.Credits
+						}
+					}
+				} else {
+					result, toolErr = runCatalogTool(ctx, cat, u, call.Function.Name, json.RawMessage(call.Function.Arguments))
+				}
 			}
 			if req.afterTool != nil && index < 8 {
 				if err = req.afterTool(call, result, toolErr); err != nil {
@@ -385,10 +458,9 @@ func validateChatRequest(req ChatRequest) error {
 // tokens or applying the same catalog edit twice.
 func (s *Store) claimChat(ctx context.Context, owner string, req ChatRequest) (Conversation, *ChatResponse, error) {
 	var conv Conversation
-	b, _ := json.Marshal(struct {
-		Request             ChatRequest
-		CredentialSpecified bool
-	}{req, req.credentialSpecified})
+	hashReq := req
+	hashReq.Background = false
+	b, _ := json.Marshal(hashReq)
 	digest := sha256.Sum256(b)
 	hash := hex.EncodeToString(digest[:])
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -396,27 +468,35 @@ func (s *Store) claimChat(ctx context.Context, owner string, req ChatRequest) (C
 		return conv, nil, err
 	}
 	defer tx.Rollback()
-	var previousOwner, status, previousHash string
+	var previousOwner, status, previousHash, previousConversationID string
 	var response []byte
-	err = tx.QueryRowContext(ctx, `SELECT owner_id,status,request_hash,response FROM assistant.chat_requests WHERE id=$1`, req.ClientRequestID).Scan(&previousOwner, &status, &previousHash, &response)
+	err = tx.QueryRowContext(ctx, `SELECT owner_id,status,request_hash,COALESCE(conversation_id::text,''),response FROM assistant.chat_requests WHERE id=$1`, req.ClientRequestID).Scan(&previousOwner, &status, &previousHash, &previousConversationID, &response)
 	if err == nil {
-		if owner != previousOwner || hash != previousHash || status == "pending" {
+		if owner != previousOwner || hash != previousHash {
+			return conv, nil, ErrConflict
+		}
+		if status == "pending" {
+			if req.Background {
+				return Conversation{ID: previousConversationID}, &ChatResponse{ConversationID: previousConversationID, RequestID: req.ClientRequestID, Status: "pending"}, nil
+			}
 			return conv, nil, ErrConflict
 		}
 		var replay ChatResponse
 		if json.Unmarshal(response, &replay) != nil {
 			return conv, nil, ErrConflict
 		}
+		replay.RequestID = req.ClientRequestID
+		replay.Status = status
 		return conv, &replay, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return conv, nil, err
 	}
 	if req.ConversationID == "" {
-		conv = Conversation{ID: uuid.NewString(), OwnerID: owner, Title: shortTitle(req.Message), ModelID: req.ModelID, BYOCredentialID: req.CredentialID, Messages: []Message{}}
-		_, err = tx.ExecContext(ctx, `INSERT INTO assistant.conversations(id,owner_id,title,model_id,byo_credential_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid)`, conv.ID, owner, conv.Title, conv.ModelID, conv.BYOCredentialID)
+		conv = Conversation{ID: uuid.NewString(), OwnerID: owner, Title: shortTitle(req.Message), ModelID: req.ModelID, Messages: []Message{}}
+		_, err = tx.ExecContext(ctx, `INSERT INTO assistant.conversations(id,owner_id,title,model_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid)`, conv.ID, owner, conv.Title, conv.ModelID)
 	} else {
-		conv, err = scanConversation(tx.QueryRowContext(ctx, `SELECT id::text,owner_id,title,coalesce(model_id::text,''),coalesce(byo_credential_id::text,''),messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND owner_id=$2`, req.ConversationID, owner))
+		conv, err = scanConversation(tx.QueryRowContext(ctx, `SELECT id::text,owner_id,title,coalesce(model_id::text,''),'',messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND owner_id=$2`, req.ConversationID, owner))
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return conv, nil, ErrNotFound
@@ -431,6 +511,7 @@ func (s *Store) claimChat(ctx context.Context, owner string, req ChatRequest) (C
 	if err = tx.Commit(); err != nil {
 		return conv, nil, err
 	}
+	conv.ActiveRequestID = req.ClientRequestID
 	return conv, nil, nil
 }
 
@@ -446,7 +527,7 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanConversation(row rowScanner) (c Conversation, err error) {
 	var messages []byte
-	err = row.Scan(&c.ID, &c.OwnerID, &c.Title, &c.ModelID, &c.BYOCredentialID, &messages, &c.CreatedAt, &c.UpdatedAt)
+	err = row.Scan(&c.ID, &c.OwnerID, &c.Title, &c.ModelID, &c.ActiveRequestID, &messages, &c.CreatedAt, &c.UpdatedAt)
 	if err == nil {
 		err = json.Unmarshal(messages, &c.Messages)
 	}
@@ -461,6 +542,8 @@ func (s *Store) finishChat(ctx context.Context, owner, requestID string, conv Co
 	if response.Error != "" {
 		status = "failed"
 	}
+	response.RequestID = requestID
+	response.Status = status
 	return s.persistChat(ctx, owner, requestID, conv, response, status)
 }
 
@@ -470,14 +553,27 @@ func (s *Store) persistChat(ctx context.Context, owner, requestID string, conv C
 		return err
 	}
 	defer tx.Rollback()
-	b, err := json.Marshal(response.Messages)
+	var stored []Message
+	if status == "pending" {
+		stored = make([]Message, 0, len(response.Messages))
+		for _, m := range response.Messages {
+			if m.Role != "system" {
+				stored = append(stored, m)
+			}
+		}
+	} else {
+		stored = withoutSystemMessages(response.Messages)
+	}
+	b, err := json.Marshal(stored)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE assistant.conversations SET messages=$1,model_id=NULLIF($2,'')::uuid,byo_credential_id=NULLIF($3,'')::uuid,updated_at=now() WHERE id=$4 AND owner_id=$5`, b, conv.ModelID, conv.BYOCredentialID, conv.ID, owner)
+	_, err = tx.ExecContext(ctx, `UPDATE assistant.conversations SET messages=$1,model_id=NULLIF($2,'')::uuid,updated_at=now() WHERE id=$3 AND owner_id=$4`, b, conv.ModelID, conv.ID, owner)
 	if err != nil {
 		return err
 	}
+	response.RequestID = requestID
+	response.Status = status
 	b, err = json.Marshal(response)
 	if err != nil {
 		return err
@@ -506,39 +602,57 @@ func scanChatRequest(row rowScanner) (v ChatRequestRecord, err error) {
 	return
 }
 
-func (h HTTP) listRequests(c *gin.Context) {
-	l, o := pageArgs(c)
-	owner, status := c.Query("user_id"), c.Query("status")
-	if status != "" && status != "pending" && status != "completed" && status != "failed" {
-		writeResponse(c, nil, errors.New("assistant_invalid_status"))
-		return
-	}
-	p := Page[ChatRequestRecord]{Items: []ChatRequestRecord{}, Limit: l, Offset: o}
-	where := ` WHERE ($1='' OR owner_id=$1) AND ($2='' OR status=$2)`
-	if err := h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT count(*) FROM assistant.chat_requests`+where, owner, status).Scan(&p.Total); err != nil {
-		writeResponse(c, nil, err)
-		return
-	}
-	rows, err := h.Store.DB.QueryContext(c.Request.Context(), `SELECT id::text,owner_id,coalesce(conversation_id::text,''),status,NULL::jsonb,created_at,updated_at FROM assistant.chat_requests`+where+` ORDER BY created_at DESC,id LIMIT $3 OFFSET $4`, owner, status, l, o)
-	if err != nil {
-		writeResponse(c, nil, err)
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		v, e := scanChatRequest(rows)
-		if e != nil {
-			writeResponse(c, nil, e)
+func (h HTTP) listRequests(admin bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		l, o := pageArgs(c)
+		owner := ""
+		if admin {
+			owner = c.Query("user_id")
+		} else {
+			owner = catalog.RequestUser(c).ID
+		}
+		status, conversationID := c.Query("status"), c.Query("conversation_id")
+		if status != "" && status != "pending" && status != "completed" && status != "failed" {
+			writeResponse(c, nil, errors.New("assistant_invalid_status"))
 			return
 		}
-		p.Items = append(p.Items, v)
+		if conversationID != "" && !validID(conversationID) {
+			writeResponse(c, nil, errors.New("assistant_invalid_id"))
+			return
+		}
+		p := Page[ChatRequestRecord]{Items: []ChatRequestRecord{}, Limit: l, Offset: o}
+		where := ` WHERE ($1='' OR owner_id=$1) AND ($2='' OR status=$2) AND ($3='' OR conversation_id::text=$3)`
+		if err := h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT count(*) FROM assistant.chat_requests`+where, owner, status, conversationID).Scan(&p.Total); err != nil {
+			writeResponse(c, nil, err)
+			return
+		}
+		rows, err := h.Store.DB.QueryContext(c.Request.Context(), `SELECT id::text,owner_id,coalesce(conversation_id::text,''),status,NULL::jsonb,created_at,updated_at FROM assistant.chat_requests`+where+` ORDER BY created_at DESC,id LIMIT $4 OFFSET $5`, owner, status, conversationID, l, o)
+		if err != nil {
+			writeResponse(c, nil, err)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			v, e := scanChatRequest(rows)
+			if e != nil {
+				writeResponse(c, nil, e)
+				return
+			}
+			p.Items = append(p.Items, v)
+		}
+		writeResponse(c, p, rows.Err())
 	}
-	writeResponse(c, p, rows.Err())
 }
 
-func (h HTTP) getRequest(c *gin.Context) {
-	v, e := scanChatRequest(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,coalesce(conversation_id::text,''),status,response,created_at,updated_at FROM assistant.chat_requests WHERE id=$1`, c.Param("id")))
-	writeResponse(c, v, e)
+func (h HTTP) getRequest(admin bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		owner := ""
+		if !admin {
+			owner = catalog.RequestUser(c).ID
+		}
+		v, e := scanChatRequest(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,coalesce(conversation_id::text,''),status,response,created_at,updated_at FROM assistant.chat_requests WHERE id=$1 AND ($2='' OR owner_id=$2)`, c.Param("id"), owner))
+		writeResponse(c, v, e)
+	}
 }
 
 func (h HTTP) cancelRequest(c *gin.Context) {
@@ -568,5 +682,5 @@ func (h HTTP) cancelRequest(c *gin.Context) {
 		writeResponse(c, nil, ErrConflict)
 		return
 	}
-	h.getRequest(c)
+	h.getRequest(true)(c)
 }

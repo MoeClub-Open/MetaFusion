@@ -280,27 +280,38 @@ func TestPostgresRewardPolicyAndUniqueness(t *testing.T) {
 }
 
 func TestPostgresBYOIsolationAndNoPlatformCharges(t *testing.T) {
-	s, m, ownerID := accountingFixture(t)
+	s, _, ownerID := accountingFixture(t)
 	ctx := context.Background()
-	id := uuid.NewString()
-	encrypted, err := s.encryptSecret("owner-test-key", "byo:"+id)
+	providerID := uuid.NewString()
+	encrypted, err := s.encryptSecret("owner-test-key", "byo:"+providerID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.DB.Exec(`INSERT INTO assistant.byo_credentials(id,owner_id,name,base_url,encrypted_key) VALUES($1,$2,'Own','https://api.example.com/v1',$3)`, id, ownerID, encrypted); err != nil {
+	if _, err = s.DB.Exec(`INSERT INTO assistant.byo_providers(id,owner_id,name,base_url,encrypted_key) VALUES($1,$2,'Own','https://api.example.com/v1',$3)`, providerID, ownerID, encrypted); err != nil {
+		t.Fatal(err)
+	}
+	modelID := uuid.NewString()
+	if _, err = s.DB.Exec(`INSERT INTO assistant.byo_models(id,owner_id,provider_id,upstream_model,name,max_output_tokens,context_window) VALUES($1,$2,$3,'own-model','Own Model',1024,32768)`, modelID, ownerID, providerID); err != nil {
 		t.Fatal(err)
 	}
 	other := uuid.NewString()
-	in := ReserveRequest{ID: uuid.NewString(), UserID: other, ModelID: m.ID, BYOCredentialID: id, InputTokens: 10, OutputTokens: 10, Purpose: "test"}
+	in := ReserveRequest{ID: uuid.NewString(), UserID: other, ModelID: modelID, InputTokens: 10, OutputTokens: 10, Purpose: "test"}
 	if _, err = s.Reserve(ctx, in); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner credential usable: %v", err)
 	}
-	if err = s.DeleteBYOCredential(ctx, other, id, false); !errors.Is(err, ErrNotFound) {
+	if err = s.DeleteBYOModel(ctx, other, modelID, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-owner model deletable: %v", err)
+	}
+	if err = s.DeleteBYOProvider(ctx, other, providerID, false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner credential deletable: %v", err)
 	}
-	list, err := s.BYOCredentials(ctx, other, false, 50, 0)
+	list, err := s.BYOProviders(ctx, other, false, 50, 0)
 	if err != nil || list.Total != 0 {
 		t.Fatalf("cross-owner credential listed: %+v %v", list, err)
+	}
+	models, err := s.BYOModels(ctx, other, false, false, 50, 0)
+	if err != nil || models.Total != 0 {
+		t.Fatalf("cross-owner model listed: %+v %v", models, err)
 	}
 	in.ID = uuid.NewString()
 	in.UserID = ownerID
@@ -308,7 +319,7 @@ func TestPostgresBYOIsolationAndNoPlatformCharges(t *testing.T) {
 		t.Fatal(err)
 	}
 	u, err := s.Settle(ctx, in.ID, TokenUsage{InputTokens: 10, OutputTokens: 5, CachedInputTokens: 3}, "completed", "")
-	if err != nil || u.Credits != 0 || u.CostMicroUSD != 0 || u.Usage.CachedInputTokens != 3 {
+	if err != nil || u.Credits != 0 || u.CostMicroUSD != 0 || u.BYOProviderID != providerID || u.Usage.CachedInputTokens != 3 {
 		t.Fatalf("BYO accounting: %+v %v", u, err)
 	}
 	budgets, err := s.Budgets(ctx)

@@ -1,11 +1,12 @@
 import { fetchApi } from "./api";
-import type { AssistantModel } from "./assistantApi";
+import type { AssistantModel, AssistantMessage } from "./assistantApi";
 
 export function curatorRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   return fetchApi<T>(`/curator${path}`, options);
 }
 
 export interface CuratorSettings {
+  execution: { child_model_id: string; billing_owner_id: string; search_provider_id: string; search_byo_provider_id: string; max_children: number; allow_reviews: boolean; auto_merge_reviews: boolean };
   enabled: boolean;
   model_id: string;
   interval_seconds: number;
@@ -26,6 +27,7 @@ export interface CuratorSettings {
 }
 
 export interface CuratorFinding {
+  review_pr_id?: string;
   id: string;
   entity_id: string;
   entity_kind: string;
@@ -54,10 +56,11 @@ export interface CuratorFinding {
 }
 
 export interface CuratorRun {
+  parent_run_id?: string; role: string; messages?: AssistantMessage[];
   id: string;
   finding_id?: string;
   entity_id?: string;
-  kind: "agent" | "sweep" | "quality";
+  kind: "manager" | "agent" | "sweep" | "quality";
   trigger: "schedule" | "manual" | "sweep";
   status: "running" | "completed" | "failed" | "skipped";
   model_id?: string;

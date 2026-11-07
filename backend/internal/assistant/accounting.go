@@ -177,12 +177,12 @@ func reserveHash(in ReserveRequest) string {
 	return hex.EncodeToString(sum[:])
 }
 
-const usageColumns = `id,user_id,provider_id,model_id,COALESCE(byo_credential_id::text,''),purpose,COALESCE(entity_id::text,''),status,error,input_tokens,output_tokens,cached_input_tokens,usage_estimated,credits,cost_microusd,price_snapshot,created_at,settled_at`
+const usageColumns = `id,user_id,provider_id,model_id,COALESCE(byo_provider_id::text,''),purpose,COALESCE(entity_id::text,''),status,error,input_tokens,output_tokens,cached_input_tokens,usage_estimated,credits,cost_microusd,price_snapshot,created_at,settled_at`
 
 func scanUsage(row scanner) (UsageRecord, error) {
 	var u UsageRecord
 	var snapshot []byte
-	err := row.Scan(&u.ID, &u.UserID, &u.ProviderID, &u.ModelID, &u.BYOCredentialID, &u.Purpose, &u.EntityID, &u.Status, &u.Error, &u.Usage.InputTokens, &u.Usage.OutputTokens, &u.Usage.CachedInputTokens, &u.UsageEstimated, &u.Credits, &u.CostMicroUSD, &snapshot, &u.CreatedAt, &u.SettledAt)
+	err := row.Scan(&u.ID, &u.UserID, &u.ProviderID, &u.ModelID, &u.BYOProviderID, &u.Purpose, &u.EntityID, &u.Status, &u.Error, &u.Usage.InputTokens, &u.Usage.OutputTokens, &u.Usage.CachedInputTokens, &u.UsageEstimated, &u.Credits, &u.CostMicroUSD, &snapshot, &u.CreatedAt, &u.SettledAt)
 	if err != nil {
 		return u, dbError(err)
 	}
@@ -193,7 +193,7 @@ func scanReservation(row scanner) (Reservation, string, error) {
 	var r Reservation
 	var snapshot []byte
 	var hash string
-	err := row.Scan(&r.ID, &r.UserID, &r.ModelID, &r.BYOCredentialID, &r.InputTokens, &r.OutputTokens, &r.Purpose, &r.EntityID, &r.ProviderID, &r.ReservedCredits, &r.ReservedCostMicroUSD, &r.Status, &r.CreatedAt, &snapshot, &hash)
+	err := row.Scan(&r.ID, &r.UserID, &r.ModelID, &r.BYOProviderID, &r.InputTokens, &r.OutputTokens, &r.Purpose, &r.EntityID, &r.ProviderID, &r.ReservedCredits, &r.ReservedCostMicroUSD, &r.Status, &r.CreatedAt, &snapshot, &hash)
 	if err != nil {
 		return r, "", dbError(err)
 	}
@@ -201,13 +201,13 @@ func scanReservation(row scanner) (Reservation, string, error) {
 	return r, hash, err
 }
 
-const reservationColumns = `id,user_id,model_id,COALESCE(byo_credential_id::text,''),input_limit,output_limit,purpose,COALESCE(entity_id::text,''),provider_id,reserved_credits,reserved_cost_microusd,status,created_at,price_snapshot,request_hash`
+const reservationColumns = `id,user_id,model_id,COALESCE(byo_provider_id::text,''),input_limit,output_limit,purpose,COALESCE(entity_id::text,''),provider_id,reserved_credits,reserved_cost_microusd,status,created_at,price_snapshot,request_hash`
 
 func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, error) {
 	if !s.CredentialsAvailable() {
 		return Reservation{}, ErrEncryptionUnavailable
 	}
-	if !validID(in.ID) || in.UserID == "" || !validID(in.ModelID) || in.InputTokens < 1 || in.OutputTokens < 1 || len(in.Purpose) > 100 || in.Purpose == "" || (in.EntityID != "" && !validID(in.EntityID)) || (in.BYOCredentialID != "" && !validID(in.BYOCredentialID)) {
+	if !validID(in.ID) || in.UserID == "" || !validID(in.ModelID) || in.InputTokens < 1 || in.OutputTokens < 1 || len(in.Purpose) > 100 || in.Purpose == "" || (in.EntityID != "" && !validID(in.EntityID)) {
 		return Reservation{}, fmt.Errorf("assistant_invalid_reservation")
 	}
 	if _, err := s.SyncCredits(ctx, in.UserID); err != nil {
@@ -238,53 +238,65 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 	if !settings.Enabled {
 		return Reservation{}, ErrDisabled
 	}
-	m, err := scanModel(tx.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM assistant.models WHERE id=$1`, in.ModelID))
-	if err != nil {
-		return Reservation{}, err
-	}
-	if !m.Enabled {
-		return Reservation{}, ErrDisabled
-	}
-	if in.OutputTokens > m.MaxOutputTokens || in.InputTokens > m.ContextWindow-in.OutputTokens {
-		return Reservation{}, fmt.Errorf("assistant_context_limit")
-	}
-	var providerEnabled bool
-	var providerBudget int64
-	var hasKey bool
-	err = tx.QueryRowContext(ctx, `SELECT enabled,monthly_budget_microusd,octet_length(encrypted_key)>0 FROM assistant.providers WHERE id=$1`, m.ProviderID).Scan(&providerEnabled, &providerBudget, &hasKey)
-	if err != nil {
-		return Reservation{}, dbError(err)
-	}
-	if !providerEnabled {
-		return Reservation{}, ErrDisabled
-	}
-	reservationPricing := m
-	if m.CachedInputPriceMicroUSDPerMillion > reservationPricing.InputPriceMicroUSDPerMillion {
-		reservationPricing.InputPriceMicroUSDPerMillion = m.CachedInputPriceMicroUSDPerMillion
-	}
-	credits, cost, err := quote(reservationPricing, TokenUsage{InputTokens: in.InputTokens, OutputTokens: in.OutputTokens})
-	if err != nil {
-		return Reservation{}, err
-	}
+	var byoProviderID string
+	var credits, cost int64
 	month := time.Now().UTC()
 	month = time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if in.BYOCredentialID != "" {
-		var available bool
-		var upstreamModel string
-		err = tx.QueryRowContext(ctx, `SELECT enabled AND octet_length(encrypted_key)>0,upstream_model FROM assistant.byo_credentials WHERE id=$1 AND owner_id=$2`, in.BYOCredentialID, in.UserID).Scan(&available, &upstreamModel)
+	m, err := scanModel(tx.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM assistant.models WHERE id=$1`, in.ModelID))
+	if err == ErrNotFound {
+		var bm BYOModel
+		var providerEnabled, hasKey bool
+		var providerUpdated time.Time
+		byoErr := tx.QueryRowContext(ctx, `SELECT bm.id,bm.owner_id,bm.provider_id,bm.upstream_model,bm.name,bm.enabled,bm.max_output_tokens,bm.max_tokens_parameter,bm.context_window,bm.created_at,bm.updated_at,bp.enabled,octet_length(bp.encrypted_key)>0,bp.updated_at FROM assistant.byo_models bm JOIN assistant.byo_providers bp ON bp.id=bm.provider_id AND bp.owner_id=bm.owner_id WHERE bm.id=$1 AND bm.owner_id=$2`, in.ModelID, in.UserID).Scan(&bm.ID, &bm.OwnerID, &bm.ProviderID, &bm.UpstreamModel, &bm.Name, &bm.Enabled, &bm.MaxOutputTokens, &bm.MaxTokensParameter, &bm.ContextWindow, &bm.CreatedAt, &bm.UpdatedAt, &providerEnabled, &hasKey, &providerUpdated)
+		if byoErr != nil {
+			return Reservation{}, dbError(byoErr)
+		}
+		if !bm.Enabled || !providerEnabled || !hasKey {
+			return Reservation{}, ErrDisabled
+		}
+		if in.OutputTokens > bm.MaxOutputTokens || in.InputTokens > bm.ContextWindow-in.OutputTokens {
+			return Reservation{}, fmt.Errorf("assistant_context_limit")
+		}
+		updated := bm.UpdatedAt
+		if providerUpdated.After(updated) {
+			updated = providerUpdated
+		}
+		m = Model{
+			ID: bm.ID, ProviderID: bm.ProviderID, UpstreamModel: bm.UpstreamModel, Name: bm.Name,
+			Enabled: true, MaxOutputTokens: bm.MaxOutputTokens, MaxTokensParameter: bm.MaxTokensParameter,
+			ContextWindow: bm.ContextWindow, CreatedAt: bm.CreatedAt, UpdatedAt: updated,
+		}
+		byoProviderID = bm.ProviderID
+		credits, cost = 0, 0
+	} else if err != nil {
+		return Reservation{}, err
+	} else {
+		if !m.Enabled {
+			return Reservation{}, ErrDisabled
+		}
+		if in.OutputTokens > m.MaxOutputTokens || in.InputTokens > m.ContextWindow-in.OutputTokens {
+			return Reservation{}, fmt.Errorf("assistant_context_limit")
+		}
+		var providerEnabled bool
+		var providerBudget int64
+		var hasKey bool
+		err = tx.QueryRowContext(ctx, `SELECT enabled,monthly_budget_microusd,octet_length(encrypted_key)>0 FROM assistant.providers WHERE id=$1`, m.ProviderID).Scan(&providerEnabled, &providerBudget, &hasKey)
 		if err != nil {
 			return Reservation{}, dbError(err)
 		}
-		if !available {
+		if !providerEnabled {
 			return Reservation{}, ErrDisabled
 		}
-		if upstreamModel != "" {
-			m.UpstreamModel = upstreamModel
-		}
-		credits, cost = 0, 0
-	} else {
 		if !hasKey {
 			return Reservation{}, fmt.Errorf("assistant_provider_key_required")
+		}
+		reservationPricing := m
+		if m.CachedInputPriceMicroUSDPerMillion > reservationPricing.InputPriceMicroUSDPerMillion {
+			reservationPricing.InputPriceMicroUSDPerMillion = m.CachedInputPriceMicroUSDPerMillion
+		}
+		credits, cost, err = quote(reservationPricing, TokenUsage{InputTokens: in.InputTokens, OutputTokens: in.OutputTokens})
+		if err != nil {
+			return Reservation{}, err
 		}
 		b, e := scanBalance(tx.QueryRowContext(ctx, `SELECT user_id,credits,reserved_credits,updated_at FROM assistant.accounts WHERE user_id=$1 FOR UPDATE`, in.UserID))
 		if e != nil {
@@ -295,20 +307,36 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 		}
 		if in.CreditBudget != nil {
 			budget := in.CreditBudget
-			if budget.MonthlyLimit <= 0 || budget.PurposePrefix == "" || !strings.HasPrefix(in.Purpose, budget.PurposePrefix) {
+			if budget.PurposePrefix == "" && !budget.EnforceTotal {
 				return Reservation{}, ErrBudgetExceeded
 			}
-			var committed int64
-			// The account row above serializes concurrent reservations. Include
-			// outstanding calls so rewards or top-ups cannot bypass this cap.
-			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(sum(CASE WHEN status='reserved' THEN reserved_credits ELSE credits END),0)
-				FROM assistant.usage WHERE user_id=$1 AND starts_with(purpose,$2) AND budget_month=$3
-				AND status IN ('reserved','completed','failed','unknown')`, in.UserID, budget.PurposePrefix, month).Scan(&committed); err != nil {
-				return Reservation{}, err
+			if budget.PurposePrefix != "" {
+				if budget.MonthlyLimit <= 0 || !strings.HasPrefix(in.Purpose, budget.PurposePrefix) {
+					return Reservation{}, ErrBudgetExceeded
+				}
+				var committed int64
+				committed, err = budgetCommitted(ctx, tx, in.UserID, budget.PurposePrefix, month)
+				if err != nil {
+					return Reservation{}, err
+				}
+				total, e := addAmounts(committed, credits)
+				if e != nil || total > budget.MonthlyLimit {
+					return Reservation{}, ErrBudgetExceeded
+				}
 			}
-			total, e := addAmounts(committed, credits)
-			if e != nil || total > budget.MonthlyLimit {
-				return Reservation{}, ErrBudgetExceeded
+			if budget.EnforceTotal {
+				if budget.TotalLimit <= 0 || budget.TotalPrefix == "" || !strings.HasPrefix(in.Purpose, budget.TotalPrefix) {
+					return Reservation{}, ErrBudgetExceeded
+				}
+				var committed int64
+				committed, err = totalBudgetCommitted(ctx, tx, in.UserID, budget.TotalPrefix)
+				if err != nil {
+					return Reservation{}, err
+				}
+				total, e := addAmounts(committed, credits)
+				if e != nil || total > budget.TotalLimit {
+					return Reservation{}, ErrBudgetExceeded
+				}
 			}
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE assistant.accounts SET reserved_credits=reserved_credits+$2,updated_at=now() WHERE user_id=$1`, in.UserID, credits); err != nil {
@@ -323,7 +351,7 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 			}
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO assistant.usage(id,user_id,provider_id,model_id,byo_credential_id,purpose,entity_id,status,request_hash,price_snapshot,input_limit,output_limit,reserved_credits,reserved_cost_microusd,budget_month) VALUES($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14)`, in.ID, in.UserID, m.ProviderID, in.ModelID, nullableID(in.BYOCredentialID), in.Purpose, nullableID(in.EntityID), reserveHash(in), jsonBytes(m), in.InputTokens, in.OutputTokens, credits, cost, month)
+	_, err = tx.ExecContext(ctx, `INSERT INTO assistant.usage(id,user_id,provider_id,model_id,byo_provider_id,purpose,entity_id,status,request_hash,price_snapshot,input_limit,output_limit,reserved_credits,reserved_cost_microusd,budget_month) VALUES($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14)`, in.ID, in.UserID, m.ProviderID, in.ModelID, nullableID(byoProviderID), in.Purpose, nullableID(in.EntityID), reserveHash(in), jsonBytes(m), in.InputTokens, in.OutputTokens, credits, cost, month)
 	if err != nil {
 		return Reservation{}, err
 	}
@@ -393,7 +421,7 @@ func (s *Store) Settle(ctx context.Context, id string, usage TokenUsage, status,
 	if estimated {
 		credits, cost = r.ReservedCredits, r.ReservedCostMicroUSD
 	}
-	if r.BYOCredentialID != "" {
+	if r.BYOProviderID != "" {
 		credits, cost = 0, 0
 	} else {
 		if _, err = tx.ExecContext(ctx, `SELECT user_id FROM assistant.accounts WHERE user_id=$1 FOR UPDATE`, r.UserID); err != nil {

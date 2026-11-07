@@ -62,6 +62,7 @@ export function describeAssistantError(error: unknown, t: TranslateFn): string {
       assistant_encryption_unavailable: "unavailable",
       assistant_request_conflict: "requestConflict",
       assistant_context_limit: "contextLimit",
+      assistant_record_in_use: "recordInUse",
     } as Record<string, string>)[error.message];
     if (key) return t(`assistant.user.error.${key}`);
     if (error.status === 401) return t("assistant.user.loginRequired");

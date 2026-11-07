@@ -54,7 +54,7 @@ func TestAssistantBodyRejectsIdentityInjectionAndTrailingPayload(t *testing.T) {
 func TestPostgresChatRequestIsOwnerBoundAndNeverReplayed(t *testing.T) {
 	s, model, owner := accountingFixture(t)
 	ctx := context.Background()
-	req := ChatRequest{ClientRequestID: uuid.NewString(), Message: "A requested edit", ModelID: model.ID, credentialSpecified: true}
+	req := ChatRequest{ClientRequestID: uuid.NewString(), Message: "A requested edit", ModelID: model.ID}
 	conv, replay, err := s.claimChat(ctx, owner, req)
 	if err != nil || replay != nil {
 		t.Fatalf("claim err=%v replay=%+v", err, replay)
@@ -148,7 +148,7 @@ func TestPostgresAdminRequestListHandlesOmittedBodies(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest(http.MethodGet, "/api/assistant/admin/requests"+query, nil)
-		HTTP{Store: s}.listRequests(c)
+		HTTP{Store: s}.listRequests(true)(c)
 		if w.Code != 200 {
 			t.Fatalf("nonempty request list failed for %s: %d %s", query, w.Code, w.Body.String())
 		}
@@ -167,7 +167,7 @@ func TestPostgresAdminRequestListHandlesOmittedBodies(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	c.Params = gin.Params{{Key: "id", Value: req.ClientRequestID}}
-	HTTP{Store: s}.getRequest(c)
+	HTTP{Store: s}.getRequest(true)(c)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "private answer") {
 		t.Fatalf("request detail lost its stored response: %d %s", w.Code, w.Body.String())
 	}

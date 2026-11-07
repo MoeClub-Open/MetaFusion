@@ -6,7 +6,7 @@ import { ChevronDown, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { ApiError } from "@/lib/api";
-import { assistantRequest, type AssistantAccount, type AssistantCredential, type AssistantGeneratedOverview, type AssistantModel, type AssistantTokenUsage } from "@/lib/assistantApi";
+import { assistantRequest, type AssistantAccount, type AssistantBYOModel, type AssistantBYOProvider, type AssistantGeneratedOverview, type AssistantModel, type AssistantTokenUsage } from "@/lib/assistantApi";
 import { assistantAllPages, describeAssistantError, type AssistantAccountResponse } from "@/lib/assistantUser";
 import { parseGeneratedBlocks } from "@/lib/generatedBlocks";
 import { AssistantModelPicker } from "./AssistantModelPicker";
@@ -26,10 +26,10 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
   const [refresh, setRefresh] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [models, setModels] = useState<AssistantModel[]>([]);
-  const [credentials, setCredentials] = useState<AssistantCredential[]>([]);
+  const [byoProviders, setBYOProviders] = useState<AssistantBYOProvider[]>([]);
+  const [byoModels, setBYOModels] = useState<AssistantBYOModel[]>([]);
   const [account, setAccount] = useState<AssistantAccountResponse | null>(null);
   const [modelID, setModelID] = useState("");
-  const [credentialID, setCredentialID] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -41,7 +41,7 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
   const optionsKey = useRef("");
 
   useEffect(() => {
-    setModels([]); setCredentials([]); setAccount(null); setModelID(""); setCredentialID("");
+    setModels([]); setBYOProviders([]); setBYOModels([]); setAccount(null); setModelID("");
     optionsKey.current = "";
   }, [user?.id]);
 
@@ -54,6 +54,7 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
         if (!alive) return;
         setResult(next);
         if (next.item) void assistantAllPages<AssistantModel>("/models").then((nextModels) => { if (alive) setModels(nextModels); }).catch(() => {});
+        if (next.item && user && next.item.owner_id === user.id) void assistantAllPages<AssistantBYOModel>("/byo/models").then((nextBYO) => { if (alive) setBYOModels(nextBYO); }).catch(() => {});
       })
       .catch((cause) => { if (alive) setError(describeAssistantError(cause, t)); })
       .finally(() => { if (alive) setReading(false); });
@@ -66,12 +67,18 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
     const key = readKey;
     setOptionsLoading(true); setError("");
     try {
-      const [nextModels, nextCredentials, nextAccount] = await Promise.all([
-        assistantAllPages<AssistantModel>("/models"), assistantAllPages<AssistantCredential>("/credentials"), assistantRequest<AssistantAccountResponse>("/account"),
+      const [nextModels, nextBYOProviders, nextBYOModels, nextAccount] = await Promise.all([
+        assistantAllPages<AssistantModel>("/models"),
+        assistantAllPages<AssistantBYOProvider>("/byo/providers"),
+        assistantAllPages<AssistantBYOModel>("/byo/models"),
+        assistantRequest<AssistantAccountResponse>("/account"),
       ]);
       if (currentKey.current !== key) return;
-      setModels(nextModels); setCredentials(nextCredentials); setAccount(nextAccount);
-      setModelID(nextModels.find((model) => model.id === nextAccount.default_model_id)?.id || nextModels[0]?.id || ""); setCredentialID(""); optionsKey.current = user.id;
+      setModels(nextModels); setBYOProviders(nextBYOProviders); setBYOModels(nextBYOModels); setAccount(nextAccount);
+      const activeProviderIDs = new Set(nextBYOProviders.filter((item) => item.enabled && item.has_key).map((item) => item.id));
+      const activeBYO = nextBYOModels.filter((item) => item.enabled && activeProviderIDs.has(item.provider_id));
+      setModelID(nextModels.find((model) => model.id === nextAccount.default_model_id)?.id || nextModels[0]?.id || activeBYO[0]?.id || "");
+      optionsKey.current = user.id;
     } catch (cause) { if (currentKey.current === key) setError(describeAssistantError(cause, t)); }
     finally { if (currentKey.current === key) setOptionsLoading(false); }
   };
@@ -82,7 +89,7 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
     requestID.current ||= crypto.randomUUID();
     setGenerating(true); setError(""); setFailedUsage(null);
     try {
-      const next = await assistantRequest<OverviewResponse>(`/generated/${entityID}`, { method: "POST", body: JSON.stringify({ model_id: modelID, ...(credentialID ? { credential_id: credentialID } : {}), locale, regenerate: !!result?.item, client_request_id: requestID.current }) });
+      const next = await assistantRequest<OverviewResponse>(`/generated/${entityID}`, { method: "POST", body: JSON.stringify({ model_id: modelID, locale, regenerate: !!result?.item, client_request_id: requestID.current }) });
       if (currentKey.current !== key) return;
       setResult(next); setExpanded(false); requestID.current = null;
       if (next.balance?.user_id === user?.id) setAccount((previous) => previous ? { ...previous, balance: next.balance! } : previous);
@@ -118,7 +125,7 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
     {failedUsage && <p className="text-[11px] text-text-muted">{t("assistant.user.consumed", { input: number.format(failedUsage.usage.input_tokens), output: number.format(failedUsage.usage.output_tokens), credits: number.format(failedUsage.credits_spent) })}</p>}
     {expanded && <div className="rounded-card border border-line-subtle bg-surfaceSubtle p-3 space-y-3">
       {!user ? <Link href={`/login?redirect=${encodeURIComponent(`/catalog/${entityID}#overview`)}`} className="text-xs text-primary hover:underline">{t("assistant.generated.login")}</Link> : <>
-        {optionsLoading ? <p role="status" className="text-xs text-text-muted">{t("common.loading")}</p> : <AssistantModelPicker models={models} credentials={credentials} modelID={modelID} credentialID={credentialID} onModel={(id) => { setModelID(id); requestID.current = null; }} onCredential={(id) => { setCredentialID(id); requestID.current = null; }} disabled={generating} />}
+        {optionsLoading ? <p role="status" className="text-xs text-text-muted">{t("common.loading")}</p> : <AssistantModelPicker models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={(id) => { setModelID(id); requestID.current = null; }} disabled={generating} />}
         <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[11px] text-text-muted">{account ? t("assistant.user.balance", { credits: number.format(account.balance.available_credits) }) : t("assistant.generated.paidHint")}</p>
           <button type="button" onClick={() => void generate()} disabled={generating || optionsLoading || !modelID} className="inline-flex items-center gap-1.5 rounded-control bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}{t(generating ? "assistant.generated.generating" : "assistant.generated.generate")}</button></div>
         <p className="text-[10px] text-text-muted">{t("assistant.generated.paidHint")}</p>
@@ -128,7 +135,7 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
     {item?.partial && <p className="text-xs text-warn">{t("assistant.generated.partial")}</p>}
     {item && !blocks.length && <p className="text-xs text-text-muted">{t("assistant.generated.invalid")}</p>}
     {item && <footer className="space-y-2 text-[10px] text-text-muted">
-      <p>{t("assistant.generated.metadata", { model: models.find((model) => model.id === item.model_id)?.name || item.model_id, date: new Date(item.updated_at || item.created_at).toLocaleString(locale), version: item.entity_version })}</p>
+      <p>{t("assistant.generated.metadata", { model: models.find((model) => model.id === item.model_id)?.name || byoModels.find((model) => model.id === item.model_id)?.name || item.model_id, date: new Date(item.updated_at || item.created_at).toLocaleString(locale), version: item.entity_version })}</p>
       {usage && <p>{result?.credits_spent === undefined
         ? t("assistant.generated.tokenUsage", { input: number.format(usage.input_tokens), output: number.format(usage.output_tokens) })
         : t("assistant.user.consumed", { input: number.format(usage.input_tokens), output: number.format(usage.output_tokens), credits: number.format(result.credits_spent) })}</p>}

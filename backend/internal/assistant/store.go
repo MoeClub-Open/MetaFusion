@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/metafusion/metafusion-app/internal/catalog"
 	"github.com/metafusion/metafusion-app/internal/publicweb"
 )
 
@@ -20,10 +22,31 @@ type Store struct {
 	// CompletionClient is an optional code-only test transport. Production leaves
 	// it nil so every connection uses the shared publicweb DNS validation.
 	CompletionClient *http.Client
+	bg               sync.WaitGroup
+	missionsMu       sync.Mutex
+	missions         *MissionEngine
 }
 
 func NewStore(db *sql.DB, key []byte) *Store {
 	return &Store{DB: db, EncryptionKey: append([]byte(nil), key...)}
+}
+func (s *Store) EnsureMissionEngine(cat *catalog.Store) *MissionEngine {
+	s.missionsMu.Lock()
+	defer s.missionsMu.Unlock()
+	if s.missions == nil && cat != nil {
+		s.missions = NewMissionEngine(s, cat)
+	}
+	return s.missions
+}
+func (s *Store) Wait() {
+	s.missionsMu.Lock()
+	m := s.missions
+	s.missionsMu.Unlock()
+	if m != nil {
+		m.stopAll()
+		m.Wait()
+	}
+	s.bg.Wait()
 }
 func (s *Store) CredentialsAvailable() bool { return len(s.EncryptionKey) == 32 }
 
@@ -205,26 +228,26 @@ func (s *Store) SaveSettings(ctx context.Context, v Settings) (Settings, error) 
 	return scanSettings(s.DB.QueryRowContext(ctx, `UPDATE assistant.settings SET enabled=$1,default_model_id=$2,registration_credits=$3,accepted_edit_credits=$4,reward_effective_at=$5,monthly_budget_microusd=$6,max_tool_rounds=$7,updated_at=now() WHERE singleton RETURNING `+settingsColumns, v.Enabled, nullableID(v.DefaultModelID), v.RegistrationCredits, v.AcceptedEditCredits, v.RewardEffectiveAt, v.MonthlyBudgetMicroUSD, v.MaxToolRounds))
 }
 
-const byoColumns = `id,owner_id,name,base_url,protocol,upstream_model,enabled,octet_length(encrypted_key)>0,key_hint,created_at,updated_at`
+const byoProviderColumns = `id,owner_id,name,base_url,protocol,enabled,octet_length(encrypted_key)>0,key_hint,created_at,updated_at`
 
-func scanBYO(row scanner) (BYOCredential, error) {
-	var b BYOCredential
-	err := row.Scan(&b.ID, &b.OwnerID, &b.Name, &b.BaseURL, &b.Protocol, &b.UpstreamModel, &b.Enabled, &b.HasKey, &b.KeyHint, &b.CreatedAt, &b.UpdatedAt)
+func scanBYOProvider(row scanner) (BYOProvider, error) {
+	var b BYOProvider
+	err := row.Scan(&b.ID, &b.OwnerID, &b.Name, &b.BaseURL, &b.Protocol, &b.Enabled, &b.HasKey, &b.KeyHint, &b.CreatedAt, &b.UpdatedAt)
 	return b, dbError(err)
 }
-func (s *Store) BYOCredentials(ctx context.Context, ownerID string, admin bool, limit, offset int) (Page[BYOCredential], error) {
+func (s *Store) BYOProviders(ctx context.Context, ownerID string, admin bool, limit, offset int) (Page[BYOProvider], error) {
 	limit, offset = pageBounds(limit, offset)
-	p := Page[BYOCredential]{Items: []BYOCredential{}, Limit: limit, Offset: offset}
-	if err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM assistant.byo_credentials WHERE ($2 AND $1='') OR owner_id=$1`, ownerID, admin).Scan(&p.Total); err != nil {
+	p := Page[BYOProvider]{Items: []BYOProvider{}, Limit: limit, Offset: offset}
+	if err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM assistant.byo_providers WHERE ($2 AND $1='') OR owner_id=$1`, ownerID, admin).Scan(&p.Total); err != nil {
 		return p, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+byoColumns+` FROM assistant.byo_credentials WHERE ($2 AND $1='') OR owner_id=$1 ORDER BY created_at DESC,id DESC LIMIT $3 OFFSET $4`, ownerID, admin, limit, offset)
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+byoProviderColumns+` FROM assistant.byo_providers WHERE ($2 AND $1='') OR owner_id=$1 ORDER BY created_at DESC,id DESC LIMIT $3 OFFSET $4`, ownerID, admin, limit, offset)
 	if err != nil {
 		return p, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		b, e := scanBYO(rows)
+		b, e := scanBYOProvider(rows)
 		if e != nil {
 			return p, e
 		}
@@ -232,54 +255,143 @@ func (s *Store) BYOCredentials(ctx context.Context, ownerID string, admin bool, 
 	}
 	return p, rows.Err()
 }
-func (s *Store) SaveBYOCredential(ctx context.Context, ownerID string, in BYOCredentialInput, admin bool) (BYOCredential, error) {
+func (s *Store) SaveBYOProvider(ctx context.Context, ownerID string, in BYOProviderInput, admin bool) (BYOProvider, error) {
 	id, err := ensureID(in.ID)
 	if err != nil {
-		return BYOCredential{}, err
+		return BYOProvider{}, err
 	}
 	in.ID = id
 	if ownerID == "" {
-		return BYOCredential{}, fmt.Errorf("assistant_owner_required")
+		return BYOProvider{}, fmt.Errorf("assistant_owner_required")
 	}
 	in.Name = strings.TrimSpace(in.Name)
-	in.UpstreamModel = strings.TrimSpace(in.UpstreamModel)
 	in.BaseURL = strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
 	if in.Protocol == "" {
 		in.Protocol = "openai_compatible"
 	}
-	if in.Name == "" || len(in.Name) > 200 || len(in.UpstreamModel) > 200 || !validProtocol(in.Protocol) {
-		return BYOCredential{}, fmt.Errorf("assistant_invalid_credential")
+	if in.Name == "" || len(in.Name) > 200 || !validProtocol(in.Protocol) {
+		return BYOProvider{}, fmt.Errorf("assistant_invalid_provider")
 	}
 	u, err := publicweb.ValidateURL(ctx, in.BaseURL)
 	if err != nil || u.Scheme != "https" || u.RawQuery != "" {
-		return BYOCredential{}, fmt.Errorf("assistant_invalid_provider_url")
+		return BYOProvider{}, fmt.Errorf("assistant_invalid_provider_url")
 	}
 	var encrypted any
 	hint := ""
 	if in.APIKey != nil {
 		secret := strings.TrimSpace(*in.APIKey)
 		if secret == "" || len(secret) > 16000 {
-			return BYOCredential{}, fmt.Errorf("assistant_invalid_key")
+			return BYOProvider{}, fmt.Errorf("assistant_invalid_key")
 		}
 		b, e := s.encryptSecret(secret, "byo:"+id)
 		if e != nil {
-			return BYOCredential{}, e
+			return BYOProvider{}, e
 		}
 		encrypted = b
 		hint = keyHint(secret)
 	}
 	var exists bool
-	err = s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM assistant.byo_credentials WHERE id=$1)`, id).Scan(&exists)
-	if err != nil {
-		return BYOCredential{}, err
+	if err = s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM assistant.byo_providers WHERE id=$1)`, id).Scan(&exists); err != nil {
+		return BYOProvider{}, err
 	}
 	if !exists && encrypted == nil {
-		return BYOCredential{}, fmt.Errorf("assistant_key_required")
+		return BYOProvider{}, fmt.Errorf("assistant_key_required")
 	}
-	return scanBYO(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_credentials(id,owner_id,name,base_url,enabled,encrypted_key,key_hint,upstream_model,protocol) VALUES($1,$2,$3,$4,$5,COALESCE($6::bytea,''::bytea),$7,$9,$10) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,base_url=EXCLUDED.base_url,protocol=EXCLUDED.protocol,upstream_model=EXCLUDED.upstream_model,enabled=EXCLUDED.enabled,encrypted_key=COALESCE($6::bytea,assistant.byo_credentials.encrypted_key),key_hint=CASE WHEN $6::bytea IS NULL THEN assistant.byo_credentials.key_hint ELSE $7 END,updated_at=now() WHERE assistant.byo_credentials.owner_id=$2 OR $8 RETURNING `+byoColumns, id, ownerID, in.Name, in.BaseURL, in.Enabled, encrypted, hint, admin, in.UpstreamModel, in.Protocol))
+	return scanBYOProvider(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_providers(id,owner_id,name,base_url,enabled,encrypted_key,key_hint,protocol) VALUES($1,$2,$3,$4,$5,COALESCE($6::bytea,''::bytea),$7,$9) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,base_url=EXCLUDED.base_url,protocol=EXCLUDED.protocol,enabled=EXCLUDED.enabled,encrypted_key=COALESCE($6::bytea,assistant.byo_providers.encrypted_key),key_hint=CASE WHEN $6::bytea IS NULL THEN assistant.byo_providers.key_hint ELSE $7 END,updated_at=now() WHERE assistant.byo_providers.owner_id=$2 OR $8 RETURNING `+byoProviderColumns, id, ownerID, in.Name, in.BaseURL, in.Enabled, encrypted, hint, admin, in.Protocol))
 }
-func (s *Store) DeleteBYOCredential(ctx context.Context, ownerID, id string, admin bool) error {
-	return s.deleteOne(ctx, `DELETE FROM assistant.byo_credentials WHERE id=$1 AND (owner_id=$2 OR $3)`, id, ownerID, admin)
+func (s *Store) DeleteBYOProvider(ctx context.Context, ownerID, id string, admin bool) error {
+	return s.deleteOne(ctx, `DELETE FROM assistant.byo_providers WHERE id=$1 AND (owner_id=$2 OR $3)`, id, ownerID, admin)
+}
+
+const byoModelColumns = `id,owner_id,provider_id,upstream_model,name,enabled,max_output_tokens,max_tokens_parameter,context_window,created_at,updated_at`
+
+func scanBYOModel(row scanner) (BYOModel, error) {
+	var m BYOModel
+	err := row.Scan(&m.ID, &m.OwnerID, &m.ProviderID, &m.UpstreamModel, &m.Name, &m.Enabled, &m.MaxOutputTokens, &m.MaxTokensParameter, &m.ContextWindow, &m.CreatedAt, &m.UpdatedAt)
+	return m, dbError(err)
+}
+func (s *Store) BYOModels(ctx context.Context, ownerID string, admin, enabledOnly bool, limit, offset int) (Page[BYOModel], error) {
+	limit, offset = pageBounds(limit, offset)
+	p := Page[BYOModel]{Items: []BYOModel{}, Limit: limit, Offset: offset}
+	where := ` WHERE (($2 AND $1='') OR owner_id=$1) AND (NOT $3 OR (enabled AND provider_id IN (SELECT id FROM assistant.byo_providers WHERE enabled AND octet_length(encrypted_key)>0 AND (($2 AND $1='') OR owner_id=$1))))`
+	if err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM assistant.byo_models`+where, ownerID, admin, enabledOnly).Scan(&p.Total); err != nil {
+		return p, err
+	}
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+byoModelColumns+` FROM assistant.byo_models`+where+` ORDER BY name,id LIMIT $4 OFFSET $5`, ownerID, admin, enabledOnly, limit, offset)
+	if err != nil {
+		return p, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		m, e := scanBYOModel(rows)
+		if e != nil {
+			return p, e
+		}
+		p.Items = append(p.Items, m)
+	}
+	return p, rows.Err()
+}
+func (s *Store) SaveBYOModel(ctx context.Context, ownerID string, m BYOModel, admin bool) (BYOModel, error) {
+	id, err := ensureID(m.ID)
+	if err != nil {
+		return BYOModel{}, err
+	}
+	m.ID = id
+	if ownerID == "" {
+		return BYOModel{}, fmt.Errorf("assistant_owner_required")
+	}
+	m.Name = strings.TrimSpace(m.Name)
+	m.UpstreamModel = strings.TrimSpace(m.UpstreamModel)
+	if m.MaxTokensParameter == "" {
+		m.MaxTokensParameter = "max_tokens"
+	}
+	if m.MaxOutputTokens == 0 {
+		m.MaxOutputTokens = 4096
+	}
+	if m.ContextWindow == 0 {
+		m.ContextWindow = 65536
+	}
+	if !validID(m.ProviderID) || m.Name == "" || len(m.Name) > 200 || m.UpstreamModel == "" || len(m.UpstreamModel) > 200 || m.MaxOutputTokens < 1 || m.ContextWindow < m.MaxOutputTokens || m.ContextWindow > 10000000 || (m.MaxTokensParameter != "max_tokens" && m.MaxTokensParameter != "max_completion_tokens") {
+		return BYOModel{}, fmt.Errorf("assistant_invalid_model")
+	}
+	var providerOwned bool
+	if err = s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM assistant.byo_providers WHERE id=$1 AND owner_id=$2)`, m.ProviderID, ownerID).Scan(&providerOwned); err != nil {
+		return BYOModel{}, err
+	}
+	if !providerOwned {
+		return BYOModel{}, ErrNotFound
+	}
+	return scanBYOModel(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_models(id,owner_id,provider_id,upstream_model,name,enabled,max_output_tokens,max_tokens_parameter,context_window) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET provider_id=EXCLUDED.provider_id,upstream_model=EXCLUDED.upstream_model,name=EXCLUDED.name,enabled=EXCLUDED.enabled,max_output_tokens=EXCLUDED.max_output_tokens,max_tokens_parameter=EXCLUDED.max_tokens_parameter,context_window=EXCLUDED.context_window,updated_at=now() WHERE assistant.byo_models.owner_id=$2 OR $10 RETURNING `+byoModelColumns, id, ownerID, m.ProviderID, m.UpstreamModel, m.Name, m.Enabled, m.MaxOutputTokens, m.MaxTokensParameter, m.ContextWindow, admin))
+}
+func (s *Store) DeleteBYOModel(ctx context.Context, ownerID, id string, admin bool) error {
+	return s.deleteOne(ctx, `DELETE FROM assistant.byo_models WHERE id=$1 AND (owner_id=$2 OR $3)`, id, ownerID, admin)
+}
+
+// ResolveBYOModel resolves an owner-scoped BYO model into a zero-credit Model snapshot.
+func (s *Store) ResolveBYOModel(ctx context.Context, id, ownerID string, enabledOnly bool) (Model, string, error) {
+	if !validID(id) || ownerID == "" {
+		return Model{}, "", ErrNotFound
+	}
+	var bm BYOModel
+	var providerEnabled, hasKey bool
+	var providerUpdated time.Time
+	err := s.DB.QueryRowContext(ctx, `SELECT bm.id,bm.owner_id,bm.provider_id,bm.upstream_model,bm.name,bm.enabled,bm.max_output_tokens,bm.max_tokens_parameter,bm.context_window,bm.created_at,bm.updated_at,bp.enabled,octet_length(bp.encrypted_key)>0,bp.updated_at FROM assistant.byo_models bm JOIN assistant.byo_providers bp ON bp.id=bm.provider_id AND bp.owner_id=bm.owner_id WHERE bm.id=$1 AND bm.owner_id=$2`, id, ownerID).Scan(&bm.ID, &bm.OwnerID, &bm.ProviderID, &bm.UpstreamModel, &bm.Name, &bm.Enabled, &bm.MaxOutputTokens, &bm.MaxTokensParameter, &bm.ContextWindow, &bm.CreatedAt, &bm.UpdatedAt, &providerEnabled, &hasKey, &providerUpdated)
+	if err != nil {
+		return Model{}, "", dbError(err)
+	}
+	active := bm.Enabled && providerEnabled && hasKey
+	if enabledOnly && !active {
+		return Model{}, "", ErrDisabled
+	}
+	updated := bm.UpdatedAt
+	if providerUpdated.After(updated) {
+		updated = providerUpdated
+	}
+	return Model{
+		ID: bm.ID, ProviderID: bm.ProviderID, UpstreamModel: bm.UpstreamModel, Name: bm.Name,
+		Enabled: active, MaxOutputTokens: bm.MaxOutputTokens, MaxTokensParameter: bm.MaxTokensParameter,
+		ContextWindow: bm.ContextWindow, CreatedAt: bm.CreatedAt, UpdatedAt: updated,
+	}, bm.ProviderID, nil
 }
 
 func (s *Store) Budgets(ctx context.Context) ([]BudgetUsage, error) {
@@ -325,5 +437,6 @@ func (s *Store) RecoverReservations(ctx context.Context, before time.Time) (int,
 			return i, err
 		}
 	}
-	return len(ids), nil
+	n, err := s.recoverSearchReservations(ctx, before)
+	return len(ids) + n, err
 }

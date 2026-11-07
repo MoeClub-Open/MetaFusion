@@ -28,11 +28,11 @@ var (
 	ErrLeaseLost         = errors.New("curator_scheduler_lease_lost")
 )
 
-const settingsColumns = `enabled,COALESCE(model_id::text,''),interval_seconds,max_runs_per_hour,monthly_credit_allowance,auto_merge_low_risk,allow_structures,allow_sources,allow_names,allow_dedupe,system_user_id,reviewer_user_id,paused,paused_reason,consecutive_failures,sweep_cursor_updated_at,COALESCE(sweep_cursor_id::text,''),sweep_detector,last_sweep_at,last_run_at,updated_at`
+const settingsColumns = `enabled,COALESCE(model_id::text,''),interval_seconds,max_runs_per_hour,monthly_credit_allowance,auto_merge_low_risk,allow_structures,allow_sources,allow_names,allow_dedupe,system_user_id,reviewer_user_id,paused,paused_reason,consecutive_failures,sweep_cursor_updated_at,COALESCE(sweep_cursor_id::text,''),sweep_detector,last_sweep_at,last_run_at,updated_at,execution`
 
-const findingColumns = `f.id::text,f.entity_id::text,f.entity_kind,COALESCE(e.title,''),f.code,f.severity,f.priority,f.signature,f.details,f.status,f.decision,f.reason,f.sources,f.attempts,f.next_attempt_at,f.last_error,COALESCE(f.last_run_id::text,''),COALESCE(f.workspace_id::text,''),COALESCE(f.pull_request_id::text,''),f.merged,f.auto_merged,f.last_seen_at,f.resolved_at,f.created_at,f.updated_at`
+const findingColumns = `f.id::text,COALESCE(f.entity_id::text,''),f.entity_kind,COALESCE(e.title,''),f.code,f.severity,f.priority,f.signature,f.details,f.status,f.decision,f.reason,f.sources,f.attempts,f.next_attempt_at,f.last_error,COALESCE(f.last_run_id::text,''),COALESCE(f.workspace_id::text,''),COALESCE(f.pull_request_id::text,''),f.merged,f.auto_merged,f.last_seen_at,f.resolved_at,f.created_at,f.updated_at,COALESCE(f.review_pr_id::text,'')`
 
-const runColumns = `id::text,COALESCE(finding_id::text,''),COALESCE(entity_id::text,''),kind,trigger_kind,status,COALESCE(model_id::text,''),decision,reason,sources,tool_trace,detail,COALESCE(workspace_id::text,''),COALESCE(pull_request_id::text,''),merged,auto_merged,error,input_tokens,output_tokens,credits,started_at,finished_at,created_at`
+const runColumns = `id::text,COALESCE(finding_id::text,''),COALESCE(entity_id::text,''),kind,trigger_kind,status,COALESCE(model_id::text,''),decision,reason,sources,tool_trace,detail,COALESCE(workspace_id::text,''),COALESCE(pull_request_id::text,''),merged,auto_merged,error,input_tokens,output_tokens,credits,started_at,finished_at,created_at,COALESCE(parent_run_id::text,''),role,messages`
 
 type Service struct {
 	Catalog    *catalog.Store
@@ -44,7 +44,21 @@ type Service struct {
 }
 
 func New(cat *catalog.Store, asst *assistant.Store) *Service {
-	return &Service{Catalog: cat, Assistant: asst, wake: make(chan struct{}, 1)}
+	svc := &Service{Catalog: cat, Assistant: asst, wake: make(chan struct{}, 1)}
+	if asst != nil && cat != nil {
+		eng := asst.EnsureMissionEngine(cat)
+		eng.CuratorMonthlyLimit = func(ctx context.Context) (int64, error) {
+			st, err := svc.Settings(ctx)
+			if err != nil {
+				return 0, err
+			}
+			if err := svc.ensureAllowance(ctx, st); err != nil {
+				return 0, err
+			}
+			return st.MonthlyCreditAllowance, nil
+		}
+	}
+	return svc
 }
 
 func (s *Service) Wake() {
@@ -75,7 +89,7 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 		&v.Enabled, &model, &v.IntervalSeconds, &v.MaxRunsPerHour, &v.MonthlyCreditAllowance,
 		&v.AutoMergeLowRisk, &v.AllowStructures, &v.AllowSources, &v.AllowNames, &v.AllowDedupe,
 		&v.SystemUserID, &v.ReviewerUserID, &v.Paused, &v.PausedReason, &v.ConsecutiveFailures,
-		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt,
+		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution,
 	)
 	v.ModelID, v.SweepCursorID = model, cursorID
 	return v, err
@@ -90,15 +104,15 @@ func (s *Service) SaveSettings(ctx context.Context, in Settings) (Settings, erro
 	err := s.Catalog.DB.QueryRowContext(ctx, `UPDATE curator.settings SET
 		enabled=$1,model_id=$2,interval_seconds=$3,max_runs_per_hour=$4,monthly_credit_allowance=$5,
 		auto_merge_low_risk=$6,allow_structures=$7,allow_sources=$8,allow_names=$9,allow_dedupe=$10,
-		updated_at=now()
+		execution=$11,updated_at=now()
 		WHERE singleton RETURNING `+settingsColumns,
 		in.Enabled, nullableID(in.ModelID), in.IntervalSeconds, in.MaxRunsPerHour, in.MonthlyCreditAllowance,
-		in.AutoMergeLowRisk, in.AllowStructures, in.AllowSources, in.AllowNames, in.AllowDedupe,
+		in.AutoMergeLowRisk, in.AllowStructures, in.AllowSources, in.AllowNames, in.AllowDedupe, assistantJSON(in.Execution),
 	).Scan(
 		&v.Enabled, &model, &v.IntervalSeconds, &v.MaxRunsPerHour, &v.MonthlyCreditAllowance,
 		&v.AutoMergeLowRisk, &v.AllowStructures, &v.AllowSources, &v.AllowNames, &v.AllowDedupe,
 		&v.SystemUserID, &v.ReviewerUserID, &v.Paused, &v.PausedReason, &v.ConsecutiveFailures,
-		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt,
+		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution,
 	)
 	v.ModelID, v.SweepCursorID = model, cursorID
 	return v, err
@@ -113,13 +127,16 @@ func (s *Service) SetPaused(ctx context.Context, paused bool, reason string) (Se
 		&v.Enabled, &model, &v.IntervalSeconds, &v.MaxRunsPerHour, &v.MonthlyCreditAllowance,
 		&v.AutoMergeLowRisk, &v.AllowStructures, &v.AllowSources, &v.AllowNames, &v.AllowDedupe,
 		&v.SystemUserID, &v.ReviewerUserID, &v.Paused, &v.PausedReason, &v.ConsecutiveFailures,
-		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt,
+		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution,
 	)
 	v.ModelID, v.SweepCursorID = model, cursorID
 	return v, err
 }
 
 func (s *Service) validateSettings(ctx context.Context, in Settings) error {
+	if err := s.validateExecution(ctx, in.Execution, in.Enabled); err != nil {
+		return err
+	}
 	if in.IntervalSeconds < 30 || in.IntervalSeconds > 86400 || in.MaxRunsPerHour < 1 || in.MaxRunsPerHour > 240 ||
 		in.MonthlyCreditAllowance < 0 || in.MonthlyCreditAllowance > 1_000_000_000_000 {
 		return ErrInvalidSettings
@@ -131,14 +148,20 @@ func (s *Service) validateSettings(ctx context.Context, in Settings) error {
 			return ErrInvalidSettings
 		}
 	}
-	if !in.AllowStructures && !in.AllowSources && !in.AllowNames && !in.AllowDedupe {
+	if !in.AllowStructures && !in.AllowSources && !in.AllowNames && !in.AllowDedupe && !in.Execution.AllowReviews {
 		return ErrInvalidSettings
 	}
 	if !in.Enabled {
 		return nil
 	}
 	if in.MonthlyCreditAllowance <= 0 {
-		return ErrAllowanceRequired
+		required, err := s.requiresPlatformCredits(ctx, in)
+		if err != nil {
+			return err
+		}
+		if required {
+			return ErrAllowanceRequired
+		}
 	}
 	as, err := s.Assistant.GetSettings(ctx)
 	if err != nil {
@@ -154,22 +177,14 @@ func (s *Service) validateSettings(ctx context.Context, in Settings) error {
 	if modelID == "" {
 		return ErrModelRequired
 	}
-	models, err := s.Assistant.Models(ctx, true)
-	if err != nil {
-		return err
-	}
-	for _, m := range models {
-		if m.ID == modelID {
-			return nil
-		}
-	}
-	return ErrModelRequired
+	_, _, err = s.resolveModel(ctx, modelID, in.Execution.BillingOwnerID, true)
+	return err
 }
 
 func (s *Service) spentCredits(ctx context.Context, settings Settings, month time.Time) (int64, error) {
 	var spent int64
-	err := s.Catalog.DB.QueryRowContext(ctx, `SELECT COALESCE(sum(credits),0) FROM assistant.usage
-		WHERE user_id=$1 AND purpose LIKE 'curator:%' AND budget_month=$2 AND status IN ('completed','failed','unknown')`,
+	err := s.Catalog.DB.QueryRowContext(ctx, `SELECT (SELECT COALESCE(sum(credits),0) FROM assistant.usage
+		WHERE user_id=$1 AND purpose LIKE 'curator:%' AND budget_month=$2 AND status IN ('completed','failed','unknown')) + (SELECT COALESCE(sum(credits),0) FROM assistant.search_requests WHERE user_id=$1 AND purpose LIKE 'curator:%' AND budget_month=$2 AND status IN ('completed','unknown'))`,
 		settings.SystemUserID, month).Scan(&spent)
 	return spent, err
 }
@@ -177,6 +192,13 @@ func (s *Service) spentCredits(ctx context.Context, settings Settings, month tim
 // ensureAllowance funds the service account at the start of each month and
 // enforces a monthly usage cap independently of rollover balance.
 func (s *Service) ensureAllowance(ctx context.Context, settings Settings) error {
+	required, err := s.requiresPlatformCredits(ctx, settings)
+	if err != nil {
+		return err
+	}
+	if !required {
+		return nil
+	}
 	if settings.MonthlyCreditAllowance <= 0 {
 		return ErrAllowanceRequired
 	}
@@ -370,7 +392,7 @@ func scanFinding(row interface{ Scan(...any) error }) (Finding, error) {
 	err := row.Scan(&f.ID, &f.EntityID, &f.EntityKind, &f.EntityTitle, &f.Code, &f.Severity, &f.Priority, &f.Signature,
 		&f.Details, &f.Status, &f.Decision, &f.Reason, &f.Sources, &f.Attempts, &f.NextAttemptAt, &f.LastError,
 		&f.LastRunID, &f.WorkspaceID, &f.PullRequestID, &f.Merged, &f.AutoMerged, &f.LastSeenAt, &f.ResolvedAt,
-		&f.CreatedAt, &f.UpdatedAt)
+		&f.CreatedAt, &f.UpdatedAt, &f.ReviewPRID)
 	if err != nil {
 		return Finding{}, err
 	}
@@ -384,23 +406,28 @@ func scanFinding(row interface{ Scan(...any) error }) (Finding, error) {
 }
 
 func (s *Service) CreateRun(ctx context.Context, kind, trigger string, finding *Finding, detail json.RawMessage) (Run, error) {
+	return s.createRun(ctx, kind, trigger, finding, detail, "", "")
+}
+func (s *Service) createRun(ctx context.Context, kind, trigger string, finding *Finding, detail json.RawMessage, parent, role string) (Run, error) {
 	var findingID, entityID any
 	if finding != nil {
-		findingID, entityID = finding.ID, finding.EntityID
+		findingID, entityID = finding.ID, nullableID(finding.EntityID)
 	}
 	var r Run
 	var mid string
+	var messages []byte
 	tx, err := s.Catalog.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return r, err
 	}
 	defer tx.Rollback()
-	err = tx.QueryRowContext(ctx, `INSERT INTO curator.runs(id,finding_id,entity_id,kind,trigger_kind,status,detail)
-		VALUES($1,$2,$3,$4,$5,'running',$6) RETURNING `+runColumns, uuid.NewString(), findingID, entityID, kind, trigger, defaultJSON(detail, "{}")).Scan(
+	err = tx.QueryRowContext(ctx, `INSERT INTO curator.runs(id,finding_id,entity_id,kind,trigger_kind,status,detail,parent_run_id,role)
+		VALUES($1,$2,$3,$4,$5,'running',$6,$7,$8) RETURNING `+runColumns, uuid.NewString(), findingID, entityID, kind, trigger, defaultJSON(detail, "{}"), nullableID(parent), role).Scan(
 		&r.ID, &r.FindingID, &r.EntityID, &r.Kind, &r.Trigger, &r.Status, &mid, &r.Decision, &r.Reason,
 		&r.Sources, &r.ToolTrace, &r.Detail, &r.WorkspaceID, &r.PullRequestID, &r.Merged, &r.AutoMerged,
-		&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
+		&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.ParentRunID, &r.Role, &messages)
 	r.ModelID = mid
+	_ = json.Unmarshal(messages, &r.Messages)
 	if err != nil {
 		return r, err
 	}
@@ -414,11 +441,11 @@ func (s *Service) CreateRun(ctx context.Context, kind, trigger string, finding *
 
 func (s *Service) finishRun(ctx context.Context, tx *sql.Tx, r Run) error {
 	res, err := tx.ExecContext(ctx, `UPDATE curator.runs SET status=$2,model_id=$3,decision=$4,reason=$5,sources=$6,tool_trace=$7,detail=$8,
-		workspace_id=$9,pull_request_id=$10,merged=$11,auto_merged=$12,error=$13,input_tokens=$14,output_tokens=$15,credits=$16,finished_at=now()
+		workspace_id=$9,pull_request_id=$10,merged=$11,auto_merged=$12,error=$13,input_tokens=$14,output_tokens=$15,credits=$16,messages=$17,finished_at=now()
 		WHERE id=$1 AND status='running'`,
 		r.ID, r.Status, nullableID(r.ModelID), r.Decision, r.Reason, defaultJSON(r.Sources, "[]"), defaultJSON(r.ToolTrace, "[]"),
 		defaultJSON(r.Detail, "{}"), nullableID(r.WorkspaceID), nullableID(r.PullRequestID), r.Merged, r.AutoMerged, r.Error,
-		r.InputTokens, r.OutputTokens, r.Credits)
+		r.InputTokens, r.OutputTokens, r.Credits, assistantJSON(r.Messages))
 	if err != nil {
 		return err
 	}
@@ -436,12 +463,17 @@ func (s *Service) Runs(ctx context.Context, filter RunFilter, limit, offset int)
 		args = append(args, filter.Kind)
 		where = "kind=$1"
 	}
+	if filter.ParentID != "" {
+		args = append(args, filter.ParentID)
+		where += " AND parent_run_id=$" + fmt.Sprint(len(args))
+	}
 	p := Page[Run]{Items: []Run{}, Limit: limit, Offset: offset}
 	if err := s.Catalog.DB.QueryRowContext(ctx, `SELECT count(*) FROM curator.runs WHERE `+where, args...).Scan(&p.Total); err != nil {
 		return p, err
 	}
 	args = append(args, limit, offset)
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT `+runColumns+` FROM curator.runs WHERE `+where+`
+	listColumns := strings.Replace(runColumns, ",messages", ",'[]'::jsonb", 1)
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT `+listColumns+` FROM curator.runs WHERE `+where+`
 		ORDER BY started_at DESC,id DESC LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {
 		return p, err
@@ -450,12 +482,14 @@ func (s *Service) Runs(ctx context.Context, filter RunFilter, limit, offset int)
 	for rows.Next() {
 		var r Run
 		var mid string
+		var messages []byte
 		if err := rows.Scan(&r.ID, &r.FindingID, &r.EntityID, &r.Kind, &r.Trigger, &r.Status, &mid, &r.Decision, &r.Reason,
 			&r.Sources, &r.ToolTrace, &r.Detail, &r.WorkspaceID, &r.PullRequestID, &r.Merged, &r.AutoMerged,
-			&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt); err != nil {
+			&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.ParentRunID, &r.Role, &messages); err != nil {
 			return p, err
 		}
 		r.ModelID = mid
+		_ = json.Unmarshal(messages, &r.Messages)
 		p.Items = append(p.Items, r)
 	}
 	return p, rows.Err()
@@ -464,11 +498,13 @@ func (s *Service) Runs(ctx context.Context, filter RunFilter, limit, offset int)
 func (s *Service) GetRun(ctx context.Context, id string) (Run, error) {
 	var r Run
 	var mid string
+	var messages []byte
 	err := s.Catalog.DB.QueryRowContext(ctx, `SELECT `+runColumns+` FROM curator.runs WHERE id=$1`, id).Scan(
 		&r.ID, &r.FindingID, &r.EntityID, &r.Kind, &r.Trigger, &r.Status, &mid, &r.Decision, &r.Reason,
 		&r.Sources, &r.ToolTrace, &r.Detail, &r.WorkspaceID, &r.PullRequestID, &r.Merged, &r.AutoMerged,
-		&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
+		&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.ParentRunID, &r.Role, &messages)
 	r.ModelID = mid
+	_ = json.Unmarshal(messages, &r.Messages)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -490,15 +526,8 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 		modelID = as.DefaultModelID
 	}
 	if modelID != "" {
-		models, e := s.Assistant.Models(ctx, true)
-		if e != nil {
-			return out, e
-		}
-		for i := range models {
-			if models[i].ID == modelID {
-				out.Model = &models[i]
-				break
-			}
+		if m, _, e := s.resolveModel(ctx, modelID, settings.Execution.BillingOwnerID, true); e == nil {
+			out.Model = &m
 		}
 	}
 	if out.Balance, err = s.Assistant.SyncCredits(ctx, settings.SystemUserID); err != nil {
@@ -529,7 +558,7 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 		return out, err
 	}
 	rows.Close()
-	err = s.Catalog.DB.QueryRowContext(ctx, `SELECT count(*) FROM curator.runs WHERE kind='agent' AND started_at>now()-interval '24 hours'`).Scan(&out.Runs24h)
+	err = s.Catalog.DB.QueryRowContext(ctx, `SELECT count(*) FROM curator.runs WHERE kind IN ('agent','manager') AND started_at>now()-interval '24 hours'`).Scan(&out.Runs24h)
 	return out, err
 }
 

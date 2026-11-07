@@ -18,8 +18,9 @@ import (
 )
 
 type HTTP struct {
-	Store   *Store
-	Catalog *catalog.Store
+	Store    *Store
+	Catalog  *catalog.Store
+	Missions *MissionEngine
 }
 
 func decodeBody(c *gin.Context, v any) bool {
@@ -145,14 +146,22 @@ func (h HTTP) Register(api *gin.RouterGroup) {
 		settings, err := h.Store.GetSettings(c.Request.Context())
 		writeResponse(c, gin.H{"balance": balance, "registration_credits": settings.RegistrationCredits, "accepted_edit_credits": settings.AcceptedEditCredits, "default_model_id": settings.DefaultModelID}, err)
 	})
-	self.GET("/credentials", func(c *gin.Context) {
+	self.GET("/byo/providers", func(c *gin.Context) {
 		l, o := pageArgs(c)
-		v, e := h.Store.BYOCredentials(c.Request.Context(), catalog.RequestUser(c).ID, false, l, o)
+		v, e := h.Store.BYOProviders(c.Request.Context(), catalog.RequestUser(c).ID, false, l, o)
 		writeResponse(c, v, e)
 	})
-	self.POST("/credentials", h.saveCredential(false, false))
-	self.PUT("/credentials/:id", h.saveCredential(false, true))
-	self.DELETE("/credentials/:id", h.deleteCredential(false))
+	self.POST("/byo/providers", h.saveBYOProvider(false, false))
+	self.PUT("/byo/providers/:id", h.saveBYOProvider(false, true))
+	self.DELETE("/byo/providers/:id", h.deleteBYOProvider(false))
+	self.GET("/byo/models", func(c *gin.Context) {
+		l, o := pageArgs(c)
+		v, e := h.Store.BYOModels(c.Request.Context(), catalog.RequestUser(c).ID, false, false, l, o)
+		writeResponse(c, v, e)
+	})
+	self.POST("/byo/models", h.saveBYOModel(false, false))
+	self.PUT("/byo/models/:id", h.saveBYOModel(false, true))
+	self.DELETE("/byo/models/:id", h.deleteBYOModel(false))
 	self.GET("/usage", func(c *gin.Context) {
 		l, o := pageArgs(c)
 		v, e := h.Store.UsageRecords(c.Request.Context(), catalog.RequestUser(c).ID, false, l, o)
@@ -162,10 +171,14 @@ func (h HTTP) Register(api *gin.RouterGroup) {
 	self.POST("/conversations", h.createConversation)
 	self.GET("/conversations/:id", h.getConversation(false))
 	self.DELETE("/conversations/:id", h.deleteConversation(false))
+	self.GET("/requests", h.listRequests(false))
+	self.GET("/requests/:id", h.getRequest(false))
 	self.POST("/chat", h.chat)
 	self.POST("/context", h.previewContext)
 	self.POST("/generated/:entity_id", h.generate)
 	admin := a.Group("/admin", assistantIdentity(true))
+	h.registerSearch(self, admin)
+	h.registerMissions(self, admin)
 	admin.GET("/settings", func(c *gin.Context) { v, e := h.Store.GetSettings(c.Request.Context()); writeResponse(c, v, e) })
 	admin.PUT("/settings", func(c *gin.Context) {
 		var in Settings
@@ -205,13 +218,20 @@ func (h HTTP) Register(api *gin.RouterGroup) {
 		}
 		c.Status(204)
 	})
-	admin.GET("/credentials", func(c *gin.Context) {
+	admin.GET("/byo/providers", func(c *gin.Context) {
 		l, o := pageArgs(c)
-		v, e := h.Store.BYOCredentials(c.Request.Context(), c.Query("user_id"), true, l, o)
+		v, e := h.Store.BYOProviders(c.Request.Context(), c.Query("user_id"), true, l, o)
 		writeResponse(c, v, e)
 	})
-	admin.PUT("/credentials/:id", h.saveCredential(true, true))
-	admin.DELETE("/credentials/:id", h.deleteCredential(true))
+	admin.PUT("/byo/providers/:id", h.saveBYOProvider(true, true))
+	admin.DELETE("/byo/providers/:id", h.deleteBYOProvider(true))
+	admin.GET("/byo/models", func(c *gin.Context) {
+		l, o := pageArgs(c)
+		v, e := h.Store.BYOModels(c.Request.Context(), c.Query("user_id"), true, false, l, o)
+		writeResponse(c, v, e)
+	})
+	admin.PUT("/byo/models/:id", h.saveBYOModel(true, true))
+	admin.DELETE("/byo/models/:id", h.deleteBYOModel(true))
 	admin.GET("/usage", func(c *gin.Context) {
 		l, o := pageArgs(c)
 		v, e := h.Store.UsageRecords(c.Request.Context(), c.Query("user_id"), true, l, o)
@@ -243,8 +263,8 @@ func (h HTTP) Register(api *gin.RouterGroup) {
 		v, e := h.Store.CreditEntries(c.Request.Context(), c.Query("user_id"), true, l, o)
 		writeResponse(c, v, e)
 	})
-	admin.GET("/requests", h.listRequests)
-	admin.GET("/requests/:id", h.getRequest)
+	admin.GET("/requests", h.listRequests(true))
+	admin.GET("/requests/:id", h.getRequest(true))
 	admin.POST("/requests/:id/cancel", h.cancelRequest)
 	admin.GET("/budgets", func(c *gin.Context) {
 		v, e := h.Store.Budgets(c.Request.Context())
@@ -288,9 +308,9 @@ func (h HTTP) saveModel(update bool) gin.HandlerFunc {
 		writeResponse(c, v, e)
 	}
 }
-func (h HTTP) saveCredential(admin, update bool) gin.HandlerFunc {
+func (h HTTP) saveBYOProvider(admin, update bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var in BYOCredentialInput
+		var in BYOProviderInput
 		if !decodeBody(c, &in) {
 			return
 		}
@@ -301,19 +321,52 @@ func (h HTTP) saveCredential(admin, update bool) gin.HandlerFunc {
 			in.ID = ""
 		}
 		if admin {
-			if e := h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT owner_id FROM assistant.byo_credentials WHERE id=$1`, in.ID).Scan(&owner); e != nil {
+			if e := h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT owner_id FROM assistant.byo_providers WHERE id=$1`, in.ID).Scan(&owner); e != nil {
 				writeResponse(c, nil, e)
 				return
 			}
 		}
 		in.OwnerID = owner
-		v, e := h.Store.SaveBYOCredential(c.Request.Context(), owner, in, admin)
+		v, e := h.Store.SaveBYOProvider(c.Request.Context(), owner, in, admin)
 		writeResponse(c, v, e)
 	}
 }
-func (h HTTP) deleteCredential(admin bool) gin.HandlerFunc {
+func (h HTTP) deleteBYOProvider(admin bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		e := h.Store.DeleteBYOCredential(c.Request.Context(), catalog.RequestUser(c).ID, c.Param("id"), admin)
+		e := h.Store.DeleteBYOProvider(c.Request.Context(), catalog.RequestUser(c).ID, c.Param("id"), admin)
+		if e != nil {
+			writeResponse(c, nil, e)
+			return
+		}
+		c.Status(204)
+	}
+}
+func (h HTTP) saveBYOModel(admin, update bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var in BYOModel
+		if !decodeBody(c, &in) {
+			return
+		}
+		owner := catalog.RequestUser(c).ID
+		if update {
+			in.ID = c.Param("id")
+		} else {
+			in.ID = ""
+		}
+		if admin {
+			if e := h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT owner_id FROM assistant.byo_models WHERE id=$1`, in.ID).Scan(&owner); e != nil {
+				writeResponse(c, nil, e)
+				return
+			}
+		}
+		in.OwnerID = owner
+		v, e := h.Store.SaveBYOModel(c.Request.Context(), owner, in, admin)
+		writeResponse(c, v, e)
+	}
+}
+func (h HTTP) deleteBYOModel(admin bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		e := h.Store.DeleteBYOModel(c.Request.Context(), catalog.RequestUser(c).ID, c.Param("id"), admin)
 		if e != nil {
 			writeResponse(c, nil, e)
 			return
@@ -323,19 +376,9 @@ func (h HTTP) deleteCredential(admin bool) gin.HandlerFunc {
 }
 
 func (h HTTP) chat(c *gin.Context) {
-	var wire struct {
-		ConversationID  string  `json:"conversation_id"`
-		Message         string  `json:"message"`
-		ModelID         string  `json:"model_id"`
-		CredentialID    *string `json:"credential_id"`
-		ClientRequestID string  `json:"client_request_id"`
-	}
-	if !decodeBody(c, &wire) {
+	var in ChatRequest
+	if !decodeBody(c, &in) {
 		return
-	}
-	in := ChatRequest{ConversationID: wire.ConversationID, Message: wire.Message, ModelID: wire.ModelID, ClientRequestID: wire.ClientRequestID, credentialSpecified: wire.CredentialID != nil}
-	if wire.CredentialID != nil {
-		in.CredentialID = *wire.CredentialID
 	}
 	if e := validateChatRequest(in); e != nil {
 		writeResponse(c, nil, e)
@@ -354,41 +397,71 @@ func (h HTTP) chat(c *gin.Context) {
 	if in.ModelID == "" {
 		in.ModelID = conv.ModelID
 	}
-	if !in.credentialSpecified {
-		in.CredentialID = conv.BYOCredentialID
-	}
-	conv.ModelID, conv.BYOCredentialID = in.ModelID, in.CredentialID
-	in.checkpoint = func(progress CompletionRun) error {
-		checkpointCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 10*time.Second)
-		defer cancel()
-		return h.Store.persistChat(checkpointCtx, u.ID, in.ClientRequestID, conv, ChatResponse{ConversationID: conv.ID, CompletionRun: progress}, "pending")
-	}
+	conv.ModelID = in.ModelID
 	messages := chatMessages(conv.Messages, in.Message)
-	run, runErr := h.complete(c.Request.Context(), u, in, messages, true, "chat", "")
-	if run.Messages == nil {
-		run.Messages = messages
+	initial := ChatResponse{
+		ConversationID: conv.ID,
+		RequestID:      in.ClientRequestID,
+		Status:         "pending",
+		CompletionRun:  CompletionRun{Messages: messages},
 	}
-	response := ChatResponse{ConversationID: conv.ID, CompletionRun: run}
-	if runErr != nil {
-		response.Error = safeRuntimeCode(runErr)
-		if response.Answer == "" {
-			response.Answer = ""
-		}
+	if balance, bErr := h.Store.SyncCredits(c.Request.Context(), u.ID); bErr == nil {
+		initial.Balance = balance
 	}
-	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 10*time.Second)
-	defer cancel()
-	if err = h.Store.finishChat(finishCtx, u.ID, in.ClientRequestID, conv, response); err != nil {
-		// Catalog writes and provider billing may already have completed. Return
-		// their actual receipts even when this final message save fails; the
-		// sealed pending request still prevents automatically repeating edits.
-		response.Error = "assistant_response_persistence_failed"
-		auditlog.Fail(c, response.Error)
-		c.JSON(200, response)
+	if err = h.Store.persistChat(c.Request.Context(), u.ID, in.ClientRequestID, conv, initial, "pending"); err != nil {
+		writeResponse(c, nil, err)
 		return
 	}
-	// Even a later upstream failure must return the actual push receipts and
-	// charged usage; hiding successful edits behind a generic error is unsafe.
-	c.JSON(200, response)
+	bgBase := context.WithoutCancel(c.Request.Context())
+	done := make(chan ChatResponse, 1)
+	h.Store.bg.Add(1)
+	go func() {
+		defer h.Store.bg.Done()
+		in.checkpoint = func(progress CompletionRun) error {
+			checkpointCtx, cancel := context.WithTimeout(bgBase, 10*time.Second)
+			defer cancel()
+			return h.Store.persistChat(checkpointCtx, u.ID, in.ClientRequestID, conv, ChatResponse{
+				ConversationID: conv.ID,
+				RequestID:      in.ClientRequestID,
+				Status:         "pending",
+				CompletionRun:  progress,
+			}, "pending")
+		}
+		runCtx, cancelRun := context.WithTimeout(bgBase, 5*time.Minute)
+		defer cancelRun()
+		run, runErr := h.complete(runCtx, u, in, messages, true, "chat", "")
+		if run.Messages == nil {
+			run.Messages = messages
+		}
+		response := ChatResponse{ConversationID: conv.ID, RequestID: in.ClientRequestID, CompletionRun: run}
+		if runErr != nil {
+			response.Error = safeRuntimeCode(runErr)
+		}
+		finishCtx, cancelFinish := context.WithTimeout(bgBase, 10*time.Second)
+		defer cancelFinish()
+		if finishErr := h.Store.finishChat(finishCtx, u.ID, in.ClientRequestID, conv, response); finishErr != nil {
+			response.Status = "failed"
+			response.Error = "assistant_response_persistence_failed"
+		} else if response.Error != "" {
+			response.Status = "failed"
+		} else {
+			response.Status = "completed"
+		}
+		done <- response
+	}()
+	if in.Background {
+		c.JSON(200, initial)
+		return
+	}
+	select {
+	case response := <-done:
+		if response.Error == "assistant_response_persistence_failed" {
+			auditlog.Fail(c, response.Error)
+		}
+		c.JSON(200, response)
+	case <-c.Request.Context().Done():
+		writeResponse(c, nil, c.Request.Context().Err())
+	}
 }
 
 func withoutSystemMessages(in []Message) []Message {
@@ -426,7 +499,7 @@ func (h HTTP) listConversations(admin bool) gin.HandlerFunc {
 			writeResponse(c, nil, err)
 			return
 		}
-		rows, err := h.Store.DB.QueryContext(c.Request.Context(), `SELECT id::text,owner_id,title,coalesce(model_id::text,''),coalesce(byo_credential_id::text,''),'[]'::jsonb,created_at,updated_at FROM assistant.conversations`+where+` ORDER BY updated_at DESC,id LIMIT $2 OFFSET $3`, owner, l, o)
+		rows, err := h.Store.DB.QueryContext(c.Request.Context(), `SELECT c.id::text,c.owner_id,c.title,coalesce(c.model_id::text,''),coalesce((SELECT r.id::text FROM assistant.chat_requests r WHERE r.conversation_id=c.id AND r.status='pending' LIMIT 1),''),'[]'::jsonb,c.created_at,c.updated_at FROM assistant.conversations c`+where+` ORDER BY c.updated_at DESC,c.id LIMIT $2 OFFSET $3`, owner, l, o)
 		if err != nil {
 			writeResponse(c, nil, err)
 			return
@@ -449,21 +522,20 @@ func (h HTTP) getConversation(admin bool) gin.HandlerFunc {
 		if admin {
 			owner = ""
 		}
-		v, e := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,title,coalesce(model_id::text,''),coalesce(byo_credential_id::text,''),messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND ($2='' OR owner_id=$2)`, c.Param("id"), owner))
+		v, e := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT c.id::text,c.owner_id,c.title,coalesce(c.model_id::text,''),coalesce((SELECT r.id::text FROM assistant.chat_requests r WHERE r.conversation_id=c.id AND r.status='pending' LIMIT 1),''),c.messages,c.created_at,c.updated_at FROM assistant.conversations c WHERE c.id=$1 AND ($2='' OR c.owner_id=$2)`, c.Param("id"), owner))
 		writeResponse(c, v, e)
 	}
 }
 func (h HTTP) createConversation(c *gin.Context) {
 	var in struct {
-		Title        string `json:"title"`
-		ModelID      string `json:"model_id"`
-		CredentialID string `json:"credential_id"`
+		Title   string `json:"title"`
+		ModelID string `json:"model_id"`
 	}
 	if !decodeBody(c, &in) {
 		return
 	}
-	v := Conversation{ID: uuid.NewString(), OwnerID: catalog.RequestUser(c).ID, Title: shortTitle(in.Title), ModelID: in.ModelID, BYOCredentialID: in.CredentialID, Messages: []Message{}}
-	err := h.Store.DB.QueryRowContext(c.Request.Context(), `INSERT INTO assistant.conversations(id,owner_id,title,model_id,byo_credential_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid) RETURNING created_at,updated_at`, v.ID, v.OwnerID, v.Title, v.ModelID, v.BYOCredentialID).Scan(&v.CreatedAt, &v.UpdatedAt)
+	v := Conversation{ID: uuid.NewString(), OwnerID: catalog.RequestUser(c).ID, Title: shortTitle(in.Title), ModelID: in.ModelID, Messages: []Message{}}
+	err := h.Store.DB.QueryRowContext(c.Request.Context(), `INSERT INTO assistant.conversations(id,owner_id,title,model_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid) RETURNING created_at,updated_at`, v.ID, v.OwnerID, v.Title, v.ModelID).Scan(&v.CreatedAt, &v.UpdatedAt)
 	writeResponse(c, v, err)
 }
 func (h HTTP) deleteConversation(admin bool) gin.HandlerFunc {

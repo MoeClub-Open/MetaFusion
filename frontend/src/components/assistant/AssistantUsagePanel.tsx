@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
-import { assistantRequest, type AssistantModel, type AssistantPage, type AssistantUsage } from "@/lib/assistantApi";
+import { assistantRequest, type AssistantBYOModel, type AssistantModel, type AssistantPage, type AssistantUsage } from "@/lib/assistantApi";
 import { describeAssistantError } from "@/lib/assistantUser";
 import { Card } from "@/components/ui/Card";
 
 const PAGE_SIZE = 20;
 
-export function AssistantUsagePanel({ models }: { models: AssistantModel[] }) {
+export function AssistantUsagePanel({ models, byoModels = [] }: { models: AssistantModel[]; byoModels?: AssistantBYOModel[] }) {
   const { t, locale } = useI18n();
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<AssistantPage<AssistantUsage> | null>(null);
@@ -31,7 +31,7 @@ export function AssistantUsagePanel({ models }: { models: AssistantModel[] }) {
     {!!result?.items.length && <div className="overflow-x-auto"><table className="w-full text-xs text-left">
       <thead className="text-text-muted"><tr>{["time", "model", "tokenInput", "tokenOutput", "cachedTokens", "creditsSpent", "status"].map((key) => <th key={key} scope="col" className="px-2 py-2 font-medium whitespace-nowrap">{t(`assistant.user.${key}`)}</th>)}</tr></thead>
       <tbody className="divide-y divide-line-subtle">{result.items.map((item) => <tr key={item.id}>
-        <td className="p-2 whitespace-nowrap">{new Date(item.created_at).toLocaleString(locale)}</td><td className="p-2">{models.find((model) => model.id === item.model_id)?.name || item.price_snapshot?.name || item.model_id}<span className="block text-[10px] text-text-muted">{item.byo_credential_id ? t("assistant.user.byo") : t(`assistant.user.purpose.${item.purpose}`)}</span></td>
+        <td className="p-2 whitespace-nowrap">{new Date(item.created_at).toLocaleString(locale)}</td><td className="p-2">{models.find((model) => model.id === item.model_id)?.name || byoModels.find((model) => model.id === item.model_id)?.name || item.price_snapshot?.name || item.model_id}<span className="block text-[10px] text-text-muted">{item.byo_provider_id ? t("assistant.user.byo") : item.purpose.startsWith("curator:") ? t("curator.title") : item.purpose.startsWith("mission:") ? t("assistant.user.purpose.mission") : t(`assistant.user.purpose.${item.purpose}`)}</span></td>
         <td className="p-2 tabular-nums">{number.format(item.usage?.input_tokens || 0)}{item.usage_estimated && <span className="block text-[10px] text-text-muted">{t("assistant.user.estimated")}</span>}</td><td className="p-2 tabular-nums">{number.format(item.usage?.output_tokens || 0)}</td><td className="p-2 tabular-nums">{number.format(item.usage?.cached_input_tokens || 0)}</td><td className="p-2 tabular-nums">{number.format(item.credits || 0)}</td><td className="p-2">{t(`assistant.user.usageStatus.${item.status}`)}</td>
       </tr>)}</tbody>
     </table></div>}

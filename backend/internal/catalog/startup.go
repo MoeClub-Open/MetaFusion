@@ -58,13 +58,19 @@ var requiredCatalogTables = []string{
 	"assistant.settings",
 	"assistant.providers",
 	"assistant.models",
-	"assistant.byo_credentials",
+	"assistant.byo_providers",
+	"assistant.byo_models",
+	"assistant.search_providers",
+	"assistant.search_requests",
 	"assistant.accounts",
 	"assistant.credit_entries",
 	"assistant.budget_months",
 	"assistant.usage",
 	"assistant.conversations",
 	"assistant.chat_requests",
+	"assistant.missions",
+	"assistant.mission_tasks",
+	"assistant.mission_planner_runs",
 	"assistant.generated_content",
 	"assistant.public_sources",
 	"curator.settings",
@@ -96,8 +102,8 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 40 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 40 required (run mf-migrate up)")
+	if contractVersion != 41 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 41 required (run mf-migrate up)")
 	}
 	var hasCommitProvenance bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='revisions' AND column_name='commit_id')`).Scan(&hasCommitProvenance); err != nil {

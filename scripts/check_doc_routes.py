@@ -52,6 +52,8 @@ GO_ROUTER_PARAM = re.compile(r"([A-Za-z_]\w*)\s+\*?gin\.(?:RouterGroup|IRoutes|E
 GO_CALL_HEAD = re.compile(r"([A-Za-z_]\w*)\s*\(")
 # openapi.go 的声明行：表里的 {"<path>", "<method>", ...} 与零散的 add("<path>", "<method>", ...)
 GO_OPENAPI_PAIR = re.compile(r"\"(/[^\"]*)\"\s*,\s*\"(get|post|put|patch|delete|head|options)\"")
+GO_OPENAPI_MAP_HEAD = re.compile(r"paths\[\"(/[^\"]*)\"\]\s*=\s*map\[string\]any\{(.*)")
+GO_OPENAPI_MAP_METHOD = re.compile(r"\"(get|post|put|patch|delete|head|options)\"\s*:")
 
 # ── 归一化 ────────────────────────────────────────────────────────────
 UUID_RE = re.compile(r"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
@@ -274,6 +276,10 @@ def scan_openapi_routes(openapi_path, root):
         for number, line in enumerate(fh, 1):
             for raw, method in GO_OPENAPI_PAIR.findall(line):
                 routes.setdefault((method.upper(), norm_path("/api" + raw)), []).append("%s:%d" % (shown, number))
+            head = GO_OPENAPI_MAP_HEAD.search(line)
+            if head:
+                for method in GO_OPENAPI_MAP_METHOD.findall(head.group(2)):
+                    routes.setdefault((method.upper(), norm_path("/api" + head.group(1))), []).append("%s:%d" % (shown, number))
     return routes
 
 
@@ -397,8 +403,15 @@ def check(root, doc_roots):
         return 1
 
     api_routes, unresolved, group_count, api_prefix = scan_backend_routes(backend_dir, root)
-    openapi_rel = os.path.join("backend", "internal", "catalog", "openapi.go")
-    openapi_routes = scan_openapi_routes(os.path.join(root, openapi_rel), root)
+    openapi_rels = [
+        os.path.join("backend", "internal", "catalog", "openapi.go"),
+        os.path.join("backend", "internal", "assistant", "openapi.go"),
+        os.path.join("backend", "internal", "curator", "openapi.go"),
+    ]
+    openapi_routes = {}
+    for rel in openapi_rels:
+        for key, locs in scan_openapi_routes(os.path.join(root, rel), root).items():
+            openapi_routes.setdefault(key, []).extend(locs)
 
     implemented = {}
     for (method, path) in list(api_routes) + list(openapi_routes):
@@ -419,8 +432,8 @@ def check(root, doc_roots):
         return 0
     p1, other = compare(implemented_paths, refs)
 
-    print("路由来源：backend 实现 %d 条（前缀变量 %d 个，解析出的组前缀 %s）+ %s 声明 %d 条，去重后 %d 条路径"
-          % (len(api_routes), group_count, api_prefix or "(空)", openapi_rel.replace(os.sep, "/"),
+    print("路由来源：backend 实现 %d 条（前缀变量 %d 个，解析出的组前缀 %s）+ OpenAPI 模块声明 %d 条，去重后 %d 条路径"
+          % (len(api_routes), group_count, api_prefix or "(空)",
              len(openapi_routes), len(implemented_paths)))
     reasons = {}
     for item in skipped:

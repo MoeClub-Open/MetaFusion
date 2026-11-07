@@ -34,6 +34,7 @@ func (h HTTP) previewContext(c *gin.Context) {
 		writeResponse(c, nil, errors.New("assistant_invalid_payload"))
 		return
 	}
+	ownerID := catalog.RequestUser(c).ID
 	models, err := h.Store.Models(c.Request.Context(), true)
 	if err != nil {
 		writeResponse(c, nil, err)
@@ -47,12 +48,15 @@ func (h HTTP) previewContext(c *gin.Context) {
 		}
 	}
 	if model.ID == "" {
-		writeResponse(c, nil, ErrNotFound)
-		return
+		model, _, err = h.Store.ResolveBYOModel(c.Request.Context(), in.ModelID, ownerID, true)
+		if err != nil {
+			writeResponse(c, nil, err)
+			return
+		}
 	}
 	var history []Message
 	if in.ConversationID != "" {
-		conv, err := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,title,coalesce(model_id::text,''),coalesce(byo_credential_id::text,''),messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND owner_id=$2`, in.ConversationID, catalog.RequestUser(c).ID))
+		conv, err := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,title,coalesce(model_id::text,''),'',messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND owner_id=$2`, in.ConversationID, ownerID))
 		if err != nil {
 			writeResponse(c, nil, err)
 			return

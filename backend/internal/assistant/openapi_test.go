@@ -105,13 +105,13 @@ func TestOpenAPISecretsAndPagination(t *testing.T) {
 	if !strings.Contains(","+strings.Join(account["required"].([]string), ",")+",", ",default_model_id,") {
 		t.Error("account response always includes default_model_id")
 	}
-	for _, name := range []string{"AssistantProviderInput", "AssistantCredentialInput"} {
+	for _, name := range []string{"AssistantProviderInput", "AssistantBYOProviderInput", "AssistantSearchProviderInput"} {
 		props := schemas[name].(map[string]any)["properties"].(map[string]any)
 		if props["api_key"].(map[string]any)["writeOnly"] != true {
 			t.Errorf("credential plaintext must be write-only: %s", name)
 		}
 	}
-	for _, name := range []string{"AssistantProvider", "AssistantBYOCredential", "AssistantModel", "AssistantGeneratedOverview"} {
+	for _, name := range []string{"AssistantProvider", "AssistantBYOProvider", "AssistantBYOModel", "AssistantModel", "AssistantGeneratedOverview"} {
 		props := schemas[name].(map[string]any)["properties"].(map[string]any)
 		for _, key := range []string{"api_key", "encrypted_key", "content", "dependencies"} {
 			if _, exists := props[key]; exists {
@@ -229,9 +229,13 @@ func TestOpenAPIModelOverridesAndEstimatedUsage(t *testing.T) {
 			t.Errorf("model token-limit parameter contract drift: %s", name)
 		}
 	}
-	for _, name := range []string{"AssistantBYOCredential", "AssistantCredentialInput"} {
+	for _, name := range []string{"AssistantBYOModel", "AssistantBYOModelInput"} {
 		if _, ok := props(name)["upstream_model"]; !ok {
 			t.Errorf("missing BYO upstream override: %s", name)
+		}
+		field := props(name)["max_tokens_parameter"].(map[string]any)
+		if field["default"] != "max_tokens" || strings.Join(field["enum"].([]string), ",") != "max_tokens,max_completion_tokens" {
+			t.Errorf("BYO model token-limit parameter contract drift: %s", name)
 		}
 	}
 	usage := props("AssistantUsageRecord")
@@ -252,9 +256,10 @@ func TestOpenAPIModelOverridesAndEstimatedUsage(t *testing.T) {
 			t.Error("chat usage_estimated is omitted when no provider usage was estimated")
 		}
 	}
-	credential := props("AssistantChatRequest")["credential_id"].(map[string]any)
-	variants := credential["oneOf"].([]any)
-	if len(variants) != 2 || variants[1].(map[string]any)["enum"].([]string)[0] != "" {
-		t.Error("explicit empty credential_id must allow clearing a conversation's BYO selection")
+	if props("AssistantChatRequest")["background"].(map[string]any)["type"] != "boolean" {
+		t.Error("chat request must document background execution flag")
+	}
+	if props("AssistantConversation")["active_request_id"].(map[string]any)["format"] != "uuid" {
+		t.Error("conversation must expose active_request_id for background polling")
 	}
 }
