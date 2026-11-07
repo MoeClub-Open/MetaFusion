@@ -180,6 +180,13 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 						},
 					}))
 				}
+				if last.ToolCallID == "plan-1" {
+					// Simulate a model prematurely calling mission_complete right after queueing tasks;
+					// the engine must defer completion so newly added Worker tasks still execute.
+					return reply("", call("premature-done", "mission_complete", map[string]any{
+						"summary": "已派发首轮并行探查与后续编辑子任务。",
+					}))
+				}
 				return reply("已完成首轮拆解并派发并行探查与核证任务。")
 			}
 			if strings.Contains(userPrompt, "唤醒原因: worker_discovery") {
@@ -305,11 +312,40 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 	t.Cleanup(eng.Wait)
 	HTTP{Store: f.s, Catalog: f.cat, Missions: eng}.Register(router.Group("/api"))
 
+	// A mission whose budget cannot cover even the first ceiling reservation must fail cleanly rather than complete with 0 tasks.
+	tooSmallBody := missionMustJSON(t, map[string]any{
+		"client_request_id": uuid.NewString(),
+		"goal":              "预算过小测试",
+		"budget_credits":    100,
+	})
+	sw0 := httptest.NewRecorder()
+	req0 := httptest.NewRequest("POST", "/api/assistant/missions", bytes.NewReader(tooSmallBody))
+	req0.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(sw0, req0)
+	if sw0.Code != 200 {
+		t.Fatalf("create small-budget mission status=%d body=%s", sw0.Code, sw0.Body.String())
+	}
+	var smallCreated MissionDetail
+	_ = json.Unmarshal(sw0.Body.Bytes(), &smallCreated)
+	var smallDetail MissionDetail
+	for deadline0 := time.Now().Add(8 * time.Second); time.Now().Before(deadline0); {
+		gw0 := httptest.NewRecorder()
+		router.ServeHTTP(gw0, httptest.NewRequest("GET", "/api/assistant/missions/"+smallCreated.Mission.ID, nil))
+		_ = json.Unmarshal(gw0.Body.Bytes(), &smallDetail)
+		if smallDetail.Mission.Status == "completed" || smallDetail.Mission.Status == "failed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if smallDetail.Mission.Status != "failed" || smallDetail.Mission.Error != "assistant_budget_exceeded" {
+		t.Fatalf("expected failed mission with assistant_budget_exceeded, got status=%s err=%s", smallDetail.Mission.Status, smallDetail.Mission.Error)
+	}
+
 	reqBody := missionMustJSON(t, map[string]any{
 		"client_request_id":   uuid.NewString(),
 		"title":               "完善测试作品资料",
 		"goal":                "核实 Original Work 并通过工作副本提交简介更新",
-		"budget_credits":      50000,
+		"budget_credits":      500000,
 		"max_workers":         2,
 		"max_tasks":           8,
 		"max_planner_rounds":  6,
