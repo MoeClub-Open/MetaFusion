@@ -173,8 +173,8 @@ export function CuratorAdmin() {
       </div>
     </div>
 
-    {!mayWrite ? <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-text-body">
-      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warning" />{t("curator.readOnly")}
+    {!mayWrite ? <div className="flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-text-body">
+      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warn" />{t("curator.readOnly")}
     </div> : null}
     {error ? <div className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div> : null}
     {notice ? <div className="rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-xs text-text-body">{notice}</div> : null}
@@ -270,7 +270,7 @@ export function CuratorAdmin() {
                 </Link>
                 <div className="mt-0.5 text-[10px] text-text-faint">{finding.entity_kind} · {finding.id.slice(0, 8)}</div>
               </td>
-              <td className="px-3 py-2"><span className="font-mono text-[11px]">{finding.code}</span><div className={`mt-0.5 text-[10px] ${finding.severity === "error" ? "text-danger" : finding.severity === "warning" ? "text-warning" : "text-text-faint"}`}>{finding.severity}</div></td>
+              <td className="px-3 py-2"><span className="font-mono text-[11px]">{finding.code}</span><div className={`mt-0.5 text-[10px] ${finding.severity === "error" ? "text-danger" : finding.severity === "warning" ? "text-warn" : "text-text-faint"}`}>{finding.severity}</div></td>
               <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[10px] ${finding.status === "open" ? "bg-primary/10 text-primary" : finding.status === "failed" ? "bg-danger/10 text-danger" : finding.status === "resolved" ? "bg-success/10 text-success" : "bg-surfaceHover text-text-muted"}`}>{t(`curator.status.${finding.status}`)}</span></td>
               <td className="px-3 py-2 font-mono">{finding.attempts}</td>
               <td className="max-w-[260px] px-3 py-2"><div className="truncate text-text-body" title={finding.reason}>{finding.decision || "—"}{finding.reason ? ` · ${finding.reason}` : ""}</div>{finding.last_error ? <div className="mt-0.5 truncate font-mono text-[10px] text-danger" title={finding.last_error}>{finding.last_error}</div> : null}</td>

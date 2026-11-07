@@ -24,7 +24,7 @@ const sectionPermissions: Partial<Record<CatalogAdminTab, string>> = {
 export function canUseCatalogAdminTab(user: User | null | undefined, tab: CatalogAdminTab): boolean {
   if (tab === "ratelimits") return can(user, CATALOG_DEFINITIONS_MANAGE) || can(user, COMMUNITY_RATE_LIMITS_MANAGE);
   if (!canEnterCatalogConsole(user)) return false;
-  if (tab !== "assistant" && !CATALOG_CONSOLE_CODES.some((code) => code !== ASSISTANT_MANAGE && can(user, code))) return false;
+  if (tab !== "assistant" && tab !== "curator" && !CATALOG_CONSOLE_CODES.some((code) => code !== ASSISTANT_MANAGE && can(user, code))) return false;
   const permission = sectionPermissions[tab];
   return !permission || can(user, permission);
 }
