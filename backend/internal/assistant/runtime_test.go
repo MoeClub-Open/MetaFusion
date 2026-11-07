@@ -16,6 +16,7 @@ type runtimeFixture struct {
 	completeErr error
 	settleErr   error
 	response    CompletionResponse
+	responses   []CompletionResponse
 	status      string
 	errorCode   string
 	reservation ReserveRequest
@@ -34,6 +35,11 @@ func (f *runtimeFixture) Reserve(_ context.Context, r ReserveRequest) (Reservati
 }
 func (f *runtimeFixture) Complete(context.Context, CompletionRequest) (CompletionResponse, error) {
 	f.events = append(f.events, "complete")
+	if len(f.responses) > 0 {
+		response := f.responses[0]
+		f.responses = f.responses[1:]
+		return response, f.completeErr
+	}
 	return f.response, f.completeErr
 }
 func (f *runtimeFixture) Settle(_ context.Context, _ string, u TokenUsage, status, code string) (UsageRecord, error) {
@@ -90,6 +96,32 @@ func TestCompletionDoesNotExecuteToolsUntilAccountingSettles(t *testing.T) {
 	r, err := runCompletion(context.Background(), f, nil, catalog.User{ID: "owner"}, ChatRequest{}, nil, true, "chat", "")
 	if err == nil || len(r.ToolResults) != 0 {
 		t.Fatalf("err=%v results=%v", err, r.ToolResults)
+	}
+}
+
+func TestCompletionLargeToolBatchCanContinueWithoutExceedingLimit(t *testing.T) {
+	calls := make([]ToolCall, 10)
+	for i := range calls {
+		calls[i] = ToolCall{ID: uuid.NewString(), Type: "function"}
+		calls[i].Function.Name, calls[i].Function.Arguments = "catalog_get", `{}`
+	}
+	f := &runtimeFixture{responses: []CompletionResponse{
+		{Message: Message{ToolCalls: calls}},
+		{Message: Message{Content: "continued"}},
+	}}
+	executed, observed := 0, 0
+	req := ChatRequest{
+		beforeTool: func(call ToolCall) (ToolCall, error) { executed++; return call, nil },
+		afterTool:  func(ToolCall, any, error) error { observed++; return nil },
+	}
+	run, err := runCompletion(context.Background(), f, nil, catalog.User{ID: "owner"}, req, nil, true, "curator:test", "")
+	if err != nil || run.Answer != "continued" || len(run.ToolResults) != len(calls) || executed != 8 || observed != 8 {
+		t.Fatalf("large batch could not continue within its execution budget: %v results=%d executed=%d observed=%d", err, len(run.ToolResults), executed, observed)
+	}
+	for _, result := range run.ToolResults[8:] {
+		if result.(map[string]any)["result"].(map[string]any)["error"] != "assistant_tool_limit" {
+			t.Fatalf("unexecuted call has no retryable limit result: %v", result)
+		}
 	}
 }
 

@@ -280,7 +280,7 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 			run.Answer = response.Message.Content
 			return run, nil
 		}
-		if len(tools) == 0 || len(response.Message.ToolCalls) > 8 {
+		if len(tools) == 0 {
 			return run, errors.New("assistant_tool_limit")
 		}
 		if req.checkpoint != nil {
@@ -288,13 +288,17 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 				return run, err
 			}
 		}
-		for _, call := range response.Message.ToolCalls {
+		for index, call := range response.Message.ToolCalls {
 			if ctx.Err() != nil {
 				return run, ctx.Err()
 			}
 			var result any
 			var toolErr error
-			if allowedTools != nil && !allowedTools[call.Function.Name] {
+			// Return a result for every call ID so the model can continue with
+			// another bounded round instead of abandoning the whole batch.
+			if index >= 8 {
+				toolErr = errors.New("assistant_tool_limit")
+			} else if allowedTools != nil && !allowedTools[call.Function.Name] {
 				toolErr = errors.New("assistant_tool_not_allowed")
 			} else {
 				if req.beforeTool != nil {
@@ -305,7 +309,7 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 				}
 				result, toolErr = runCatalogTool(ctx, cat, u, call.Function.Name, json.RawMessage(call.Function.Arguments))
 			}
-			if req.afterTool != nil {
+			if req.afterTool != nil && index < 8 {
 				if err = req.afterTool(call, result, toolErr); err != nil {
 					return run, err
 				}
