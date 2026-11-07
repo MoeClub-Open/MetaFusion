@@ -500,7 +500,9 @@ type ChatRequestRecord struct {
 }
 
 func scanChatRequest(row rowScanner) (v ChatRequestRecord, err error) {
-	err = row.Scan(&v.ID, &v.OwnerID, &v.ConversationID, &v.Status, &v.Response, &v.CreatedAt, &v.UpdatedAt)
+	var response []byte
+	err = row.Scan(&v.ID, &v.OwnerID, &v.ConversationID, &v.Status, &response, &v.CreatedAt, &v.UpdatedAt)
+	v.Response = response
 	return
 }
 

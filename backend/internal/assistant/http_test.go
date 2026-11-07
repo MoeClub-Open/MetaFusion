@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -129,5 +130,45 @@ func TestPostgresOnlyExpiredRequestsCanBeCancelled(t *testing.T) {
 	var status, note string
 	if err = s.DB.QueryRow(`SELECT status,response->>'admin_cancel_note' FROM assistant.chat_requests WHERE id=$1`, req.ClientRequestID).Scan(&status, &note); err != nil || status != "failed" || note != "worker interrupted" {
 		t.Fatalf("status=%s note=%s err=%v", status, note, err)
+	}
+}
+
+func TestPostgresAdminRequestListHandlesOmittedBodies(t *testing.T) {
+	s, model, owner := accountingFixture(t)
+	ctx := t.Context()
+	req := ChatRequest{ClientRequestID: uuid.NewString(), Message: "private question", ModelID: model.ID}
+	conv, _, err := s.claimChat(ctx, owner, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.finishChat(ctx, owner, req.ClientRequestID, conv, ChatResponse{CompletionRun: CompletionRun{Answer: "private answer"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"", "?user_id=" + owner, "?status=completed", "?limit=1&offset=0"} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/assistant/admin/requests"+query, nil)
+		HTTP{Store: s}.listRequests(c)
+		if w.Code != 200 {
+			t.Fatalf("nonempty request list failed for %s: %d %s", query, w.Code, w.Body.String())
+		}
+		var page Page[map[string]any]
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if page.Total != 1 || len(page.Items) != 1 || page.Items[0]["id"] != req.ClientRequestID {
+			t.Fatalf("request metadata missing: %s", w.Body.String())
+		}
+		if _, present := page.Items[0]["response"]; present || strings.Contains(w.Body.String(), "private answer") {
+			t.Fatal("request list exposed private response bodies")
+		}
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.Params = gin.Params{{Key: "id", Value: req.ClientRequestID}}
+	HTTP{Store: s}.getRequest(c)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "private answer") {
+		t.Fatalf("request detail lost its stored response: %d %s", w.Code, w.Body.String())
 	}
 }

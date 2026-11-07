@@ -1,7 +1,7 @@
 /* 管理台共用密度；由主题同步脚本分发到三个独立后台。 */
 [data-mf-admin] {
   --mf-admin-control-height: 32px;
-  background: var(--background);
+  background: var(--bg-color);
 }
 
 [data-mf-admin-content] :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select) {
