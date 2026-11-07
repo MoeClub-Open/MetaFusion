@@ -189,7 +189,7 @@ export function CuratorAdmin() {
     {tab === "overview" ? <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ["curator.status", t(`curator.status.${status}`), status === "enabled" ? "text-success" : status === "paused" ? "text-warning" : "text-text-muted"],
+          ["curator.status", t(`curator.status.${status}`), status === "enabled" ? "text-success" : status === "paused" ? "text-warn" : "text-text-muted"],
           ["curator.queue", `${summary?.counts.open ?? 0} / ${summary?.counts.failed ?? 0}`, "text-text-strong"],
           ["curator.runs24h", String(summary?.runs_24h ?? 0), "text-text-strong"],
           ["curator.budget", `${summary?.spent_credits ?? 0} / ${summary?.settings.monthly_credit_allowance ?? 0}`, "text-text-strong"],
