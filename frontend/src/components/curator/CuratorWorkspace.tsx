@@ -6,6 +6,7 @@ import { Bot, GitBranch, Loader2, Send } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { MissionWorkspacePanel } from "@/components/assistant/MissionWorkspacePanel";
 import { useI18n } from "@/i18n/I18nProvider";
+import type { AssistantBYOModel, AssistantBYOProvider, AssistantModel, AssistantReasoningEffort, SearchProvider } from "@/lib/assistantApi";
 import { curatorRequest, type CuratorFinding, type CuratorPage, type CuratorRun } from "@/lib/curatorApi";
 
 const button = "rounded-control border border-line px-2 py-1.5 text-xs hover:bg-surfaceHover disabled:opacity-40";
@@ -17,7 +18,33 @@ function readableAnswer(content: string) {
 
 function pretty(value: string) { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } }
 
-export function CuratorWorkspace({ mayWrite, enabled, paused, onQueued }: { mayWrite: boolean; enabled: boolean; paused: boolean; onQueued: () => Promise<void> }) {
+export function CuratorWorkspace({
+  mayWrite,
+  enabled,
+  paused,
+  models = [],
+  byoProviders = [],
+  byoModels = [],
+  searchProviders = [],
+  defaultModelID = "",
+  defaultWorkerModelID = "",
+  defaultReasoningEffort = "",
+  defaultWorkerReasoningEffort = "",
+  onQueued,
+}: {
+  mayWrite: boolean;
+  enabled: boolean;
+  paused: boolean;
+  models?: AssistantModel[];
+  byoProviders?: AssistantBYOProvider[];
+  byoModels?: AssistantBYOModel[];
+  searchProviders?: SearchProvider[];
+  defaultModelID?: string;
+  defaultWorkerModelID?: string;
+  defaultReasoningEffort?: AssistantReasoningEffort;
+  defaultWorkerReasoningEffort?: AssistantReasoningEffort;
+  onQueued: () => Promise<void>;
+}) {
   const { t, locale } = useI18n();
   const [mode, setMode] = useState<"missions" | "sessions">("missions");
   const [page, setPage] = useState<CuratorPage<CuratorRun> | null>(null);
@@ -79,7 +106,7 @@ export function CuratorWorkspace({ mayWrite, enabled, paused, onQueued }: { mayW
       <button type="button" onClick={() => setMode("sessions")} className={`rounded-control px-3 py-1.5 text-xs font-medium ${mode === "sessions" ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle"}`}>{t("curator.mode.sessions")}</button>
     </div>
     {mode === "missions" ? (
-      <MissionWorkspacePanel scope="curator" request={curatorRequest} mayWrite={mayWrite} defaultBudget={120} onChanged={() => { void onQueued(); }} />
+      <MissionWorkspacePanel scope="curator" request={curatorRequest} mayWrite={mayWrite} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={defaultModelID} defaultWorkerModelID={defaultWorkerModelID} defaultReasoningEffort={defaultReasoningEffort} defaultWorkerReasoningEffort={defaultWorkerReasoningEffort} defaultBudget={120} onChanged={() => { void onQueued(); }} />
     ) : (
     <div className="overflow-hidden rounded-control border border-line bg-surface">
       {error && <p role="alert" className="border-b border-line px-3 py-2 text-xs text-danger">{error}</p>}

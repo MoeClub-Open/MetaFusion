@@ -139,7 +139,9 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 
 	f.s.CompletionClient = &http.Client{Transport: missionRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		var body struct {
-			Messages []Message `json:"messages"`
+			Messages        []Message `json:"messages"`
+			Tools           []Tool    `json:"tools"`
+			ReasoningEffort string    `json:"reasoning_effort"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			return nil, err
@@ -180,6 +182,11 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 
 		isPlanner := strings.Contains(sys, "规划器（Planner）")
 		if isPlanner {
+			for _, tool := range body.Tools {
+				if strings.HasPrefix(tool.Function.Name, "catalog_") || tool.Function.Name == "web_search" || tool.Function.Name == "web_fetch" || tool.Function.Name == "public_fetch" {
+					t.Errorf("planner must not expose direct catalog/web tool %q", tool.Function.Name)
+				}
+			}
 			if strings.Contains(userPrompt, "唤醒原因: init") {
 				if last.Role == "user" {
 					return reply("", call("plan-1", "mission_update_plan", map[string]any{
@@ -357,14 +364,16 @@ func TestPostgresMissionPlannerWorkerLifecycle(t *testing.T) {
 	}
 
 	reqBody := missionMustJSON(t, map[string]any{
-		"client_request_id":   uuid.NewString(),
-		"title":               "完善测试作品资料",
-		"goal":                "核实 Original Work 并通过工作副本提交简介更新",
-		"budget_credits":      500000,
-		"max_workers":         2,
-		"max_tasks":           8,
-		"max_planner_rounds":  6,
-		"prefer_pull_request": true,
+		"client_request_id":       uuid.NewString(),
+		"title":                   "完善测试作品资料",
+		"goal":                    "核实 Original Work 并通过工作副本提交简介更新",
+		"reasoning_effort":        "high",
+		"worker_reasoning_effort": "low",
+		"budget_credits":          500000,
+		"max_workers":             2,
+		"max_tasks":               8,
+		"max_planner_rounds":      6,
+		"prefer_pull_request":     true,
 	})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/assistant/missions", bytes.NewReader(reqBody))

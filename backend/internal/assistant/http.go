@@ -398,6 +398,12 @@ func (h HTTP) chat(c *gin.Context) {
 		in.ModelID = conv.ModelID
 	}
 	conv.ModelID = in.ModelID
+	if in.ReasoningEffort != nil {
+		conv.ReasoningEffort = *in.ReasoningEffort
+	} else if conv.ReasoningEffort != "" {
+		eff := conv.ReasoningEffort
+		in.ReasoningEffort = &eff
+	}
 	messages := chatMessages(conv.Messages, in.Message)
 	initial := ChatResponse{
 		ConversationID: conv.ID,
@@ -499,7 +505,7 @@ func (h HTTP) listConversations(admin bool) gin.HandlerFunc {
 			writeResponse(c, nil, err)
 			return
 		}
-		rows, err := h.Store.DB.QueryContext(c.Request.Context(), `SELECT c.id::text,c.owner_id,c.title,coalesce(c.model_id::text,''),coalesce((SELECT r.id::text FROM assistant.chat_requests r WHERE r.conversation_id=c.id AND r.status='pending' LIMIT 1),''),'[]'::jsonb,c.created_at,c.updated_at FROM assistant.conversations c`+where+` ORDER BY c.updated_at DESC,c.id LIMIT $2 OFFSET $3`, owner, l, o)
+		rows, err := h.Store.DB.QueryContext(c.Request.Context(), `SELECT c.id::text,c.owner_id,c.title,coalesce(c.model_id::text,''),c.reasoning_effort,coalesce((SELECT r.id::text FROM assistant.chat_requests r WHERE r.conversation_id=c.id AND r.status='pending' LIMIT 1),''),'[]'::jsonb,c.created_at,c.updated_at FROM assistant.conversations c`+where+` ORDER BY c.updated_at DESC,c.id LIMIT $2 OFFSET $3`, owner, l, o)
 		if err != nil {
 			writeResponse(c, nil, err)
 			return
@@ -522,20 +528,25 @@ func (h HTTP) getConversation(admin bool) gin.HandlerFunc {
 		if admin {
 			owner = ""
 		}
-		v, e := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT c.id::text,c.owner_id,c.title,coalesce(c.model_id::text,''),coalesce((SELECT r.id::text FROM assistant.chat_requests r WHERE r.conversation_id=c.id AND r.status='pending' LIMIT 1),''),c.messages,c.created_at,c.updated_at FROM assistant.conversations c WHERE c.id=$1 AND ($2='' OR c.owner_id=$2)`, c.Param("id"), owner))
+		v, e := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT c.id::text,c.owner_id,c.title,coalesce(c.model_id::text,''),c.reasoning_effort,coalesce((SELECT r.id::text FROM assistant.chat_requests r WHERE r.conversation_id=c.id AND r.status='pending' LIMIT 1),''),c.messages,c.created_at,c.updated_at FROM assistant.conversations c WHERE c.id=$1 AND ($2='' OR c.owner_id=$2)`, c.Param("id"), owner))
 		writeResponse(c, v, e)
 	}
 }
 func (h HTTP) createConversation(c *gin.Context) {
 	var in struct {
-		Title   string `json:"title"`
-		ModelID string `json:"model_id"`
+		Title           string `json:"title"`
+		ModelID         string `json:"model_id"`
+		ReasoningEffort string `json:"reasoning_effort"`
 	}
 	if !decodeBody(c, &in) {
 		return
 	}
-	v := Conversation{ID: uuid.NewString(), OwnerID: catalog.RequestUser(c).ID, Title: shortTitle(in.Title), ModelID: in.ModelID, Messages: []Message{}}
-	err := h.Store.DB.QueryRowContext(c.Request.Context(), `INSERT INTO assistant.conversations(id,owner_id,title,model_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid) RETURNING created_at,updated_at`, v.ID, v.OwnerID, v.Title, v.ModelID).Scan(&v.CreatedAt, &v.UpdatedAt)
+	if !ValidReasoningEffort(in.ReasoningEffort) {
+		writeResponse(c, nil, errors.New("assistant_invalid_reasoning_effort"))
+		return
+	}
+	v := Conversation{ID: uuid.NewString(), OwnerID: catalog.RequestUser(c).ID, Title: shortTitle(in.Title), ModelID: in.ModelID, ReasoningEffort: in.ReasoningEffort, Messages: []Message{}}
+	err := h.Store.DB.QueryRowContext(c.Request.Context(), `INSERT INTO assistant.conversations(id,owner_id,title,model_id,reasoning_effort) VALUES($1,$2,$3,NULLIF($4,'')::uuid,$5) RETURNING created_at,updated_at`, v.ID, v.OwnerID, v.Title, v.ModelID, v.ReasoningEffort).Scan(&v.CreatedAt, &v.UpdatedAt)
 	writeResponse(c, v, err)
 }
 func (h HTTP) deleteConversation(admin bool) gin.HandlerFunc {

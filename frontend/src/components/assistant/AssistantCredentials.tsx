@@ -7,8 +7,8 @@ import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
-  ASSISTANT_PROTOCOLS, assistantRequest,
-  type AssistantBYOModel, type AssistantBYOProvider, type AssistantProtocol,
+  ASSISTANT_PROTOCOLS, ASSISTANT_REASONING_EFFORTS, assistantRequest,
+  type AssistantBYOModel, type AssistantBYOProvider, type AssistantProtocol, type AssistantReasoningEffort,
 } from "@/lib/assistantApi";
 import { describeAssistantError } from "@/lib/assistantUser";
 
@@ -27,7 +27,8 @@ export function AssistantCredentials({ providers, models, onChanged }: {
   const [deletingModel, setDeletingModel] = useState<AssistantBYOModel | null>(null);
   const [modelForm, setModelForm] = useState({
     provider_id: "", name: "", upstream_model: "", context_window: "65536", max_output_tokens: "4096",
-    max_tokens_parameter: "max_tokens" as "max_tokens" | "max_completion_tokens", enabled: true,
+    max_tokens_parameter: "max_tokens" as "max_tokens" | "max_completion_tokens",
+    reasoning_effort: "" as AssistantReasoningEffort, enabled: true,
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -43,8 +44,8 @@ export function AssistantCredentials({ providers, models, onChanged }: {
   const openModel = (item: AssistantBYOModel | "new") => {
     setError("");
     setModelForm(item === "new"
-      ? { provider_id: providers[0]?.id || "", name: "", upstream_model: "", context_window: "65536", max_output_tokens: "4096", max_tokens_parameter: "max_tokens", enabled: true }
-      : { provider_id: item.provider_id, name: item.name, upstream_model: item.upstream_model, context_window: String(item.context_window), max_output_tokens: String(item.max_output_tokens), max_tokens_parameter: item.max_tokens_parameter, enabled: item.enabled });
+      ? { provider_id: providers[0]?.id || "", name: "", upstream_model: "", context_window: "65536", max_output_tokens: "4096", max_tokens_parameter: "max_tokens", reasoning_effort: "", enabled: true }
+      : { provider_id: item.provider_id, name: item.name, upstream_model: item.upstream_model, context_window: String(item.context_window), max_output_tokens: String(item.max_output_tokens), max_tokens_parameter: item.max_tokens_parameter, reasoning_effort: item.reasoning_effort || "", enabled: item.enabled });
     setEditingModel(item);
   };
 
@@ -102,6 +103,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
                 <span className={"rounded-control px-1.5 py-0.5 text-[10px] " + (item.enabled ? "bg-primary/10 text-primary" : "bg-surfaceSubtle text-text-muted")}>{t(item.enabled ? "assistant.user.enabled" : "assistant.user.disabled")}</span>
               </div>
               <p className="text-xs text-text-muted break-all">{providerName} · <span className="font-mono">{item.upstream_model}</span> · {number.format(item.context_window)} / {number.format(item.max_output_tokens)}</p>
+              <p className="text-[11px] text-text-faint">{t("assistant.user.reasoningEffort")}: {t("assistant.reasoning." + (item.reasoning_effort || "default"))}</p>
             </div>
             <div className="flex items-center gap-1.5">
               <button type="button" disabled={busy} className={buttonClass} onClick={() => openModel(item)} aria-label={t("common.edit")}><Pencil className="size-3.5" /></button>
@@ -109,7 +111,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
                 onClick={() => void mutate("/byo/models/" + item.id, "PUT", {
                   provider_id: item.provider_id, name: item.name, upstream_model: item.upstream_model,
                   context_window: item.context_window, max_output_tokens: item.max_output_tokens,
-                  max_tokens_parameter: item.max_tokens_parameter, enabled: !item.enabled,
+                  max_tokens_parameter: item.max_tokens_parameter, reasoning_effort: item.reasoning_effort || "", enabled: !item.enabled,
                 })}><Power className="size-3.5" /></button>
               <button type="button" disabled={busy} className={buttonClass + " text-danger"} onClick={() => { setError(""); setDeletingModel(item); }} aria-label={t("assistant.user.delete")}><Trash2 className="size-3.5" /></button>
             </div>
@@ -153,6 +155,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
             context_window: Number(modelForm.context_window) || 65536,
             max_output_tokens: Number(modelForm.max_output_tokens) || 4096,
             max_tokens_parameter: modelForm.max_tokens_parameter,
+            reasoning_effort: modelForm.reasoning_effort,
             enabled: modelForm.enabled,
           },
         );
@@ -165,6 +168,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
           <label className="block space-y-1 text-xs"><span>{t("assistant.user.maxOutputTokens")}</span><input required type="number" min={1} max={10000000} value={modelForm.max_output_tokens} className={inputClass} onChange={(event) => setModelForm({ ...modelForm, max_output_tokens: event.target.value })} /></label>
         </div>
         <label className="block space-y-1 text-xs"><span>{t("assistant.user.maxTokensParameter")}</span><Select aria-label={t("assistant.user.maxTokensParameter")} value={modelForm.max_tokens_parameter} onChange={(value) => setModelForm({ ...modelForm, max_tokens_parameter: value as "max_tokens" | "max_completion_tokens" })} options={[{ value: "max_tokens", label: "max_tokens" }, { value: "max_completion_tokens", label: "max_completion_tokens" }]} /></label>
+        <label className="block space-y-1 text-xs"><span>{t("assistant.user.reasoningEffort")}</span><Select aria-label={t("assistant.user.reasoningEffort")} value={modelForm.reasoning_effort} onChange={(value) => setModelForm({ ...modelForm, reasoning_effort: value as AssistantReasoningEffort })} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t("assistant.reasoning." + (value || "default")) }))} /></label>
         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={modelForm.enabled} onChange={(event) => setModelForm({ ...modelForm, enabled: event.target.checked })} />{t("assistant.user.enabled")}</label>
         {error && <p role="alert" className="text-xs text-danger">{error}</p>}
         <button type="submit" disabled={busy || !modelForm.provider_id} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">{busy && <Loader2 className="size-3.5 animate-spin" />}{t("common.save")}</button>

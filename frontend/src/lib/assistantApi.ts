@@ -14,6 +14,8 @@ export interface AssistantPage<T> {
 
 export const ASSISTANT_PROTOCOLS = ["openai_compatible", "openai_responses", "anthropic_messages", "gemini_generate_content"] as const;
 export type AssistantProtocol = typeof ASSISTANT_PROTOCOLS[number];
+export const ASSISTANT_REASONING_EFFORTS = ["", "none", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type AssistantReasoningEffort = typeof ASSISTANT_REASONING_EFFORTS[number];
 
 export interface AssistantProvider {
   id: string; name: string; base_url: string; protocol: AssistantProtocol; enabled: boolean;
@@ -38,6 +40,7 @@ export interface AssistantModel {
   output_price_microusd_per_million: number; input_credits_per_million: number;
   output_credits_per_million: number; max_output_tokens: number; context_window: number;
   max_tokens_parameter: "max_tokens" | "max_completion_tokens";
+  reasoning_effort?: AssistantReasoningEffort;
   created_at: string; updated_at: string;
 }
 
@@ -55,6 +58,7 @@ export interface AssistantBYOProvider {
 export interface AssistantBYOModel {
   id: string; owner_id: string; provider_id: string; upstream_model: string; name: string; enabled: boolean;
   max_output_tokens: number; max_tokens_parameter: "max_tokens" | "max_completion_tokens"; context_window: number;
+  reasoning_effort?: AssistantReasoningEffort;
   created_at: string; updated_at: string;
 }
 
@@ -88,6 +92,7 @@ export interface AssistantMessage {
 
 export interface AssistantConversation {
   id: string; owner_id: string; title: string; model_id: string; active_request_id?: string;
+  reasoning_effort?: AssistantReasoningEffort;
   messages: AssistantMessage[]; created_at: string; updated_at: string;
 }
 
@@ -136,6 +141,8 @@ export interface Mission {
   status: MissionStatus;
   model_id: string;
   worker_model_id?: string;
+  reasoning_effort?: AssistantReasoningEffort;
+  worker_reasoning_effort?: AssistantReasoningEffort;
   search_provider_id?: string;
   search_byo_provider_id?: string;
   prefer_pull_request: boolean;

@@ -9,7 +9,7 @@ import {
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ASSISTANT_MANAGE, CATALOG_REVIEW_MANAGE, can } from "@/lib/permissions";
-import { assistantRequest, type AssistantBYOModel, type AssistantBYOProvider, type AssistantModel, type SearchProvider } from "@/lib/assistantApi";
+import { ASSISTANT_REASONING_EFFORTS, assistantRequest, type AssistantBYOModel, type AssistantBYOProvider, type AssistantModel, type AssistantReasoningEffort, type SearchProvider } from "@/lib/assistantApi";
 import {
   curatorRequest, type CuratorFinding, type CuratorPage, type CuratorRun,
   type CuratorSettings, type CuratorSummary,
@@ -209,7 +209,7 @@ export function CuratorAdmin() {
       </button>)}
     </div>
 
-    {tab === "chat" && <CuratorWorkspace mayWrite={mayWrite} enabled={summary?.settings.enabled ?? false} paused={summary?.settings.paused ?? false} onQueued={loadSummary} />}
+    {tab === "chat" && <CuratorWorkspace mayWrite={mayWrite} enabled={summary?.settings.enabled ?? false} paused={summary?.settings.paused ?? false} models={models} byoProviders={byoProviders} byoModels={activeBYOModels} searchProviders={searchProviders} defaultModelID={summary?.settings.model_id || ""} defaultWorkerModelID={summary?.settings.execution.child_model_id || ""} defaultReasoningEffort={summary?.settings.execution.reasoning_effort || ""} defaultWorkerReasoningEffort={summary?.settings.execution.child_reasoning_effort || ""} onQueued={loadSummary} />}
 
     {tab === "overview" ? <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -247,6 +247,16 @@ export function CuratorAdmin() {
                 {!hasModelOption(draft.execution.child_model_id) && <option value={draft.execution.child_model_id}>{t("curator.boundModel")}</option>}
                 {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                 {activeBYOModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {t("assistant.user.byo")}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.reasoningEffort")}</span>
+              <select value={draft.execution.reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(event) => updateExecution("reasoning_effort", event.target.value as AssistantReasoningEffort)} className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary disabled:opacity-60">
+                {ASSISTANT_REASONING_EFFORTS.map((value) => <option key={value || "default"} value={value}>{t("assistant.reasoning." + (value || "default"))}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.childReasoningEffort")}</span>
+              <select value={draft.execution.child_reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(event) => updateExecution("child_reasoning_effort", event.target.value as AssistantReasoningEffort)} className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary disabled:opacity-60">
+                {ASSISTANT_REASONING_EFFORTS.map((value) => <option key={value || "default"} value={value}>{t("assistant.reasoning." + (value || "default"))}</option>)}
               </select>
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.maxChildren")}</span>{numberInput(draft.execution.max_children, 1, 8, (n) => updateExecution("max_children", n), !mayWrite || !!busy)}</label>

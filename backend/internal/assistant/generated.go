@@ -733,9 +733,9 @@ func (h HTTP) overviewExecutionConfig(ctx context.Context, model Model, byoProvi
 		}
 	}
 	return overviewHash(struct {
-		Endpoint, Protocol, BYOProviderID, UpstreamModel string
-		UpdatedAt                                        time.Time
-	}{endpoint, protocol, byoProviderID, model.UpstreamModel, updated}), nil
+		Endpoint, Protocol, BYOProviderID, UpstreamModel, ReasoningEffort string
+		UpdatedAt                                                         time.Time
+	}{endpoint, protocol, byoProviderID, model.UpstreamModel, model.ReasoningEffort, updated}), nil
 }
 
 func writeOverviewFailure(c *gin.Context, err error, run CompletionRun) any {

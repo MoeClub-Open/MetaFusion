@@ -124,8 +124,12 @@ func (s *Service) runFinding(ctx context.Context, finding Finding, trigger, pare
 			return fail("curator_entity_read_failed", backoff(finding.Attempts))
 		}
 		modelID := settings.Execution.ChildModelID
+		effort := settings.Execution.ChildReasoningEffort
 		if modelID == "" {
 			modelID = settings.ModelID
+			if effort == "" {
+				effort = settings.Execution.ReasoningEffort
+			}
 		}
 		if modelID == "" {
 			as, e := s.Assistant.GetSettings(ctx)
@@ -144,7 +148,7 @@ func (s *Service) runFinding(ctx context.Context, finding Finding, trigger, pare
 			return e
 		}
 		result, err = assistant.RunAgent(ctx, s.Assistant, s.Catalog, assistant.AgentOptions{
-			User: user, ModelID: modelID, SystemPrompt: curatorSystemPrompt,
+			User: user, ModelID: modelID, ReasoningEffort: effort, SystemPrompt: curatorSystemPrompt,
 			BillingUserID: s.modelBillingUser(ctx, settings, modelID),
 			SearchProviderID: settings.Execution.SearchProviderID, SearchBYOProviderID: settings.Execution.SearchBYOProviderID, SearchUserID: searchBillingUser(settings),
 			Checkpoint: func(result assistant.CompletionRun) error { return s.checkpointRun(ctx, &run, result) },

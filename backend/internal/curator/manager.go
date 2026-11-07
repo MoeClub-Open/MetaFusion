@@ -15,8 +15,16 @@ const managerPrompt = `你是 MetaFusion 的主 Agent，负责分配和跟进目
 func (s *Service) agentOptions(ctx context.Context, settings Settings, user catalog.User, run *Run) assistant.AgentOptions {
 	c := settings.Execution
 	model := settings.ModelID
+	effort := c.ReasoningEffort
 	if run.Kind != "manager" && c.ChildModelID != "" {
 		model = c.ChildModelID
+	}
+	if run.Kind != "manager" {
+		if c.ChildReasoningEffort != "" {
+			effort = c.ChildReasoningEffort
+		} else if c.ChildModelID != "" {
+			effort = ""
+		}
 	}
 	if model == "" {
 		if as, err := s.Assistant.GetSettings(ctx); err == nil {
@@ -25,7 +33,7 @@ func (s *Service) agentOptions(ctx context.Context, settings Settings, user cata
 	}
 	run.ModelID = model
 	return assistant.AgentOptions{
-		User: user, ModelID: model, RequestID: run.ID,
+		User: user, ModelID: model, ReasoningEffort: effort, RequestID: run.ID,
 		BillingUserID: s.modelBillingUser(ctx, settings, model), SearchUserID: searchBillingUser(settings),
 		SearchProviderID: c.SearchProviderID, SearchBYOProviderID: c.SearchBYOProviderID,
 		CreditBudget: &assistant.CreditBudget{PurposePrefix: "curator:", MonthlyLimit: settings.MonthlyCreditAllowance},

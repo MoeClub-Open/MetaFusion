@@ -126,9 +126,17 @@ func AddOpenAPI(paths, schemas map[string]any) {
 		props(name)["provider_id"] = id()
 		props(name)["upstream_model"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 200}
 		props(name)["max_tokens_parameter"] = map[string]any{"type": "string", "enum": []string{"max_tokens", "max_completion_tokens"}, "default": "max_tokens", "description": "Chat Completions output-limit parameter. Other protocols automatically use their native max_output_tokens, max_tokens or maxOutputTokens field."}
+		props(name)["reasoning_effort"] = map[string]any{"type": "string", "enum": ReasoningEfforts, "default": "", "description": "Optional reasoning effort level; empty string uses the upstream model default."}
 		props(name)["max_output_tokens"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1}
 		props(name)["context_window"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1, "maximum": 10000000, "description": "Must be at least max_output_tokens."}
 	}
+	reasoningEffortProp := map[string]any{"type": "string", "enum": ReasoningEfforts, "default": "", "description": "Optional reasoning effort override; empty string inherits the model default."}
+	props("Conversation")["reasoning_effort"] = reasoningEffortProp
+	props("ChatRequest")["reasoning_effort"] = map[string]any{"allOf": []any{reasoningEffortProp}, "nullable": true}
+	props("Mission")["reasoning_effort"] = reasoningEffortProp
+	props("Mission")["worker_reasoning_effort"] = reasoningEffortProp
+	props("MissionCreateRequest")["reasoning_effort"] = reasoningEffortProp
+	props("MissionCreateRequest")["worker_reasoning_effort"] = reasoningEffortProp
 	props("Conversation")["active_request_id"] = id()
 	props("UsageRecord")["byo_provider_id"] = id()
 	props("Model")["cached_input_price_microusd_per_million"].(map[string]any)["description"] = "Provider price per million cached input tokens in millionths of one USD. Platform credits are a separate unit."
@@ -153,16 +161,16 @@ func AddOpenAPI(paths, schemas map[string]any) {
 		schemas["Assistant"+name] = object(p, required...)
 	}
 	input("ProviderInput", "Provider", []string{"name", "base_url", "protocol", "enabled", "monthly_budget_microusd"}, "name", "base_url")
-	input("ModelInput", "Model", []string{"provider_id", "upstream_model", "max_tokens_parameter", "name", "enabled", "input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million", "input_credits_per_million", "output_credits_per_million", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name", "max_output_tokens", "context_window")
+	input("ModelInput", "Model", []string{"provider_id", "upstream_model", "max_tokens_parameter", "reasoning_effort", "name", "enabled", "input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million", "input_credits_per_million", "output_credits_per_million", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name", "max_output_tokens", "context_window")
 	input("BYOProviderInput", "BYOProvider", []string{"name", "base_url", "protocol", "enabled"}, "name", "base_url")
-	input("BYOModelInput", "BYOModel", []string{"provider_id", "upstream_model", "max_tokens_parameter", "name", "enabled", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name")
+	input("BYOModelInput", "BYOModel", []string{"provider_id", "upstream_model", "max_tokens_parameter", "reasoning_effort", "name", "enabled", "max_output_tokens", "context_window"}, "provider_id", "upstream_model", "name")
 	input("SettingsInput", "Settings", []string{"enabled", "default_model_id", "registration_credits", "accepted_edit_credits", "reward_effective_at", "monthly_budget_microusd", "max_tool_rounds"}, "enabled", "registration_credits", "accepted_edit_credits", "reward_effective_at", "monthly_budget_microusd", "max_tool_rounds")
 	for _, name := range []string{"ProviderInput", "BYOProviderInput", "SearchProviderInput"} {
 		props(name)["api_key"] = map[string]any{"type": "string", "writeOnly": true, "maxLength": 16000, "description": "Omit to keep the existing encrypted key. A new BYO provider requires a nonempty key; an empty platform provider key clears it. Never returned in any response."}
 	}
 	schemas["AssistantAccount"] = object(map[string]any{"balance": ref("Balance"), "registration_credits": natural(), "accepted_edit_credits": natural(), "default_model_id": map[string]any{"type": "string", "description": "Configured default model ID for initial selection; empty when no default model is configured."}}, "balance", "registration_credits", "accepted_edit_credits", "default_model_id")
 	schemas["AssistantCreditAdjustment"] = object(map[string]any{"id": id(), "credits": integer(), "note": map[string]any{"type": "string", "minLength": 1, "maxLength": 1000}}, "id", "credits", "note")
-	schemas["AssistantConversationInput"] = object(map[string]any{"title": str(), "model_id": id()})
+	schemas["AssistantConversationInput"] = object(map[string]any{"title": str(), "model_id": id(), "reasoning_effort": reasoningEffortProp})
 	props("ChatRequest")["message"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 32768, "description": "UTF-8 user message; at most 32768 encoded bytes."}
 	props("ChatRequest")["model_id"] = map[string]any{"type": "string", "format": "uuid", "description": "Platform model ID or caller-owned BYO model ID. Omit to retain the conversation's model or fall back to the default platform model."}
 	props("ChatRequest")["conversation_id"] = id()

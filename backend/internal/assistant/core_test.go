@@ -89,4 +89,46 @@ func TestCompletionRequiresUsageAndKeepsToolCalls(t *testing.T) {
 	if payload["max_completion_tokens"] != float64(30) || payload["max_tokens"] != nil {
 		t.Fatalf("reasoning token parameter not respected: %v", payload)
 	}
+	request, err = completionPayload(Reservation{ReserveRequest: ReserveRequest{OutputTokens: 30}, Model: Model{UpstreamModel: "reasoning-model", ReasoningEffort: "high"}}, CompletionRequest{Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = map[string]any{}
+	if err = json.Unmarshal(request, &payload); err != nil || payload["reasoning_effort"] != "high" {
+		t.Fatalf("openai_compatible reasoning_effort not mapped: %v %v", payload, err)
+	}
+	respPayload, err := protocolPayload("openai_responses", "b1", Reservation{ReserveRequest: ReserveRequest{OutputTokens: 30}, Model: Model{UpstreamModel: "gpt-6", ReasoningEffort: "medium"}}, CompletionRequest{Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = map[string]any{}
+	if err = json.Unmarshal(respPayload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if rm, _ := payload["reasoning"].(map[string]any); rm["effort"] != "medium" {
+		t.Fatalf("openai_responses reasoning.effort not mapped: %v", payload)
+	}
+	anthPayload, err := protocolPayload("anthropic_messages", "b1", Reservation{ReserveRequest: ReserveRequest{OutputTokens: 8192}, Model: Model{UpstreamModel: "claude", ReasoningEffort: "medium"}}, CompletionRequest{Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = map[string]any{}
+	if err = json.Unmarshal(anthPayload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if tm, _ := payload["thinking"].(map[string]any); tm["type"] != "enabled" || tm["budget_tokens"] != float64(4096) {
+		t.Fatalf("anthropic_messages thinking not mapped: %v", payload)
+	}
+	gemPayload, err := protocolPayload("gemini_generate_content", "b1", Reservation{ReserveRequest: ReserveRequest{OutputTokens: 2048}, Model: Model{UpstreamModel: "gemini", ReasoningEffort: "low"}}, CompletionRequest{Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = map[string]any{}
+	if err = json.Unmarshal(gemPayload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	gc, _ := payload["generationConfig"].(map[string]any)
+	if tc, _ := gc["thinkingConfig"].(map[string]any); tc["thinkingBudget"] != float64(1024) {
+		t.Fatalf("gemini_generate_content thinkingBudget not mapped: %v", payload)
+	}
 }

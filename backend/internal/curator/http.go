@@ -277,7 +277,7 @@ func (h HTTP) createMission(c *gin.Context) {
 		respond(c, nil, ErrInvalidSettings)
 		return
 	}
-	v, err := h.Service.CreateMission(c.Request.Context(), in)
+	v, err := h.Service.CreateMission(c.Request.Context(), in, catalog.RequestUser(c).ID)
 	if err == nil {
 		h.audit(c, "curator.mission_created", "mission", v.Mission.ID, map[string]any{"budget_credits": v.Mission.BudgetCredits})
 	}

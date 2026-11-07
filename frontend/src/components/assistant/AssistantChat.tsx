@@ -6,10 +6,10 @@ import { Activity, ArrowUpRight, GitBranch, KeyRound, Loader2, MessageSquare, Pa
 import { useI18n, type TranslateFn } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import {
-  assistantRequest,
+  ASSISTANT_REASONING_EFFORTS, assistantRequest,
   type AssistantAccount, type AssistantBYOModel, type AssistantBYOProvider,
   type AssistantConversation, type AssistantMessage, type AssistantModel,
-  type AssistantRequestRecord, type AssistantTokenUsage, type SearchProvider,
+  type AssistantReasoningEffort, type AssistantRequestRecord, type AssistantTokenUsage, type SearchProvider,
 } from "@/lib/assistantApi";
 import {
   assistantAllPages, conversationReceipts, describeAssistantError, pushReceiptKey,
@@ -66,6 +66,7 @@ function AssistantWorkspace() {
   const [conversationID, setConversationID] = useState("");
   const [activeRequestID, setActiveRequestID] = useState("");
   const [modelID, setModelID] = useState("");
+  const [reasoningEffort, setReasoningEffort] = useState<AssistantReasoningEffort>("");
   const [searchProviders, setSearchProviders] = useState<SearchProvider[]>([]);
   const [searchProviderID, setSearchProviderID] = useState("");
   const [searchBYOProviderID, setSearchBYOProviderID] = useState("");
@@ -238,6 +239,7 @@ function AssistantWorkspace() {
       setConversationID(item.id);
       setMessages(item.messages || []);
       setActiveRequestID(item.active_request_id || "");
+      setReasoningEffort(item.reasoning_effort || "");
       if (item.model_id && (models.some((entry) => entry.id === item.model_id) || activeBYOModels.some((entry) => entry.id === item.model_id))) {
         setModelID(item.model_id);
       }
@@ -254,6 +256,7 @@ function AssistantWorkspace() {
     const request = {
       message: prompt,
       model_id: modelID,
+      reasoning_effort: reasoningEffort,
       search_provider_id: searchProviderID,
       search_byo_provider_id: searchBYOProviderID,
       background: true,
@@ -314,6 +317,7 @@ function AssistantWorkspace() {
     ++readSequence.current;
     setConversationID("");
     setActiveRequestID("");
+    setReasoningEffort("");
     setMessages([]);
     setResult(null);
     setError("");
@@ -349,6 +353,7 @@ function AssistantWorkspace() {
   const tabs = [{ id: "chat", icon: MessageSquare }, { id: "missions", icon: GitBranch }, { id: "credentials", icon: KeyRound }, { id: "usage", icon: Activity }] as const;
   const canBypassReview = Boolean(user.permissions?.includes("*") || user.permissions?.includes("catalog.review.bypass"));
   const activeModelName = models.find((item) => item.id === modelID)?.name || byoModels.find((item) => item.id === modelID)?.name || t("assistant.user.noModels");
+  const activeModelEffort = reasoningEffort || models.find((item) => item.id === modelID)?.reasoning_effort || byoModels.find((item) => item.id === modelID)?.reasoning_effort || "";
   const lastMessage = messages[messages.length - 1];
   const activeToolName = lastMessage?.role === "assistant" && lastMessage.tool_calls?.length ? lastMessage.tool_calls[lastMessage.tool_calls.length - 1]?.function.name : "";
 
@@ -365,7 +370,7 @@ function AssistantWorkspace() {
         <div className="flex min-w-0 flex-col lg:h-[calc(100dvh-16rem)] lg:min-h-[34rem]">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle px-4 py-3">
             <span className="truncate text-sm font-medium text-text-strong">{conversations.find((item) => item.id === conversationID)?.title || t("assistant.user.newChat")}</span>
-            <span className="text-xs text-text-muted">{activeModelName}</span>
+            <span className="text-xs text-text-muted">{activeModelName}{activeModelEffort ? " · " + t("assistant.reasoning." + activeModelEffort) : ""}</span>
           </header>
           <div role="log" aria-live="polite" aria-busy={currentRunning || loading} className="min-h-[22rem] flex-1 space-y-6 overflow-y-auto px-4 py-6 sm:px-6">
             {loading && <p role="status" className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="size-4 animate-spin" />{t("common.loading")}</p>}
@@ -383,7 +388,7 @@ function AssistantWorkspace() {
           <footer className="shrink-0 border-t border-line-subtle bg-surface px-4 pb-3 pt-2 sm:px-6">
             <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="rounded-control border border-line bg-background p-2 focus-within:border-primary/50">
               <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label><textarea id="assistant-message" rows={2} maxLength={16000} value={message} disabled={currentRunning || loading} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); } }} placeholder={t("assistant.user.placeholder")} className="max-h-48 min-h-16 w-full resize-y bg-transparent px-1 py-1 text-sm outline-none disabled:opacity-50" />
-              <div className="flex items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={currentRunning || loading} /><button type="submit" disabled={currentRunning || loading || !modelID || !message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"><Send className="size-3.5 shrink-0" />{t("assistant.user.send")}</button></div>
+              <div className="flex flex-wrap items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={currentRunning || loading} /><label className="flex items-center"><span className="sr-only">{t("assistant.user.reasoningEffort")}</span><select aria-label={t("assistant.user.reasoningEffort")} title={t("assistant.user.reasoningEffort")} value={reasoningEffort} disabled={currentRunning || loading} onChange={(event) => setReasoningEffort(event.target.value as AssistantReasoningEffort)} className="h-8 rounded-control border border-line bg-surface px-2 text-xs text-text-body outline-none focus:border-primary/50 disabled:opacity-50">{ASSISTANT_REASONING_EFFORTS.map((value) => <option key={value || "default"} value={value}>{t("assistant.reasoning." + (value || "default"))}</option>)}</select></label><button type="submit" disabled={currentRunning || loading || !modelID || !message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"><Send className="size-3.5 shrink-0" />{t("assistant.user.send")}</button></div>
               <details className="mt-2 border-t border-line-subtle pt-2 text-xs text-text-muted"><summary className="cursor-pointer">{t("assistant.search.settings")}</summary><div className="pt-2"><AssistantSearchPicker providers={searchProviders} byoProviders={byoProviders} providerID={searchProviderID} byoProviderID={searchBYOProviderID} onProvider={setSearchProviderID} onBYOProvider={setSearchBYOProviderID} disabled={currentRunning || loading} /></div></details>
             </form>
             <div className="mt-2 flex flex-wrap items-start justify-between gap-2"><AssistantContextMeter conversationID={conversationID} modelID={modelID} message={message} revision={messages.length} disabled={currentRunning || loading} />{account && <span className="shrink-0 text-xs text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}</div>
@@ -393,7 +398,7 @@ function AssistantWorkspace() {
       </div>
     </section>}
     {tab === "missions" && <section id="assistant-panel-missions" role="tabpanel" aria-labelledby="assistant-tab-missions">
-      <MissionWorkspacePanel scope="user" request={assistantRequest} allowDelete canBypassReview={canBypassReview} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={modelID} onBalance={(balance) => setAccount((prev) => prev ? { ...prev, balance } : prev)} />
+      <MissionWorkspacePanel scope="user" request={assistantRequest} allowDelete canBypassReview={canBypassReview} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={modelID} defaultReasoningEffort={reasoningEffort} onBalance={(balance) => setAccount((prev) => prev ? { ...prev, balance } : prev)} />
     </section>}
     {tab === "credentials" && <div id="assistant-panel-credentials" role="tabpanel" aria-labelledby="assistant-tab-credentials"><AssistantCredentials providers={byoProviders} models={byoModels} onChanged={loadBYO} /></div>}
     {tab === "usage" && <div id="assistant-panel-usage" role="tabpanel" aria-labelledby="assistant-tab-usage"><AssistantUsagePanel models={models} byoModels={byoModels} /></div>}

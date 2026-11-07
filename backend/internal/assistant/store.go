@@ -167,11 +167,11 @@ func (s *Store) deleteOne(ctx context.Context, query string, args ...any) error 
 	return err
 }
 
-const modelColumns = `id,provider_id,upstream_model,name,enabled,input_price_microusd_per_million,cached_input_price_microusd_per_million,output_price_microusd_per_million,input_credits_per_million,output_credits_per_million,max_output_tokens,max_tokens_parameter,context_window,created_at,updated_at`
+const modelColumns = `id,provider_id,upstream_model,name,enabled,input_price_microusd_per_million,cached_input_price_microusd_per_million,output_price_microusd_per_million,input_credits_per_million,output_credits_per_million,max_output_tokens,max_tokens_parameter,reasoning_effort,context_window,created_at,updated_at`
 
 func scanModel(row scanner) (Model, error) {
 	var m Model
-	err := row.Scan(&m.ID, &m.ProviderID, &m.UpstreamModel, &m.Name, &m.Enabled, &m.InputPriceMicroUSDPerMillion, &m.CachedInputPriceMicroUSDPerMillion, &m.OutputPriceMicroUSDPerMillion, &m.InputCreditsPerMillion, &m.OutputCreditsPerMillion, &m.MaxOutputTokens, &m.MaxTokensParameter, &m.ContextWindow, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.ID, &m.ProviderID, &m.UpstreamModel, &m.Name, &m.Enabled, &m.InputPriceMicroUSDPerMillion, &m.CachedInputPriceMicroUSDPerMillion, &m.OutputPriceMicroUSDPerMillion, &m.InputCreditsPerMillion, &m.OutputCreditsPerMillion, &m.MaxOutputTokens, &m.MaxTokensParameter, &m.ReasoningEffort, &m.ContextWindow, &m.CreatedAt, &m.UpdatedAt)
 	return m, dbError(err)
 }
 func (s *Store) Models(ctx context.Context, enabledOnly bool) ([]Model, error) {
@@ -191,7 +191,7 @@ func (s *Store) Models(ctx context.Context, enabledOnly bool) ([]Model, error) {
 	return out, rows.Err()
 }
 func validModel(m Model) bool {
-	return validID(m.ProviderID) && strings.TrimSpace(m.Name) != "" && len(m.Name) <= 200 && strings.TrimSpace(m.UpstreamModel) != "" && len(m.UpstreamModel) <= 200 && m.InputPriceMicroUSDPerMillion >= 0 && m.CachedInputPriceMicroUSDPerMillion >= 0 && m.OutputPriceMicroUSDPerMillion >= 0 && m.InputCreditsPerMillion >= 0 && m.OutputCreditsPerMillion >= 0 && m.MaxOutputTokens > 0 && m.ContextWindow >= m.MaxOutputTokens && m.ContextWindow <= 10000000 && (m.MaxTokensParameter == "max_tokens" || m.MaxTokensParameter == "max_completion_tokens")
+	return validID(m.ProviderID) && strings.TrimSpace(m.Name) != "" && len(m.Name) <= 200 && strings.TrimSpace(m.UpstreamModel) != "" && len(m.UpstreamModel) <= 200 && m.InputPriceMicroUSDPerMillion >= 0 && m.CachedInputPriceMicroUSDPerMillion >= 0 && m.OutputPriceMicroUSDPerMillion >= 0 && m.InputCreditsPerMillion >= 0 && m.OutputCreditsPerMillion >= 0 && m.MaxOutputTokens > 0 && m.ContextWindow >= m.MaxOutputTokens && m.ContextWindow <= 10000000 && (m.MaxTokensParameter == "max_tokens" || m.MaxTokensParameter == "max_completion_tokens") && ValidReasoningEffort(m.ReasoningEffort)
 }
 func (s *Store) SaveModel(ctx context.Context, m Model) (Model, error) {
 	id, err := ensureID(m.ID)
@@ -199,13 +199,14 @@ func (s *Store) SaveModel(ctx context.Context, m Model) (Model, error) {
 		return Model{}, err
 	}
 	m.ID = id
+	m.ReasoningEffort = strings.TrimSpace(m.ReasoningEffort)
 	if m.MaxTokensParameter == "" {
 		m.MaxTokensParameter = "max_tokens"
 	}
 	if !validModel(m) {
 		return Model{}, fmt.Errorf("assistant_invalid_model")
 	}
-	return scanModel(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.models(id,provider_id,upstream_model,name,enabled,input_price_microusd_per_million,cached_input_price_microusd_per_million,output_price_microusd_per_million,input_credits_per_million,output_credits_per_million,max_output_tokens,context_window,max_tokens_parameter) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(id) DO UPDATE SET provider_id=EXCLUDED.provider_id,upstream_model=EXCLUDED.upstream_model,name=EXCLUDED.name,enabled=EXCLUDED.enabled,input_price_microusd_per_million=EXCLUDED.input_price_microusd_per_million,cached_input_price_microusd_per_million=EXCLUDED.cached_input_price_microusd_per_million,output_price_microusd_per_million=EXCLUDED.output_price_microusd_per_million,input_credits_per_million=EXCLUDED.input_credits_per_million,output_credits_per_million=EXCLUDED.output_credits_per_million,max_output_tokens=EXCLUDED.max_output_tokens,context_window=EXCLUDED.context_window,max_tokens_parameter=EXCLUDED.max_tokens_parameter,updated_at=now() RETURNING `+modelColumns, m.ID, m.ProviderID, m.UpstreamModel, m.Name, m.Enabled, m.InputPriceMicroUSDPerMillion, m.CachedInputPriceMicroUSDPerMillion, m.OutputPriceMicroUSDPerMillion, m.InputCreditsPerMillion, m.OutputCreditsPerMillion, m.MaxOutputTokens, m.ContextWindow, m.MaxTokensParameter))
+	return scanModel(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.models(id,provider_id,upstream_model,name,enabled,input_price_microusd_per_million,cached_input_price_microusd_per_million,output_price_microusd_per_million,input_credits_per_million,output_credits_per_million,max_output_tokens,context_window,max_tokens_parameter,reasoning_effort) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(id) DO UPDATE SET provider_id=EXCLUDED.provider_id,upstream_model=EXCLUDED.upstream_model,name=EXCLUDED.name,enabled=EXCLUDED.enabled,input_price_microusd_per_million=EXCLUDED.input_price_microusd_per_million,cached_input_price_microusd_per_million=EXCLUDED.cached_input_price_microusd_per_million,output_price_microusd_per_million=EXCLUDED.output_price_microusd_per_million,input_credits_per_million=EXCLUDED.input_credits_per_million,output_credits_per_million=EXCLUDED.output_credits_per_million,max_output_tokens=EXCLUDED.max_output_tokens,context_window=EXCLUDED.context_window,max_tokens_parameter=EXCLUDED.max_tokens_parameter,reasoning_effort=EXCLUDED.reasoning_effort,updated_at=now() RETURNING `+modelColumns, m.ID, m.ProviderID, m.UpstreamModel, m.Name, m.Enabled, m.InputPriceMicroUSDPerMillion, m.CachedInputPriceMicroUSDPerMillion, m.OutputPriceMicroUSDPerMillion, m.InputCreditsPerMillion, m.OutputCreditsPerMillion, m.MaxOutputTokens, m.ContextWindow, m.MaxTokensParameter, m.ReasoningEffort))
 }
 func (s *Store) DeleteModel(ctx context.Context, id string) error {
 	return s.deleteOne(ctx, `DELETE FROM assistant.models WHERE id=$1`, id)
@@ -303,11 +304,11 @@ func (s *Store) DeleteBYOProvider(ctx context.Context, ownerID, id string, admin
 	return s.deleteOne(ctx, `DELETE FROM assistant.byo_providers WHERE id=$1 AND (owner_id=$2 OR $3)`, id, ownerID, admin)
 }
 
-const byoModelColumns = `id,owner_id,provider_id,upstream_model,name,enabled,max_output_tokens,max_tokens_parameter,context_window,created_at,updated_at`
+const byoModelColumns = `id,owner_id,provider_id,upstream_model,name,enabled,max_output_tokens,max_tokens_parameter,reasoning_effort,context_window,created_at,updated_at`
 
 func scanBYOModel(row scanner) (BYOModel, error) {
 	var m BYOModel
-	err := row.Scan(&m.ID, &m.OwnerID, &m.ProviderID, &m.UpstreamModel, &m.Name, &m.Enabled, &m.MaxOutputTokens, &m.MaxTokensParameter, &m.ContextWindow, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.ID, &m.OwnerID, &m.ProviderID, &m.UpstreamModel, &m.Name, &m.Enabled, &m.MaxOutputTokens, &m.MaxTokensParameter, &m.ReasoningEffort, &m.ContextWindow, &m.CreatedAt, &m.UpdatedAt)
 	return m, dbError(err)
 }
 func (s *Store) BYOModels(ctx context.Context, ownerID string, admin, enabledOnly bool, limit, offset int) (Page[BYOModel], error) {
@@ -342,6 +343,7 @@ func (s *Store) SaveBYOModel(ctx context.Context, ownerID string, m BYOModel, ad
 	}
 	m.Name = strings.TrimSpace(m.Name)
 	m.UpstreamModel = strings.TrimSpace(m.UpstreamModel)
+	m.ReasoningEffort = strings.TrimSpace(m.ReasoningEffort)
 	if m.MaxTokensParameter == "" {
 		m.MaxTokensParameter = "max_tokens"
 	}
@@ -351,7 +353,7 @@ func (s *Store) SaveBYOModel(ctx context.Context, ownerID string, m BYOModel, ad
 	if m.ContextWindow == 0 {
 		m.ContextWindow = 65536
 	}
-	if !validID(m.ProviderID) || m.Name == "" || len(m.Name) > 200 || m.UpstreamModel == "" || len(m.UpstreamModel) > 200 || m.MaxOutputTokens < 1 || m.ContextWindow < m.MaxOutputTokens || m.ContextWindow > 10000000 || (m.MaxTokensParameter != "max_tokens" && m.MaxTokensParameter != "max_completion_tokens") {
+	if !validID(m.ProviderID) || m.Name == "" || len(m.Name) > 200 || m.UpstreamModel == "" || len(m.UpstreamModel) > 200 || m.MaxOutputTokens < 1 || m.ContextWindow < m.MaxOutputTokens || m.ContextWindow > 10000000 || (m.MaxTokensParameter != "max_tokens" && m.MaxTokensParameter != "max_completion_tokens") || !ValidReasoningEffort(m.ReasoningEffort) {
 		return BYOModel{}, fmt.Errorf("assistant_invalid_model")
 	}
 	var providerOwned bool
@@ -361,7 +363,7 @@ func (s *Store) SaveBYOModel(ctx context.Context, ownerID string, m BYOModel, ad
 	if !providerOwned {
 		return BYOModel{}, ErrNotFound
 	}
-	return scanBYOModel(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_models(id,owner_id,provider_id,upstream_model,name,enabled,max_output_tokens,max_tokens_parameter,context_window) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET provider_id=EXCLUDED.provider_id,upstream_model=EXCLUDED.upstream_model,name=EXCLUDED.name,enabled=EXCLUDED.enabled,max_output_tokens=EXCLUDED.max_output_tokens,max_tokens_parameter=EXCLUDED.max_tokens_parameter,context_window=EXCLUDED.context_window,updated_at=now() WHERE assistant.byo_models.owner_id=$2 OR $10 RETURNING `+byoModelColumns, id, ownerID, m.ProviderID, m.UpstreamModel, m.Name, m.Enabled, m.MaxOutputTokens, m.MaxTokensParameter, m.ContextWindow, admin))
+	return scanBYOModel(s.DB.QueryRowContext(ctx, `INSERT INTO assistant.byo_models(id,owner_id,provider_id,upstream_model,name,enabled,max_output_tokens,max_tokens_parameter,reasoning_effort,context_window) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET provider_id=EXCLUDED.provider_id,upstream_model=EXCLUDED.upstream_model,name=EXCLUDED.name,enabled=EXCLUDED.enabled,max_output_tokens=EXCLUDED.max_output_tokens,max_tokens_parameter=EXCLUDED.max_tokens_parameter,reasoning_effort=EXCLUDED.reasoning_effort,context_window=EXCLUDED.context_window,updated_at=now() WHERE assistant.byo_models.owner_id=$2 OR $11 RETURNING `+byoModelColumns, id, ownerID, m.ProviderID, m.UpstreamModel, m.Name, m.Enabled, m.MaxOutputTokens, m.MaxTokensParameter, m.ReasoningEffort, m.ContextWindow, admin))
 }
 func (s *Store) DeleteBYOModel(ctx context.Context, ownerID, id string, admin bool) error {
 	return s.deleteOne(ctx, `DELETE FROM assistant.byo_models WHERE id=$1 AND (owner_id=$2 OR $3)`, id, ownerID, admin)
@@ -375,7 +377,7 @@ func (s *Store) ResolveBYOModel(ctx context.Context, id, ownerID string, enabled
 	var bm BYOModel
 	var providerEnabled, hasKey bool
 	var providerUpdated time.Time
-	err := s.DB.QueryRowContext(ctx, `SELECT bm.id,bm.owner_id,bm.provider_id,bm.upstream_model,bm.name,bm.enabled,bm.max_output_tokens,bm.max_tokens_parameter,bm.context_window,bm.created_at,bm.updated_at,bp.enabled,octet_length(bp.encrypted_key)>0,bp.updated_at FROM assistant.byo_models bm JOIN assistant.byo_providers bp ON bp.id=bm.provider_id AND bp.owner_id=bm.owner_id WHERE bm.id=$1 AND bm.owner_id=$2`, id, ownerID).Scan(&bm.ID, &bm.OwnerID, &bm.ProviderID, &bm.UpstreamModel, &bm.Name, &bm.Enabled, &bm.MaxOutputTokens, &bm.MaxTokensParameter, &bm.ContextWindow, &bm.CreatedAt, &bm.UpdatedAt, &providerEnabled, &hasKey, &providerUpdated)
+	err := s.DB.QueryRowContext(ctx, `SELECT bm.id,bm.owner_id,bm.provider_id,bm.upstream_model,bm.name,bm.enabled,bm.max_output_tokens,bm.max_tokens_parameter,bm.reasoning_effort,bm.context_window,bm.created_at,bm.updated_at,bp.enabled,octet_length(bp.encrypted_key)>0,bp.updated_at FROM assistant.byo_models bm JOIN assistant.byo_providers bp ON bp.id=bm.provider_id AND bp.owner_id=bm.owner_id WHERE bm.id=$1 AND bm.owner_id=$2`, id, ownerID).Scan(&bm.ID, &bm.OwnerID, &bm.ProviderID, &bm.UpstreamModel, &bm.Name, &bm.Enabled, &bm.MaxOutputTokens, &bm.MaxTokensParameter, &bm.ReasoningEffort, &bm.ContextWindow, &bm.CreatedAt, &bm.UpdatedAt, &providerEnabled, &hasKey, &providerUpdated)
 	if err != nil {
 		return Model{}, "", dbError(err)
 	}
@@ -390,7 +392,7 @@ func (s *Store) ResolveBYOModel(ctx context.Context, id, ownerID string, enabled
 	return Model{
 		ID: bm.ID, ProviderID: bm.ProviderID, UpstreamModel: bm.UpstreamModel, Name: bm.Name,
 		Enabled: active, MaxOutputTokens: bm.MaxOutputTokens, MaxTokensParameter: bm.MaxTokensParameter,
-		ContextWindow: bm.ContextWindow, CreatedAt: bm.CreatedAt, UpdatedAt: updated,
+		ReasoningEffort: bm.ReasoningEffort, ContextWindow: bm.ContextWindow, CreatedAt: bm.CreatedAt, UpdatedAt: updated,
 	}, bm.ProviderID, nil
 }
 

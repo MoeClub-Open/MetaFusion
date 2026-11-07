@@ -1,12 +1,12 @@
 import { fetchApi } from "./api";
-import type { AssistantModel, AssistantMessage } from "./assistantApi";
+import type { AssistantModel, AssistantMessage, AssistantReasoningEffort } from "./assistantApi";
 
 export function curatorRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   return fetchApi<T>(`/curator${path}`, options);
 }
 
 export interface CuratorSettings {
-  execution: { child_model_id: string; billing_owner_id: string; search_provider_id: string; search_byo_provider_id: string; max_children: number; allow_reviews: boolean; auto_merge_reviews: boolean };
+  execution: { child_model_id: string; reasoning_effort?: AssistantReasoningEffort; child_reasoning_effort?: AssistantReasoningEffort; billing_owner_id: string; search_provider_id: string; search_byo_provider_id: string; max_children: number; allow_reviews: boolean; auto_merge_reviews: boolean };
   enabled: boolean;
   model_id: string;
   interval_seconds: number;

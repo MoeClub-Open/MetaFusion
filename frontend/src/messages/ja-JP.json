@@ -2907,5 +2907,18 @@
   "settings.activity.action.curator.mission_steered": "自動メンテナンス範囲タスクを更新",
   "settings.activity.action.curator.mission_paused": "自動メンテナンス範囲タスクを一時停止",
   "settings.activity.action.curator.mission_resumed": "自動メンテナンス範囲タスクを再開",
-  "settings.activity.action.curator.mission_stopped": "自動メンテナンス範囲タスクを停止"
+  "settings.activity.action.curator.mission_stopped": "自動メンテナンス範囲タスクを停止",
+  "assistant.reasoning.default": "思考：デフォルト",
+  "assistant.reasoning.none": "思考：オフ",
+  "assistant.reasoning.minimal": "思考：最小",
+  "assistant.reasoning.low": "思考：低",
+  "assistant.reasoning.medium": "思考：中",
+  "assistant.reasoning.high": "思考：高",
+  "assistant.reasoning.xhigh": "思考：最高",
+  "assistant.user.reasoningEffort": "思考強度",
+  "assistant.admin.field.reasoning_effort": "デフォルト思考強度",
+  "assistant.mission.plannerReasoning": "計画の思考強度",
+  "assistant.mission.workerReasoning": "サブタスクの思考強度",
+  "curator.settings.reasoningEffort": "主エージェントの思考強度",
+  "curator.settings.childReasoningEffort": "子エージェントの思考強度"
 }

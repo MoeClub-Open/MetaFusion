@@ -22,11 +22,12 @@ func AddOpenAPI(paths, schemas map[string]any) {
 			"limit": integer(), "offset": integer(),
 		}, "items", "total", "limit", "offset")
 	}
+	reasoningEffortProp := map[string]any{"type": "string", "enum": []string{"", "none", "minimal", "low", "medium", "high", "xhigh"}, "default": ""}
 	schemas["CuratorExecutionConfig"] = object(map[string]any{
-		"child_model_id": str(), "billing_owner_id": map[string]any{"type": "string", "readOnly": true}, "search_provider_id": str(), "search_byo_provider_id": str(), "max_children": integer(), "allow_reviews": boolean(), "auto_merge_reviews": boolean(),
+		"child_model_id": str(), "reasoning_effort": reasoningEffortProp, "child_reasoning_effort": reasoningEffortProp, "billing_owner_id": map[string]any{"type": "string", "readOnly": true}, "search_provider_id": str(), "search_byo_provider_id": str(), "max_children": integer(), "allow_reviews": boolean(), "auto_merge_reviews": boolean(),
 	})
 	schemas["CuratorTaskInput"] = object(map[string]any{"id": str(), "message": str(), "entity_id": str()}, "id", "message")
-	schemas["CuratorMissionInput"] = object(map[string]any{"client_request_id": map[string]any{"type": "string", "format": "uuid"}, "title": str(), "goal": str(), "budget_credits": integer(), "max_workers": integer(), "max_tasks": integer(), "max_planner_rounds": integer()}, "client_request_id", "goal", "budget_credits")
+	schemas["CuratorMissionInput"] = object(map[string]any{"client_request_id": map[string]any{"type": "string", "format": "uuid"}, "title": str(), "goal": str(), "model_id": str(), "worker_model_id": str(), "reasoning_effort": reasoningEffortProp, "worker_reasoning_effort": reasoningEffortProp, "budget_credits": integer(), "max_workers": integer(), "max_tasks": integer(), "max_planner_rounds": integer()}, "client_request_id", "goal", "budget_credits")
 	schemas["CuratorSettings"] = object(map[string]any{
 		"execution": ref("ExecutionConfig"), "enabled": boolean(), "model_id": str(), "interval_seconds": integer(), "max_runs_per_hour": integer(),
 		"monthly_credit_allowance": integer(), "auto_merge_low_risk": boolean(),

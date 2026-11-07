@@ -116,6 +116,9 @@ func completionPayload(r Reservation, in CompletionRequest) ([]byte, error) {
 		messages[i].ProviderContext = nil
 	}
 	payload := map[string]any{"model": r.Model.UpstreamModel, "messages": messages, parameter: r.OutputTokens, "stream": false}
+	if r.Model.ReasoningEffort != "" {
+		payload["reasoning_effort"] = r.Model.ReasoningEffort
+	}
 	if len(in.Tools) > 0 {
 		payload["tools"] = in.Tools
 	}

@@ -28,34 +28,36 @@ type MissionActor struct {
 }
 
 type Mission struct {
-	ID                  string            `json:"id"`
-	OwnerID             string            `json:"owner_id"`
-	Scope               string            `json:"scope"`
-	Title               string            `json:"title"`
-	Goal                string            `json:"goal"`
-	Steering            string            `json:"steering,omitempty"`
-	PendingSteer        bool              `json:"pending_steer,omitempty"`
-	Status              string            `json:"status"`
-	ModelID             string            `json:"model_id"`
-	WorkerModelID       string            `json:"worker_model_id,omitempty"`
-	SearchProviderID    string            `json:"search_provider_id,omitempty"`
-	SearchBYOProviderID string            `json:"search_byo_provider_id,omitempty"`
-	BillingUserID       string            `json:"-"`
-	BYOOwnerID          string            `json:"-"`
-	PreferPullRequest   bool              `json:"prefer_pull_request"`
-	Actor               MissionActor      `json:"-"`
-	BudgetCredits       int64             `json:"budget_credits"`
-	SpentCredits        int64             `json:"spent_credits"`
-	MaxWorkers          int               `json:"max_workers"`
-	MaxTasks            int               `json:"max_tasks"`
-	PlannerRounds       int               `json:"planner_rounds"`
-	MaxPlannerRounds    int               `json:"max_planner_rounds"`
-	Plan                []MissionPlanItem `json:"plan"`
-	Summary             string            `json:"summary,omitempty"`
-	Error               string            `json:"error,omitempty"`
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
-	FinishedAt          *time.Time        `json:"finished_at,omitempty"`
+	ID                    string            `json:"id"`
+	OwnerID               string            `json:"owner_id"`
+	Scope                 string            `json:"scope"`
+	Title                 string            `json:"title"`
+	Goal                  string            `json:"goal"`
+	Steering              string            `json:"steering,omitempty"`
+	PendingSteer          bool              `json:"pending_steer,omitempty"`
+	Status                string            `json:"status"`
+	ModelID               string            `json:"model_id"`
+	WorkerModelID         string            `json:"worker_model_id,omitempty"`
+	ReasoningEffort       string            `json:"reasoning_effort,omitempty"`
+	WorkerReasoningEffort string            `json:"worker_reasoning_effort,omitempty"`
+	SearchProviderID      string            `json:"search_provider_id,omitempty"`
+	SearchBYOProviderID   string            `json:"search_byo_provider_id,omitempty"`
+	BillingUserID         string            `json:"-"`
+	BYOOwnerID            string            `json:"-"`
+	PreferPullRequest     bool              `json:"prefer_pull_request"`
+	Actor                 MissionActor      `json:"-"`
+	BudgetCredits         int64             `json:"budget_credits"`
+	SpentCredits          int64             `json:"spent_credits"`
+	MaxWorkers            int               `json:"max_workers"`
+	MaxTasks              int               `json:"max_tasks"`
+	PlannerRounds         int               `json:"planner_rounds"`
+	MaxPlannerRounds      int               `json:"max_planner_rounds"`
+	Plan                  []MissionPlanItem `json:"plan"`
+	Summary               string            `json:"summary,omitempty"`
+	Error                 string            `json:"error,omitempty"`
+	CreatedAt             time.Time         `json:"created_at"`
+	UpdatedAt             time.Time         `json:"updated_at"`
+	FinishedAt            *time.Time        `json:"finished_at,omitempty"`
 }
 
 type MissionTask struct {
@@ -112,19 +114,21 @@ type MissionDetail struct {
 }
 
 type MissionCreateRequest struct {
-	ClientRequestID     string `json:"client_request_id"`
-	Title               string `json:"title,omitempty"`
-	Goal                string `json:"goal"`
-	ModelID             string `json:"model_id,omitempty"`
-	WorkerModelID       string `json:"worker_model_id,omitempty"`
-	SearchProviderID    string `json:"search_provider_id,omitempty"`
-	SearchBYOProviderID string `json:"search_byo_provider_id,omitempty"`
-	BudgetCredits       int64  `json:"budget_credits"`
-	MaxWorkers          int    `json:"max_workers,omitempty"`
-	MaxTasks            int    `json:"max_tasks,omitempty"`
-	MaxPlannerRounds    int    `json:"max_planner_rounds,omitempty"`
-	PreferPullRequest   *bool  `json:"prefer_pull_request,omitempty"`
-	BYOOwnerID          string `json:"-"`
+	ClientRequestID       string `json:"client_request_id"`
+	Title                 string `json:"title,omitempty"`
+	Goal                  string `json:"goal"`
+	ModelID               string `json:"model_id,omitempty"`
+	WorkerModelID         string `json:"worker_model_id,omitempty"`
+	ReasoningEffort       string `json:"reasoning_effort,omitempty"`
+	WorkerReasoningEffort string `json:"worker_reasoning_effort,omitempty"`
+	SearchProviderID      string `json:"search_provider_id,omitempty"`
+	SearchBYOProviderID   string `json:"search_byo_provider_id,omitempty"`
+	BudgetCredits         int64  `json:"budget_credits"`
+	MaxWorkers            int    `json:"max_workers,omitempty"`
+	MaxTasks              int    `json:"max_tasks,omitempty"`
+	MaxPlannerRounds      int    `json:"max_planner_rounds,omitempty"`
+	PreferPullRequest     *bool  `json:"prefer_pull_request,omitempty"`
+	BYOOwnerID            string `json:"-"`
 }
 
 type MissionSteerRequest struct {
@@ -138,14 +142,14 @@ type MissionFilter struct {
 	Status  string
 }
 
-const missionColumns = "id::text,owner_id,scope,title,goal,steering,pending_steer,status,COALESCE(model_id::text,''),COALESCE(worker_model_id::text,''),COALESCE(search_provider_id::text,''),COALESCE(search_byo_provider_id::text,''),billing_user_id,byo_owner_id,prefer_pull_request,actor_snapshot,budget_credits,spent_credits,max_workers,max_tasks,planner_rounds,max_planner_rounds,plan,summary,error,created_at,updated_at,finished_at"
+const missionColumns = "id::text,owner_id,scope,title,goal,steering,pending_steer,status,COALESCE(model_id::text,''),COALESCE(worker_model_id::text,''),reasoning_effort,worker_reasoning_effort,COALESCE(search_provider_id::text,''),COALESCE(search_byo_provider_id::text,''),billing_user_id,byo_owner_id,prefer_pull_request,actor_snapshot,budget_credits,spent_credits,max_workers,max_tasks,planner_rounds,max_planner_rounds,plan,summary,error,created_at,updated_at,finished_at"
 
 func scanMission(row scanner) (Mission, error) {
 	var m Mission
 	var actorBytes, planBytes []byte
 	err := row.Scan(
 		&m.ID, &m.OwnerID, &m.Scope, &m.Title, &m.Goal, &m.Steering, &m.PendingSteer, &m.Status,
-		&m.ModelID, &m.WorkerModelID, &m.SearchProviderID, &m.SearchBYOProviderID, &m.BillingUserID, &m.BYOOwnerID,
+		&m.ModelID, &m.WorkerModelID, &m.ReasoningEffort, &m.WorkerReasoningEffort, &m.SearchProviderID, &m.SearchBYOProviderID, &m.BillingUserID, &m.BYOOwnerID,
 		&m.PreferPullRequest, &actorBytes, &m.BudgetCredits, &m.SpentCredits,
 		&m.MaxWorkers, &m.MaxTasks, &m.PlannerRounds, &m.MaxPlannerRounds,
 		&planBytes, &m.Summary, &m.Error, &m.CreatedAt, &m.UpdatedAt, &m.FinishedAt,
@@ -384,6 +388,11 @@ func (s *Store) CreateMission(ctx context.Context, scope, ownerID, billingUserID
 			return out, errors.New("assistant_invalid_id")
 		}
 	}
+	in.ReasoningEffort = strings.TrimSpace(in.ReasoningEffort)
+	in.WorkerReasoningEffort = strings.TrimSpace(in.WorkerReasoningEffort)
+	if !ValidReasoningEffort(in.ReasoningEffort) || !ValidReasoningEffort(in.WorkerReasoningEffort) {
+		return out, errors.New("assistant_invalid_reasoning_effort")
+	}
 
 	var existingID string
 	err := s.DB.QueryRowContext(ctx, "SELECT id::text FROM assistant.missions WHERE client_request_id=$1", in.ClientRequestID).Scan(&existingID)
@@ -451,8 +460,9 @@ func (s *Store) CreateMission(ctx context.Context, scope, ownerID, billingUserID
 	}
 
 	id := uuid.NewString()
-	m, err := scanMission(s.DB.QueryRowContext(ctx, "INSERT INTO assistant.missions(id,client_request_id,owner_id,scope,title,goal,status,model_id,worker_model_id,search_provider_id,search_byo_provider_id,billing_user_id,byo_owner_id,prefer_pull_request,actor_snapshot,budget_credits,max_workers,max_tasks,max_planner_rounds) VALUES($1,$2,$3,$4,$5,$6,'running',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING "+missionColumns,
+	m, err := scanMission(s.DB.QueryRowContext(ctx, "INSERT INTO assistant.missions(id,client_request_id,owner_id,scope,title,goal,status,model_id,worker_model_id,reasoning_effort,worker_reasoning_effort,search_provider_id,search_byo_provider_id,billing_user_id,byo_owner_id,prefer_pull_request,actor_snapshot,budget_credits,max_workers,max_tasks,max_planner_rounds) VALUES($1,$2,$3,$4,$5,$6,'running',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING "+missionColumns,
 		id, in.ClientRequestID, ownerID, scope, title, in.Goal, nullableID(modelID), nullableID(in.WorkerModelID),
+		in.ReasoningEffort, in.WorkerReasoningEffort,
 		nullableID(in.SearchProviderID), nullableID(in.SearchBYOProviderID), billingUserID, byoOwnerID, preferPR,
 		jsonBytes(actor), in.BudgetCredits, maxWorkers, maxTasks, maxRounds,
 	))

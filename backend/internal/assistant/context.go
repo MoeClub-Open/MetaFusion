@@ -56,7 +56,7 @@ func (h HTTP) previewContext(c *gin.Context) {
 	}
 	var history []Message
 	if in.ConversationID != "" {
-		conv, err := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,title,coalesce(model_id::text,''),'',messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND owner_id=$2`, in.ConversationID, ownerID))
+		conv, err := scanConversation(h.Store.DB.QueryRowContext(c.Request.Context(), `SELECT id::text,owner_id,title,coalesce(model_id::text,''),reasoning_effort,'',messages,created_at,updated_at FROM assistant.conversations WHERE id=$1 AND owner_id=$2`, in.ConversationID, ownerID))
 		if err != nil {
 			writeResponse(c, nil, err)
 			return

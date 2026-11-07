@@ -3,30 +3,35 @@ package curator
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/metafusion/metafusion-app/internal/assistant"
 	"github.com/metafusion/metafusion-app/internal/catalog"
 )
 
 type MissionInput struct {
-	ClientRequestID  string `json:"client_request_id"`
-	Title            string `json:"title,omitempty"`
-	Goal             string `json:"goal"`
-	BudgetCredits    int64  `json:"budget_credits"`
-	MaxWorkers       int    `json:"max_workers,omitempty"`
-	MaxTasks         int    `json:"max_tasks,omitempty"`
-	MaxPlannerRounds int    `json:"max_planner_rounds,omitempty"`
+	ClientRequestID       string `json:"client_request_id"`
+	Title                 string `json:"title,omitempty"`
+	Goal                  string `json:"goal"`
+	ModelID               string `json:"model_id,omitempty"`
+	WorkerModelID         string `json:"worker_model_id,omitempty"`
+	ReasoningEffort       string `json:"reasoning_effort,omitempty"`
+	WorkerReasoningEffort string `json:"worker_reasoning_effort,omitempty"`
+	BudgetCredits         int64  `json:"budget_credits"`
+	MaxWorkers            int    `json:"max_workers,omitempty"`
+	MaxTasks              int    `json:"max_tasks,omitempty"`
+	MaxPlannerRounds      int    `json:"max_planner_rounds,omitempty"`
 }
 
-func (s *Service) CreateMission(ctx context.Context, in MissionInput) (assistant.MissionDetail, error) {
+func (s *Service) CreateMission(ctx context.Context, in MissionInput, actorUserID ...string) (assistant.MissionDetail, error) {
 	settings, err := s.Settings(ctx)
 	if err != nil {
 		return assistant.MissionDetail{}, err
 	}
-	if err := s.ensureAllowance(ctx, settings); err != nil {
-		return assistant.MissionDetail{}, err
+	modelID := strings.TrimSpace(in.ModelID)
+	if modelID == "" {
+		modelID = settings.ModelID
 	}
-	modelID := settings.ModelID
 	if modelID == "" {
 		as, e := s.Assistant.GetSettings(ctx)
 		if e != nil {
@@ -37,14 +42,47 @@ func (s *Service) CreateMission(ctx context.Context, in MissionInput) (assistant
 	if modelID == "" {
 		return assistant.MissionDetail{}, ErrModelRequired
 	}
-	workerModelID := settings.Execution.ChildModelID
+	workerModelID := strings.TrimSpace(in.WorkerModelID)
+	if workerModelID == "" {
+		workerModelID = settings.Execution.ChildModelID
+	}
+	reasoningEffort := strings.TrimSpace(in.ReasoningEffort)
+	if reasoningEffort == "" && strings.TrimSpace(in.ModelID) == "" {
+		reasoningEffort = settings.Execution.ReasoningEffort
+	}
+	workerReasoningEffort := strings.TrimSpace(in.WorkerReasoningEffort)
+	if workerReasoningEffort == "" && strings.TrimSpace(in.WorkerModelID) == "" {
+		workerReasoningEffort = settings.Execution.ChildReasoningEffort
+	}
+	byoOwner := settings.Execution.BillingOwnerID
+	if len(actorUserID) > 0 && strings.TrimSpace(actorUserID[0]) != "" {
+		caller := strings.TrimSpace(actorUserID[0])
+		if byoOwner == "" {
+			byoOwner = caller
+		} else if strings.TrimSpace(in.ModelID) != "" || strings.TrimSpace(in.WorkerModelID) != "" {
+			if _, _, e := s.Assistant.ResolveBYOModel(ctx, modelID, caller, true); e == nil {
+				byoOwner = caller
+			} else if workerModelID != "" {
+				if _, _, e2 := s.Assistant.ResolveBYOModel(ctx, workerModelID, caller, true); e2 == nil {
+					byoOwner = caller
+				}
+			}
+		}
+	}
+	checkSettings := settings
+	checkSettings.ModelID = modelID
+	checkSettings.Execution.ChildModelID = workerModelID
+	checkSettings.Execution.BillingOwnerID = byoOwner
+	if err := s.ensureAllowance(ctx, checkSettings); err != nil {
+		return assistant.MissionDetail{}, err
+	}
 	billingUser := settings.SystemUserID
 	maxWorkers := in.MaxWorkers
 	if maxWorkers <= 0 {
 		maxWorkers = min(4, max(1, settings.Execution.MaxChildren))
 	}
 	budget := in.BudgetCredits
-	required, err := s.requiresPlatformCredits(ctx, settings)
+	required, err := s.requiresPlatformCredits(ctx, checkSettings)
 	if err != nil {
 		return assistant.MissionDetail{}, err
 	}
@@ -58,19 +96,21 @@ func (s *Service) CreateMission(ctx context.Context, in MissionInput) (assistant
 		Permissions: []string{catalog.PermissionEntityEdit, catalog.PermissionRelationEdit},
 	}
 	detail, err := s.Assistant.CreateMission(ctx, "curator", settings.SystemUserID, billingUser, actor, assistant.MissionCreateRequest{
-		ClientRequestID:     in.ClientRequestID,
-		Title:               in.Title,
-		Goal:                in.Goal,
-		ModelID:             modelID,
-		WorkerModelID:       workerModelID,
-		SearchProviderID:    settings.Execution.SearchProviderID,
-		SearchBYOProviderID: settings.Execution.SearchBYOProviderID,
-		BudgetCredits:       budget,
-		MaxWorkers:          maxWorkers,
-		MaxTasks:            in.MaxTasks,
-		MaxPlannerRounds:    in.MaxPlannerRounds,
-		PreferPullRequest:   &preferPR,
-		BYOOwnerID:          settings.Execution.BillingOwnerID,
+		ClientRequestID:       in.ClientRequestID,
+		Title:                 in.Title,
+		Goal:                  in.Goal,
+		ModelID:               modelID,
+		WorkerModelID:         workerModelID,
+		ReasoningEffort:       reasoningEffort,
+		WorkerReasoningEffort: workerReasoningEffort,
+		SearchProviderID:      settings.Execution.SearchProviderID,
+		SearchBYOProviderID:   settings.Execution.SearchBYOProviderID,
+		BudgetCredits:         budget,
+		MaxWorkers:            maxWorkers,
+		MaxTasks:              in.MaxTasks,
+		MaxPlannerRounds:      in.MaxPlannerRounds,
+		PreferPullRequest:     &preferPR,
+		BYOOwnerID:            byoOwner,
 	})
 	if err != nil {
 		if errors.Is(err, assistant.ErrDisabled) {

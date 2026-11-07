@@ -2907,5 +2907,18 @@
   "settings.activity.action.curator.mission_steered": "调整自动维护范围任务",
   "settings.activity.action.curator.mission_paused": "暂停自动维护范围任务",
   "settings.activity.action.curator.mission_resumed": "恢复自动维护范围任务",
-  "settings.activity.action.curator.mission_stopped": "停止自动维护范围任务"
+  "settings.activity.action.curator.mission_stopped": "停止自动维护范围任务",
+  "assistant.reasoning.default": "思考：默认",
+  "assistant.reasoning.none": "思考：关闭",
+  "assistant.reasoning.minimal": "思考：极低",
+  "assistant.reasoning.low": "思考：低",
+  "assistant.reasoning.medium": "思考：中",
+  "assistant.reasoning.high": "思考：高",
+  "assistant.reasoning.xhigh": "思考：超高",
+  "assistant.user.reasoningEffort": "思考强度",
+  "assistant.admin.field.reasoning_effort": "默认思考强度",
+  "assistant.mission.plannerReasoning": "规划思考强度",
+  "assistant.mission.workerReasoning": "子任务思考强度",
+  "curator.settings.reasoningEffort": "主 Agent 思考强度",
+  "curator.settings.childReasoningEffort": "子 Agent 思考强度"
 }

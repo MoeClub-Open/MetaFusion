@@ -19,13 +19,15 @@ const CodeReview = "review_pull_request"
 const CodeManualTask = "manual_task"
 
 type ExecutionConfig struct {
-	ChildModelID        string `json:"child_model_id"`
-	BillingOwnerID      string `json:"billing_owner_id"`
-	SearchProviderID    string `json:"search_provider_id"`
-	SearchBYOProviderID string `json:"search_byo_provider_id"`
-	MaxChildren         int    `json:"max_children"`
-	AllowReviews        bool   `json:"allow_reviews"`
-	AutoMergeReviews    bool   `json:"auto_merge_reviews"`
+	ChildModelID         string `json:"child_model_id"`
+	ReasoningEffort      string `json:"reasoning_effort"`
+	ChildReasoningEffort string `json:"child_reasoning_effort"`
+	BillingOwnerID       string `json:"billing_owner_id"`
+	SearchProviderID     string `json:"search_provider_id"`
+	SearchBYOProviderID  string `json:"search_byo_provider_id"`
+	MaxChildren          int    `json:"max_children"`
+	AllowReviews         bool   `json:"allow_reviews"`
+	AutoMergeReviews     bool   `json:"auto_merge_reviews"`
 }
 
 func (v *ExecutionConfig) Scan(value any) error {
@@ -42,6 +44,8 @@ func (s *Service) SaveSettingsForUser(ctx context.Context, in Settings, user cat
 		return Settings{}, err
 	}
 	c := &in.Execution
+	c.ReasoningEffort = strings.TrimSpace(c.ReasoningEffort)
+	c.ChildReasoningEffort = strings.TrimSpace(c.ChildReasoningEffort)
 	mainBYO, err := s.isBYOModelID(ctx, in.ModelID)
 	if err != nil {
 		return Settings{}, err
@@ -83,6 +87,9 @@ func (s *Service) SaveSettingsForUser(ctx context.Context, in Settings, user cat
 
 func (s *Service) validateExecution(ctx context.Context, c ExecutionConfig, enabled bool) error {
 	if c.MaxChildren < 1 || c.MaxChildren > 8 {
+		return ErrInvalidSettings
+	}
+	if !assistant.ValidReasoningEffort(strings.TrimSpace(c.ReasoningEffort)) || !assistant.ValidReasoningEffort(strings.TrimSpace(c.ChildReasoningEffort)) {
 		return ErrInvalidSettings
 	}
 	for _, id := range []string{c.ChildModelID, c.SearchProviderID, c.SearchBYOProviderID} {

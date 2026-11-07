@@ -198,6 +198,7 @@ func scanReservation(row scanner) (Reservation, string, error) {
 		return r, "", dbError(err)
 	}
 	err = json.Unmarshal(snapshot, &r.Model)
+	r.ReasoningEffort = r.Model.ReasoningEffort
 	return r, hash, err
 }
 
@@ -207,7 +208,7 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 	if !s.CredentialsAvailable() {
 		return Reservation{}, ErrEncryptionUnavailable
 	}
-	if !validID(in.ID) || in.UserID == "" || !validID(in.ModelID) || in.InputTokens < 1 || in.OutputTokens < 1 || len(in.Purpose) > 100 || in.Purpose == "" || (in.EntityID != "" && !validID(in.EntityID)) {
+	if !validID(in.ID) || in.UserID == "" || !validID(in.ModelID) || !ValidReasoningEffort(in.ReasoningEffort) || in.InputTokens < 1 || in.OutputTokens < 1 || len(in.Purpose) > 100 || in.Purpose == "" || (in.EntityID != "" && !validID(in.EntityID)) {
 		return Reservation{}, fmt.Errorf("assistant_invalid_reservation")
 	}
 	if _, err := s.SyncCredits(ctx, in.UserID); err != nil {
@@ -247,7 +248,7 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 		var bm BYOModel
 		var providerEnabled, hasKey bool
 		var providerUpdated time.Time
-		byoErr := tx.QueryRowContext(ctx, `SELECT bm.id,bm.owner_id,bm.provider_id,bm.upstream_model,bm.name,bm.enabled,bm.max_output_tokens,bm.max_tokens_parameter,bm.context_window,bm.created_at,bm.updated_at,bp.enabled,octet_length(bp.encrypted_key)>0,bp.updated_at FROM assistant.byo_models bm JOIN assistant.byo_providers bp ON bp.id=bm.provider_id AND bp.owner_id=bm.owner_id WHERE bm.id=$1 AND bm.owner_id=$2`, in.ModelID, in.UserID).Scan(&bm.ID, &bm.OwnerID, &bm.ProviderID, &bm.UpstreamModel, &bm.Name, &bm.Enabled, &bm.MaxOutputTokens, &bm.MaxTokensParameter, &bm.ContextWindow, &bm.CreatedAt, &bm.UpdatedAt, &providerEnabled, &hasKey, &providerUpdated)
+		byoErr := tx.QueryRowContext(ctx, `SELECT bm.id,bm.owner_id,bm.provider_id,bm.upstream_model,bm.name,bm.enabled,bm.max_output_tokens,bm.max_tokens_parameter,bm.reasoning_effort,bm.context_window,bm.created_at,bm.updated_at,bp.enabled,octet_length(bp.encrypted_key)>0,bp.updated_at FROM assistant.byo_models bm JOIN assistant.byo_providers bp ON bp.id=bm.provider_id AND bp.owner_id=bm.owner_id WHERE bm.id=$1 AND bm.owner_id=$2`, in.ModelID, in.UserID).Scan(&bm.ID, &bm.OwnerID, &bm.ProviderID, &bm.UpstreamModel, &bm.Name, &bm.Enabled, &bm.MaxOutputTokens, &bm.MaxTokensParameter, &bm.ReasoningEffort, &bm.ContextWindow, &bm.CreatedAt, &bm.UpdatedAt, &providerEnabled, &hasKey, &providerUpdated)
 		if byoErr != nil {
 			return Reservation{}, dbError(byoErr)
 		}
@@ -264,7 +265,7 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 		m = Model{
 			ID: bm.ID, ProviderID: bm.ProviderID, UpstreamModel: bm.UpstreamModel, Name: bm.Name,
 			Enabled: true, MaxOutputTokens: bm.MaxOutputTokens, MaxTokensParameter: bm.MaxTokensParameter,
-			ContextWindow: bm.ContextWindow, CreatedAt: bm.CreatedAt, UpdatedAt: updated,
+			ReasoningEffort: bm.ReasoningEffort, ContextWindow: bm.ContextWindow, CreatedAt: bm.CreatedAt, UpdatedAt: updated,
 		}
 		byoProviderID = bm.ProviderID
 		credits, cost = 0, 0
@@ -350,6 +351,9 @@ func (s *Store) Reserve(ctx context.Context, in ReserveRequest) (Reservation, er
 				return Reservation{}, err
 			}
 		}
+	}
+	if in.ReasoningEffort != "" {
+		m.ReasoningEffort = in.ReasoningEffort
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO assistant.usage(id,user_id,provider_id,model_id,byo_provider_id,purpose,entity_id,status,request_hash,price_snapshot,input_limit,output_limit,reserved_credits,reserved_cost_microusd,budget_month) VALUES($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14)`, in.ID, in.UserID, m.ProviderID, in.ModelID, nullableID(byoProviderID), in.Purpose, nullableID(in.EntityID), reserveHash(in), jsonBytes(m), in.InputTokens, in.OutputTokens, credits, cost, month)
 	if err != nil {

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Circle, Clock, ExternalLink, GitBranch, Loader2, Pause, Play, Plus, Search, Send, Square, Trash2, XCircle } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
-import type {
-  AssistantAccount, AssistantBYOModel, AssistantBYOProvider, AssistantMessage,
-  AssistantModel, AssistantPage, Mission, MissionDetail, MissionPlannerRun, MissionTask, SearchProvider,
+import {
+  ASSISTANT_REASONING_EFFORTS,
+  type AssistantAccount, type AssistantBYOModel, type AssistantBYOProvider, type AssistantMessage,
+  type AssistantModel, type AssistantPage, type AssistantReasoningEffort, type Mission, type MissionDetail, type MissionPlannerRun, type MissionTask, type SearchProvider,
 } from "@/lib/assistantApi";
 import { describeAssistantError } from "@/lib/assistantUser";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -31,6 +32,9 @@ export interface MissionWorkspacePanelProps {
   byoModels?: AssistantBYOModel[];
   searchProviders?: SearchProvider[];
   defaultModelID?: string;
+  defaultWorkerModelID?: string;
+  defaultReasoningEffort?: AssistantReasoningEffort;
+  defaultWorkerReasoningEffort?: AssistantReasoningEffort;
   defaultBudget?: number;
   onBalance?: (balance: AssistantAccount) => void;
   onChanged?: () => void;
@@ -47,6 +51,9 @@ export function MissionWorkspacePanel({
   byoModels = [],
   searchProviders = [],
   defaultModelID = "",
+  defaultWorkerModelID = "",
+  defaultReasoningEffort = "",
+  defaultWorkerReasoningEffort = "",
   defaultBudget = 120,
   onBalance,
   onChanged,
@@ -67,7 +74,9 @@ export function MissionWorkspacePanel({
   const [maxWorkers, setMaxWorkers] = useState(2);
   const [maxTasks, setMaxTasks] = useState(12);
   const [modelID, setModelID] = useState(defaultModelID);
-  const [workerModelID, setWorkerModelID] = useState("");
+  const [workerModelID, setWorkerModelID] = useState(defaultWorkerModelID);
+  const [reasoningEffort, setReasoningEffort] = useState<AssistantReasoningEffort>(defaultReasoningEffort);
+  const [workerReasoningEffort, setWorkerReasoningEffort] = useState<AssistantReasoningEffort>(defaultWorkerReasoningEffort);
   const [searchProviderID, setSearchProviderID] = useState("");
   const [searchBYOProviderID, setSearchBYOProviderID] = useState("");
   const [preferPR, setPreferPR] = useState(true);
@@ -83,6 +92,15 @@ export function MissionWorkspacePanel({
   useEffect(() => {
     if (!modelID && defaultModelID) setModelID(defaultModelID);
   }, [defaultModelID, modelID]);
+  useEffect(() => {
+    if (!workerModelID && defaultWorkerModelID) setWorkerModelID(defaultWorkerModelID);
+  }, [defaultWorkerModelID, workerModelID]);
+  useEffect(() => {
+    if (!reasoningEffort && defaultReasoningEffort) setReasoningEffort(defaultReasoningEffort);
+  }, [defaultReasoningEffort, reasoningEffort]);
+  useEffect(() => {
+    if (!workerReasoningEffort && defaultWorkerReasoningEffort) setWorkerReasoningEffort(defaultWorkerReasoningEffort);
+  }, [defaultWorkerReasoningEffort, workerReasoningEffort]);
 
   const loadList = useCallback(async (autoSelectFirst = false) => {
     const page = await request<AssistantPage<Mission>>("/missions?limit=50&offset=0");
@@ -181,6 +199,8 @@ export function MissionWorkspacePanel({
       max_tasks: maxTasks,
       model_id: modelID || undefined,
       worker_model_id: workerModelID || undefined,
+      reasoning_effort: reasoningEffort || undefined,
+      worker_reasoning_effort: workerReasoningEffort || undefined,
       search_provider_id: searchProviderID || undefined,
       search_byo_provider_id: searchBYOProviderID || undefined,
       prefer_pull_request: canBypassReview ? preferPR : true,
@@ -189,6 +209,10 @@ export function MissionWorkspacePanel({
       budget_credits: parsedBudget,
       max_workers: maxWorkers,
       max_tasks: maxTasks,
+      model_id: modelID || undefined,
+      worker_model_id: workerModelID || undefined,
+      reasoning_effort: reasoningEffort || undefined,
+      worker_reasoning_effort: workerReasoningEffort || undefined,
     };
     const fp = JSON.stringify(payload);
     if (pendingCreate.current?.fp !== fp) pendingCreate.current = { fp, id: crypto.randomUUID() };
@@ -328,18 +352,28 @@ export function MissionWorkspacePanel({
                 <input type="number" min={1} max={50} value={maxTasks} disabled={busy || !mayWrite} onChange={(e) => setMaxTasks(Math.min(50, Math.max(1, Number(e.target.value) || 1)))} className="h-8 w-full rounded-control border border-line bg-background px-2.5 text-xs tabular-nums text-text-strong outline-none focus:border-primary/50" />
               </label>
             </div>
-            {scope === "user" && <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <span className="mb-1 block text-xs text-text-muted">{t("assistant.mission.plannerModel")}</span>
-                <AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={busy} />
+            {(scope === "user" || models.length > 0 || byoModels.length > 0) && <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <span className="block text-xs text-text-muted">{t("assistant.mission.plannerModel")}</span>
+                <div className="flex items-center gap-1.5">
+                  <AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={busy || !mayWrite} />
+                  <select aria-label={t("assistant.mission.plannerReasoning")} title={t("assistant.mission.plannerReasoning")} value={reasoningEffort} disabled={busy || !mayWrite} onChange={(e) => setReasoningEffort(e.target.value as AssistantReasoningEffort)} className="h-8 shrink-0 rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
+                    {ASSISTANT_REASONING_EFFORTS.map((v) => <option key={v || "default"} value={v}>{t("assistant.reasoning." + (v || "default"))}</option>)}
+                  </select>
+                </div>
               </div>
-              <div>
-                <span className="mb-1 block text-xs text-text-muted">{t("assistant.mission.workerModel")}</span>
-                <select value={workerModelID} disabled={busy} onChange={(e) => setWorkerModelID(e.target.value)} className="h-8 w-full rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
-                  <option value="">{t("curator.settings.sameModel")}</option>
-                  {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  {byoModels.filter((m) => m.enabled).map((m) => <option key={m.id} value={m.id}>{m.name} ({t("assistant.user.byo")})</option>)}
-                </select>
+              <div className="space-y-1">
+                <span className="block text-xs text-text-muted">{t("assistant.mission.workerModel")}</span>
+                <div className="flex items-center gap-1.5">
+                  <select value={workerModelID} disabled={busy || !mayWrite} onChange={(e) => setWorkerModelID(e.target.value)} className="h-8 min-w-0 flex-1 rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
+                    <option value="">{t("curator.settings.sameModel")}</option>
+                    {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    {byoModels.filter((m) => m.enabled).map((m) => <option key={m.id} value={m.id}>{m.name} ({t("assistant.user.byo")})</option>)}
+                  </select>
+                  <select aria-label={t("assistant.mission.workerReasoning")} title={t("assistant.mission.workerReasoning")} value={workerReasoningEffort} disabled={busy || !mayWrite} onChange={(e) => setWorkerReasoningEffort(e.target.value as AssistantReasoningEffort)} className="h-8 shrink-0 rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
+                    {ASSISTANT_REASONING_EFFORTS.map((v) => <option key={v || "default"} value={v}>{t("assistant.reasoning." + (v || "default"))}</option>)}
+                  </select>
+                </div>
               </div>
             </div>}
             {scope === "user" && <details className="rounded-control border border-line-subtle p-2.5 text-xs text-text-muted">
@@ -364,6 +398,7 @@ export function MissionWorkspacePanel({
               <span className="font-medium text-text-strong truncate max-w-md">{mission.title}</span>
               <span className={`font-medium ${statusColor(mission.status)}`}>{t(`assistant.mission.status.${mission.status}`)}</span>
               <span className="text-text-muted tabular-nums">{t("assistant.mission.creditsUsed", { spent: number.format(mission.spent_credits), budget: number.format(mission.budget_credits) })}</span>
+              {(mission.reasoning_effort || mission.worker_reasoning_effort) && <span className="text-text-muted">{t("assistant.user.reasoningEffort")}: {t("assistant.reasoning." + (mission.reasoning_effort || "default"))}{mission.worker_reasoning_effort ? " / " + t("assistant.reasoning." + mission.worker_reasoning_effort) : ""}</span>}
               <span className="text-text-muted tabular-nums mr-auto">{t("assistant.mission.rounds", { current: mission.planner_rounds, max: mission.max_planner_rounds })}</span>
               {mayWrite && mission.status === "running" && <button type="button" disabled={busy} onClick={() => void updateStatus("pause")} className={ctlBtn}><Pause className="size-3.5" />{t("curator.pause")}</button>}
               {mayWrite && (mission.status === "paused" || mission.status === "failed") && <button type="button" disabled={busy} onClick={() => void updateStatus("resume")} className={ctlBtn}><Play className="size-3.5" />{t("curator.resume")}</button>}

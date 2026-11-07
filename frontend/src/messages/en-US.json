@@ -2907,5 +2907,18 @@
   "settings.activity.action.curator.mission_steered": "Updated curator mission",
   "settings.activity.action.curator.mission_paused": "Paused curator mission",
   "settings.activity.action.curator.mission_resumed": "Resumed curator mission",
-  "settings.activity.action.curator.mission_stopped": "Stopped curator mission"
+  "settings.activity.action.curator.mission_stopped": "Stopped curator mission",
+  "assistant.reasoning.default": "Thinking: Default",
+  "assistant.reasoning.none": "Thinking: None",
+  "assistant.reasoning.minimal": "Thinking: Minimal",
+  "assistant.reasoning.low": "Thinking: Low",
+  "assistant.reasoning.medium": "Thinking: Medium",
+  "assistant.reasoning.high": "Thinking: High",
+  "assistant.reasoning.xhigh": "Thinking: Extra High",
+  "assistant.user.reasoningEffort": "Reasoning Effort",
+  "assistant.admin.field.reasoning_effort": "Default reasoning effort",
+  "assistant.mission.plannerReasoning": "Planner Reasoning Effort",
+  "assistant.mission.workerReasoning": "Worker Reasoning Effort",
+  "curator.settings.reasoningEffort": "Main agent reasoning effort",
+  "curator.settings.childReasoningEffort": "Child agent reasoning effort"
 }

@@ -11,6 +11,69 @@ import (
 	"github.com/google/uuid"
 )
 
+var ReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+
+func ValidReasoningEffort(effort string) bool {
+	switch effort {
+	case "", "none", "minimal", "low", "medium", "high", "xhigh":
+		return true
+	}
+	return false
+}
+
+func anthropicThinkingBudget(effort string, maxOutputTokens int64) int64 {
+	var target int64
+	switch effort {
+	case "minimal":
+		target = 1024
+	case "low":
+		target = 2048
+	case "medium":
+		target = 4096
+	case "high":
+		target = 8192
+	case "xhigh":
+		target = 16384
+	default:
+		return 0
+	}
+	if maxOutputTokens <= 1024 {
+		return 0
+	}
+	limit := maxOutputTokens - 256
+	if limit < 1024 {
+		limit = 1024
+	}
+	if target > limit {
+		target = limit
+	}
+	return target
+}
+
+func geminiThinkingBudget(effort string, maxOutputTokens int64) int64 {
+	var target int64
+	switch effort {
+	case "none":
+		return 0
+	case "minimal":
+		target = 512
+	case "low":
+		target = 1024
+	case "medium":
+		target = 4096
+	case "high":
+		target = 8192
+	case "xhigh":
+		target = 16384
+	default:
+		return 0
+	}
+	if maxOutputTokens > 0 && target > maxOutputTokens {
+		target = maxOutputTokens
+	}
+	return target
+}
+
 func validProtocol(protocol string) bool {
 	switch protocol {
 	case "openai_compatible", "openai_responses", "anthropic_messages", "gemini_generate_content":
@@ -80,6 +143,9 @@ func protocolPayload(protocol, binding string, r Reservation, in CompletionReque
 			}
 		}
 		payload = map[string]any{"model": r.Model.UpstreamModel, "input": items, "max_output_tokens": r.OutputTokens, "store": false, "stream": false, "include": []string{"reasoning.encrypted_content"}}
+		if r.Model.ReasoningEffort != "" {
+			payload["reasoning"] = map[string]any{"effort": r.Model.ReasoningEffort}
+		}
 		if len(in.Tools) > 0 {
 			tools := []any{}
 			for _, tool := range in.Tools {
@@ -114,6 +180,11 @@ func protocolPayload(protocol, binding string, r Reservation, in CompletionReque
 			messages = appendProtocolParts(messages, role, "content", parts)
 		}
 		payload = map[string]any{"model": r.Model.UpstreamModel, "system": strings.Join(system, "\n\n"), "messages": messages, "max_tokens": r.OutputTokens, "stream": false}
+		if r.Model.ReasoningEffort == "none" {
+			payload["thinking"] = map[string]any{"type": "disabled"}
+		} else if budget := anthropicThinkingBudget(r.Model.ReasoningEffort, r.OutputTokens); budget >= 1024 {
+			payload["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
+		}
 		if len(in.Tools) > 0 {
 			tools := []any{}
 			for _, tool := range in.Tools {
@@ -174,7 +245,11 @@ func protocolPayload(protocol, binding string, r Reservation, in CompletionReque
 			}
 			contents = appendProtocolParts(contents, role, "parts", parts)
 		}
-		payload = map[string]any{"contents": contents, "systemInstruction": map[string]any{"parts": system}, "generationConfig": map[string]any{"maxOutputTokens": r.OutputTokens, "candidateCount": 1}}
+		genConfig := map[string]any{"maxOutputTokens": r.OutputTokens, "candidateCount": 1}
+		if r.Model.ReasoningEffort != "" {
+			genConfig["thinkingConfig"] = map[string]any{"thinkingBudget": geminiThinkingBudget(r.Model.ReasoningEffort, r.OutputTokens)}
+		}
+		payload = map[string]any{"contents": contents, "systemInstruction": map[string]any{"parts": system}, "generationConfig": genConfig}
 		if len(in.Tools) > 0 {
 			declarations := []any{}
 			for _, tool := range in.Tools {

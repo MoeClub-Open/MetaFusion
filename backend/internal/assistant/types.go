@@ -65,6 +65,7 @@ type Model struct {
 	OutputCreditsPerMillion            int64     `json:"output_credits_per_million"`
 	MaxOutputTokens                    int64     `json:"max_output_tokens"`
 	MaxTokensParameter                 string    `json:"max_tokens_parameter"`
+	ReasoningEffort                    string    `json:"reasoning_effort"`
 	ContextWindow                      int64     `json:"context_window"`
 	CreatedAt                          time.Time `json:"created_at"`
 	UpdatedAt                          time.Time `json:"updated_at"`
@@ -96,6 +97,7 @@ type BYOModel struct {
 	Enabled            bool      `json:"enabled"`
 	MaxOutputTokens    int64     `json:"max_output_tokens"`
 	MaxTokensParameter string    `json:"max_tokens_parameter"`
+	ReasoningEffort    string    `json:"reasoning_effort"`
 	ContextWindow      int64     `json:"context_window"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -129,14 +131,15 @@ type TokenUsage struct {
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 }
 type ReserveRequest struct {
-	ID           string        `json:"id"`
-	UserID       string        `json:"user_id"`
-	ModelID      string        `json:"model_id"`
-	InputTokens  int64         `json:"input_tokens"`
-	OutputTokens int64         `json:"output_tokens"`
-	Purpose      string        `json:"purpose"`
-	EntityID     string        `json:"entity_id,omitempty"`
-	CreditBudget *CreditBudget `json:"-"`
+	ID              string        `json:"id"`
+	UserID          string        `json:"user_id"`
+	ModelID         string        `json:"model_id"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	InputTokens     int64         `json:"input_tokens"`
+	OutputTokens    int64         `json:"output_tokens"`
+	Purpose         string        `json:"purpose"`
+	EntityID        string        `json:"entity_id,omitempty"`
+	CreditBudget    *CreditBudget `json:"-"`
 }
 
 // CreditBudget is supplied by an internal caller, never by an API payload.
@@ -229,6 +232,7 @@ type Conversation struct {
 	OwnerID         string    `json:"owner_id"`
 	Title           string    `json:"title"`
 	ModelID         string    `json:"model_id"`
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
 	ActiveRequestID string    `json:"active_request_id,omitempty"`
 	Messages        []Message `json:"messages"`
 	CreatedAt       time.Time `json:"created_at"`
