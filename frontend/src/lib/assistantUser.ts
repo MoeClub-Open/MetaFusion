@@ -29,6 +29,7 @@ export interface AssistantEntityItem {
   title: string;
   subtitle?: string;
   summary?: string;
+  cover_url?: string;
 }
 
 export interface AssistantChatTurn {
@@ -40,6 +41,11 @@ export interface AssistantChatTurn {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+const isSafeCoverUrl = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.trim().length <= 2_000 &&
+  (/^https?:\/\/\S+$/i.test(value.trim()) || /^\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/.test(value.trim()));
 export const pushReceiptKey = (receipt: AssistantPushReceipt) => `${receipt.workspace?.id || receipt.pull_request?.id || ""}:${receipt.workspace?.head_commit_id || receipt.commits.map((commit) => commit.id).join(",")}:${receipt.applied}`;
 
 function extractEntityFromRecord(raw: unknown): AssistantEntityItem | null {
@@ -48,37 +54,83 @@ function extractEntityFromRecord(raw: unknown): AssistantEntityItem | null {
   const title = raw.title.trim();
   const kind = typeof raw.kind === "string" && raw.kind ? raw.kind : undefined;
   let subtitle: string | undefined;
+  let summary: string | undefined = typeof raw.summary === "string" && raw.summary.trim() ? raw.summary.trim().slice(0, 200) : undefined;
   if (record(raw.titles)) {
     const alt = Object.values(raw.titles).find((v): v is string => typeof v === "string" && !!v.trim() && v.trim() !== title);
     if (alt) subtitle = alt.trim();
-  } else if (record(raw.translations)) {
+  }
+  if (record(raw.translations)) {
     for (const tr of Object.values(raw.translations)) {
-      if (record(tr) && typeof tr.title === "string" && tr.title.trim() && tr.title.trim() !== title) {
+      if (!subtitle && record(tr) && typeof tr.title === "string" && tr.title.trim() && tr.title.trim() !== title) {
         subtitle = tr.title.trim();
-        break;
+      }
+      if (!summary && record(tr) && typeof tr.summary === "string" && tr.summary.trim()) {
+        summary = tr.summary.trim().slice(0, 200);
       }
     }
   }
-  return { id, title, ...(kind ? { kind } : {}), ...(subtitle ? { subtitle } : {}) };
+  let cover_url: string | undefined;
+  if (isSafeCoverUrl(raw.cover_url)) {
+    cover_url = raw.cover_url.trim();
+  } else if (Array.isArray(raw.pictures) && record(raw.pictures[0]) && isSafeCoverUrl(raw.pictures[0].url)) {
+    cover_url = raw.pictures[0].url.trim();
+  }
+  return {
+    id,
+    title,
+    ...(kind ? { kind } : {}),
+    ...(subtitle ? { subtitle } : {}),
+    ...(summary ? { summary } : {}),
+    ...(cover_url ? { cover_url } : {}),
+  };
 }
 
 export function buildChatTurns(messages: AssistantMessage[]): AssistantChatTurn[] {
   const toolOutputs = new Map<string, string>();
   const catalogEntities = new Map<string, AssistantEntityItem>();
+  const putEntity = (raw: unknown) => {
+    const ent = extractEntityFromRecord(raw);
+    if (!ent) return;
+    const prev = catalogEntities.get(ent.id);
+    catalogEntities.set(ent.id, {
+      id: ent.id,
+      title: ent.title || prev?.title || "",
+      ...(ent.kind || prev?.kind ? { kind: ent.kind || prev?.kind } : {}),
+      ...(ent.subtitle || prev?.subtitle ? { subtitle: ent.subtitle || prev?.subtitle } : {}),
+      ...(ent.summary || prev?.summary ? { summary: ent.summary || prev?.summary } : {}),
+      ...(ent.cover_url || prev?.cover_url ? { cover_url: ent.cover_url || prev?.cover_url } : {}),
+    });
+  };
   for (const msg of messages) {
     if (msg.role === "tool" && msg.tool_call_id) {
       toolOutputs.set(msg.tool_call_id, msg.content || "");
       try {
         const parsed: unknown = JSON.parse(msg.content || "");
         const root = record(parsed) && record(parsed.result) ? parsed.result : parsed;
-        if (record(root) && Array.isArray(root.items)) {
-          for (const item of root.items) {
-            const ent = extractEntityFromRecord(item);
-            if (ent) catalogEntities.set(ent.id, ent);
+        if (record(root)) {
+          if (Array.isArray(root.items)) {
+            for (const item of root.items) {
+              putEntity(item);
+              if (record(item)) {
+                if (record(item.matched)) putEntity(item.matched);
+                if (record(item.canonical)) putEntity(item.canonical);
+              }
+            }
           }
-        } else if (record(root)) {
-          const ent = extractEntityFromRecord(record(root.entity) ? root.entity : root);
-          if (ent) catalogEntities.set(ent.id, ent);
+          if (record(root.entities)) {
+            for (const item of Object.values(root.entities)) {
+              putEntity(item);
+            }
+          }
+          if (record(root.covers)) {
+            for (const [id, cov] of Object.entries(root.covers)) {
+              const existing = catalogEntities.get(id.toLowerCase());
+              if (existing && !existing.cover_url && record(cov) && isSafeCoverUrl(cov.url)) {
+                catalogEntities.set(existing.id, { ...existing, cover_url: cov.url.trim() });
+              }
+            }
+          }
+          putEntity(record(root.entity) ? root.entity : root);
         }
       } catch { /* non-JSON or unrelated tool output */ }
     }
@@ -90,13 +142,46 @@ export function buildChatTurns(messages: AssistantMessage[]): AssistantChatTurn[
 
   const flushAssistant = () => {
     if (pendingSteps.length === 0 && pendingTexts.length === 0) return;
-    const content = pendingTexts.join("\n\n").trim();
+    let content = pendingTexts.join("\n\n").trim();
+    if (content && catalogEntities.size > 0) {
+      content = content.replace(/```(ui|metafusion-ui)\s*\n([\s\S]*?)```/gi, (full, lang: string, body: string) => {
+        try {
+          const raw: unknown = JSON.parse(body);
+          const list = Array.isArray(raw) ? raw : record(raw) ? [raw] : null;
+          if (!list) return full;
+          let changed = false;
+          for (const block of list) {
+            if (record(block) && block.type === "entities" && Array.isArray(block.items)) {
+              for (const item of block.items) {
+                if (record(item) && typeof item.id === "string") {
+                  const known = catalogEntities.get(item.id.toLowerCase());
+                  if (known?.cover_url && !item.cover_url) {
+                    item.cover_url = known.cover_url;
+                    changed = true;
+                  }
+                }
+              }
+            }
+          }
+          return changed ? `\`\`\`${lang}\n${JSON.stringify(raw)}\n\`\`\`` : full;
+        } catch {
+          return full;
+        }
+      });
+    }
     const hasExplicitUIBlock = /```(?:ui|metafusion-ui|html)\b/i.test(content);
     const matchedEntities: AssistantEntityItem[] = [];
     if (content && !hasExplicitUIBlock && catalogEntities.size > 0) {
       const lowerContent = content.toLowerCase();
+      const compactContent = lowerContent.replace(/\s+/g, "");
       for (const ent of catalogEntities.values()) {
-        if (lowerContent.includes(ent.id) || (ent.title.length >= 3 && lowerContent.includes(ent.title.toLowerCase()))) {
+        const compactTitle = ent.title.toLowerCase().replace(/\s+/g, "");
+        const compactSub = (ent.subtitle || "").toLowerCase().replace(/\s+/g, "");
+        if (
+          lowerContent.includes(ent.id) ||
+          (compactTitle.length >= 2 && compactContent.includes(compactTitle)) ||
+          (compactSub.length >= 2 && compactContent.includes(compactSub))
+        ) {
           matchedEntities.push(ent);
         }
       }

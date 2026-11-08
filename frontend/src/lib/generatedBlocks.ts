@@ -3,12 +3,18 @@ export type GeneratedBlock =
   | { type: "table"; title?: string; columns: string[]; rows: string[][] }
   | { type: "timeline"; title?: string; events: { date: string; title: string; description?: string; entity_id?: string }[] }
   | { type: "chart"; title?: string; chart_type: "bar" | "line"; labels: string[]; series: { name: string; values: number[] }[] }
-  | { type: "entities"; title?: string; items: { id: string; kind?: string; title: string; subtitle?: string; summary?: string }[] };
+  | { type: "entities"; title?: string; items: { id: string; kind?: string; title: string; subtitle?: string; summary?: string; cover_url?: string }[] };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const text = (value: unknown, limit: number): value is string => typeof value === "string" && value.length <= limit;
 const optionalText = (value: unknown, limit: number): value is string | undefined => value === undefined || text(value, limit);
+const optionalSafeCoverUrl = (value: unknown): value is string | undefined =>
+  value === undefined ||
+  (typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 2_000 &&
+    (/^https?:\/\/\S+$/i.test(value) || /^\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/.test(value)));
 const strings = (value: unknown, maxItems: number, maxLength: number): value is string[] =>
   Array.isArray(value) && value.length <= maxItems && value.every((item) => text(item, maxLength));
 
@@ -66,13 +72,15 @@ export function parseGeneratedBlocks(value: unknown): GeneratedBlock[] {
         for (const entry of item.items) {
           if (!record(entry) || typeof entry.id !== "string" || !UUID.test(entry.id) ||
               !text(entry.title, 300) || !optionalText(entry.kind, 40) ||
-              !optionalText(entry.subtitle, 300) || !optionalText(entry.summary, 1_000)) break;
+              !optionalText(entry.subtitle, 300) || !optionalText(entry.summary, 1_000) ||
+              !optionalSafeCoverUrl(entry.cover_url)) break;
           items.push({
             id: entry.id,
             title: entry.title,
             ...(entry.kind === undefined ? {} : { kind: entry.kind }),
             ...(entry.subtitle === undefined ? {} : { subtitle: entry.subtitle }),
             ...(entry.summary === undefined ? {} : { summary: entry.summary }),
+            ...(entry.cover_url === undefined ? {} : { cover_url: entry.cover_url }),
           });
         }
         if (items.length === item.items.length) blocks.push({ type: "entities", ...title, items });

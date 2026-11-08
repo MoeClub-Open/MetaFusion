@@ -447,7 +447,7 @@ export function MissionWorkspacePanel({
                 {mission.error && <p className="text-danger">{mission.error}</p>}
               </div>
 
-              {mission.summary && <div className="rounded-control border border-line p-3 text-sm"><MarkdownRenderer content={mission.summary} /></div>}
+              {mission.summary && <div className="rounded-control border border-line p-3 text-sm"><MarkdownRenderer content={mission.summary} interactive /></div>}
 
               {mission.plan.length > 0 && <div className="rounded-control border border-line-subtle p-3">
                 <div className="mb-2 text-xs font-medium text-text-muted">{t("assistant.mission.plan")}</div>

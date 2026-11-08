@@ -177,6 +177,13 @@ func relationshipEntitiesFrom(ctx context.Context, q queryer, ids []string, u *U
 		if e.Translations == nil {
 			e.Translations = map[string]Translation{}
 		}
+		for locale, tr := range e.Translations {
+			tr.Body = ""
+			if r := []rune(tr.Summary); len(r) > 240 {
+				tr.Summary = string(r[:240]) + "…"
+			}
+			e.Translations[locale] = tr
+		}
 		out[e.ID] = e
 	}
 	return out, rows.Err()

@@ -166,13 +166,39 @@ func TestAssistantLargeMutationRetainsAuthoritativeOutcome(t *testing.T) {
 }
 
 func TestAssistantSearchSummariesNeverIncludeArticleOrOwner(t *testing.T) {
-	result := assistantEntitySummaries([]catalog.Entity{{ID: "entity", Kind: "work", Title: "Original", CreatedBy: "owner", Translations: map[string]catalog.Translation{"ja": {Title: "Original", Body: "large article", Aliases: []string{"alias"}}}}})
+	result := assistantEntitySummaries([]catalog.Entity{{
+		ID: "entity", Kind: "work", Title: "Original", State: "active", CreatedBy: "owner",
+		Pictures:     catalog.PicturesJSON{{URL: "/api/storage/cover.jpg"}},
+		Translations: map[string]catalog.Translation{"ja": {Title: "Original", Summary: "Short summary", Body: "large article", Aliases: []string{"alias"}}, "zh-CN": {Title: "译名"}},
+	}})
 	raw, _ := json.Marshal(result)
 	if strings.Contains(string(raw), "large article") || strings.Contains(string(raw), "owner") {
 		t.Fatalf("summary leaked unrelated data: %s", raw)
 	}
-	if len(result) != 1 || result[0]["title"] != "Original" {
+	if len(result) != 1 || result[0]["title"] != "Original" || result[0]["cover_url"] != "/api/storage/cover.jpg" || result[0]["summary"] != "Short summary" || result[0]["work_id"] != nil {
 		t.Fatalf("summary lost the source title: %#v", result)
+	}
+	relOut := assistantRelationshipsOutput(context.Background(), nil, catalog.RelationshipQueryResponse{
+		DefinitionETag: "etag-1",
+		Pages: []catalog.RelationshipQueryPage{{
+			SubjectID: "sub-1",
+			Limit:     10,
+			Items: []catalog.EntityLink{{
+				Key: "k1", RuleCode: "relation:member_of", Class: "semantic", Direction: "incoming",
+				SourceID: "peer-1", TargetID: "sub-1",
+				References: []catalog.RelationshipReference{{Field: "character", EntityID: "char-1"}},
+			}},
+		}},
+		Entities: map[string]catalog.RelationshipEntity{
+			"sub-1":  {ID: "sub-1", Kind: "agent", Title: "Roselia"},
+			"peer-1": {ID: "peer-1", Kind: "agent", Title: "湊友希那", Translations: map[string]catalog.Translation{"zh-CN": {Title: "凑友希那", Body: "huge body"}}},
+			"char-1": {ID: "char-1", Kind: "agent", Title: "湊友希那（角色）"},
+		},
+		UnavailableIDs: []string{},
+	}, nil)
+	relRaw, _ := json.Marshal(relOut)
+	if strings.Contains(string(relRaw), "huge body") || !strings.Contains(string(relRaw), "湊友希那") || !strings.Contains(string(relRaw), "peer_title") {
+		t.Fatalf("relationship projection was not compacted or enriched: %s", relRaw)
 	}
 }
 

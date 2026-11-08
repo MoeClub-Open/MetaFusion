@@ -109,6 +109,30 @@ function GeneratedChart({ block, label }: { block: ChartBlock; label?: string })
   );
 }
 
+function EntityCoverThumb({ url, title }: { url?: string; title: string }) {
+  const [failed, setFailed] = useState(false);
+  const initial = (title.trim()[0] || "?").toUpperCase();
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt={title}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="h-14 w-14 shrink-0 rounded-control border border-line-subtle bg-surfaceSubtle object-cover"
+      />
+    );
+  }
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-control border border-line-subtle bg-surfaceSubtle text-xs font-semibold text-text-muted"
+    >
+      {initial}
+    </div>
+  );
+}
+
 function EntitiesGrid({ block }: { block: EntitiesBlock }) {
   const { tr } = useI18n();
   const [query, setQuery] = useState("");
@@ -144,6 +168,7 @@ function EntitiesGrid({ block }: { block: EntitiesBlock }) {
             href={`/catalog/${item.id}`}
             className="group flex items-start justify-between gap-2.5 rounded-control border border-line bg-background p-2.5 transition-colors hover:border-primary/40 hover:bg-primary/5"
           >
+            <EntityCoverThumb url={item.cover_url} title={item.title} />
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex items-center gap-1.5">
                 {item.kind && (

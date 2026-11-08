@@ -260,7 +260,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"items": assistantEntitySummaries(page.Items), "total": page.Total, "total_relation": page.TotalRelation, "has_more": page.HasMore, "next_cursor": page.NextCursor, "projection": "summary"}, nil
+			return map[string]any{"items": assistantEntitySummariesWithCovers(ctx, s, page.Items, &u), "total": page.Total, "total_relation": page.TotalRelation, "has_more": page.HasMore, "next_cursor": page.NextCursor, "projection": "summary"}, nil
 		}
 		if in.Cursor != "" {
 			return nil, errors.New("invalid_search_cursor")
@@ -273,7 +273,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"items": assistantEntitySummaries(items), "total": total, "total_relation": "eq", "has_more": int64(in.Offset+len(items)) < total, "offset": in.Offset, "limit": limit, "projection": "summary"}, nil
+		return map[string]any{"items": assistantEntitySummariesWithCovers(ctx, s, items, &u), "total": total, "total_relation": "eq", "has_more": int64(in.Offset+len(items)) < total, "offset": in.Offset, "limit": limit, "projection": "summary"}, nil
 	case "catalog_get":
 		var in struct {
 			ID     string   `json:"id"`
@@ -286,7 +286,16 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 			return nil, errors.New("invalid_fields")
 		}
 		entity, err := s.Get(ctx, in.ID, &u)
-		if err != nil || len(in.Fields) == 0 {
+		if err != nil {
+			return entity, err
+		}
+		if len(in.Fields) == 0 {
+			for loc, tr := range entity.Translations {
+				if r := []rune(tr.Body); len(r) > 1500 {
+					tr.Body = string(r[:1500]) + "… (truncated; pass fields=[\"translations\"] for full body)"
+					entity.Translations[loc] = tr
+				}
+			}
 			return entity, err
 		}
 		raw, err := json.Marshal(entity)
@@ -297,7 +306,10 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err = json.Unmarshal(raw, &all); err != nil {
 			return nil, err
 		}
-		selected := map[string]any{"id": entity.ID, "url": "/catalog/" + entity.ID, "version": entity.Version}
+		selected := map[string]any{"id": entity.ID, "kind": entity.Kind, "title": entity.Title, "url": "/catalog/" + entity.ID, "version": entity.Version}
+		if len(entity.Pictures) > 0 && strings.TrimSpace(entity.Pictures[0].URL) != "" {
+			selected["cover_url"] = strings.TrimSpace(entity.Pictures[0].URL)
+		}
 		for _, field := range in.Fields {
 			v, exists := all[field]
 			if !exists {
@@ -322,7 +334,11 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if in.Offset != nil && (*in.Offset < 0 || *in.Offset > 1000000) {
 			return nil, errors.New("invalid_offset")
 		}
-		return s.QueryRelationships(ctx, in, &u)
+		out, err := s.QueryRelationships(ctx, in, &u)
+		if err != nil {
+			return nil, err
+		}
+		return assistantRelationshipsOutput(ctx, s, out, &u), nil
 	case "catalog_candidates":
 		var in catalog.IdentityCandidateQuery
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
@@ -710,12 +726,198 @@ func assistantEntitySummaries(items []catalog.Entity) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for _, e := range items {
 		titles := map[string]string{}
+		summary := ""
 		for locale, tr := range e.Translations {
-			titles[locale] = tr.Title
+			if tr.Title != "" && tr.Title != e.Title {
+				titles[locale] = tr.Title
+			}
+			if summary == "" && strings.TrimSpace(tr.Summary) != "" {
+				summary = truncateRunes(strings.TrimSpace(tr.Summary), 160)
+			}
 		}
-		out = append(out, map[string]any{"id": e.ID, "kind": e.Kind, "url": "/catalog/" + e.ID, "version": e.Version, "title": e.Title, "original_language": e.OriginalLanguage, "titles": titles, "state": e.State, "work_id": e.WorkID, "content_unit_id": e.ContentUnitID, "release_id": e.ReleaseID, "medium_id": e.MediumID, "parent_id": e.ParentID})
+		item := map[string]any{"id": e.ID, "kind": e.Kind, "url": "/catalog/" + e.ID, "version": e.Version, "title": e.Title}
+		if e.OriginalLanguage != "" {
+			item["original_language"] = e.OriginalLanguage
+		}
+		if len(titles) > 0 {
+			item["titles"] = titles
+		}
+		if summary != "" {
+			item["summary"] = summary
+		}
+		if len(e.Pictures) > 0 && strings.TrimSpace(e.Pictures[0].URL) != "" {
+			item["cover_url"] = strings.TrimSpace(e.Pictures[0].URL)
+		}
+		if e.State != "" && e.State != "active" {
+			item["state"] = e.State
+		}
+		if e.WorkID != "" {
+			item["work_id"] = e.WorkID
+		}
+		if e.ContentUnitID != "" {
+			item["content_unit_id"] = e.ContentUnitID
+		}
+		if e.ReleaseID != "" {
+			item["release_id"] = e.ReleaseID
+		}
+		if e.MediumID != "" {
+			item["medium_id"] = e.MediumID
+		}
+		if e.ParentID != "" {
+			item["parent_id"] = e.ParentID
+		}
+		out = append(out, item)
 	}
 	return out
+}
+
+func truncateRunes(s string, max int) string {
+	if r := []rune(s); len(r) > max {
+		return string(r[:max]) + "…"
+	}
+	return s
+}
+
+func assistantEntitySummariesWithCovers(ctx context.Context, s *catalog.Store, items []catalog.Entity, u *catalog.User) []map[string]any {
+	out := assistantEntitySummaries(items)
+	if s == nil || s.DB == nil || len(items) == 0 {
+		return out
+	}
+	if covers, err := s.DisplayCovers(ctx, items, u); err == nil && len(covers) > 0 {
+		for i, e := range items {
+			if _, hasOwn := out[i]["cover_url"]; !hasOwn {
+				if c, ok := covers[e.ID]; ok && strings.TrimSpace(c.URL) != "" {
+					out[i]["cover_url"] = strings.TrimSpace(c.URL)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func assistantRelationshipsOutput(ctx context.Context, s *catalog.Store, out catalog.RelationshipQueryResponse, u *catalog.User) map[string]any {
+	covers := map[string]string{}
+	if s != nil && s.DB != nil && len(out.Entities) > 0 {
+		ids := make([]string, 0, len(out.Entities))
+		for id := range out.Entities {
+			ids = append(ids, id)
+		}
+		for start := 0; start < len(ids); start += 100 {
+			end := start + 100
+			if end > len(ids) {
+				end = len(ids)
+			}
+			if batch, err := s.EntityBatch(ctx, catalog.EntityBatchRequest{IDs: ids[start:end]}, u); err == nil {
+				for id, ent := range batch.Items {
+					if len(ent.Pictures) > 0 && strings.TrimSpace(ent.Pictures[0].URL) != "" {
+						covers[id] = strings.TrimSpace(ent.Pictures[0].URL)
+					} else if c, ok := batch.Covers[id]; ok && strings.TrimSpace(c.URL) != "" {
+						covers[id] = strings.TrimSpace(c.URL)
+					}
+				}
+			}
+		}
+	}
+	entities := make(map[string]map[string]any, len(out.Entities))
+	for id, e := range out.Entities {
+		titles := map[string]string{}
+		summary := ""
+		for locale, tr := range e.Translations {
+			if tr.Title != "" && tr.Title != e.Title {
+				titles[locale] = tr.Title
+			}
+			if summary == "" && strings.TrimSpace(tr.Summary) != "" {
+				summary = truncateRunes(strings.TrimSpace(tr.Summary), 160)
+			}
+		}
+		item := map[string]any{"id": e.ID, "kind": e.Kind, "version": e.Version, "title": e.Title, "url": "/catalog/" + e.ID}
+		if e.OriginalLanguage != "" {
+			item["original_language"] = e.OriginalLanguage
+		}
+		if len(titles) > 0 {
+			item["titles"] = titles
+		}
+		if summary != "" {
+			item["summary"] = summary
+		}
+		if c := covers[id]; c != "" {
+			item["cover_url"] = c
+		}
+		entities[id] = item
+	}
+	pages := make([]map[string]any, 0, len(out.Pages))
+	for _, p := range out.Pages {
+		items := make([]map[string]any, 0, len(p.Items))
+		for _, link := range p.Items {
+			peerID := link.TargetID
+			if peerID == p.SubjectID {
+				peerID = link.SourceID
+			}
+			peer := out.Entities[peerID]
+			edge := map[string]any{
+				"key":        link.Key,
+				"rule_code":  link.RuleCode,
+				"class":      link.Class,
+				"direction":  link.Direction,
+				"source_id":  link.SourceID,
+				"target_id":  link.TargetID,
+				"peer_id":    peerID,
+				"peer_kind":  peer.Kind,
+				"peer_title": peer.Title,
+			}
+			if link.Version != nil && *link.Version > 0 {
+				edge["version"] = *link.Version
+			}
+			if link.Position != 0 {
+				edge["position"] = link.Position
+			}
+			if link.Role != "" {
+				edge["role"] = link.Role
+			}
+			if link.Field != "" {
+				edge["field"] = link.Field
+			}
+			if len(link.Locator) > 0 {
+				edge["locator"] = link.Locator
+			}
+			if len(link.Attributes) > 0 {
+				edge["attributes"] = link.Attributes
+			}
+			if len(link.References) > 0 {
+				refs := make([]map[string]any, 0, len(link.References))
+				for _, r := range link.References {
+					rm := map[string]any{"field": r.Field, "entity_id": r.EntityID}
+					if refEnt, ok := out.Entities[r.EntityID]; ok {
+						if refEnt.Kind != "" {
+							rm["kind"] = refEnt.Kind
+						}
+						if refEnt.Title != "" {
+							rm["title"] = refEnt.Title
+						}
+					}
+					refs = append(refs, rm)
+				}
+				edge["references"] = refs
+			}
+			if len(link.Via) > 0 {
+				edge["via"] = link.Via
+			}
+			items = append(items, edge)
+		}
+		pages = append(pages, map[string]any{
+			"subject_id": p.SubjectID,
+			"items":      items,
+			"limit":      p.Limit,
+			"offset":     p.Offset,
+			"has_more":   p.HasMore,
+		})
+	}
+	return map[string]any{
+		"definition_etag": out.DefinitionETag,
+		"pages":           pages,
+		"entities":        entities,
+		"unavailable_ids": out.UnavailableIDs,
+	}
 }
 
 func assistantCollaborationPageLimit(value *int, offset int) (int, error) {
