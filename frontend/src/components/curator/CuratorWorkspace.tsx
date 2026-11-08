@@ -60,6 +60,9 @@ export function CuratorWorkspace({
   const [loading, setLoading] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
   const pending = useRef<{ message: string; id: string } | null>(null);
+  const handleMissionChanged = useCallback(() => {
+    void onQueued();
+  }, [onQueued]);
 
   const load = useCallback(async () => {
     const next = await curatorRequest<CuratorPage<CuratorRun>>(`/runs?kind=manager&limit=25&offset=${offset}`);
@@ -106,7 +109,7 @@ export function CuratorWorkspace({
       <button type="button" onClick={() => setMode("sessions")} className={`rounded-control px-3 py-1.5 text-xs font-medium ${mode === "sessions" ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle"}`}>{t("curator.mode.sessions")}</button>
     </div>
     {mode === "missions" ? (
-      <MissionWorkspacePanel scope="curator" request={curatorRequest} mayWrite={mayWrite} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={defaultModelID} defaultWorkerModelID={defaultWorkerModelID} defaultReasoningEffort={defaultReasoningEffort} defaultWorkerReasoningEffort={defaultWorkerReasoningEffort} defaultBudget={120} onChanged={() => { void onQueued(); }} />
+      <MissionWorkspacePanel scope="curator" request={curatorRequest} mayWrite={mayWrite} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={defaultModelID} defaultWorkerModelID={defaultWorkerModelID} defaultReasoningEffort={defaultReasoningEffort} defaultWorkerReasoningEffort={defaultWorkerReasoningEffort} defaultBudget={120} onChanged={handleMissionChanged} />
     ) : (
     <div className="overflow-hidden rounded-control border border-line bg-surface">
       {error && <p role="alert" className="border-b border-line px-3 py-2 text-xs text-danger">{error}</p>}

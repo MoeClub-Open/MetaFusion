@@ -370,7 +370,11 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.EditWorkspace(ctx, in.WorkspaceID, in.WorkspaceEdit, u)
+		out, err := s.EditWorkspace(ctx, in.WorkspaceID, in.WorkspaceEdit, u)
+		if err != nil {
+			return nil, err
+		}
+		return assistantWorkspaceOutput(out), nil
 	case "catalog_workspace_checkout":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")
@@ -382,7 +386,11 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.CheckoutWorkspace(ctx, in.WorkspaceID, in.WorkspaceCheckout, u)
+		out, err := s.CheckoutWorkspace(ctx, in.WorkspaceID, in.WorkspaceCheckout, u)
+		if err != nil {
+			return nil, err
+		}
+		return assistantWorkspaceOutput(out), nil
 	case "catalog_workspace_stage":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")
@@ -397,7 +405,12 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if len(in.Operations) > 25 {
 			return nil, errors.New("invalid_workspace_size")
 		}
-		return s.SaveWorkspaceChanges(ctx, in.WorkspaceID, in.WorkspaceChanges, u)
+		out, err := s.SaveWorkspaceChanges(ctx, in.WorkspaceID, in.WorkspaceChanges, u)
+		if err != nil {
+			return nil, err
+		}
+		out.Workspace = assistantWorkspaceOutput(out.Workspace)
+		return out, nil
 	case "catalog_workspace_members":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")
@@ -409,7 +422,11 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.SetWorkspaceMembers(ctx, in.WorkspaceID, in.WorkspaceMembersEdit, u)
+		out, err := s.SetWorkspaceMembers(ctx, in.WorkspaceID, in.WorkspaceMembersEdit, u)
+		if err != nil {
+			return nil, err
+		}
+		return assistantWorkspaceOutput(out), nil
 	case "catalog_workspace_commit":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")
@@ -433,7 +450,15 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.PushWorkspace(ctx, in.WorkspaceID, in.WorkspacePush, u)
+		out, err := s.PushWorkspace(ctx, in.WorkspaceID, in.WorkspacePush, u)
+		if err != nil {
+			return nil, err
+		}
+		if out.Workspace != nil {
+			ws := assistantWorkspaceOutput(*out.Workspace)
+			out.Workspace = &ws
+		}
+		return out, nil
 	case "catalog_workspace_rebase":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")
@@ -445,7 +470,12 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.RebaseWorkspace(ctx, in.WorkspaceID, in.WorkspaceRebase, u)
+		out, err := s.RebaseWorkspace(ctx, in.WorkspaceID, in.WorkspaceRebase, u)
+		if err != nil {
+			return nil, err
+		}
+		out.Workspace = assistantWorkspaceOutput(out.Workspace)
+		return out, nil
 	case "catalog_workspace_create":
 		if u.ID == "" || u.IsThirdParty {
 			return nil, errors.New("forbidden")
@@ -457,7 +487,11 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if len(in.EntityIDs)+len(in.RelationIDs) > 25 {
 			return nil, errors.New("invalid_workspace_size")
 		}
-		return s.CreateWorkspace(ctx, in, u)
+		out, err := s.CreateWorkspace(ctx, in, u)
+		if err != nil {
+			return nil, err
+		}
+		return assistantWorkspaceOutput(out), nil
 	case "catalog_workspace_list":
 		var in struct {
 			Limit  *int `json:"limit"`
@@ -478,7 +512,11 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err := decodeAssistantToolArgs(args, &in); err != nil {
 			return nil, err
 		}
-		return s.GetWorkspace(ctx, in.WorkspaceID, u)
+		out, err := s.GetWorkspace(ctx, in.WorkspaceID, u)
+		if err != nil {
+			return nil, err
+		}
+		return assistantWorkspaceOutput(out), nil
 	case "catalog_workspace_commits":
 		var in struct {
 			WorkspaceID string `json:"workspace_id"`
@@ -931,4 +969,18 @@ func assistantCollaborationPageLimit(value *int, offset int) (int, error) {
 		return 0, errors.New("invalid_pagination")
 	}
 	return limit, nil
+}
+
+func assistantWorkspaceOutput(ws catalog.Workspace) catalog.Workspace {
+	if len(ws.Objects) == 0 {
+		return ws
+	}
+	objects := make([]catalog.WorkspaceObject, len(ws.Objects))
+	copy(objects, ws.Objects)
+	for i := range objects {
+		objects[i].Base = nil
+		objects[i].Committed = nil
+	}
+	ws.Objects = objects
+	return ws
 }

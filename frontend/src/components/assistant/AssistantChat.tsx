@@ -326,9 +326,16 @@ function AssistantWorkspace() {
     setShowConversations(false);
     pendingRequest.current = null;
   };
+  const handleBalance = useCallback((balance: AssistantAccount) => {
+    setAccount((prev) => {
+      if (!prev) return prev;
+      if (prev.balance.credits === balance.credits && prev.balance.reserved_credits === balance.reserved_credits && prev.balance.available_credits === balance.available_credits) return prev;
+      return { ...prev, balance };
+    });
+  }, []);
 
   const conversationList = <div className="flex h-full min-h-0 flex-col gap-3">
-    <button type="button" disabled={submitting} onClick={startNewChat} className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-sm font-medium disabled:opacity-40"><Plus className="size-4" />{t("assistant.user.newChat")}</button>
+    <button type="button" disabled={submitting} onClick={startNewChat} className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-sm font-medium disabled:opacity-40"><Plus className="size-4" /><span>{t("assistant.user.newChat")}</span></button>
     <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5"><Search className="size-3.5 shrink-0 text-text-muted" /><input type="search" aria-label={t("assistantUI.searchChats")} placeholder={t("assistantUI.searchChats")} value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} className="h-8 min-w-0 w-full bg-transparent text-xs outline-none" /></label>
     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto lg:max-h-[62vh]">
       {conversations.filter((item) => (item.title || "").toLocaleLowerCase().includes(conversationSearch.toLocaleLowerCase())).map((item) => {
@@ -366,12 +373,12 @@ function AssistantWorkspace() {
 
   return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle pb-2">
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={"assistant-panel-" + id} id={"assistant-tab-" + id} onClick={() => setTab(id)} className={"inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-control px-3 py-2 text-sm " + (tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle")}><Icon className="size-4 shrink-0" />{t("assistant.user." + id)}</button>)}</div>
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={"assistant-panel-" + id} id={"assistant-tab-" + id} onClick={() => setTab(id)} className={"inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-control px-3 py-2 text-sm " + (tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle")}><Icon className="size-4 shrink-0" /><span>{t("assistant.user." + id)}</span></button>)}</div>
       {account && tab !== "chat" && <span className="text-xs text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}
     </div>
     {error && <p role="alert" className="rounded-control border border-danger/20 bg-danger/5 p-3 text-sm text-danger">{error}</p>}
     {tab === "chat" && <section id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="overflow-hidden rounded-panel border border-line bg-surface">
-      <button type="button" onClick={() => setShowConversations((value) => !value)} aria-expanded={showConversations} className="flex w-full items-center gap-2 border-b border-line-subtle px-4 py-3 text-sm text-text-muted lg:hidden"><PanelLeft className="size-4" />{t("assistantUI.conversations")}</button>
+      <button type="button" onClick={() => setShowConversations((value) => !value)} aria-expanded={showConversations} className="flex w-full items-center gap-2 border-b border-line-subtle px-4 py-3 text-sm text-text-muted lg:hidden"><PanelLeft className="size-4" /><span>{t("assistantUI.conversations")}</span></button>
       <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="hidden min-w-0 flex-col border-r border-line-subtle bg-surfaceSubtle p-3 lg:flex">{conversationList}</aside>
         <div className="flex min-w-0 flex-col lg:h-[calc(100dvh-16rem)] lg:min-h-[34rem]">
@@ -380,11 +387,11 @@ function AssistantWorkspace() {
             <span className="text-xs text-text-muted">{activeModelName}{activeModelEffort ? " · " + t("assistant.reasoning." + activeModelEffort) : ""}</span>
           </header>
           <div role="log" aria-live="polite" aria-busy={currentRunning || loading} className="min-h-[22rem] flex-1 space-y-6 overflow-y-auto px-4 py-6 sm:px-6">
-            {loading && <p role="status" className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="size-4 animate-spin" />{t("common.loading")}</p>}
+            {loading && <p role="status" className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="size-4 animate-spin" /><span>{t("common.loading")}</span></p>}
             {!messages.length && !currentRunning && !loading && <div className="flex h-full flex-col justify-center px-4 py-8 text-center">
               <span className="mx-auto mb-4 grid size-10 place-items-center rounded-control border border-primary/20 bg-primary/10 text-primary"><Sparkles className="size-5" /></span>
               <h2 className="text-xl font-semibold text-text-strong">{t("assistantUI.welcome")}</h2><p className="mt-2 text-sm leading-relaxed text-text-muted">{t("assistant.user.startHint")}</p>
-              <div className="mt-6 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t("assistantUI.prompt." + key)); document.getElementById("assistant-message")?.focus(); }} className="rounded-control border border-line px-3 py-3 text-left text-xs leading-relaxed text-text-body hover:border-primary/40 hover:bg-primary/5"><ArrowUpRight className="mb-2 size-4 text-primary" />{t("assistantUI.example." + key)}</button>)}</div>
+              <div className="mt-6 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t("assistantUI.prompt." + key)); document.getElementById("assistant-message")?.focus(); }} className="rounded-control border border-line px-3 py-3 text-left text-xs leading-relaxed text-text-body hover:border-primary/40 hover:bg-primary/5"><ArrowUpRight className="mb-2 size-4 text-primary" /><span>{t("assistantUI.example." + key)}</span></button>)}</div>
               {!models.length && !activeBYOModels.length && <p className="mt-5 text-xs text-text-muted">{t("assistantUI.modelsUnavailable")}</p>}
             </div>}
             {chatTurns.map((item, index) => <article key={index} className={item.role === "user" ? "ml-auto max-w-[90%] rounded-control border border-line-subtle bg-surfaceSubtle px-4 py-3" : "min-w-0 space-y-2.5"}>
@@ -437,7 +444,7 @@ function AssistantWorkspace() {
       </div>
     </section>}
     {tab === "missions" && <section id="assistant-panel-missions" role="tabpanel" aria-labelledby="assistant-tab-missions">
-      <MissionWorkspacePanel scope="user" request={assistantRequest} allowDelete canBypassReview={canBypassReview} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={modelID} defaultReasoningEffort={reasoningEffort} onBalance={(balance) => setAccount((prev) => prev ? { ...prev, balance } : prev)} />
+      <MissionWorkspacePanel scope="user" request={assistantRequest} allowDelete canBypassReview={canBypassReview} models={models} byoProviders={byoProviders} byoModels={byoModels} searchProviders={searchProviders} defaultModelID={modelID} defaultReasoningEffort={reasoningEffort} onBalance={handleBalance} />
     </section>}
     {tab === "credentials" && <div id="assistant-panel-credentials" role="tabpanel" aria-labelledby="assistant-tab-credentials"><AssistantCredentials providers={byoProviders} models={byoModels} onChanged={loadBYO} /></div>}
     {tab === "usage" && <div id="assistant-panel-usage" role="tabpanel" aria-labelledby="assistant-tab-usage"><AssistantUsagePanel models={models} byoModels={byoModels} /></div>}
