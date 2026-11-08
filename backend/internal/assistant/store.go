@@ -223,7 +223,7 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 	return scanSettings(s.DB.QueryRowContext(ctx, `SELECT `+settingsColumns+` FROM assistant.settings WHERE singleton`))
 }
 func (s *Store) SaveSettings(ctx context.Context, v Settings) (Settings, error) {
-	if v.RegistrationCredits < 0 || v.AcceptedEditCredits < 0 || v.MonthlyBudgetMicroUSD < 0 || v.MaxToolRounds < 1 || v.MaxToolRounds > 12 || v.RewardEffectiveAt.IsZero() || (v.DefaultModelID != "" && !validID(v.DefaultModelID)) {
+	if v.RegistrationCredits < 0 || v.AcceptedEditCredits < 0 || v.MonthlyBudgetMicroUSD < 0 || v.MaxToolRounds < 1 || v.MaxToolRounds > 24 || v.RewardEffectiveAt.IsZero() || (v.DefaultModelID != "" && !validID(v.DefaultModelID)) {
 		return Settings{}, fmt.Errorf("assistant_invalid_settings")
 	}
 	return scanSettings(s.DB.QueryRowContext(ctx, `UPDATE assistant.settings SET enabled=$1,default_model_id=$2,registration_credits=$3,accepted_edit_credits=$4,reward_effective_at=$5,monthly_budget_microusd=$6,max_tool_rounds=$7,updated_at=now() WHERE singleton RETURNING `+settingsColumns, v.Enabled, nullableID(v.DefaultModelID), v.RegistrationCredits, v.AcceptedEditCredits, v.RewardEffectiveAt, v.MonthlyBudgetMicroUSD, v.MaxToolRounds))

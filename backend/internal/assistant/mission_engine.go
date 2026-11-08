@@ -973,6 +973,16 @@ func (e *MissionEngine) runSingleWorker(ctx context.Context, m Mission, task Mis
 	finalReport := extractWorkerReport(reported, result.Answer, task.AnchorEntityIDs)
 	status := "completed"
 	errCode := ""
+	if runErr != nil && safeRuntimeCode(runErr) == "assistant_tool_round_limit" && (reported != nil || observedMerged || observedPRID != "") {
+		runErr = nil
+		if finalReport.Summary == "" {
+			if observedMerged {
+				finalReport.Summary = "已完成工作副本提交并合入正式目录（workspace=" + observedWorkspaceID + "）。"
+			} else if observedPRID != "" {
+				finalReport.Summary = "已完成工作副本提交并创建拉取请求（PR=" + observedPRID + "）。"
+			}
+		}
+	}
 	if runErr != nil {
 		if errors.Is(runErr, ErrBudgetExceeded) || errors.Is(runErr, ErrInsufficientCredits) {
 			out.budgetHit = true
