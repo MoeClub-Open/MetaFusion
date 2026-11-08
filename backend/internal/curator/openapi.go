@@ -22,7 +22,7 @@ func AddOpenAPI(paths, schemas map[string]any) {
 			"limit": integer(), "offset": integer(),
 		}, "items", "total", "limit", "offset")
 	}
-	reasoningEffortProp := map[string]any{"type": "string", "enum": []string{"", "none", "minimal", "low", "medium", "high", "xhigh"}, "default": ""}
+	reasoningEffortProp := map[string]any{"type": "string", "enum": []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max"}, "default": ""}
 	schemas["CuratorExecutionConfig"] = object(map[string]any{
 		"child_model_id": str(), "reasoning_effort": reasoningEffortProp, "child_reasoning_effort": reasoningEffortProp, "billing_owner_id": map[string]any{"type": "string", "readOnly": true}, "search_provider_id": str(), "search_byo_provider_id": str(), "max_children": integer(), "allow_reviews": boolean(), "auto_merge_reviews": boolean(),
 	})

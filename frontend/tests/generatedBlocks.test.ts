@@ -63,6 +63,7 @@ test("generated rendering escapes HTML, uses UUID-only entity links and supplies
     { type: "timeline", events: [{ date: "2026", title: "Record", entity_id: "01a10136-c0f1-7eb5-a66c-112270350f28" }] },
     { type: "timeline", events: [{ date: "2026", title: "Unsafe", entity_id: "javascript:alert(1)" }] },
     { type: "chart", title: "Measurements", chart_type: "line", labels: ["A", "B"], series: [{ name: "Amount", values: [-Number.MAX_VALUE, Number.MAX_VALUE] }] },
+    { type: "entities", title: "Bands", items: [{ id: "01a10136-c0f1-7eb5-a66c-112270350f28", kind: "agent", title: "Poppin'Party", subtitle: "ポッピンパーティー" }] },
   ] }));
   assert.equal(html.includes("<script"), false);
   assert.equal(html.includes("<img"), false);

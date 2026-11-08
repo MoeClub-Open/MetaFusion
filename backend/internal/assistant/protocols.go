@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
-var ReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+var ReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 
 func ValidReasoningEffort(effort string) bool {
 	switch effort {
-	case "", "none", "minimal", "low", "medium", "high", "xhigh":
+	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
 		return true
 	}
 	return false
@@ -34,6 +34,8 @@ func anthropicThinkingBudget(effort string, maxOutputTokens int64) int64 {
 		target = 8192
 	case "xhigh":
 		target = 16384
+	case "max":
+		target = 32000
 	default:
 		return 0
 	}
@@ -65,6 +67,8 @@ func geminiThinkingBudget(effort string, maxOutputTokens int64) int64 {
 		target = 8192
 	case "xhigh":
 		target = 16384
+	case "max":
+		target = 24576
 	default:
 		return 0
 	}

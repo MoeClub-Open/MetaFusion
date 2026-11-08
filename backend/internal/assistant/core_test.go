@@ -131,4 +131,7 @@ func TestCompletionRequiresUsageAndKeepsToolCalls(t *testing.T) {
 	if tc, _ := gc["thinkingConfig"].(map[string]any); tc["thinkingBudget"] != float64(1024) {
 		t.Fatalf("gemini_generate_content thinkingBudget not mapped: %v", payload)
 	}
+	if !ValidReasoningEffort("max") || anthropicThinkingBudget("max", 40000) != 32000 || geminiThinkingBudget("max", 30000) != 24576 {
+		t.Fatal("max reasoning effort budget mapping failed")
+	}
 }

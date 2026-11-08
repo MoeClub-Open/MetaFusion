@@ -1,7 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowUpRight, Search } from "lucide-react";
+import { useI18n } from "@/i18n/I18nProvider";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { parseGeneratedBlocks, type GeneratedBlock } from "@/lib/generatedBlocks";
@@ -10,20 +12,50 @@ export type { GeneratedBlock } from "@/lib/generatedBlocks";
 export { parseGeneratedBlocks } from "@/lib/generatedBlocks";
 
 type ChartBlock = Extract<GeneratedBlock, { type: "chart" }>;
+type EntitiesBlock = Extract<GeneratedBlock, { type: "entities" }>;
 const COLORS = ["text-primary", "text-success", "text-warn", "text-violet-500", "text-rose-500", "text-cyan-600", "text-orange-500", "text-text-muted"];
 
 function DataTable({ columns, rows, caption, rowHeadings = false }: { columns: string[]; rows: string[][]; caption?: string; rowHeadings?: boolean }) {
+  const { tr } = useI18n();
+  const [query, setQuery] = useState("");
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase();
+    const filtered = q ? rows.filter((r) => r.some((cell) => cell.toLocaleLowerCase().includes(q))) : rows;
+    if (sortCol === null) return filtered;
+    return [...filtered].sort((a, b) => {
+      const av = a[sortCol] ?? "";
+      const bv = b[sortCol] ?? "";
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [rows, query, sortCol, sortAsc]);
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-2">
+      {rows.length > 4 && !rowHeadings && (
+        <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5 py-1 text-xs">
+          <Search className="size-3.5 shrink-0 text-text-muted" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={tr("assistantUI.filterTable", "Filter items…")}
+            className="w-full bg-transparent text-xs text-text-strong outline-none"
+          />
+        </label>
+      )}
+      <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-line text-left text-xs sm:text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
-        <thead><tr>{columns.map((column, index) => <th key={index} scope="col" className="whitespace-nowrap px-3 py-2 font-medium text-text-strong">{column}</th>)}</tr></thead>
-        <tbody className="divide-y divide-line-subtle">{rows.map((row, rowIndex) => (
+        <thead><tr>{columns.map((column, index) => <th key={index} scope="col" onClick={!rowHeadings && rows.length > 1 ? () => { if (sortCol === index) setSortAsc((v) => !v); else { setSortCol(index); setSortAsc(true); } } : undefined} className={"whitespace-nowrap px-3 py-2 font-medium text-text-strong" + (!rowHeadings && rows.length > 1 ? " cursor-pointer select-none hover:text-primary" : "")}>{column}{sortCol === index ? (sortAsc ? " ↑" : " ↓") : ""}</th>)}</tr></thead>
+        <tbody className="divide-y divide-line-subtle">{visibleRows.map((row, rowIndex) => (
           <tr key={rowIndex}>{row.map((cell, cellIndex) => rowHeadings && cellIndex === 0
             ? <th key={cellIndex} scope="row" className="whitespace-pre-wrap px-3 py-2 font-medium text-text-strong">{cell}</th>
             : <td key={cellIndex} className="max-w-sm whitespace-pre-wrap break-words px-3 py-2 text-text-body">{cell}</td>)}</tr>
         ))}</tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -77,7 +109,65 @@ function GeneratedChart({ block, label }: { block: ChartBlock; label?: string })
   );
 }
 
-export default function GeneratedBlocks({ blocks, className = "", chartLabel, tableLabel, timelineLabel }: {
+function EntitiesGrid({ block }: { block: EntitiesBlock }) {
+  const { tr } = useI18n();
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase();
+    if (!q) return block.items;
+    return block.items.filter((item) =>
+      item.title.toLocaleLowerCase().includes(q) ||
+      (item.subtitle || "").toLocaleLowerCase().includes(q) ||
+      (item.summary || "").toLocaleLowerCase().includes(q) ||
+      (item.kind || "").toLocaleLowerCase().includes(q)
+    );
+  }, [block.items, query]);
+  return (
+    <div className="space-y-2.5">
+      {block.items.length > 4 && (
+        <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5 py-1.5 text-xs">
+          <Search className="size-3.5 shrink-0 text-text-muted" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={tr("assistantUI.filterTable", "Filter items…")}
+            className="w-full bg-transparent text-xs text-text-strong outline-none"
+          />
+          <span className="shrink-0 tabular-nums text-[11px] text-text-muted">{filtered.length} / {block.items.length}</span>
+        </label>
+      )}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {filtered.map((item) => (
+          <Link
+            key={item.id}
+            href={`/catalog/${item.id}`}
+            className="group flex items-start justify-between gap-2.5 rounded-control border border-line bg-background p-2.5 transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                {item.kind && (
+                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                    {tr(`kinds.${item.kind}`, item.kind)}
+                  </span>
+                )}
+                <span className="truncate text-xs font-semibold text-text-strong group-hover:text-primary">
+                  {item.title}
+                </span>
+              </div>
+              {item.subtitle && <p className="truncate text-[11px] text-text-muted">{item.subtitle}</p>}
+              {item.summary && <p className="line-clamp-2 text-[11px] text-text-body">{item.summary}</p>}
+              <p className="font-mono text-[10px] text-text-faint">/catalog/{item.id.slice(0, 8)}…</p>
+            </div>
+            <ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-text-faint transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function GeneratedBlocksView({ blocks, className = "", chartLabel, tableLabel, timelineLabel }: {
   blocks: unknown;
   className?: string;
   chartLabel?: string;
@@ -95,6 +185,7 @@ export default function GeneratedBlocks({ blocks, className = "", chartLabel, ta
           {block.type === "markdown" && <MarkdownRenderer content={block.markdown} headingPrefix={`${headingPrefix}-ai-block-${index}`} />}
           {block.type === "table" && <DataTable columns={block.columns} rows={block.rows} caption={block.title || tableLabel} />}
           {block.type === "chart" && <GeneratedChart block={block} label={chartLabel} />}
+          {block.type === "entities" && <EntitiesGrid block={block} />}
           {block.type === "timeline" && <ol className="ml-2 border-l border-line pl-5" aria-label={block.title || timelineLabel}>
             {block.events.map((event, eventIndex) => <li key={eventIndex} className="relative pb-5 last:pb-0">
               <span aria-hidden="true" className="absolute -left-[1.6rem] top-1.5 h-2 w-2 rounded-full bg-primary" />
@@ -108,3 +199,5 @@ export default function GeneratedBlocks({ blocks, className = "", chartLabel, ta
     </div>
   );
 }
+
+export default GeneratedBlocksView;

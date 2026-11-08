@@ -14,7 +14,7 @@ export interface AssistantPage<T> {
 
 export const ASSISTANT_PROTOCOLS = ["openai_compatible", "openai_responses", "anthropic_messages", "gemini_generate_content"] as const;
 export type AssistantProtocol = typeof ASSISTANT_PROTOCOLS[number];
-export const ASSISTANT_REASONING_EFFORTS = ["", "none", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const ASSISTANT_REASONING_EFFORTS = ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type AssistantReasoningEffort = typeof ASSISTANT_REASONING_EFFORTS[number];
 
 export interface AssistantProvider {

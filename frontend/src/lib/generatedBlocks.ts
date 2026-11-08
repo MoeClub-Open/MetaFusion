@@ -2,7 +2,8 @@ export type GeneratedBlock =
   | { type: "markdown"; title?: string; markdown: string }
   | { type: "table"; title?: string; columns: string[]; rows: string[][] }
   | { type: "timeline"; title?: string; events: { date: string; title: string; description?: string; entity_id?: string }[] }
-  | { type: "chart"; title?: string; chart_type: "bar" | "line"; labels: string[]; series: { name: string; values: number[] }[] };
+  | { type: "chart"; title?: string; chart_type: "bar" | "line"; labels: string[]; series: { name: string; values: number[] }[] }
+  | { type: "entities"; title?: string; items: { id: string; kind?: string; title: string; subtitle?: string; summary?: string }[] };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -59,6 +60,24 @@ export function parseGeneratedBlocks(value: unknown): GeneratedBlock[] {
         if (series.length === item.series.length) blocks.push({ type: "chart", ...title, chart_type: item.chart_type, labels: [...item.labels], series });
         break;
       }
+      case "entities": {
+        if (!Array.isArray(item.items) || item.items.length === 0 || item.items.length > 60) break;
+        const items: Extract<GeneratedBlock, { type: "entities" }>["items"] = [];
+        for (const entry of item.items) {
+          if (!record(entry) || typeof entry.id !== "string" || !UUID.test(entry.id) ||
+              !text(entry.title, 300) || !optionalText(entry.kind, 40) ||
+              !optionalText(entry.subtitle, 300) || !optionalText(entry.summary, 1_000)) break;
+          items.push({
+            id: entry.id,
+            title: entry.title,
+            ...(entry.kind === undefined ? {} : { kind: entry.kind }),
+            ...(entry.subtitle === undefined ? {} : { subtitle: entry.subtitle }),
+            ...(entry.summary === undefined ? {} : { summary: entry.summary }),
+          });
+        }
+        if (items.length === item.items.length) blocks.push({ type: "entities", ...title, items });
+        break;
+      }
     }
     if (blocks.length > previousCount) {
       const block = blocks[blocks.length - 1];
@@ -67,6 +86,7 @@ export function parseGeneratedBlocks(value: unknown): GeneratedBlock[] {
       if (block.type === "table") length += [...block.columns, ...block.rows.flat()].reduce((sum, cell) => sum + cell.length, 0);
       if (block.type === "timeline") length += block.events.reduce((sum, event) => sum + event.date.length + event.title.length + (event.description?.length || 0), 0);
       if (block.type === "chart") length += block.labels.reduce((sum, label) => sum + label.length, 0) + block.series.reduce((sum, series) => sum + series.name.length, 0);
+      if (block.type === "entities") length += block.items.reduce((sum, entry) => sum + entry.title.length + (entry.subtitle?.length || 0) + (entry.summary?.length || 0), 0);
       if (length > remainingCharacters) blocks.pop();
       else remainingCharacters -= length;
     }

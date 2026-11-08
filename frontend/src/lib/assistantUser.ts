@@ -15,9 +15,118 @@ export interface AssistantPushReceipt {
   commits: { id: string; merged_at: string | null; changes: { id: string; target: string }[] }[];
   pull_request: { id: string; status: "open" | "merged" | "closed" } | null;
 }
+
+export interface AssistantToolStep {
+  id: string;
+  name: string;
+  arguments: string;
+  output?: string;
+}
+
+export interface AssistantEntityItem {
+  id: string;
+  kind?: string;
+  title: string;
+  subtitle?: string;
+  summary?: string;
+}
+
+export interface AssistantChatTurn {
+  role: "user" | "assistant";
+  content: string;
+  steps: AssistantToolStep[];
+  entities: AssistantEntityItem[];
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 export const pushReceiptKey = (receipt: AssistantPushReceipt) => `${receipt.workspace?.id || receipt.pull_request?.id || ""}:${receipt.workspace?.head_commit_id || receipt.commits.map((commit) => commit.id).join(",")}:${receipt.applied}`;
+
+function extractEntityFromRecord(raw: unknown): AssistantEntityItem | null {
+  if (!record(raw) || typeof raw.id !== "string" || !UUID.test(raw.id) || typeof raw.title !== "string" || !raw.title.trim()) return null;
+  const id = raw.id.toLowerCase();
+  const title = raw.title.trim();
+  const kind = typeof raw.kind === "string" && raw.kind ? raw.kind : undefined;
+  let subtitle: string | undefined;
+  if (record(raw.titles)) {
+    const alt = Object.values(raw.titles).find((v): v is string => typeof v === "string" && !!v.trim() && v.trim() !== title);
+    if (alt) subtitle = alt.trim();
+  } else if (record(raw.translations)) {
+    for (const tr of Object.values(raw.translations)) {
+      if (record(tr) && typeof tr.title === "string" && tr.title.trim() && tr.title.trim() !== title) {
+        subtitle = tr.title.trim();
+        break;
+      }
+    }
+  }
+  return { id, title, ...(kind ? { kind } : {}), ...(subtitle ? { subtitle } : {}) };
+}
+
+export function buildChatTurns(messages: AssistantMessage[]): AssistantChatTurn[] {
+  const toolOutputs = new Map<string, string>();
+  const catalogEntities = new Map<string, AssistantEntityItem>();
+  for (const msg of messages) {
+    if (msg.role === "tool" && msg.tool_call_id) {
+      toolOutputs.set(msg.tool_call_id, msg.content || "");
+      try {
+        const parsed: unknown = JSON.parse(msg.content || "");
+        const root = record(parsed) && record(parsed.result) ? parsed.result : parsed;
+        if (record(root) && Array.isArray(root.items)) {
+          for (const item of root.items) {
+            const ent = extractEntityFromRecord(item);
+            if (ent) catalogEntities.set(ent.id, ent);
+          }
+        } else if (record(root)) {
+          const ent = extractEntityFromRecord(record(root.entity) ? root.entity : root);
+          if (ent) catalogEntities.set(ent.id, ent);
+        }
+      } catch { /* non-JSON or unrelated tool output */ }
+    }
+  }
+
+  const turns: AssistantChatTurn[] = [];
+  let pendingSteps: AssistantToolStep[] = [];
+  let pendingTexts: string[] = [];
+
+  const flushAssistant = () => {
+    if (pendingSteps.length === 0 && pendingTexts.length === 0) return;
+    const content = pendingTexts.join("\n\n").trim();
+    const hasExplicitUIBlock = /```(?:ui|metafusion-ui|html)\b/i.test(content);
+    const matchedEntities: AssistantEntityItem[] = [];
+    if (content && !hasExplicitUIBlock && catalogEntities.size > 0) {
+      const lowerContent = content.toLowerCase();
+      for (const ent of catalogEntities.values()) {
+        if (lowerContent.includes(ent.id) || (ent.title.length >= 3 && lowerContent.includes(ent.title.toLowerCase()))) {
+          matchedEntities.push(ent);
+        }
+      }
+    }
+    turns.push({ role: "assistant", content, steps: pendingSteps, entities: matchedEntities.slice(0, 24) });
+    pendingSteps = [];
+    pendingTexts = [];
+  };
+
+  for (const msg of messages) {
+    if (msg.role === "user" && msg.content) {
+      flushAssistant();
+      turns.push({ role: "user", content: msg.content, steps: [], entities: [] });
+    } else if (msg.role === "assistant") {
+      for (const call of msg.tool_calls || []) {
+        pendingSteps.push({
+          id: call.id,
+          name: call.function.name,
+          arguments: call.function.arguments || "{}",
+          output: toolOutputs.get(call.id),
+        });
+      }
+      if (msg.content && msg.content.trim()) {
+        pendingTexts.push(msg.content.trim());
+      }
+    }
+  }
+  flushAssistant();
+  return turns;
+}
 
 /** Only authoritative push/merge tool replies become outcomes, never staging or user text. */
 export function conversationReceipts(messages: AssistantMessage[]): AssistantPushReceipt[] {

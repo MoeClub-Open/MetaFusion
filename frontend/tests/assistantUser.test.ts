@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assistantAllPages, conversationReceipts } from "../src/lib/assistantUser";
+import { assistantAllPages, buildChatTurns, conversationReceipts } from "../src/lib/assistantUser";
 import type { AssistantMessage } from "../src/lib/assistantApi";
 
 const id = "01a10136-c0f1-7eb5-a66c-112270350f28";
@@ -40,4 +40,20 @@ test("assistant lists follow total and reject incomplete pages instead of silent
     globalThis.fetch = (async () => Response.json({ items: [], total: 2, limit: 100, offset: 0 })) as typeof fetch;
     await assert.rejects(assistantAllPages("/models"), /assistant_incomplete_page/);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test("buildChatTurns preserves tool execution steps and links referenced catalog entities", () => {
+  const messages: AssistantMessage[] = [
+    { role: "user", content: "Find Poppin'Party" },
+    { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "catalog_search", arguments: "{\"q\":\"Poppin'Party\"}" } }] },
+    { role: "tool", tool_call_id: "c1", content: JSON.stringify({ items: [{ id, kind: "agent", title: "Poppin'Party", titles: { "zh-CN": "Poppin'Party", "ja-JP": "ポッピンパーティー" } }] }) },
+    { role: "assistant", content: `Poppin'Party link: /catalog/${id}` },
+  ];
+  const turns = buildChatTurns(messages);
+  assert.equal(turns.length, 2);
+  assert.equal(turns[1].steps.length, 1);
+  assert.equal(turns[1].steps[0].name, "catalog_search");
+  assert.ok(turns[1].steps[0].output?.includes("Poppin'Party"));
+  assert.equal(turns[1].entities.length, 1);
+  assert.equal(turns[1].entities[0].id, id);
 });

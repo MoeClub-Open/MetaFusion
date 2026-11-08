@@ -297,7 +297,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if err = json.Unmarshal(raw, &all); err != nil {
 			return nil, err
 		}
-		selected := map[string]any{"id": entity.ID, "version": entity.Version}
+		selected := map[string]any{"id": entity.ID, "url": "/catalog/" + entity.ID, "version": entity.Version}
 		for _, field := range in.Fields {
 			v, exists := all[field]
 			if !exists {
@@ -713,7 +713,7 @@ func assistantEntitySummaries(items []catalog.Entity) []map[string]any {
 		for locale, tr := range e.Translations {
 			titles[locale] = tr.Title
 		}
-		out = append(out, map[string]any{"id": e.ID, "kind": e.Kind, "version": e.Version, "title": e.Title, "original_language": e.OriginalLanguage, "titles": titles, "state": e.State, "work_id": e.WorkID, "content_unit_id": e.ContentUnitID, "release_id": e.ReleaseID, "medium_id": e.MediumID, "parent_id": e.ParentID})
+		out = append(out, map[string]any{"id": e.ID, "kind": e.Kind, "url": "/catalog/" + e.ID, "version": e.Version, "title": e.Title, "original_language": e.OriginalLanguage, "titles": titles, "state": e.State, "work_id": e.WorkID, "content_unit_id": e.ContentUnitID, "release_id": e.ReleaseID, "medium_id": e.MediumID, "parent_id": e.ParentID})
 	}
 	return out
 }

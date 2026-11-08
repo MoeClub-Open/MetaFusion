@@ -12,14 +12,16 @@ import {
   type AssistantReasoningEffort, type AssistantRequestRecord, type AssistantTokenUsage, type SearchProvider,
 } from "@/lib/assistantApi";
 import {
-  assistantAllPages, conversationReceipts, describeAssistantError, pushReceiptKey,
+  assistantAllPages, buildChatTurns, conversationReceipts, describeAssistantError, pushReceiptKey,
   type AssistantAccountResponse, type AssistantPushReceipt,
 } from "@/lib/assistantUser";
 import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { GeneratedBlocksView } from "./GeneratedBlocks";
 import { AssistantSearchPicker } from "./AssistantSearchPicker";
 import { AssistantModelPicker } from "./AssistantModelPicker";
 import { AssistantContextMeter } from "./AssistantContextMeter";
@@ -356,6 +358,11 @@ function AssistantWorkspace() {
   const activeModelEffort = reasoningEffort || models.find((item) => item.id === modelID)?.reasoning_effort || byoModels.find((item) => item.id === modelID)?.reasoning_effort || "";
   const lastMessage = messages[messages.length - 1];
   const activeToolName = lastMessage?.role === "assistant" && lastMessage.tool_calls?.length ? lastMessage.tool_calls[lastMessage.tool_calls.length - 1]?.function.name : "";
+  const chatTurns = useMemo(() => buildChatTurns(messages), [messages]);
+  const reasoningOptions = useMemo(() => ASSISTANT_REASONING_EFFORTS.map((value) => ({
+    value,
+    label: t("assistant.reasoning." + (value || "default")),
+  })), [t]);
 
   return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle pb-2">
@@ -380,7 +387,39 @@ function AssistantWorkspace() {
               <div className="mt-6 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t("assistantUI.prompt." + key)); document.getElementById("assistant-message")?.focus(); }} className="rounded-control border border-line px-3 py-3 text-left text-xs leading-relaxed text-text-body hover:border-primary/40 hover:bg-primary/5"><ArrowUpRight className="mb-2 size-4 text-primary" />{t("assistantUI.example." + key)}</button>)}</div>
               {!models.length && !activeBYOModels.length && <p className="mt-5 text-xs text-text-muted">{t("assistantUI.modelsUnavailable")}</p>}
             </div>}
-            {messages.filter((item) => (item.role === "user" || item.role === "assistant") && item.content).map((item, index) => <article key={index} className={item.role === "user" ? "ml-auto max-w-[90%] rounded-control border border-line-subtle bg-surfaceSubtle px-4 py-3" : "min-w-0 space-y-2"}><p className="mb-2 text-xs font-medium text-text-muted">{t(item.role === "user" ? "assistant.user.you" : "assistant.user.assistant")}</p>{item.role === "user" ? <p className="whitespace-pre-wrap break-words text-sm">{item.content}</p> : <MarkdownRenderer content={item.content} />}</article>)}
+            {chatTurns.map((item, index) => <article key={index} className={item.role === "user" ? "ml-auto max-w-[90%] rounded-control border border-line-subtle bg-surfaceSubtle px-4 py-3" : "min-w-0 space-y-2.5"}>
+              <p className="mb-1.5 text-xs font-medium text-text-muted">{t(item.role === "user" ? "assistant.user.you" : "assistant.user.assistant")}</p>
+              {item.role === "user" ? (
+                <p className="whitespace-pre-wrap break-words text-sm">{item.content}</p>
+              ) : (
+                <>
+                  {item.steps.length > 0 && (
+                    <details open={currentRunning && index === chatTurns.length - 1} className="rounded-control border border-line-subtle bg-surfaceSubtle/70 px-3 py-2 text-xs">
+                      <summary className="cursor-pointer select-none font-medium text-text-muted hover:text-text-strong">
+                        {t("assistantUI.toolSteps", { count: item.steps.length })} · {item.steps.map((s) => s.name).filter((v, i, a) => a.indexOf(v) === i).join(", ")}
+                      </summary>
+                      <div className="mt-2 space-y-1.5 border-t border-line-subtle pt-2">
+                        {item.steps.map((step, sIdx) => (
+                          <details key={step.id || sIdx} className="rounded border border-line-subtle bg-surface px-2.5 py-1.5">
+                            <summary className="cursor-pointer font-mono text-[11px] text-primary">
+                              #{sIdx + 1} {step.name}
+                            </summary>
+                            <div className="mt-1.5 space-y-1.5 text-[11px]">
+                              <pre className="max-h-36 overflow-auto rounded bg-surfaceSubtle p-2 font-mono text-text-body whitespace-pre-wrap break-words">{step.arguments}</pre>
+                              {step.output && <pre className="max-h-44 overflow-auto rounded bg-surfaceSubtle p-2 font-mono text-text-muted whitespace-pre-wrap break-words">{step.output}</pre>}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {item.content && <MarkdownRenderer content={item.content} interactive />}
+                  {item.entities.length > 0 && (
+                    <GeneratedBlocksView blocks={[{ type: "entities", title: t("assistantUI.relatedEntities"), items: item.entities }]} />
+                  )}
+                </>
+              )}
+            </article>)}
             {currentRunning && <p role="status" className="flex items-center gap-2 text-xs text-text-muted"><Loader2 className="size-3.5 animate-spin text-primary" /><span>{t("assistant.user.runningInBackground")}{activeToolName ? " · " + activeToolName : ""}</span></p>}
             {receipts.length > 0 && <details className="rounded-control border border-line-subtle p-3 text-xs"><summary className="cursor-pointer text-primary">{t("assistantUI.changes")}</summary><div className="mt-3 space-y-2">{receipts.map((receipt) => <div key={pushReceiptKey(receipt)} className="flex flex-wrap items-center justify-between gap-2"><span className={receipt.applied ? "text-success" : "text-warn"}>{t(receipt.applied ? "assistant.user.editApplied" : "assistant.user.editPending")}</span><Link className="text-primary hover:underline" href={receipt.pull_request ? "/pull-requests/" + receipt.pull_request.id : receipt.workspace ? "/workspaces/" + receipt.workspace.id : "/commits/" + (receipt.commits[0]?.id || "")}>{t("assistantUI.viewChanges")}</Link></div>)}</div></details>}
             <div ref={endRef} />
@@ -388,7 +427,7 @@ function AssistantWorkspace() {
           <footer className="shrink-0 border-t border-line-subtle bg-surface px-4 pb-3 pt-2 sm:px-6">
             <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="rounded-control border border-line bg-background p-2 focus-within:border-primary/50">
               <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label><textarea id="assistant-message" rows={2} maxLength={16000} value={message} disabled={currentRunning || loading} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); } }} placeholder={t("assistant.user.placeholder")} className="max-h-48 min-h-16 w-full resize-y bg-transparent px-1 py-1 text-sm outline-none disabled:opacity-50" />
-              <div className="flex flex-wrap items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={currentRunning || loading} /><label className="flex items-center"><span className="sr-only">{t("assistant.user.reasoningEffort")}</span><select aria-label={t("assistant.user.reasoningEffort")} title={t("assistant.user.reasoningEffort")} value={reasoningEffort} disabled={currentRunning || loading} onChange={(event) => setReasoningEffort(event.target.value as AssistantReasoningEffort)} className="h-8 rounded-control border border-line bg-surface px-2 text-xs text-text-body outline-none focus:border-primary/50 disabled:opacity-50">{ASSISTANT_REASONING_EFFORTS.map((value) => <option key={value || "default"} value={value}>{t("assistant.reasoning." + (value || "default"))}</option>)}</select></label><button type="submit" disabled={currentRunning || loading || !modelID || !message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"><Send className="size-3.5 shrink-0" />{t("assistant.user.send")}</button></div>
+              <div className="flex flex-wrap items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={currentRunning || loading} /><div className="flex items-center" title={t("assistant.user.reasoningEffort")}><Select fullWidth={false} aria-label={t("assistant.user.reasoningEffort")} value={reasoningEffort} disabled={currentRunning || loading} onChange={(val) => setReasoningEffort(val as AssistantReasoningEffort)} options={reasoningOptions} className="!h-8 min-w-[5.25rem] !px-2.5 !text-xs !bg-surface" /></div><button type="submit" disabled={currentRunning || loading || !modelID || !message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"><Send className="size-3.5 shrink-0" />{t("assistant.user.send")}</button></div>
               <details className="mt-2 border-t border-line-subtle pt-2 text-xs text-text-muted"><summary className="cursor-pointer">{t("assistant.search.settings")}</summary><div className="pt-2"><AssistantSearchPicker providers={searchProviders} byoProviders={byoProviders} providerID={searchProviderID} byoProviderID={searchBYOProviderID} onProvider={setSearchProviderID} onBYOProvider={setSearchBYOProviderID} disabled={currentRunning || loading} /></div></details>
             </form>
             <div className="mt-2 flex flex-wrap items-start justify-between gap-2"><AssistantContextMeter conversationID={conversationID} modelID={modelID} message={message} revision={messages.length} disabled={currentRunning || loading} />{account && <span className="shrink-0 text-xs text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}</div>

@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
-import { Check, Copy, ExternalLink } from "lucide-react";
+import { Check, Code2, Copy, Eye, ExternalLink } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { parseGeneratedBlocks } from "@/lib/generatedBlocks";
+import { GeneratedBlocksView } from "@/components/assistant/GeneratedBlocks";
 import { normalizeLatexDelimiters, remarkArticleHeadings } from "@/lib/markdown";
 export { normalizeLatexDelimiters } from "@/lib/markdown";
 
@@ -19,22 +22,46 @@ interface MarkdownRendererProps {
   content: string;
   className?: string;
   compact?: boolean;
+  interactive?: boolean;
   headingPrefix?: string;
   footnoteLabel?: string;
   footnoteBackLabel?: string;
 }
 
+const ENTITY_PATH_RE = /^(?:https?:\/\/(?:www\.)?(?:findverse\.cc|metafusion\.cc))?\/(?:catalog|agent|collection|work|content_unit|content-unit|expression|release|medium|track)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#].*)?$/i;
+
+function buildInteractiveSrcDoc(code: string, isSvg: boolean): string {
+  const body = isSvg ? `<div style="display:flex;justify-content:center;align-items:center;min-height:160px;">${code}</div>` : code;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light dark;}body{margin:0;padding:12px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.5;color:#1f2937;background:transparent;}@media (prefers-color-scheme:dark){body{color:#e5e7eb;}}a{color:#2563eb;text-decoration:none;}a:hover{text-decoration:underline;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid rgba(128,128,128,0.25);padding:6px 10px;text-align:left;}</style></head><body>${body}</body></html>`;
+}
+
 function CodeBlockWrapper({
   language,
   code,
+  interactive = false,
   children,
 }: {
   language?: string;
   code: string;
+  interactive?: boolean;
   children: React.ReactNode;
 }) {
-  const { t } = useI18n();
+  const { t, tr } = useI18n();
   const [copied, setCopied] = useState(false);
+  const lang = (language || "").toLowerCase();
+  const uiBlocks = useMemo(() => {
+    if (lang !== "ui" && lang !== "metafusion-ui" && !(interactive && lang === "json")) return [];
+    try {
+      const raw = JSON.parse(code);
+      const arr = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
+      return parseGeneratedBlocks(arr);
+    } catch {
+      return [];
+    }
+  }, [code, interactive, lang]);
+  const isHtmlPreview = interactive && (lang === "html" || lang === "svg") && code.trim().startsWith("<");
+  const hasPreview = uiBlocks.length > 0 || isHtmlPreview;
+  const [showCode, setShowCode] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -49,7 +76,19 @@ function CodeBlockWrapper({
   return (
     <div className="relative group my-3 rounded-lg overflow-hidden border border-line bg-background shadow-xs">
       <div className="flex items-center justify-between px-3 py-1.5 bg-surfaceSubtle border-b border-line-subtle text-xs text-text-muted font-mono select-none">
-        <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">{language || "code"}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">{hasPreview ? tr("assistantUI.interactivePreview", "Interactive View") : (language || "code")}</span>
+          {hasPreview && (
+            <button
+              type="button"
+              onClick={() => setShowCode((v) => !v)}
+              className="inline-flex items-center gap-1 rounded border border-line bg-surface px-2 py-0.5 font-sans text-[11px] text-text-body hover:text-primary"
+            >
+              {showCode ? <Eye className="w-3 h-3" /> : <Code2 className="w-3 h-3" />}
+              <span>{showCode ? tr("assistantUI.interactivePreview", "Interactive View") : tr("assistantUI.viewCode", "Source")}</span>
+            </button>
+          )}
+        </div>
         <button
           type="button"
           onClick={handleCopy}
@@ -69,9 +108,24 @@ function CodeBlockWrapper({
           )}
         </button>
       </div>
-      <div className="p-3.5 overflow-x-auto text-xs sm:text-sm font-mono text-text-strong leading-relaxed scrollbar-thin">
-        {children}
-      </div>
+      {hasPreview && !showCode ? (
+        <div className="p-3 bg-surface">
+          {uiBlocks.length > 0 ? (
+            <GeneratedBlocksView blocks={uiBlocks} />
+          ) : (
+            <iframe
+              title={tr("assistantUI.interactivePreview", "Interactive View")}
+              sandbox="allow-scripts"
+              srcDoc={buildInteractiveSrcDoc(code, lang === "svg")}
+              className="w-full min-h-[16rem] rounded border border-line-subtle bg-background"
+            />
+          )}
+        </div>
+      ) : (
+        <div className="p-3.5 overflow-x-auto text-xs sm:text-sm font-mono text-text-strong leading-relaxed scrollbar-thin">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -80,6 +134,7 @@ export default function MarkdownRenderer({
   content,
   className = "",
   compact = false,
+  interactive = false,
   headingPrefix,
   footnoteLabel,
   footnoteBackLabel,
@@ -151,6 +206,24 @@ export default function MarkdownRenderer({
               lowerHref.startsWith("data:") ||
               lowerHref.startsWith("file:");
             const safeHref = isUnsafe ? "#" : rawHref;
+            const entityMatch = !isUnsafe ? ENTITY_PATH_RE.exec(safeHref) : null;
+            if (entityMatch) {
+              const canonicalPath = `/catalog/${entityMatch[1].toLowerCase()}`;
+              const childText = Array.isArray(children) && children.length === 1 && typeof children[0] === "string"
+                ? children[0]
+                : typeof children === "string" ? children : null;
+              const displayChildren = childText && ENTITY_PATH_RE.test(childText.trim())
+                ? childText.replace(/\/(?:agent|collection|work|content_unit|content-unit|expression|release|medium|track)\//i, "/catalog/")
+                : children;
+              return (
+                <Link
+                  href={canonicalPath}
+                  className="text-primary hover:underline underline-offset-2 font-medium transition-colors duration-fast ease-soft inline-flex items-center gap-0.5"
+                >
+                  <span>{displayChildren}</span>
+                </Link>
+              );
+            }
             const isExternal = safeHref.startsWith("http://") || safeHref.startsWith("https://");
             return (
               <a
@@ -180,7 +253,7 @@ export default function MarkdownRenderer({
               const language = match ? match[1] : "";
               const codeString = String(children).replace(/\n$/, "");
               return (
-                <CodeBlockWrapper language={language} code={codeString}>
+                <CodeBlockWrapper language={language} code={codeString} interactive={interactive}>
                   <pre className="!bg-transparent !p-0 !m-0 overflow-x-auto">
                     <code className={className} {...props}>
                       {children}

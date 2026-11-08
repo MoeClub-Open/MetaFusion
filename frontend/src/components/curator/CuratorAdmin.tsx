@@ -17,6 +17,7 @@ import {
 
 import { CuratorWorkspace } from "./CuratorWorkspace";
 import { AssistantSearchPicker } from "@/components/assistant/AssistantSearchPicker";
+import { Select } from "@/components/ui/Select";
 import { assistantAllPages } from "@/lib/assistantUser";
 
 type Tab = "chat" | "overview" | "findings" | "runs";
@@ -234,30 +235,26 @@ export function CuratorAdmin() {
             <label className="flex items-center gap-2 text-xs text-text-body"><input type="checkbox" checked={draft.enabled} disabled={!mayWrite || !!busy} onChange={(event) => update("enabled", event.target.checked)} />{t("curator.settings.enabled")}</label>
             <label className="flex items-center gap-2 text-xs text-text-body"><input type="checkbox" checked={draft.auto_merge_low_risk} disabled={!mayWrite || !!busy} onChange={(event) => update("auto_merge_low_risk", event.target.checked)} />{t("curator.settings.autoMerge")}</label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.model")}</span>
-              <select value={draft.model_id} disabled={!mayWrite || !!busy} onChange={(event) => update("model_id", event.target.value)} className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary disabled:opacity-60">
-                <option value="">{t("curator.settings.defaultModel")}</option>
-                {!hasModelOption(draft.model_id) && <option value={draft.model_id}>{t("curator.boundModel")}</option>}
-                {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-                {activeBYOModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {t("assistant.user.byo")}</option>)}
-              </select>
+              <Select aria-label={t("curator.settings.model")} value={draft.model_id} disabled={!mayWrite || !!busy} onChange={(val) => update("model_id", val)} options={[
+                { value: "", label: t("curator.settings.defaultModel") },
+                ...(!hasModelOption(draft.model_id) ? [{ value: draft.model_id, label: t("curator.boundModel") }] : []),
+                ...models.map((model) => ({ value: model.id, label: model.name })),
+                ...activeBYOModels.map((model) => ({ value: model.id, label: `${model.name} · ${t("assistant.user.byo")}` })),
+              ]} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.childModel")}</span>
-              <select value={draft.execution.child_model_id} disabled={!mayWrite || !!busy} onChange={(event) => updateExecution("child_model_id", event.target.value)} className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary disabled:opacity-60">
-                <option value="">{t("curator.settings.sameModel")}</option>
-                {!hasModelOption(draft.execution.child_model_id) && <option value={draft.execution.child_model_id}>{t("curator.boundModel")}</option>}
-                {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-                {activeBYOModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {t("assistant.user.byo")}</option>)}
-              </select>
+              <Select aria-label={t("curator.settings.childModel")} value={draft.execution.child_model_id} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("child_model_id", val)} options={[
+                { value: "", label: t("curator.settings.sameModel") },
+                ...(!hasModelOption(draft.execution.child_model_id) ? [{ value: draft.execution.child_model_id, label: t("curator.boundModel") }] : []),
+                ...models.map((model) => ({ value: model.id, label: model.name })),
+                ...activeBYOModels.map((model) => ({ value: model.id, label: `${model.name} · ${t("assistant.user.byo")}` })),
+              ]} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.reasoningEffort")}</span>
-              <select value={draft.execution.reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(event) => updateExecution("reasoning_effort", event.target.value as AssistantReasoningEffort)} className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary disabled:opacity-60">
-                {ASSISTANT_REASONING_EFFORTS.map((value) => <option key={value || "default"} value={value}>{t("assistant.reasoning." + (value || "default"))}</option>)}
-              </select>
+              <Select aria-label={t("curator.settings.reasoningEffort")} value={draft.execution.reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("reasoning_effort", val as AssistantReasoningEffort)} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t("assistant.reasoning." + (value || "default")) }))} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.childReasoningEffort")}</span>
-              <select value={draft.execution.child_reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(event) => updateExecution("child_reasoning_effort", event.target.value as AssistantReasoningEffort)} className="w-full rounded-control border border-line bg-surface px-3 py-2 text-sm text-text-body outline-none focus:border-primary disabled:opacity-60">
-                {ASSISTANT_REASONING_EFFORTS.map((value) => <option key={value || "default"} value={value}>{t("assistant.reasoning." + (value || "default"))}</option>)}
-              </select>
+              <Select aria-label={t("curator.settings.childReasoningEffort")} value={draft.execution.child_reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("child_reasoning_effort", val as AssistantReasoningEffort)} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t("assistant.reasoning." + (value || "default")) }))} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.maxChildren")}</span>{numberInput(draft.execution.max_children, 1, 8, (n) => updateExecution("max_children", n), !mayWrite || !!busy)}</label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.interval")}</span>{numberInput(draft.interval_seconds, 30, 86400, (n) => update("interval_seconds", n), !mayWrite || !!busy)}</label>
@@ -283,18 +280,9 @@ export function CuratorAdmin() {
 
     {tab === "findings" ? <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setOffset(0); }} className="rounded-control border border-line bg-surface px-2 py-1.5 text-xs text-text-body">
-          <option value="">{t("curator.filter.allStatus")}</option>
-          {STATUSES.map((value) => <option key={value} value={value}>{t("curator.status." + value)}</option>)}
-        </select>
-        <select value={codeFilter} onChange={(event) => { setCodeFilter(event.target.value); setOffset(0); }} className="rounded-control border border-line bg-surface px-2 py-1.5 text-xs text-text-body">
-          <option value="">{t("curator.filter.allCode")}</option>
-          {CODES.map((value) => <option key={value} value={value}>{value}</option>)}
-        </select>
-        <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value); setOffset(0); }} className="rounded-control border border-line bg-surface px-2 py-1.5 text-xs text-text-body">
-          <option value="">{t("curator.filter.allKind")}</option>
-          {["agent", "collection", "work", "content_unit", "expression", "release", "medium", "track"].map((value) => <option key={value} value={value}>{value}</option>)}
-        </select>
+        <Select fullWidth={false} aria-label={t("curator.filter.allStatus")} value={statusFilter} onChange={(val) => { setStatusFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allStatus") }, ...STATUSES.map((value) => ({ value, label: t("curator.status." + value) }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
+        <Select fullWidth={false} aria-label={t("curator.filter.allCode")} value={codeFilter} onChange={(val) => { setCodeFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allCode") }, ...CODES.map((value) => ({ value, label: value }))]} className="!h-8 min-w-[9rem] !px-2.5 !text-xs !bg-surface" />
+        <Select fullWidth={false} aria-label={t("curator.filter.allKind")} value={kindFilter} onChange={(val) => { setKindFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allKind") }, ...["agent", "collection", "work", "content_unit", "expression", "release", "medium", "track"].map((value) => ({ value, label: value }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
         <span className="text-[11px] text-text-faint">{t("curator.filter.pending")} {pending}</span>
       </div>
       <div className="overflow-x-auto rounded-panel border border-line bg-surface">
@@ -329,10 +317,7 @@ export function CuratorAdmin() {
 
     {tab === "runs" ? <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <select value={runKindFilter} onChange={(event) => { setRunKindFilter(event.target.value); setOffset(0); }} className="rounded-control border border-line bg-surface px-2 py-1.5 text-xs text-text-body">
-          <option value="">{t("common.all")}</option>
-          {["manager", "agent", "quality", "sweep"].map((value) => <option key={value} value={value}>{value}</option>)}
-        </select>
+        <Select fullWidth={false} aria-label={t("common.all")} value={runKindFilter} onChange={(val) => { setRunKindFilter(val); setOffset(0); }} options={[{ value: "", label: t("common.all") }, ...["manager", "agent", "quality", "sweep"].map((value) => ({ value, label: value }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
         <span className="text-[11px] text-text-faint">{runs?.total ?? 0}</span>
       </div>
       <div className="overflow-x-auto rounded-panel border border-line bg-surface">

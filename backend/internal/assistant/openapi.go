@@ -122,15 +122,16 @@ func AddOpenAPI(paths, schemas map[string]any) {
 	for _, name := range []string{"input_price_microusd_per_million", "cached_input_price_microusd_per_million", "output_price_microusd_per_million", "input_credits_per_million", "output_credits_per_million"} {
 		props("Model")[name] = natural()
 	}
+	reasoningEffortEnum := append([]string{""}, ReasoningEfforts...)
 	for _, name := range []string{"Model", "BYOModel"} {
 		props(name)["provider_id"] = id()
 		props(name)["upstream_model"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 200}
 		props(name)["max_tokens_parameter"] = map[string]any{"type": "string", "enum": []string{"max_tokens", "max_completion_tokens"}, "default": "max_tokens", "description": "Chat Completions output-limit parameter. Other protocols automatically use their native max_output_tokens, max_tokens or maxOutputTokens field."}
-		props(name)["reasoning_effort"] = map[string]any{"type": "string", "enum": ReasoningEfforts, "default": "", "description": "Optional reasoning effort level; empty string uses the upstream model default."}
+		props(name)["reasoning_effort"] = map[string]any{"type": "string", "enum": reasoningEffortEnum, "default": "", "description": "Optional reasoning effort level; empty string uses the upstream model default."}
 		props(name)["max_output_tokens"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1}
 		props(name)["context_window"] = map[string]any{"type": "integer", "format": "int64", "minimum": 1, "maximum": 10000000, "description": "Must be at least max_output_tokens."}
 	}
-	reasoningEffortProp := map[string]any{"type": "string", "enum": ReasoningEfforts, "default": "", "description": "Optional reasoning effort override; empty string inherits the model default."}
+	reasoningEffortProp := map[string]any{"type": "string", "enum": reasoningEffortEnum, "default": "", "description": "Optional reasoning effort override; empty string inherits the model default."}
 	props("Conversation")["reasoning_effort"] = reasoningEffortProp
 	props("ChatRequest")["reasoning_effort"] = map[string]any{"allOf": []any{reasoningEffortProp}, "nullable": true}
 	props("Mission")["reasoning_effort"] = reasoningEffortProp

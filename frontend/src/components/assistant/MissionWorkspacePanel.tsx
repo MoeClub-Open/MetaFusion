@@ -11,6 +11,7 @@ import {
 } from "@/lib/assistantApi";
 import { describeAssistantError } from "@/lib/assistantUser";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { Select } from "@/components/ui/Select";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import { AssistantModelPicker } from "./AssistantModelPicker";
 import { AssistantSearchPicker } from "./AssistantSearchPicker";
@@ -143,9 +144,31 @@ export function MissionWorkspacePanel({
     setSteerBudget("");
     setSelectedTrace(null);
     setTraceMessages([]);
-    void loadDetail(selectedID).catch((cause) => { if (alive) setError(describeAssistantError(cause, t)); });
+    void loadDetail(selectedID).then((next) => {
+      if (!alive) return;
+      const runningTask = next.tasks.find((item) => item.status === "running");
+      const latestTask = next.tasks[next.tasks.length - 1];
+      const latestPlanner = next.planner_runs[next.planner_runs.length - 1];
+      const autoTarget = runningTask
+        ? { kind: "task" as const, id: runningTask.id }
+        : latestTask
+          ? { kind: "task" as const, id: latestTask.id }
+          : latestPlanner
+            ? { kind: "planner" as const, id: latestPlanner.id }
+            : null;
+      if (autoTarget) {
+        setSelectedTrace(autoTarget);
+        setTraceLoading(true);
+        const subPath = autoTarget.kind === "task" ? `/missions/${selectedID}/tasks/${autoTarget.id}` : `/missions/${selectedID}/planner-runs/${autoTarget.id}`;
+        void request<{ messages?: AssistantMessage[] }>(subPath).then((res) => {
+          if (alive) setTraceMessages(res.messages || []);
+        }).catch(() => {}).finally(() => {
+          if (alive) setTraceLoading(false);
+        });
+      }
+    }).catch((cause) => { if (alive) setError(describeAssistantError(cause, t)); });
     return () => { alive = false; };
-  }, [selectedID, loadDetail, t]);
+  }, [selectedID, loadDetail, request, t]);
 
   const anyRunning = detail?.mission.status === "running" || missions.some((m) => m.status === "running");
   useEffect(() => {
@@ -298,6 +321,22 @@ export function MissionWorkspacePanel({
   const filtered = missions.filter((m) => (m.title + " " + m.goal).toLocaleLowerCase().includes(filterText.toLocaleLowerCase()));
   const mission = detail?.mission;
   const seqByID = useMemo(() => new Map((detail?.tasks || []).map((item) => [item.id, item.seq])), [detail?.tasks]);
+  const reasoningOptions = useMemo(() => ASSISTANT_REASONING_EFFORTS.map((v) => ({
+    value: v,
+    label: t("assistant.reasoning." + (v || "default")),
+  })), [t]);
+  const workerModelOptions = useMemo(() => [
+    { value: "", label: t("curator.settings.sameModel") },
+    ...models.map((m) => ({ value: m.id, label: m.name })),
+    ...byoModels.filter((m) => m.enabled).map((m) => ({ value: m.id, label: `${m.name} (${t("assistant.user.byo")})` })),
+  ], [models, byoModels, t]);
+  const toolOutputByCallID = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const msg of traceMessages) {
+      if (msg.role === "tool" && msg.tool_call_id) map.set(msg.tool_call_id, msg.content || "");
+    }
+    return map;
+  }, [traceMessages]);
 
   const statusColor = (st: string) =>
     st === "running" ? "text-primary" : st === "completed" ? "text-success" : st === "paused" ? "text-warn" : st === "failed" ? "text-danger" : "text-text-muted";
@@ -343,9 +382,7 @@ export function MissionWorkspacePanel({
               </label>
               <label className="block text-xs text-text-muted">
                 <span className="mb-1 block">{t("assistant.mission.maxWorkers")}</span>
-                <select value={maxWorkers} disabled={busy || !mayWrite} onChange={(e) => setMaxWorkers(Number(e.target.value))} className="h-8 w-full rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
-                  {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <Select aria-label={t("assistant.mission.maxWorkers")} value={String(maxWorkers)} disabled={busy || !mayWrite} onChange={(val) => setMaxWorkers(Number(val))} options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) }))} className="!h-8 !px-2.5 !text-xs" />
               </label>
               <label className="block text-xs text-text-muted">
                 <span className="mb-1 block">{t("assistant.mission.maxTasks")}</span>
@@ -357,22 +394,20 @@ export function MissionWorkspacePanel({
                 <span className="block text-xs text-text-muted">{t("assistant.mission.plannerModel")}</span>
                 <div className="flex items-center gap-1.5">
                   <AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={busy || !mayWrite} />
-                  <select aria-label={t("assistant.mission.plannerReasoning")} title={t("assistant.mission.plannerReasoning")} value={reasoningEffort} disabled={busy || !mayWrite} onChange={(e) => setReasoningEffort(e.target.value as AssistantReasoningEffort)} className="h-8 shrink-0 rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
-                    {ASSISTANT_REASONING_EFFORTS.map((v) => <option key={v || "default"} value={v}>{t("assistant.reasoning." + (v || "default"))}</option>)}
-                  </select>
+                  <div title={t("assistant.mission.plannerReasoning")} className="shrink-0">
+                    <Select fullWidth={false} aria-label={t("assistant.mission.plannerReasoning")} value={reasoningEffort} disabled={busy || !mayWrite} onChange={(val) => setReasoningEffort(val as AssistantReasoningEffort)} options={reasoningOptions} className="!h-8 min-w-[5.25rem] !px-2.5 !text-xs" />
+                  </div>
                 </div>
               </div>
               <div className="space-y-1">
                 <span className="block text-xs text-text-muted">{t("assistant.mission.workerModel")}</span>
                 <div className="flex items-center gap-1.5">
-                  <select value={workerModelID} disabled={busy || !mayWrite} onChange={(e) => setWorkerModelID(e.target.value)} className="h-8 min-w-0 flex-1 rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
-                    <option value="">{t("curator.settings.sameModel")}</option>
-                    {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    {byoModels.filter((m) => m.enabled).map((m) => <option key={m.id} value={m.id}>{m.name} ({t("assistant.user.byo")})</option>)}
-                  </select>
-                  <select aria-label={t("assistant.mission.workerReasoning")} title={t("assistant.mission.workerReasoning")} value={workerReasoningEffort} disabled={busy || !mayWrite} onChange={(e) => setWorkerReasoningEffort(e.target.value as AssistantReasoningEffort)} className="h-8 shrink-0 rounded-control border border-line bg-background px-2 text-xs text-text-strong outline-none">
-                    {ASSISTANT_REASONING_EFFORTS.map((v) => <option key={v || "default"} value={v}>{t("assistant.reasoning." + (v || "default"))}</option>)}
-                  </select>
+                  <div className="min-w-0 flex-1">
+                    <Select aria-label={t("assistant.mission.workerModel")} value={workerModelID} disabled={busy || !mayWrite} onChange={setWorkerModelID} options={workerModelOptions} className="!h-8 !px-2.5 !text-xs" />
+                  </div>
+                  <div title={t("assistant.mission.workerReasoning")} className="shrink-0">
+                    <Select fullWidth={false} aria-label={t("assistant.mission.workerReasoning")} value={workerReasoningEffort} disabled={busy || !mayWrite} onChange={(val) => setWorkerReasoningEffort(val as AssistantReasoningEffort)} options={reasoningOptions} className="!h-8 min-w-[5.25rem] !px-2.5 !text-xs" />
+                  </div>
                 </div>
               </div>
             </div>}
@@ -429,13 +464,19 @@ export function MissionWorkspacePanel({
 
               {(detail?.planner_runs.length || 0) > 0 && <div className="space-y-1.5">
                 <div className="text-xs font-medium text-text-muted">{t("assistant.mission.plannerRuns")}</div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid gap-1.5 sm:grid-cols-2">
                   {detail!.planner_runs.map((run: MissionPlannerRun) => {
                     const active = selectedTrace?.kind === "planner" && selectedTrace.id === run.id;
-                    return <button key={run.id} type="button" onClick={() => void openTrace("planner", run.id)} className={`inline-flex items-center gap-1.5 rounded-control border px-2.5 py-1 text-xs ${active ? "border-primary bg-primary/10 text-primary" : "border-line bg-surface hover:bg-surfaceHover"}`}>
-                      {run.status === "running" ? <Loader2 className="size-3 animate-spin text-primary" /> : <Clock className="size-3 text-text-muted" />}
-                      <span>Planner #{run.round} · {run.trigger}</span>
-                      <span className="text-text-faint tabular-nums">{run.credits}</span>
+                    return <button key={run.id} type="button" onClick={() => void openTrace("planner", run.id)} className={`flex flex-col items-start gap-1 rounded-control border px-3 py-2 text-left text-xs transition-colors ${active ? "border-primary bg-primary/10" : "border-line bg-surface hover:bg-surfaceHover"}`}>
+                      <div className="flex w-full items-center justify-between gap-2">
+                        <span className={`inline-flex items-center gap-1.5 font-medium ${active ? "text-primary" : "text-text-strong"}`}>
+                          {run.status === "running" ? <Loader2 className="size-3 animate-spin text-primary" /> : <Clock className="size-3 text-text-muted" />}
+                          <span>Planner #{run.round} · {run.trigger}</span>
+                        </span>
+                        <span className="text-[11px] text-text-faint tabular-nums">{t("curator.totalCredits", { credits: run.credits })}</span>
+                      </div>
+                      {run.summary && <p className="line-clamp-2 text-[11px] text-text-body">{run.summary}</p>}
+                      {run.error && <p className="line-clamp-1 text-[11px] text-danger">{run.error}</p>}
                     </button>;
                   })}
                 </div>
@@ -451,6 +492,7 @@ export function MissionWorkspacePanel({
                       <div className="flex items-center justify-between gap-2">
                         <button type="button" onClick={() => void openTrace("task", task.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-medium text-text-strong hover:text-primary">
                           <GitBranch className="size-3.5 shrink-0 text-primary" />
+                          <span className="font-mono text-[11px] text-text-muted">#{task.seq}</span>
                           <span className="rounded-control bg-surfaceSubtle px-1.5 py-0.5 text-[11px] text-text-muted">{t(`assistant.mission.role.${task.role}`)}</span>
                           <span className="truncate">{task.title}</span>
                         </button>
@@ -459,6 +501,7 @@ export function MissionWorkspacePanel({
                       {task.result_summary && <p className="line-clamp-3 whitespace-pre-wrap break-words text-text-body">{task.result_summary}</p>}
                       {task.error && <p className="text-danger">{task.error}</p>}
                       <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px] text-text-muted">
+                        <button type="button" onClick={() => void openTrace("task", task.id)} className={`font-medium hover:underline ${active ? "text-primary" : "text-text-body"}`}>{t("assistant.mission.viewTrace")}</button>
                         <span className="tabular-nums">{t("curator.totalCredits", { credits: task.credits })}</span>
                         {task.depends_on.length > 0 && <span>{t("assistant.mission.dependsOn")}: {task.depends_on.map((id) => `#${seqByID.get(id) || "?"}`).join(", ")}</span>}
                         {task.pull_request_id && <Link href={`/pull-requests/${task.pull_request_id}`} className="text-primary hover:underline">{t(task.merged ? "assistant.user.editApplied" : "assistantUI.viewChanges")}</Link>}
@@ -473,19 +516,26 @@ export function MissionWorkspacePanel({
 
               {selectedTrace && <div className="rounded-control border border-line bg-surfaceSubtle p-3 space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-medium text-text-strong">
-                  <span>{t("assistant.mission.trace")}</span>
+                  <span>{t("assistant.mission.trace")} · {selectedTrace.kind === "task" ? `#${seqByID.get(selectedTrace.id) || ""} ${detail?.tasks.find((item) => item.id === selectedTrace.id)?.title || ""}` : `Planner #${detail?.planner_runs.find((item) => item.id === selectedTrace.id)?.round || ""}`}</span>
                   <button type="button" onClick={() => { setSelectedTrace(null); setTraceMessages([]); }} className="text-text-muted hover:text-text-strong">×</button>
                 </div>
                 {traceLoading && <Loader2 className="size-4 animate-spin text-text-muted" />}
-                {!traceLoading && traceMessages.filter((m) => m.role !== "system").map((m, idx) => <div key={idx} className="space-y-1.5 text-xs">
+                {!traceLoading && traceMessages.filter((m) => m.role === "user" || m.role === "assistant").map((m, idx) => <div key={idx} className="space-y-1.5 text-xs">
                   {m.role === "user" ? (
                     <details className="rounded-control border border-line bg-surface p-2"><summary className="cursor-pointer text-text-muted">{t("curator.taskContext")}</summary><pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-words">{m.content}</pre></details>
-                  ) : m.role === "tool" ? (
-                    <details className="rounded-control border border-line-subtle bg-surface p-2"><summary className="cursor-pointer text-text-muted">{t("curator.toolResult")}</summary><pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words">{prettyJSON(m.content)}</pre></details>
                   ) : (
                     <div className="space-y-1.5 rounded-control border border-line bg-surface p-2.5">
-                      {m.content && <MarkdownRenderer content={m.content} />}
-                      {m.tool_calls?.map((call) => <details key={call.id} className="rounded-control border border-line-subtle p-1.5"><summary className="cursor-pointer font-mono text-primary">{call.function.name}</summary><pre className="mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words">{prettyJSON(call.function.arguments)}</pre></details>)}
+                      {m.content && <MarkdownRenderer content={m.content} interactive />}
+                      {m.tool_calls?.map((call) => {
+                        const toolOut = toolOutputByCallID.get(call.id);
+                        return <details key={call.id} className="rounded-control border border-line-subtle bg-surfaceSubtle/60 p-2">
+                          <summary className="cursor-pointer font-mono text-primary">{call.function.name}</summary>
+                          <div className="mt-1.5 space-y-1.5">
+                            <pre className="max-h-40 overflow-auto rounded bg-surface p-2 font-mono whitespace-pre-wrap break-words">{prettyJSON(call.function.arguments)}</pre>
+                            {toolOut && <pre className="max-h-52 overflow-auto rounded bg-surface p-2 font-mono text-text-muted whitespace-pre-wrap break-words">{prettyJSON(toolOut)}</pre>}
+                          </div>
+                        </details>;
+                      })}
                     </div>
                   )}
                 </div>)}

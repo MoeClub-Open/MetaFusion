@@ -6,6 +6,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { ASSISTANT_MANAGE, can } from "@/lib/permissions";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import {
   ASSISTANT_PROTOCOLS, ASSISTANT_REASONING_EFFORTS, assistantRequest, type AssistantPage, type AssistantProvider, type AssistantModel,
@@ -177,7 +178,7 @@ export function AssistantAdmin() {
     {tab !== "search" && <div className="flex flex-wrap items-end justify-between gap-3">
       {hasFilter ? <form onSubmit={(event) => { event.preventDefault(); setOffset(0); setFilter(filterInput.trim()); }} className="flex flex-wrap items-end gap-2">
         <label className="space-y-1 text-xs text-text-muted"><span>{t(tab === "generated" ? "assistant.admin.field.entity_id" : "assistant.admin.field.user_id")}</span><input value={filterInput} onChange={(event) => setFilterInput(event.target.value)} className={inputClass} /></label>
-        {tab === "requests" ? <label className="space-y-1 text-xs text-text-muted"><span>{t("assistant.admin.field.status")}</span><select value={status} onChange={(event) => { setOffset(0); setStatus(event.target.value); }} className={inputClass}><option value="">{t("common.all")}</option>{["pending", "completed", "failed"].map((item) => <option key={item} value={item}>{t("assistant.admin.status." + item)}</option>)}</select></label> : null}
+        {tab === "requests" ? <label className="space-y-1 text-xs text-text-muted"><span>{t("assistant.admin.field.status")}</span><Select aria-label={t("assistant.admin.field.status")} value={status} onChange={(val) => { setOffset(0); setStatus(val); }} options={[{ value: "", label: t("common.all") }, ...["pending", "completed", "failed"].map((item) => ({ value: item, label: t("assistant.admin.status." + item) }))]} className="min-w-[8rem] !bg-surface" /></label> : null}
         <button type="submit" className={buttonClass}>{t("common.search")}</button>
       </form> : null}
       <div className="flex gap-2">
@@ -304,7 +305,11 @@ function AssistantEditor({ editor, providers, models, onClose, onSaved }: {
     return <label key={name} className="block space-y-1.5 text-xs text-text-muted"><span>{t("assistant.admin.field." + name)}{moneyInput && name === "monthly_budget_microusd" ? <span className="ml-1">{t("assistant.admin.usd")}</span> : null}</span><input name={name} type={type} value={String(draft[name] ?? "")} onChange={(event) => update(name, event.target.value)} required={required} min={type === "number" && editor.kind !== "adjust" ? 0 : undefined} step={type === "number" ? moneyInput ? "0.000001" : "1" : undefined} autoComplete={type === "password" ? "new-password" : "off"} className={inputClass} /></label>;
   }
   function select(name: string, options: { id: string; name: string }[], empty = false) {
-    return <label key={name} className="block space-y-1.5 text-xs text-text-muted"><span>{t("assistant.admin.field." + name)}</span><select name={name} value={read(name)} onChange={(event) => update(name, event.target.value)} required={!empty} className={inputClass}>{empty || !options.length ? <option value="">{t("assistant.admin.none")}</option> : null}{options.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
+    const selectOpts = [
+      ...(empty || !options.length ? [{ value: "", label: t("assistant.admin.none") }] : []),
+      ...options.map((item) => ({ value: item.id, label: item.name })),
+    ];
+    return <label key={name} className="block space-y-1.5 text-xs text-text-muted"><span>{t("assistant.admin.field." + name)}</span><Select name={name} required={!empty} aria-label={t("assistant.admin.field." + name)} value={read(name)} onChange={(val) => update(name, val)} options={selectOpts} className="!bg-surface" /></label>;
   }
   return <Modal open onClose={() => { if (!busy) onClose(); }} title={t("assistant.admin.editor." + editor.kind)} maxWidth="max-w-2xl" footer={<div className="flex justify-end gap-2"><button type="button" onClick={onClose} disabled={busy} className={buttonClass}>{t("common.cancel")}</button><button form={formId} type="submit" disabled={busy} className={buttonClass + " border-primary text-primary"}>{t(busy ? "common.saving" : "common.save")}</button></div>}>
     <form id={formId} onSubmit={(event) => void submit(event)} className="space-y-4">
