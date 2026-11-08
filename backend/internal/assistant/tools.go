@@ -308,7 +308,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		}
 		selected := map[string]any{"id": entity.ID, "kind": entity.Kind, "title": entity.Title, "url": "/catalog/" + entity.ID, "version": entity.Version}
 		if len(entity.Pictures) > 0 && strings.TrimSpace(entity.Pictures[0].URL) != "" {
-			selected["cover_url"] = strings.TrimSpace(entity.Pictures[0].URL)
+			selected["cover_url"] = compactCoverURL(entity.Pictures[0].URL)
 		}
 		for _, field := range in.Fields {
 			v, exists := all[field]
@@ -746,7 +746,7 @@ func assistantEntitySummaries(items []catalog.Entity) []map[string]any {
 			item["summary"] = summary
 		}
 		if len(e.Pictures) > 0 && strings.TrimSpace(e.Pictures[0].URL) != "" {
-			item["cover_url"] = strings.TrimSpace(e.Pictures[0].URL)
+			item["cover_url"] = compactCoverURL(e.Pictures[0].URL)
 		}
 		if e.State != "" && e.State != "active" {
 			item["state"] = e.State
@@ -778,6 +778,16 @@ func truncateRunes(s string, max int) string {
 	return s
 }
 
+func compactCoverURL(raw string) string {
+	u := strings.TrimSpace(raw)
+	for _, prefix := range []string{"https://findverse.cc/api/storage/", "http://findverse.cc/api/storage/", "https://metafusion.cc/api/storage/", "http://metafusion.cc/api/storage/"} {
+		if strings.HasPrefix(strings.ToLower(u), prefix) {
+			return "/api/storage/" + u[len(prefix):]
+		}
+	}
+	return u
+}
+
 func assistantEntitySummariesWithCovers(ctx context.Context, s *catalog.Store, items []catalog.Entity, u *catalog.User) []map[string]any {
 	out := assistantEntitySummaries(items)
 	if s == nil || s.DB == nil || len(items) == 0 {
@@ -787,7 +797,7 @@ func assistantEntitySummariesWithCovers(ctx context.Context, s *catalog.Store, i
 		for i, e := range items {
 			if _, hasOwn := out[i]["cover_url"]; !hasOwn {
 				if c, ok := covers[e.ID]; ok && strings.TrimSpace(c.URL) != "" {
-					out[i]["cover_url"] = strings.TrimSpace(c.URL)
+					out[i]["cover_url"] = compactCoverURL(c.URL)
 				}
 			}
 		}
@@ -810,9 +820,9 @@ func assistantRelationshipsOutput(ctx context.Context, s *catalog.Store, out cat
 			if batch, err := s.EntityBatch(ctx, catalog.EntityBatchRequest{IDs: ids[start:end]}, u); err == nil {
 				for id, ent := range batch.Items {
 					if len(ent.Pictures) > 0 && strings.TrimSpace(ent.Pictures[0].URL) != "" {
-						covers[id] = strings.TrimSpace(ent.Pictures[0].URL)
+						covers[id] = compactCoverURL(ent.Pictures[0].URL)
 					} else if c, ok := batch.Covers[id]; ok && strings.TrimSpace(c.URL) != "" {
-						covers[id] = strings.TrimSpace(c.URL)
+						covers[id] = compactCoverURL(c.URL)
 					}
 				}
 			}
@@ -821,24 +831,14 @@ func assistantRelationshipsOutput(ctx context.Context, s *catalog.Store, out cat
 	entities := make(map[string]map[string]any, len(out.Entities))
 	for id, e := range out.Entities {
 		titles := map[string]string{}
-		summary := ""
 		for locale, tr := range e.Translations {
 			if tr.Title != "" && tr.Title != e.Title {
 				titles[locale] = tr.Title
 			}
-			if summary == "" && strings.TrimSpace(tr.Summary) != "" {
-				summary = truncateRunes(strings.TrimSpace(tr.Summary), 160)
-			}
 		}
-		item := map[string]any{"id": e.ID, "kind": e.Kind, "version": e.Version, "title": e.Title, "url": "/catalog/" + e.ID}
-		if e.OriginalLanguage != "" {
-			item["original_language"] = e.OriginalLanguage
-		}
+		item := map[string]any{"id": e.ID, "kind": e.Kind, "title": e.Title}
 		if len(titles) > 0 {
 			item["titles"] = titles
-		}
-		if summary != "" {
-			item["summary"] = summary
 		}
 		if c := covers[id]; c != "" {
 			item["cover_url"] = c
@@ -859,11 +859,13 @@ func assistantRelationshipsOutput(ctx context.Context, s *catalog.Store, out cat
 				"rule_code":  link.RuleCode,
 				"class":      link.Class,
 				"direction":  link.Direction,
-				"source_id":  link.SourceID,
-				"target_id":  link.TargetID,
 				"peer_id":    peerID,
 				"peer_kind":  peer.Kind,
 				"peer_title": peer.Title,
+			}
+			if len(link.Via) > 0 {
+				edge["source_id"] = link.SourceID
+				edge["target_id"] = link.TargetID
 			}
 			if link.Version != nil && *link.Version > 0 {
 				edge["version"] = *link.Version
