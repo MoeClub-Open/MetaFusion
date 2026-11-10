@@ -33,7 +33,9 @@ import { RecordList, GroupAttributeInline, LocatorInline } from "@/components/ca
 import { EntityLink } from "@/components/catalog/Fields";
 import { formatDuration as formatDurationShared } from "@/lib/duration";
 import { AdaptiveCardCover } from "@/components/common/AdaptiveCardCover";
-import { coverUrl, resolveCover } from "@/lib/cover";
+import { EntityCover } from "@/components/common/EntityCover";
+import { COVER_PICTURE_INDEX, coverUrl, PICTURE_ROLE_VOCABULARY, resolveCover } from "@/lib/cover";
+import { PictureLightbox, type LightboxPicture } from "@/components/catalog/PictureLightbox";
 import { fetchEntityRelationshipPreview, type RelationshipRecord } from "@/lib/catalogRelationships";
 import type { GraphLink, GraphNode } from "@/lib/api";
 import { EntityArticle } from "@/components/catalog/EntityArticle";
@@ -160,7 +162,7 @@ function Collapsible({
 export default function ReleaseDetailLayout() {
   const params = useParams();
   const releaseId = params.id as string;
-  const { t, locale } = useI18n();
+  const { t, tr, locale } = useI18n();
   const { user } = useAuth();
   const titleOrder = useTitleDisplayOrder();
   // 定义一律走 lib/definitions.ts 的缓存（与 /catalog 路由同源）——定义从来不住在 CatalogProvider 里
@@ -438,6 +440,32 @@ export default function ReleaseDetailLayout() {
   const [releaseRelEntities, setReleaseRelEntities] = useState<Record<string, Entity>>({});
   const [releaseRelTruncated, setReleaseRelTruncated] = useState(false);
   const [releaseRelView, setReleaseRelView] = useState<"cards" | "graph">("cards");
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+
+  const pictureRoleLabel = useCallback(
+    (role?: string | null) =>
+      String(role || "").trim()
+        ? getTermName(dynamicDefs, PICTURE_ROLE_VOCABULARY, String(role).trim(), locale)
+        : "",
+    [dynamicDefs, locale],
+  );
+
+  const galleryPictures = useMemo<LightboxPicture[]>(
+    () =>
+      (release?.pictures || []).map((p, i) => ({
+        url: p.url,
+        caption: resolveLocalizedName(p.caption, locale, release?.title || ""),
+        roleLabel: pictureRoleLabel(p.role),
+        takenAt: String(p.taken_at || "").trim(),
+        versionLabel: resolveLocalizedName(p.version_label, locale, ""),
+        inUseFrom: String(p.usage_period?.begin || "").trim(),
+        inUseUntil: String(p.usage_period?.end || "").trim(),
+        isCover: i === COVER_PICTURE_INDEX,
+        source: p.source,
+      })),
+    [release, locale, pictureRoleLabel],
+  );
 
   useEffect(() => {
     if (!releaseId) return;
@@ -488,8 +516,18 @@ export default function ReleaseDetailLayout() {
   const { releaseGraphNodes, releaseGraphLinks } = useMemo(() => {
     if (!release) return { releaseGraphNodes: [] as GraphNode[], releaseGraphLinks: [] as GraphLink[] };
     const centerId = release.id || releaseId;
+    const kindLabelOf = (k: string) => getKindName(kinds, k, locale, tr(`catalog.kind.${k}`, k));
+    const known: Record<string, Entity> = { ...releaseRelEntities, ...works, ...expressions };
+    if (release.id) known[release.id] = release;
+    for (const row of media) {
+      if (row.medium.id) known[row.medium.id] = row.medium;
+      for (const trk of row.tracks) {
+        if (trk.id) known[trk.id] = trk;
+      }
+    }
     const nodeOf = (nid: string, level: number): GraphNode => {
-      const e = releaseRelEntities[nid] || works[nid] || (nid === centerId ? release : undefined);
+      const e = known[nid] || (nid === centerId ? release : undefined);
+      const roleTag = e?.number ? `#${e.number}` : e?.position ? `#${e.position}` : undefined;
       return {
         id: nid,
         name: e ? entityTitle(e, locale, titleOrder) || e.title || nid : nid.slice(0, 8),
@@ -497,31 +535,96 @@ export default function ReleaseDetailLayout() {
         type: e?.kind || "related",
         category: e?.kind || "related",
         level,
+        order: e?.position ?? undefined,
+        role: roleTag,
         cover_image_url: coverUrl(e) || undefined,
+        country: e?.attributes?.country ? String(e.attributes.country) : undefined,
         disambiguation: e?.attributes?.disambiguation ? String(e.attributes.disambiguation) : undefined,
       };
     };
     const nodes: GraphNode[] = [nodeOf(centerId, 0)];
     const links: GraphLink[] = [];
     const seen = new Set<string>([centerId]);
+    const seenEdges = new Set<string>();
+    const ensureNode = (nid: string, level = 1) => {
+      if (!nid || seen.has(nid)) return;
+      seen.add(nid);
+      nodes.push(nodeOf(nid, level));
+    };
+    const structFieldLabel = (childKind: string, fieldCode: string) => {
+      const f = dynamicDefs?.structure?.[childKind]?.fields?.find((x) => x.code === fieldCode);
+      return resolveLocalizedName(f?.names, locale, "") || kindLabelOf(childKind);
+    };
+    const releaseSubjectLabel =
+      resolveLocalizedName(dynamicDefs?.structure?.release?.subject_reverse_names, locale, "") || kindLabelOf("release");
+    const trackContentLabel =
+      resolveLocalizedName(dynamicDefs?.structure?.track?.content_names, locale, "") || kindLabelOf("expression");
+    const addStructEdge = (parent: Entity | null | undefined, child: Entity | null | undefined, code: string, label: string) => {
+      if (!parent?.id || !child?.id || parent.id === child.id) return;
+      const edgeKey = `${parent.id}->${child.id}::${code}`;
+      if (seenEdges.has(edgeKey)) return;
+      seenEdges.add(edgeKey);
+      ensureNode(parent.id, 1);
+      ensureNode(child.id, 1);
+      links.push({
+        id: `struct:${edgeKey}`,
+        source: parent.id,
+        target: child.id,
+        source_type: parent.kind,
+        target_type: child.kind,
+        type: code,
+        label,
+        is_hierarchical: true,
+      });
+    };
+
+    for (const s of release.subjects || []) {
+      const w = works[s.work_id];
+      if (w) addStructEdge(w, release, "subject:release:work", releaseSubjectLabel);
+    }
+    const medMap = new Map(media.filter((r) => r.medium.id).map((r) => [r.medium.id!, r.medium]));
+    for (const row of media) {
+      const med = row.medium;
+      if (!med.id) continue;
+      if (med.parent_id && medMap.has(med.parent_id)) {
+        addStructEdge(medMap.get(med.parent_id), med, "parent_id", structFieldLabel("medium", "parent_id"));
+      } else {
+        addStructEdge(release, med, "release_id", structFieldLabel("medium", "release_id"));
+      }
+      const trkMap = new Map(row.tracks.filter((x) => x.id).map((x) => [x.id!, x]));
+      for (const trk of row.tracks) {
+        if (!trk.id) continue;
+        if (trk.parent_id && trkMap.has(trk.parent_id)) {
+          addStructEdge(trkMap.get(trk.parent_id), trk, "parent_id", structFieldLabel("track", "parent_id"));
+        } else {
+          addStructEdge(med, trk, "medium_id", structFieldLabel("track", "medium_id"));
+        }
+        for (const c of trk.contents || []) {
+          const expr = expressions[c.expression_id];
+          if (expr) addStructEdge(trk, expr, "contents", trackContentLabel);
+        }
+      }
+    }
+
     for (const r of releaseRelItems) {
       for (const nid of [r.source_id, r.target_id]) {
-        if (!nid || seen.has(nid)) continue;
-        seen.add(nid);
-        nodes.push(nodeOf(nid, 1));
+        ensureNode(nid, 1);
       }
+      const edgeKey = `${r.source_id}->${r.target_id}::${r.type}`;
+      seenEdges.add(edgeKey);
       links.push({
         id: r.id,
         source: r.source_id,
         target: r.target_id,
-        source_type: releaseRelEntities[r.source_id]?.kind || (r.source_id === centerId ? release.kind : undefined),
-        target_type: releaseRelEntities[r.target_id]?.kind || (r.target_id === centerId ? release.kind : undefined),
+        source_type: known[r.source_id]?.kind || (r.source_id === centerId ? release.kind : undefined),
+        target_type: known[r.target_id]?.kind || (r.target_id === centerId ? release.kind : undefined),
         type: r.type,
         label: getRelationName(dynamicDefs, r.type, true, locale, relationshipRules),
+        is_hierarchical: dynamicDefs?.relations?.[r.type]?.aggregate === true,
       });
     }
     return { releaseGraphNodes: nodes, releaseGraphLinks: links };
-  }, [release, releaseId, releaseRelItems, releaseRelEntities, works, locale, titleOrder, dynamicDefs, relationshipRules]);
+  }, [release, releaseId, releaseRelItems, releaseRelEntities, works, media, expressions, kinds, tr, locale, titleOrder, dynamicDefs, relationshipRules]);
 
   useEffect(() => {
     if (!releaseId) return;
@@ -904,9 +1007,19 @@ export default function ReleaseDetailLayout() {
             </div>
             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
               {cover.url && (
-                <div className="w-24 sm:w-28 shrink-0">
-                  <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
-                </div>
+                galleryPictures.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex(0)}
+                    className="w-24 sm:w-28 shrink-0 rounded-md mf-focus cursor-pointer"
+                  >
+                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
+                  </button>
+                ) : (
+                  <div className="w-24 sm:w-28 shrink-0">
+                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -927,6 +1040,59 @@ export default function ReleaseDetailLayout() {
           <Card padding="section" className="space-y-4">
             <SectionTitle icon={<BookOpen className="w-4 h-4 text-primary" strokeWidth={1.5} />}>{t("entity.page.overviewTitle")}</SectionTitle>
             <EntityArticle entity={release} titleOrder={titleOrder} />
+            {galleryPictures.length > 0 && (
+              <div id="pictures" className="pt-2 space-y-3 border-t border-line-subtle">
+                <div className="flex items-center gap-2 pt-3">
+                  <h3 className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
+                    {t("catalog.pictureGallery")}
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
+                    {galleryPictures.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {galleryPictures.map((pic, i) => (
+                    <figure key={i} className="space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setLightboxIndex(i)}
+                        className="group block w-full text-left rounded-control mf-focus"
+                        title={pic.source?.citation || pic.caption}
+                      >
+                        <Card tone="subtle" padding="none" className="relative overflow-hidden">
+                          <EntityCover
+                            src={pic.url}
+                            alt={pic.caption}
+                            title={pic.caption}
+                            id={release.id}
+                            imgClassName="w-full h-auto max-h-48 object-contain"
+                          />
+                          <span className="absolute left-1.5 top-1.5 flex flex-wrap items-center gap-1">
+                            {pic.isCover && (
+                              <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] font-semibold leading-none">
+                                {t("catalog.pictureCoverBadge")}
+                              </span>
+                            )}
+                            {pic.roleLabel && (
+                              <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] leading-none max-w-[7rem] truncate">
+                                {pic.roleLabel}
+                              </span>
+                            )}
+                          </span>
+                        </Card>
+                      </button>
+                      <figcaption className="font-mono text-[10px] text-text-faint">
+                        {pic.versionLabel || (pic.inUseFrom || pic.inUseUntil
+                          ? t("catalog.picturePeriod", { from: pic.inUseFrom || "?", until: pic.inUseUntil || "?" })
+                          : pic.takenAt
+                            ? t("catalog.pictureTakenAtValue", { date: pic.takenAt })
+                            : t("catalog.imageTimeUnknown"))}
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
         {overviewReleaseRelations.length > 0 && (
@@ -1293,12 +1459,12 @@ export default function ReleaseDetailLayout() {
         )}
 
                 <AggregateRelationList entityId={releaseId} onCount={setAggregateCount} />
-        {(extraReleaseRelations.length > 0 || (releaseRelView === "graph" && releaseRelItems.length > 0)) && (
+        {(extraReleaseRelations.length > 0 || releaseGraphLinks.length > 0) && (
           <Card padding="section" className="space-y-4">
             <SectionTitle
               icon={<Network className="w-4 h-4 text-primary" strokeWidth={1.5} />}
               actions={
-                releaseRelItems.length > 0 ? (
+                extraReleaseRelations.length > 0 ? (
                   <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
                     <button
                       type="button"
@@ -1328,10 +1494,10 @@ export default function ReleaseDetailLayout() {
             >
               {t("entity.page.relationsTitle")}
               <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                {releaseRelView === "graph" ? releaseRelItems.length : extraReleaseRelations.length}
+                {extraReleaseRelations.length === 0 || releaseRelView === "graph" ? releaseGraphLinks.length : extraReleaseRelations.length}
               </span>
             </SectionTitle>
-            {releaseRelView === "graph" ? (
+            {extraReleaseRelations.length === 0 || releaseRelView === "graph" ? (
               <InteractiveRelationGraph
                 height="clamp(360px, 65dvh, 640px)"
                 centerEntityId={release.id || releaseId}
@@ -1350,7 +1516,7 @@ export default function ReleaseDetailLayout() {
             )}
           </Card>
         )}
-        {aggregateCount === 0 && expressionIds.length === 0 && extraReleaseRelations.length === 0 && !(releaseRelView === "graph" && releaseRelItems.length > 0) && <EmptyPanel />}
+        {aggregateCount === 0 && expressionIds.length === 0 && extraReleaseRelations.length === 0 && releaseGraphLinks.length === 0 && <EmptyPanel />}
         </div>
 
         <div role="tabpanel" id="panel-comments" aria-labelledby="tab-comments" hidden={activeSection !== "comments"} className="space-y-4">
@@ -1372,6 +1538,13 @@ export default function ReleaseDetailLayout() {
         </div>
 
       </PageShell>
+      <PictureLightbox
+        pictures={galleryPictures}
+        index={lightboxIndex}
+        entityId={release.id}
+        onIndexChange={setLightboxIndex}
+        onClose={closeLightbox}
+      />
     </div>
   );
 }

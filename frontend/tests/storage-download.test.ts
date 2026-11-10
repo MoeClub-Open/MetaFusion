@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { downloadAssetFile, StorageRequestError } from "../src/lib/storage";
+import { downloadAssetFile, storageErrorKey, StorageRequestError } from "../src/lib/storage";
 
 async function withDownloadBrowser(response: Response, check: (state: {
   opened: string[];
@@ -76,4 +76,13 @@ test("malformed download metadata fails without navigation or a saved file", asy
       assert.deepEqual(state.saved, []);
     });
   }
+});
+
+test("storageErrorKey maps visual-asset-only and unsupported media errors explicitly", () => {
+  assert.deepEqual(storageErrorKey(new StorageRequestError("catalog_assets_only", 403)), {
+    key: "storage.files.errVisualOnly",
+  });
+  assert.deepEqual(storageErrorKey(new StorageRequestError("unsupported_media_type", 415)), {
+    key: "storage.files.errUnsupportedMedia",
+  });
 });

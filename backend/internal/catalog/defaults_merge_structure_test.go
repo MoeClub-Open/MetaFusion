@@ -11,7 +11,7 @@ func TestMergeSeedBackfillsFixedStructureAdditions(t *testing.T) {
 	}
 	track := current.Structure["track"]
 	track.Contents = false
-	track.Resources = false // 资源开关仍由管理员配置。
+	track.Resources = true // 资源开关仍由管理员配置。
 	track.Fields = append([]StructureField{}, track.Fields[:1]...)
 	current.Structure["track"] = track
 
@@ -20,7 +20,7 @@ func TestMergeSeedBackfillsFixedStructureAdditions(t *testing.T) {
 	if !track.Contents {
 		t.Fatal("track.contents 应作为固定结构标记补齐")
 	}
-	if track.Resources {
+	if !track.Resources {
 		t.Fatal("不得覆盖管理员配置的 resources 开关")
 	}
 	if len(track.Fields) != 2 || track.Fields[1].Code != "parent_id" {

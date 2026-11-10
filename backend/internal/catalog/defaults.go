@@ -103,13 +103,13 @@ func Defaults() Definitions {
 				{Code: "parent_id", ScopedBy: "work_id", Names: names4("包含下级内容单元", "包含下級內容單元", "下位内容単位を含む", "Contains child content unit"), ReverseNames: names4("位于上级内容单元", "位於上級內容單元", "上位内容単位に属する", "Within parent content unit")}}},
 			"expression": {Fields: []StructureField{
 				{Code: "work_id", TargetKinds: []string{"work"}, Required: true, Names: names4("具有内容表达", "具有內容表達", "表現を持つ", "Has expression"), ReverseNames: names4("表达作品", "表達作品", "作品を表現する", "Expression of work")},
-				{Code: "content_unit_id", TargetKinds: []string{"content_unit"}, ScopedBy: "work_id", Names: names4("承载内容表达", "承載內容表達", "表現を持つ", "Hosts expression"), ReverseNames: names4("属于内容单元", "屬於內容單元", "内容単位に属する", "Within content unit")}}, Resources: true},
+				{Code: "content_unit_id", TargetKinds: []string{"content_unit"}, ScopedBy: "work_id", Names: names4("承载内容表达", "承載內容表達", "表現を持つ", "Hosts expression"), ReverseNames: names4("属于内容单元", "屬於內容單元", "内容単位に属する", "Within content unit")}}, Resources: false},
 			"medium": {Fields: []StructureField{
 				{Code: "release_id", TargetKinds: []string{"release"}, Required: true, Names: names4("包含载体", "包含載體", "媒体を含む", "Contains medium"), ReverseNames: names4("属于发行版", "屬於發行版", "リリースに属する", "Belongs to release")},
-				{Code: "parent_id", ScopedBy: "release_id", Names: names4("包含下级载体", "包含下級載體", "下位媒体を含む", "Contains child medium"), ReverseNames: names4("位于上级载体", "位於上級載體", "上位媒体に属する", "Within parent medium")}}, Resources: true},
+				{Code: "parent_id", ScopedBy: "release_id", Names: names4("包含下级载体", "包含下級載體", "下位媒体を含む", "Contains child medium"), ReverseNames: names4("位于上级载体", "位於上級載體", "上位媒体に属する", "Within parent medium")}}, Resources: false},
 			"track": {Fields: []StructureField{
 				{Code: "medium_id", TargetKinds: []string{"medium"}, Required: true, Names: names4("包含收录位置", "包含收錄位置", "収録位置を含む", "Contains track"), ReverseNames: names4("属于载体", "屬於載體", "媒体に属する", "Belongs to medium")},
-				{Code: "parent_id", ScopedBy: "medium_id", Names: names4("包含下级收录位置", "包含下級收錄位置", "下位収録位置を含む", "Contains child track"), ReverseNames: names4("位于上级收录位置", "位於上級收錄位置", "上位収録位置に属する", "Within parent track")}}, Resources: true, Contents: true,
+				{Code: "parent_id", ScopedBy: "medium_id", Names: names4("包含下级收录位置", "包含下級收錄位置", "下位収録位置を含む", "Contains child track"), ReverseNames: names4("位于上级收录位置", "位於上級收錄位置", "上位収録位置に属する", "Within parent track")}}, Resources: false, Contents: true,
 				ContentNames:        names4("收录内容表达", "收錄內容表達", "表現を収録する", "Includes expression"),
 				ContentReverseNames: names4("被收录于位置", "被收錄於位置", "収録位置に含まれる", "Included in track")},
 		},
@@ -258,6 +258,11 @@ func Defaults() Definitions {
 		{"picture_role", names4("图片用途", "圖片用途", "画像の役割", "Picture roles"), []termSeed{
 			{"key_visual", names4("主视觉", "主視覺", "メインビジュアル", "Key visual")},
 			{"cover_art", names4("封面图", "封面圖", "ジャケット画像", "Cover art")},
+			{"back_cover", names4("封底", "封底", "裏ジャケット", "Back cover")},
+			{"booklet", names4("手册内页", "手冊內頁", "ブックレット", "Booklet")},
+			{"disc_art", names4("盘面 / 载体图", "盤面 / 載體圖", "盤面・メディア画像", "Disc / medium art")},
+			{"obi", names4("侧标 / 腰封", "側標 / 腰封", "帯", "Obi strip")},
+			{"packaging", names4("包装实拍", "包裝實拍", "パッケージ写真", "Packaging")},
 			{"poster", names4("海报", "海報", "ポスター", "Poster")},
 			{"character_portrait", names4("角色立绘", "角色立繪", "キャラクター立ち絵", "Character portrait")},
 			{"person_portrait", names4("人物肖像", "人物肖像", "パーソナルポートレート", "Person portrait")},

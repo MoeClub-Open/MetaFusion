@@ -139,6 +139,7 @@ KEYS = {
     "STORAGE_S3_BUCKET": {"readers": [("storage", "internal/config/config.go")], "default": "metafusion-master", "safe": True},
     "STORAGE_S3_TLS": {"readers": [("storage", "internal/config/config.go")], "default": "true", "safe": True},
     "STORAGE_S3_SKIP_BUCKET_ENSURE": {"readers": [("storage", "internal/config/config.go")], "default": "false（默认启动建桶；生产最小权限置 true）", "safe": True, "note": "生产用仅目标桶服务凭据时置 true，跳过启动建桶检查，桶由运维身份事先建好；清理任务走 storage-server worker（cron/systemd 周期触发），不进服务容器"},
+    "STORAGE_CATALOG_ASSETS_ONLY": {"readers": [("storage", "internal/config/config.go")], "default": "false（主站编排默认注入 true，仅允许目录受管位图视觉素材）", "safe": True},
     "STORAGE_JWKS_URL": {"readers": [("storage", "internal/config/config.go")], "default": "http://auth:8081/api/oidc/jwks", "safe": True},
     "STORAGE_PRESIGN_TTL_MINUTES": {"readers": [("storage", "internal/config/config.go")], "default": "120 分钟", "safe": True, "note": "窗口偏长（审计 E7/S10 的不可撤销问题另计），不是无上限"},
     "STORAGE_MAX_PARTS": {"readers": [("storage", "internal/config/config.go")], "default": "10000", "safe": True},

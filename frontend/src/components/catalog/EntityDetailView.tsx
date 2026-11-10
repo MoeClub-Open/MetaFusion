@@ -54,7 +54,6 @@ import { StaffCharacterSection } from "@/components/entity/StaffCharacterSection
 import { buildStaffCredits, isCreditRelation, unrenderedCreditRelations } from "@/components/entity/staffCredits";
 import { TabBar, useHashTab, TabItem } from "@/components/catalog/DetailTabs";
 import { ExternalAuthorityLinks } from "@/components/entity/ExternalAuthorityLinks";
-import { EntityResourceFiles } from "@/components/storage/EntityResourceFiles";
 import { AggregateRelationList, useAggregateRelations } from "@/components/catalog/AggregateRelationList";
 import { EntityActionToolbar } from "@/components/entity/EntityActionToolbar";
 import { EntityArticle } from "./EntityArticle";
@@ -151,6 +150,7 @@ export function EntityDetailView({ id }: { id: string }) {
   // 作品发行数单独轻量拉取（不含 Medium 聚合），供页签角标在打开分节前显示。
   const [workReleaseCount, setWorkReleaseCount] = useState<number | undefined>(undefined);
   const [workCoverRelease, setWorkCoverRelease] = useState<Entity | null>(null);
+  const [workReleases, setWorkReleases] = useState<Entity[]>([]);
   const [relations, setRelations] = useState<RelationshipRecord[]>([]);
   const [relatedEntities, setRelatedEntities] = useState<Record<string, Entity>>({});
   // 统一关系投影返回的主体 ID。
@@ -268,6 +268,7 @@ export function EntityDetailView({ id }: { id: string }) {
     setMotherMedium(null);
     setSubjectWorks([]);
     setWorkCoverRelease(null);
+    setWorkReleases([]);
     setChildren([]);
     setOccurrences([]);
     setRelations([]);
@@ -501,8 +502,28 @@ export function EntityDetailView({ id }: { id: string }) {
   const { graphNodes, graphLinks } = useMemo(() => {
     if (!entity) return { graphNodes: [], graphLinks: [] };
     const centerId = entity.id || id;
+    const knownEntities: Record<string, Entity> = { ...relatedEntities, ...directoryData.relatedEntities, ...inclusionExpressions.expressions };
+    const registerEntity = (e: Entity | null | undefined) => {
+      if (e?.id) knownEntities[e.id] = e;
+    };
+    registerEntity(entity);
+    registerEntity(motherWork);
+    registerEntity(motherRelease);
+    registerEntity(motherMedium);
+    for (const w of subjectWorks) registerEntity(w);
+    for (const r of workReleases) registerEntity(r);
+    for (const d of directoryData.items) registerEntity(d);
+    for (const ch of children) registerEntity(ch);
+    for (const occ of occurrences) {
+      registerEntity(occ?.release);
+      registerEntity(occ?.medium);
+      registerEntity(occ?.track);
+      registerEntity(occ?.expression);
+    }
+
     const nodeOf = (nid: string, level: number): GraphNode => {
-      const e = relatedEntities[nid] || (nid === centerId ? entity : undefined);
+      const e = knownEntities[nid];
+      const roleTag = e?.number ? `#${e.number}` : e?.position ? `#${e.position}` : undefined;
       return {
         id: nid,
         name: e ? title(e, locale, titleOrder) || e.title || nid : nid.slice(0, 8),
@@ -510,7 +531,10 @@ export function EntityDetailView({ id }: { id: string }) {
         type: e?.kind || "related",
         category: e?.kind || "related",
         level,
+        order: e?.position ?? undefined,
+        role: roleTag,
         cover_image_url: coverUrl(e) || undefined,
+        country: e?.attributes?.country ? String(e.attributes.country) : undefined,
         disambiguation: e?.attributes?.disambiguation ? String(e.attributes.disambiguation) : undefined,
       };
     };
@@ -519,26 +543,172 @@ export function EntityDetailView({ id }: { id: string }) {
     ];
     const links: GraphLink[] = [];
     const seenNodes = new Set<string>([centerId]);
+    const seenEdges = new Set<string>();
+    const ensureNode = (nid: string, level = 1) => {
+      if (!nid || seenNodes.has(nid)) return;
+      seenNodes.add(nid);
+      nodes.push(nodeOf(nid, level));
+    };
+    const structFieldLabel = (childKind: string, fieldCode: string) => {
+      const f = defs?.structure?.[childKind]?.fields?.find((x) => x.code === fieldCode);
+      return resolveLocalizedName(f?.names, locale, "") || kindLabel(childKind);
+    };
+    const releaseSubjectLabel =
+      resolveLocalizedName(defs?.structure?.release?.subject_reverse_names, locale, "") || kindLabel("release");
+    const trackContentLabel =
+      resolveLocalizedName(defs?.structure?.track?.content_names, locale, "") || kindLabel("expression");
+    const addStructEdge = (parent: Entity | null | undefined, child: Entity | null | undefined, code: string, label: string) => {
+      if (!parent?.id || !child?.id || parent.id === child.id) return;
+      const edgeKey = `${parent.id}->${child.id}::${code}`;
+      if (seenEdges.has(edgeKey)) return;
+      seenEdges.add(edgeKey);
+      ensureNode(parent.id, 1);
+      ensureNode(child.id, 1);
+      links.push({
+        id: `struct:${edgeKey}`,
+        source: parent.id,
+        target: child.id,
+        source_type: parent.kind,
+        target_type: child.kind,
+        type: code,
+        label,
+        is_hierarchical: true,
+      });
+    };
+
+    if (motherWork) {
+      if (entity.kind === "expression" && entity.content_unit_id && knownEntities[entity.content_unit_id]) {
+        addStructEdge(motherWork, knownEntities[entity.content_unit_id], "work_id", structFieldLabel("content_unit", "work_id"));
+        addStructEdge(knownEntities[entity.content_unit_id], entity, "content_unit_id", structFieldLabel("expression", "content_unit_id"));
+      } else {
+        addStructEdge(motherWork, entity, "work_id", structFieldLabel(entity.kind, "work_id"));
+      }
+    }
+    if (motherRelease && motherMedium) {
+      addStructEdge(motherRelease, motherMedium, "release_id", structFieldLabel("medium", "release_id"));
+      addStructEdge(motherMedium, entity, "medium_id", structFieldLabel(entity.kind, "medium_id"));
+    } else if (motherRelease) {
+      addStructEdge(motherRelease, entity, "release_id", structFieldLabel(entity.kind, "release_id"));
+    } else if (motherMedium) {
+      addStructEdge(motherMedium, entity, "medium_id", structFieldLabel(entity.kind, "medium_id"));
+    }
+    for (const w of subjectWorks) {
+      if (entity.kind === "release") addStructEdge(w, entity, "subject:release:work", releaseSubjectLabel);
+      else if (motherRelease) addStructEdge(w, motherRelease, "subject:release:work", releaseSubjectLabel);
+    }
+
+    if (entity.kind === "work") {
+      const dirMap = new Map(directoryData.items.filter((x) => x.id).map((x) => [x.id!, x]));
+      for (const item of directoryData.items) {
+        if (item.kind === "content_unit") {
+          const p = item.parent_id ? dirMap.get(item.parent_id) : null;
+          if (p) addStructEdge(p, item, "parent_id", structFieldLabel("content_unit", "parent_id"));
+          else addStructEdge(entity, item, "work_id", structFieldLabel("content_unit", "work_id"));
+        } else if (item.kind === "expression") {
+          const cu = item.content_unit_id ? dirMap.get(item.content_unit_id) : null;
+          if (cu) addStructEdge(cu, item, "content_unit_id", structFieldLabel("expression", "content_unit_id"));
+          else addStructEdge(entity, item, "work_id", structFieldLabel("expression", "work_id"));
+        }
+      }
+      for (const rel of workReleases) {
+        addStructEdge(entity, rel, "subject:release:work", releaseSubjectLabel);
+      }
+    }
+
+    if (children.length > 0) {
+      const childMap = new Map(children.filter((x) => x.id).map((x) => [x.id!, x]));
+      for (const ch of children) {
+        if (ch.parent_id && childMap.has(ch.parent_id)) {
+          addStructEdge(childMap.get(ch.parent_id), ch, "parent_id", structFieldLabel(ch.kind, "parent_id"));
+        } else if (ch.medium_id && childMap.has(ch.medium_id)) {
+          addStructEdge(childMap.get(ch.medium_id), ch, "medium_id", structFieldLabel(ch.kind, "medium_id"));
+        } else if (ch.kind === "expression" && entity.kind === "content_unit") {
+          addStructEdge(entity, ch, "content_unit_id", structFieldLabel("expression", "content_unit_id"));
+        } else {
+          const fCode =
+            entity.kind === "release" ? "release_id" : entity.kind === "medium" ? "medium_id" : entity.kind === "work" ? "work_id" : "parent_id";
+          addStructEdge(entity, ch, fCode, structFieldLabel(ch.kind, fCode));
+        }
+        for (const c of ch.contents || []) {
+          const expr = inclusionExpressions.expressions[c.expression_id];
+          if (expr) addStructEdge(ch, expr, "contents", trackContentLabel);
+        }
+      }
+    }
+    for (const c of entity.contents || []) {
+      const expr = inclusionExpressions.expressions[c.expression_id];
+      if (expr) addStructEdge(entity, expr, "contents", trackContentLabel);
+    }
+    for (const occ of occurrences) {
+      const rel: Entity | undefined = occ?.release;
+      const med: Entity | undefined = occ?.medium;
+      const trk: Entity | undefined = occ?.track;
+      if (rel && med) addStructEdge(rel, med, "release_id", structFieldLabel("medium", "release_id"));
+      if (med && trk) addStructEdge(med, trk, "medium_id", structFieldLabel("track", "medium_id"));
+      else if (rel && trk) addStructEdge(rel, trk, "release_id", structFieldLabel("track", "medium_id"));
+      if (trk && entity.kind === "expression") addStructEdge(trk, entity, "contents", trackContentLabel);
+      else if (rel && entity.kind !== "release") addStructEdge(rel, entity, "occurrences", kindLabel(entity.kind));
+    }
 
     for (const r of relations) {
       for (const nid of [r.source_id, r.target_id]) {
-        if (!nid || seenNodes.has(nid)) continue;
-        seenNodes.add(nid);
-        nodes.push(nodeOf(nid, 1));
+        ensureNode(nid, 1);
       }
+      const edgeKey = `${r.source_id}->${r.target_id}::${r.type}`;
+      seenEdges.add(edgeKey);
       links.push({
         id: r.id,
         source: r.source_id,
         target: r.target_id,
-        source_type: relatedEntities[r.source_id]?.kind || (r.source_id === centerId ? entity.kind : undefined),
-        target_type: relatedEntities[r.target_id]?.kind || (r.target_id === centerId ? entity.kind : undefined),
+        source_type: knownEntities[r.source_id]?.kind || (r.source_id === centerId ? entity.kind : undefined),
+        target_type: knownEntities[r.target_id]?.kind || (r.target_id === centerId ? entity.kind : undefined),
         type: r.type,
         label: getRelationName(defs, r.type, true, locale, relationshipRules),
+        is_hierarchical: defs?.relations?.[r.type]?.aggregate === true,
+      });
+    }
+    for (const dr of directoryData.relations) {
+      const edgeKey = `${dr.source_id}->${dr.target_id}::${dr.type}`;
+      if (seenEdges.has(edgeKey)) continue;
+      seenEdges.add(edgeKey);
+      ensureNode(dr.source_id, 1);
+      ensureNode(dr.target_id, 1);
+      links.push({
+        id: `dir:${edgeKey}`,
+        source: dr.source_id,
+        target: dr.target_id,
+        source_type: knownEntities[dr.source_id]?.kind,
+        target_type: knownEntities[dr.target_id]?.kind,
+        type: dr.type,
+        label: getRelationName(defs, dr.type, true, locale, relationshipRules),
+        is_hierarchical: true,
       });
     }
 
     return { graphNodes: nodes, graphLinks: links };
-  }, [entity, relations, relatedEntities, resolvedCover, locale, id, defs, titleOrder, relationshipRules]);
+  }, [
+    entity,
+    relations,
+    relatedEntities,
+    motherWork,
+    motherRelease,
+    motherMedium,
+    subjectWorks,
+    workReleases,
+    directoryData.items,
+    directoryData.relations,
+    directoryData.relatedEntities,
+    children,
+    inclusionExpressions.expressions,
+    occurrences,
+    resolvedCover,
+    locale,
+    id,
+    defs,
+    titleOrder,
+    relationshipRules,
+    kindLabel,
+  ]);
 
   const copyUuid = async () => {
     if (!entity?.id) return;
@@ -704,6 +874,7 @@ export function EntityDetailView({ id }: { id: string }) {
     if (!entity || entity.kind !== "work") {
       setWorkReleaseCount(undefined);
       setWorkCoverRelease(null);
+      setWorkReleases([]);
       return;
     }
     const workId = entity.id || id;
@@ -713,11 +884,13 @@ export function EntityDetailView({ id }: { id: string }) {
         if (!alive) return;
         setWorkReleaseCount(items.length);
         setWorkCoverRelease(items.find((r) => coverUrl(r)) ?? null);
+        setWorkReleases(items);
       })
       .catch(() => {
         if (!alive) return;
         setWorkReleaseCount(undefined);
         setWorkCoverRelease(null);
+        setWorkReleases([]);
       });
     return () => {
       alive = false;
@@ -733,7 +906,7 @@ export function EntityDetailView({ id }: { id: string }) {
       {relationsExpanding ? t("common.loading") : t("home.viewAll")}
     </button>
   ) : null;
-  const tabBlocks: Record<string,string> = {staff:"credits",contents:entity?.kind === "expression" ? "composition" : "directory",releases:"occurrences",relations:"relations",resources:"resources"};
+  const tabBlocks: Record<string,string> = {staff:"credits",contents:entity?.kind === "expression" ? "composition" : "directory",releases:"occurrences",relations:"relations"};
   const tabs: TabItem[] = [
     { id: "overview", label: t("entity.page.navOverview"), icon: <BookOpen className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "staff", label: t("entity.page.navStaff"), badge: sectionFailures.relations ? undefined : relationCount(staffCredits.length + staffRelations.length), visible: sectionFailures.relations || staffCredits.length + staffRelations.length > 0, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
@@ -741,9 +914,7 @@ export function EntityDetailView({ id }: { id: string }) {
     // 因此目录在场时以目录计数，且不再重复渲染子实体网格。
     { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : (directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0)) + aggregate.count, visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0 || aggregate.count > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "releases", label: t("entity.page.navReleases"), badge: sectionFailures.occurrences ? undefined : (entity?.kind === "work" ? workReleaseCount : occurrences.length), visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : relationCount(mediaRelations.length), visible: sectionFailures.relations || mediaRelations.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    // entity 在数据到达前为 null，这里只能安全取值；分节本身的可见性由 kind 决定。
-    { id: "resources", label: t("entity.detail.resourcesTitle"), visible: defs?.structure?.[String(entity?.kind || "")]?.resources === true, icon: <HardDrive className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : (mediaRelations.length > 0 ? relationCount(mediaRelations.length) : graphLinks.length), visible: sectionFailures.relations || mediaRelations.length > 0 || graphLinks.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
     { id: "community", label: t("entity.page.communityTitle"), badge: communityPosts.length, visible: communityEnabled, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisionTotal, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
@@ -1265,7 +1436,7 @@ export function EntityDetailView({ id }: { id: string }) {
                 truncated={relationsTruncated}
                 onOpenGraph={() => {
                   setRelationViewMode("graph");
-                  select(mediaRelations.length > 0 ? "relations" : "staff");
+                  select(mediaRelations.length > 0 || graphLinks.length > 0 ? "relations" : "staff");
                 }}
                 onOpenType={(type) => {
                   setRelationViewMode("cards");
@@ -1512,11 +1683,12 @@ export function EntityDetailView({ id }: { id: string }) {
             {/* ============================================================ */}
             {/* Section 5: Relations & Graph (关联作品与图谱)                 */}
             {/* ============================================================ */}
-            {active === "relations" && mediaRelations.length > 0 && (
+            {active === "relations" && (mediaRelations.length > 0 || graphLinks.length > 0) && (
               <Card id="relations" padding="section" className="space-y-4 shadow-soft">
                 <SectionTitle
                   icon={<Network className="w-4 h-4 text-primary" strokeWidth={1.5} />}
                   actions={
+                    mediaRelations.length > 0 ? (
                     <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
                     <button
                       type="button"
@@ -1541,15 +1713,16 @@ export function EntityDetailView({ id }: { id: string }) {
                       {t("entity.page.viewGraph")}
                     </button>
                     </div>
+                    ) : undefined
                   }
                 >
                   {t("entity.page.relationsTitle")}
                   <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                    {relationCount(mediaRelations.length)}
+                    {mediaRelations.length > 0 ? relationCount(mediaRelations.length) : graphLinks.length}
                   </span>
                 </SectionTitle>
 
-                {relationViewMode === "graph" ? (
+                {relationViewMode === "graph" || mediaRelations.length === 0 ? (
                     <InteractiveRelationGraph
                       height="clamp(360px, 65dvh, 640px)"
                       centerEntityId={entity.id || id}
@@ -1595,11 +1768,6 @@ export function EntityDetailView({ id }: { id: string }) {
             )}
 
             {/* ============================================================ */}
-            {/* Section 8: Resource files (资源文件与上传)                    */}
-            {/* ============================================================ */}
-            {active === "resources" && defs?.structure?.[String(entity.kind || "")]?.resources === true && (
-              <EntityResourceFiles entityId={entity.id || id} />
-            )}
             {/* 聚合关系属于「内容结构」：放进对应面板；模板没有内容结构页签时退到概览。 */}
             {(aggregate.count > 0 || aggregate.state === "error") && (active === "contents" || (active === "overview" && !tabs.some((x) => x.id === "contents" && x.visible !== false))) && (
               <AggregateRelationList entityId={entity.id || id} data={aggregate} />

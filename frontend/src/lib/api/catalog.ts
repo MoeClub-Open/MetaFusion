@@ -27,6 +27,7 @@ export interface GraphNode {
   category: string;
   role?: string;
   level: number;
+  order?: number;
   cover_image_url?: string;
   disambiguation?: string;
   country?: string;

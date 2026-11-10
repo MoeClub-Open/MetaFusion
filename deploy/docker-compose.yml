@@ -441,8 +441,10 @@ services:
       # client_max_body_size 的 1 GiB 兜底（2026-09 审计 ops#30 / storage S24）。
       # 取值与网关对齐：上传上限 = 网关的 1024m；回读校验是 complete 阶段整份读回，
       # 超时就按 600s（= 网关 storage 段的 proxy_read_timeout）封顶，超限显式失败。
-      - STORAGE_MAX_UPLOAD_MB=${STORAGE_MAX_UPLOAD_MB:-1024}
-      - STORAGE_VERIFY_MAX_MB=${STORAGE_VERIFY_MAX_MB:-1024}
+      # 主站默认仅接收目录受管基础视觉素材（封面、封底、手册内页等位图），不存储作品本体。
+      - STORAGE_CATALOG_ASSETS_ONLY=${STORAGE_CATALOG_ASSETS_ONLY:-true}
+      - STORAGE_MAX_UPLOAD_MB=${STORAGE_MAX_UPLOAD_MB:-64}
+      - STORAGE_VERIFY_MAX_MB=${STORAGE_VERIFY_MAX_MB:-64}
       - STORAGE_VERIFY_TIMEOUT_SECONDS=${STORAGE_VERIFY_TIMEOUT_SECONDS:-600}
       # 容量与并发预算（A02 兑现后的治理旋钮）：服务默认 0/72/7 = 不限制，与当前行为一致；
       # 先看 GET /api/storage/stats 再定值。超限 initiate 回 413，并发超限回 429。

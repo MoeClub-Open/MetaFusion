@@ -1633,7 +1633,7 @@ export function EntityEditor({
         <input
           ref={pictureFileRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,image/avif,image/gif"
           className="hidden"
           aria-hidden="true"
           tabIndex={-1}

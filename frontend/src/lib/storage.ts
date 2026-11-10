@@ -336,12 +336,15 @@ export function storageErrorKey(err: unknown): { key: string; vars?: Record<stri
   if (code === "upload_in_progress") return { key: "storage.files.errInProgress" };
   if (code === "invalid_binding_role") return { key: "storage.files.errRole" };
   if (code === "upload_incomplete") return { key: "storage.files.errIncomplete" };
+  if (code === "catalog_assets_only") return { key: "storage.files.errVisualOnly" };
+  if (code === "unsupported_media_type") return { key: "storage.files.errUnsupportedMedia" };
   if (status === 0) return { key: "storage.files.errNetwork" };
   if (status === 401) return { key: "storage.files.errAuth" };
   if (status === 403) return { key: "storage.files.errForbidden" };
   if (status === 404) return { key: "storage.files.errNotFound" };
   if (status === 409) return { key: "storage.files.errConflict" };
   if (status === 413) return { key: "storage.files.errTooLarge" };
+  if (status === 415) return { key: "storage.files.errUnsupportedMedia" };
   if (status === 429) return { key: "storage.files.errRateLimited" };
   if (status === 502 || status === 503 || status === 504) return { key: "storage.files.errUnavailable" };
   return { key: "storage.files.errGeneric", vars: { status } };

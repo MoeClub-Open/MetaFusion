@@ -2,12 +2,21 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useTheme } from "@/lib/themeContext";
 import { GraphNode, GraphLink, catalogEntityHref } from "@/lib/api";
 import { useDefinitions, getKindName } from "@/lib/definitions";
 import { RelationFilterBar, useRelationFilter } from "@/components/entity/RelationFilterBar";
-import Link from "next/link";
+import {
+  buildDisplayGraph,
+  computeGraphLayout,
+  GraphLayoutMode,
+  hubKeyFromNodeId,
+  isHubNodeId,
+  PositionedGraphNode,
+  withAncestorBridgeLinks,
+} from "@/lib/relationGraphLayout";
 import {
   ZoomIn,
   ZoomOut,
@@ -28,6 +37,7 @@ import {
   Film,
   X,
   Scan,
+  RotateCcw,
 } from "lucide-react";
 
 export interface InteractiveRelationGraphProps {
@@ -39,24 +49,14 @@ export interface InteractiveRelationGraphProps {
   className?: string;
   onNodeClick?: (node: GraphNode) => void;
   onEdgeClick?: (link: GraphLink) => void;
-  /** 中心实体的 kind：层级布局据此把 collection/work 归上、release 归下、agent 归左。 */
   orientation?: "work" | "release" | "agent";
   showInspector?: boolean;
   title?: string;
   headerRightExtra?: React.ReactNode;
 }
 
-interface LayoutNode extends GraphNode {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  radius: number;
-}
+type GraphScopeMode = "all" | "structure" | "relations";
 
-// 实体类型视觉主题配置与本地化辅助（固定八实体骨架，支持明暗双模式高保真渲染）
-// 展示名由调用方解析（服务端 definitions.kinds 优先、前端字典兜底）：本函数只按 kind 码
-// 决定配色与图标，名称不再从字典直取，避免后台改了骨架名前端不跟随。
 const getEntityTypeTheme = (
   type: string,
   labelOf: (kind: string) => string,
@@ -150,13 +150,13 @@ const getEntityTypeTheme = (
         bgFill: isDark ? "#27272a" : "#f1f5f9",
         textFill: isDark ? "#e4e4e7" : "#475569",
         stroke: isDark ? "#52525b" : "#94a3b8",
-        badgeBgClass: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 border-zinc-500/30",
+        badgeBgClass: "bg-surfaceSubtle text-text-body border-line",
         icon: Tag,
       };
   }
 };
 
-const getLinkColorHex = (color?: string) => {
+const getLinkColorHex = (color?: string, isHierarchical?: boolean, isDark = false) => {
   switch (color) {
     case "emerald":
       return "#10b981";
@@ -175,57 +175,75 @@ const getLinkColorHex = (color?: string) => {
     case "teal":
       return "#14b8a6";
     default:
-      return "#64748b";
+      if (isHierarchical) return isDark ? "#94a3b8" : "#475569";
+      return isDark ? "#71717a" : "#64748b";
   }
 };
 
-// 连线谓词徽标智能定位与包围盒避让算法
-const calculateEdgeBadgePosition = (
-  src: LayoutNode,
-  tgt: LayoutNode,
-  pillHalfWidth = 115
-): { x: number; y: number } => {
+function visualUnits(text: string): number {
+  let units = 0;
+  for (const ch of text) {
+    units += ch.charCodeAt(0) > 0xff ? 1.85 : 1;
+  }
+  return units;
+}
+
+function truncateByUnits(text: string, maxUnits: number): string {
+  if (!text) return "";
+  let acc = 0;
+  let out = "";
+  for (const ch of text) {
+    const w = ch.charCodeAt(0) > 0xff ? 1.85 : 1;
+    if (acc + w > maxUnits) return out + "…";
+    acc += w;
+    out += ch;
+  }
+  return out;
+}
+
+function buildEdgeCurve(
+  src: PositionedGraphNode,
+  tgt: PositionedGraphNode,
+): { d: string; midX: number; midY: number } {
   const dx = tgt.x - src.x;
   const dy = tgt.y - src.y;
-  const dist = Math.hypot(dx, dy) || 1;
 
-  const capsuleBottomOffset = 46;
-
-  let tMin = (src.radius + 24) / dist;
-  let tMax = 1 - (tgt.radius + 24) / dist;
-
-  if (dy > 0) {
-    const capHeightDist = src.radius + capsuleBottomOffset;
-    const xOffsetAtCapBottom = Math.abs((dx / dy) * capHeightDist);
-    if (xOffsetAtCapBottom < pillHalfWidth + 16) {
-      const tClearSrcCap = (src.radius + capsuleBottomOffset + 14) / dy;
-      tMin = Math.max(tMin, Math.min(0.48, tClearSrcCap));
-    }
+  if (Math.abs(dy) >= 42) {
+    const dirY = dy >= 0 ? 1 : -1;
+    const x1 = src.x;
+    const y1 = src.y + dirY * (src.height / 2 + 1);
+    const x2 = tgt.x;
+    const y2 = tgt.y - dirY * (tgt.height / 2 + 4);
+    const spanY = Math.abs(y2 - y1);
+    const ctrl = Math.max(28, spanY * 0.46);
+    const cy1 = y1 + dirY * ctrl;
+    const cy2 = y2 - dirY * ctrl;
+    const midX = 0.5 * (x1 + x2);
+    const midY = 0.125 * y1 + 0.375 * cy1 + 0.375 * cy2 + 0.125 * y2;
+    return {
+      d: "M " + x1 + " " + y1 + " C " + x1 + " " + cy1 + ", " + x2 + " " + cy2 + ", " + x2 + " " + y2,
+      midX,
+      midY,
+    };
   }
 
-  if (dy < 0) {
-    const capHeightDist = tgt.radius + capsuleBottomOffset;
-    const xOffsetAtCapBottom = Math.abs((dx / Math.abs(dy)) * capHeightDist);
-    if (xOffsetAtCapBottom < pillHalfWidth + 16) {
-      const tClearTgtCap = 1 - (tgt.radius + capsuleBottomOffset + 14) / Math.abs(dy);
-      tMax = Math.min(tMax, Math.max(0.52, tClearTgtCap));
-    }
-  }
-
-  const t = tMin < tMax ? (tMin + tMax) / 2 : 0.5;
-
-  let posX = src.x + t * dx;
-  let posY = src.y + t * dy;
-
-  if (tMin >= tMax) {
-    const normalX = -dy / dist;
-    const normalY = dx / dist;
-    posX += normalX * 28;
-    posY += normalY * 28;
-  }
-
-  return { x: posX, y: posY };
-};
+  const dirX = dx >= 0 ? 1 : -1;
+  const x1 = src.x + dirX * (src.width / 2 + 1);
+  const y1 = src.y;
+  const x2 = tgt.x - dirX * (tgt.width / 2 + 4);
+  const y2 = tgt.y;
+  const spanX = Math.abs(x2 - x1);
+  const lift = spanX > 260 ? -38 : 0;
+  const cx1 = x1 + dirX * Math.max(24, spanX * 0.35);
+  const cx2 = x2 - dirX * Math.max(24, spanX * 0.35);
+  const cy1 = y1 + lift;
+  const cy2 = y2 + lift;
+  return {
+    d: "M " + x1 + " " + y1 + " C " + cx1 + " " + cy1 + ", " + cx2 + " " + cy2 + ", " + x2 + " " + y2,
+    midX: (x1 + x2) / 2,
+    midY: (y1 + y2) / 2 + lift * 0.75,
+  };
+}
 
 export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> = ({
   centerEntityId,
@@ -236,7 +254,6 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   className = "",
   onNodeClick,
   onEdgeClick,
-  orientation = "work",
   showInspector = true,
   title,
   headerRightExtra,
@@ -244,7 +261,6 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   const { t, tr, locale } = useI18n();
   const { kinds } = useDefinitions();
   const { resolvedMode } = useTheme();
-  // kind 展示名：服务端 definitions.kinds 优先，字典只作兜底，字典缺键时退原始码。
   const kindLabel = useCallback(
     (kind: string) => getKindName(kinds, kind, locale, tr(`catalog.kind.${kind}`, kind)),
     [kinds, locale, tr],
@@ -257,592 +273,275 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
 
-  // 拖拽平移手势追踪
-  const dragRef = useRef<{
+  const [viewport, setViewport] = useState<{ w: number; h: number }>({ w: 1000, h: 580 });
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
+
+  const panDragRef = useRef<{
     isDown: boolean;
     startX: number;
     startY: number;
     startPanX: number;
     startPanY: number;
-    hasMoved: boolean;
   }>({
     isDown: false,
     startX: 0,
     startY: 0,
     startPanX: 0,
     startPanY: 0,
-    hasMoved: false,
   });
 
+  const nodeDragRef = useRef<{
+    nodeId: string;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startSvgX: number;
+    startSvgY: number;
+    origX: number;
+    origY: number;
+    moved: boolean;
+  } | null>(null);
+
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const [pan, setPan] = useState({ x: 500, y: 290 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // 严格默认采用层级结构 (Hierarchy) 布局
-  const [layoutMode, setLayoutMode] = useState<"hierarchy" | "radial" | "force">("hierarchy");
+  const [layoutMode, setLayoutMode] = useState<GraphLayoutMode>("hierarchy");
+  const [scopeMode, setScopeMode] = useState<GraphScopeMode>("all");
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
-  // 节点数适中（<=20）时默认平铺展开真实节点；超大图谱默认按关系聚合，工具栏可随时一键切换。
   const [groupOverride, setGroupOverride] = useState<boolean | null>(null);
   const [expandedHubs, setExpandedHubs] = useState<Set<string>>(() => new Set());
+  const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
 
-  // 图谱底色跟随当前主题变量，不另维护一套锌灰/蓝色。
+  useEffect(() => {
+    setManualPositions({});
+    setExpandedHubs(new Set());
+    setSelectedNode(null);
+  }, [centerEntityId]);
+
   const themePaint = (name: string, fallback: string) => {
     if (typeof window === "undefined") return fallback;
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   };
-  const capsuleBg = themePaint("--surface-color", isDark ? "#343f44" : "#f4f0d9");
-  const capsuleStroke = themePaint("--line-color", isDark ? "rgba(211,198,170,0.14)" : "rgba(92,106,114,0.16)");
-  const nodeNameFill = themePaint("--text-strong-color", isDark ? "#d3c6aa" : "#5c6a72");
-  const edgeBadgeBg = capsuleBg;
-  const edgeBadgeStroke = themePaint("--line-strong-color", capsuleStroke);
-  const edgeBadgeText = themePaint("--text-body-color", nodeNameFill);
-  const centerFill = themePaint("--primary-color", isDark ? "#a7c080" : "#92a701");
-  const centerBorder = themePaint("--bg-color", isDark ? "#2d353b" : "#fdf6e3");
+  const cardBg = themePaint("--surface-color", isDark ? "#232a2e" : "#ffffff");
+  const cardStroke = themePaint("--line-color", isDark ? "rgba(211,198,170,0.18)" : "rgba(92,106,114,0.2)");
+  const titleFill = themePaint("--text-strong-color", isDark ? "#e6e1cf" : "#1f2937");
+  const subFill = themePaint("--text-muted-color", isDark ? "#9da9a0" : "#64748b");
+  const edgeBadgeBg = cardBg;
+  const edgeBadgeStroke = themePaint("--line-strong-color", cardStroke);
+  const edgeBadgeText = themePaint("--text-body-color", titleFill);
+  const centerAccent = themePaint("--primary-color", isDark ? "#a7c080" : "#0284c7");
 
-  // 过滤连线：筛选维度（关联对象 / 关系分类 / 关系类型）全部由连线自身与 definitions
-  // 推导——分组名与类型名都取服务端声明，新增关系或改分组后图谱即刻跟随，
-  // 不在前端硬编码关系码或分组码。
+  const hasStructureLinks = useMemo(() => links.some((l) => Boolean(l.is_hierarchical)), [links]);
+  const hasRelationLinks = useMemo(() => links.some((l) => !l.is_hierarchical), [links]);
+  const effectiveScope: GraphScopeMode =
+    hasStructureLinks && hasRelationLinks ? scopeMode : "all";
+
+  const scopeLinks = useMemo(() => {
+    if (effectiveScope === "structure") return links.filter((l) => Boolean(l.is_hierarchical));
+    if (effectiveScope === "relations") {
+      const relOnly = links.filter((l) => !l.is_hierarchical);
+      return withAncestorBridgeLinks(centerEntityId, links, relOnly);
+    }
+    return links;
+  }, [links, effectiveScope, centerEntityId]);
+
+  const nonHierarchicalScopeLinks = useMemo(
+    () => scopeLinks.filter((l) => !l.is_hierarchical),
+    [scopeLinks],
+  );
+
   const facetRows = useMemo(
     () =>
-      links.map((link, index) => ({
+      nonHierarchicalScopeLinks.map((link, index) => ({
         type: link.type,
-        // 对端 kind：中心实体一侧不算，另一侧才是"关联对象"。
-        kind: (link.source === centerEntityId ? link.target_type : link.source_type) || "",
+        kind:
+          (link.source === centerEntityId
+            ? link.target_type
+            : link.target === centerEntityId
+              ? link.source_type
+              : link.target_type || link.source_type) || "",
         label: link.label,
         index,
       })),
-    [links, centerEntityId]
+    [nonHierarchicalScopeLinks, centerEntityId],
   );
   const relationFilter = useRelationFilter(facetRows);
-  const filteredLinks = useMemo(
-    () => relationFilter.visible.map((row) => links[row.index]),
-    [relationFilter.visible, links]
-  );
 
-  // 获取激活的节点集合
+  const filteredLinks = useMemo(() => {
+    if (nonHierarchicalScopeLinks.length === 0) return scopeLinks;
+    if (relationFilter.visible.length === nonHierarchicalScopeLinks.length) return scopeLinks;
+    const matched = relationFilter.visible.map((row) => nonHierarchicalScopeLinks[row.index]);
+    return withAncestorBridgeLinks(centerEntityId, scopeLinks, matched);
+  }, [scopeLinks, nonHierarchicalScopeLinks, relationFilter.visible, centerEntityId]);
+
   const activeNodeIds = useMemo(() => {
     const set = new Set<string>([centerEntityId]);
-    filteredLinks.forEach((l) => {
-      set.add(l.source);
-      set.add(l.target);
-    });
+    for (const l of filteredLinks) {
+      if (l.source) set.add(l.source);
+      if (l.target) set.add(l.target);
+    }
     return set;
   }, [centerEntityId, filteredLinks]);
 
   const activeNodes = useMemo(() => {
-    return nodes.filter((n) => activeNodeIds.has(n.id));
-  }, [nodes, activeNodeIds]);
-
-  // 按关系类型分组（触及中心的边才参与聚合；游离边直通渲染，不进 hub）。
-  // 成员按首次出现排，节点有多条边时归第一组——星形拓扑下基本是一对一。
-  const typeGroups = useMemo(() => {
-    const order: string[] = [];
-    const members = new Map<string, string[]>();
-    const labels = new Map<string, string>();
-    for (const link of filteredLinks) {
-      const other = link.source === centerEntityId ? link.target : link.source;
-      if (other === centerEntityId) continue;
-      if (link.source !== centerEntityId && link.target !== centerEntityId) continue;
-      if (!members.has(link.type)) {
-        order.push(link.type);
-        members.set(link.type, []);
-        labels.set(link.type, link.label || link.type);
-      }
-      const list = members.get(link.type)!;
-      if (!list.includes(other)) list.push(other);
-    }
-    return order.map((type) => ({ type, label: labels.get(type) || type, memberIds: members.get(type) || [] }));
-  }, [filteredLinks, centerEntityId]);
-
-  // 单类型时聚合没有意义（一个 hub 包全部节点，多此一举）：直接平铺。
-  const canGroup = layoutMode === "hierarchy" && typeGroups.length > 1;
-  const otherNodeCount = Math.max(0, activeNodes.length - 1);
-  const grouped = canGroup && (groupOverride ?? otherNodeCount > 20);
-  const hubIdOf = (type: string) => `__hub:${type}`;
-
-  // 聚合展示集：中心 + 类型 hub + 展开组的成员。
-  const displayNodes = useMemo<GraphNode[]>(() => {
-    if (!grouped) return activeNodes;
-    const byId = new Map(activeNodes.map((n) => [n.id, n]));
-    const seen = new Set<string>();
-    const out: GraphNode[] = [];
-    const center = byId.get(centerEntityId);
-    if (center) {
-      seen.add(center.id);
-      out.push(center);
-    }
-    for (const g of typeGroups) {
-      out.push({
-        id: hubIdOf(g.type),
-        name: g.label,
-        type: "__hub",
-        category: "hub",
-        level: 1,
-        role: String(g.memberIds.length),
-      });
-      if (expandedHubs.has(g.type)) {
-        for (const id of g.memberIds) {
-          if (seen.has(id)) continue;
-          const m = byId.get(id);
-          if (m) {
-            seen.add(id);
-            out.push(m);
-          }
-        }
-      }
-    }
-    return out;
-  }, [grouped, activeNodes, typeGroups, expandedHubs, centerEntityId]);
-
-  // 聚合连边：中心→hub（收起态的唯一可见边）+ hub→成员（展开组）+
-  // 两端都可见的游离边。原生的中心→成员边由 hub 边代替，不再绘制。
-  const displayLinks = useMemo<GraphLink[]>(() => {
-    if (!grouped) return filteredLinks;
-    const visible = new Set(displayNodes.map((n) => n.id));
-    const out: GraphLink[] = [];
-    for (const g of typeGroups) {
-      out.push({
-        id: `__hub-edge:${g.type}`,
-        source: centerEntityId,
-        target: hubIdOf(g.type),
-        type: g.type,
-        label: g.label,
-        qualifier: "__hub",
-      });
-      if (expandedHubs.has(g.type)) {
-        for (const id of g.memberIds) {
-          if (!visible.has(id)) continue;
-          out.push({
-            id: `__hub-link:${g.type}:${id}`,
-            source: hubIdOf(g.type),
-            target: id,
-            type: g.type,
-            label: "",
-            qualifier: "__hub-member",
-          });
-        }
-      }
-    }
-    for (const link of filteredLinks) {
-      if (link.source === centerEntityId || link.target === centerEntityId) continue;
-      if (visible.has(link.source) && visible.has(link.target)) out.push(link);
-    }
-    return out;
-  }, [grouped, filteredLinks, displayNodes, typeGroups, expandedHubs, centerEntityId]);
-
-  // 计算节点布局坐标并执行全局几何中心对齐校准 (1000 x 680 基准坐标系)
-  const layoutNodes = useMemo<Map<string, LayoutNode>>(() => {
-    const map = new Map<string, LayoutNode>();
-    const baseWidth = 1000;
-    const baseHeight = 680;
-    const centerX = baseWidth / 2;
-    const centerY = baseHeight / 2;
-
-    const otherNodes = activeNodes.filter((n) => n.id !== centerEntityId);
-    const totalOthers = otherNodes.length;
-
-    // 中心节点初始化
-    const centerNode = activeNodes.find((n) => n.id === centerEntityId) || {
-      id: centerEntityId,
-      name: centerEntityId,
-      type: centerEntityType,
-      category: "center",
-      level: 0,
-    };
-
-    map.set(centerEntityId, {
-      ...centerNode,
-      x: centerX,
-      y: centerY,
-      vx: 0,
-      vy: 0,
-      radius: 38,
-    });
-
-    if (layoutMode === "radial") {
-      // 环形放射布局
-      if (totalOthers <= 7) {
-        const radius = Math.max(260, 190 + totalOthers * 16);
-        otherNodes.forEach((node, i) => {
-          const angle = (i / Math.max(1, totalOthers)) * 2 * Math.PI - Math.PI / 2;
-          const x = centerX + radius * Math.cos(angle);
-          const y = centerY + radius * Math.sin(angle);
-          map.set(node.id, {
-            ...node,
-            x,
-            y,
-            vx: 0,
-            vy: 0,
-            radius: 30,
-          });
-        });
-      } else {
-        const innerCount = Math.min(6, Math.ceil(totalOthers / 2));
-        const outerCount = totalOthers - innerCount;
-        const rInner = 240;
-        const rOuter = 390;
-
-        for (let i = 0; i < innerCount; i++) {
-          const node = otherNodes[i];
-          const angle = (i / innerCount) * 2 * Math.PI - Math.PI / 2;
-          const x = centerX + rInner * Math.cos(angle);
-          const y = centerY + rInner * Math.sin(angle);
-          map.set(node.id, {
-            ...node,
-            x,
-            y,
-            vx: 0,
-            vy: 0,
-            radius: 30,
-          });
-        }
-
-        const offsetAngle = Math.PI / innerCount;
-        for (let i = 0; i < outerCount; i++) {
-          const node = otherNodes[innerCount + i];
-          const angle = (i / outerCount) * 2 * Math.PI - Math.PI / 2 + offsetAngle;
-          const x = centerX + rOuter * Math.cos(angle);
-          const y = centerY + rOuter * Math.sin(angle);
-          map.set(node.id, {
-            ...node,
-            x,
-            y,
-            vx: 0,
-            vy: 0,
-            radius: 30,
-          });
-        }
-      }
-    } else if (layoutMode === "hierarchy") {
-      if (grouped) {
-        // 类型聚合布局：中心 → 类型 hub → 已展开类型的成员。
-        const hubById = new Map(displayNodes.map((n) => [n.id, n]));
-        const hubList = typeGroups;
-        const hubRadius = hubList.length <= 8 ? 300 : 350;
-        hubList.forEach((g, i) => {
-          const angle = (i / Math.max(1, hubList.length)) * 2 * Math.PI - Math.PI / 2;
-          const hx = centerX + hubRadius * Math.cos(angle);
-          const hy = centerY + hubRadius * Math.sin(angle);
-          const hub = hubById.get(hubIdOf(g.type));
-          if (hub) map.set(hub.id, { ...hub, x: hx, y: hy, vx: 0, vy: 0, radius: 34 });
-          if (expandedHubs.has(g.type)) {
-            const side = hx >= centerX ? 1 : -1;
-            const total = g.memberIds.length;
-            g.memberIds.forEach((id, j) => {
-              if (map.has(id)) return;
-              const m = hubById.get(id);
-              if (!m) return;
-              map.set(id, {
-                ...m,
-                x: hx + side * 180,
-                y: hy + (j - (total - 1) / 2) * 78,
-                vx: 0, vy: 0, radius: 26,
-              });
-            });
-          }
-        });
-      } else {
-      // 层级结构 (Hierarchy) 布局：按中心类型自适应四向分区并自动折行/折列
-      const topNodes: GraphNode[] = [];
-      const bottomReleaseNodes: GraphNode[] = [];
-      const bottomMediumNodes: GraphNode[] = [];
-      const leftArtistNodes: GraphNode[] = [];
-      const rightOtherNodes: GraphNode[] = [];
-
-      otherNodes.forEach((node) => {
-        if (node.id === centerEntityId) {
-          rightOtherNodes.push(node);
-        } else if (orientation === "agent") {
-          if (node.type === "agent") topNodes.push(node);
-          else if (node.type === "collection") leftArtistNodes.push(node);
-          else if (node.type === "release" || node.type === "medium" || node.type === "track") bottomReleaseNodes.push(node);
-          else rightOtherNodes.push(node);
-        } else if (node.type === "agent") {
-          leftArtistNodes.push(node);
-        } else if (node.type === "medium" || node.type === "track") {
-          bottomMediumNodes.push(node);
-        } else if (node.type === "release") {
-          // 以发行版为中心时，发行版本身在主区，其上层（work/collection）归上。
-          (orientation === "release" ? topNodes : bottomReleaseNodes).push(node);
-        } else if (node.type === "collection" || node.type === "work") {
-          (orientation === "work" ? topNodes : bottomReleaseNodes).push(node);
-        } else {
-          rightOtherNodes.push(node);
-        }
-      });
-
-      const placeRows = (list: GraphNode[], baseY: number, dirY: 1 | -1, radius: number, maxCols = 5) => {
-        const colGap = 215;
-        const rowGap = 105;
-        list.forEach((node, idx) => {
-          const row = Math.floor(idx / maxCols);
-          const col = idx % maxCols;
-          const rowCount = Math.min(maxCols, list.length - row * maxCols);
-          const span = Math.max(0, (rowCount - 1) * colGap);
-          const x = centerX - span / 2 + (rowCount > 1 ? (span / (rowCount - 1)) * col : 0);
-          const y = baseY + dirY * row * rowGap;
-          map.set(node.id, { ...node, x, y, vx: 0, vy: 0, radius });
-        });
-      };
-
-      const placeCols = (list: GraphNode[], baseX: number, dirX: 1 | -1, radius: number, maxRows = 6) => {
-        const rowGap = 104;
-        const colGap = 225;
-        list.forEach((node, idx) => {
-          const col = Math.floor(idx / maxRows);
-          const row = idx % maxRows;
-          const colCount = Math.min(maxRows, list.length - col * maxRows);
-          const startY = centerY - ((colCount - 1) * rowGap) / 2;
-          const x = baseX + dirX * col * colGap;
-          const y = startY + row * rowGap;
-          map.set(node.id, { ...node, x, y, vx: 0, vy: 0, radius });
-        });
-      };
-
-      placeRows(topNodes, centerY - 220, -1, 32);
-      const releaseBaseY = centerY + (bottomMediumNodes.length > 0 ? 180 : 220);
-      placeRows(bottomReleaseNodes, releaseBaseY, 1, 30);
-      const releaseRows = Math.ceil(bottomReleaseNodes.length / 5);
-      placeRows(bottomMediumNodes, releaseBaseY + Math.max(1, releaseRows) * 105, 1, 28);
-      placeCols(leftArtistNodes, centerX - 340, -1, 30);
-      placeCols(rightOtherNodes, centerX + 340, 1, 30);
-      }
-    } else {
-      // 自然力导向模拟排布 (Force-Directed)
-      const simNodes: LayoutNode[] = [
-        {
-          ...centerNode,
-          x: centerX,
-          y: centerY,
-          vx: 0,
-          vy: 0,
-          radius: 38,
-        },
-      ];
-
-      otherNodes.forEach((node, i) => {
-        const angle = (i / Math.max(1, totalOthers)) * 2 * Math.PI;
-        const initDist = 250;
-        simNodes.push({
-          ...node,
-          x: centerX + initDist * Math.cos(angle) + (Math.random() - 0.5) * 20,
-          y: centerY + initDist * Math.sin(angle) + (Math.random() - 0.5) * 20,
-          vx: 0,
-          vy: 0,
-          radius: 30,
-        });
-      });
-
-      const kRep = 80000;
-      const targetLen = 260;
-      const kSpring = 0.04;
-      const kCenter = 0.015;
-
-      for (let iter = 0; iter < 60; iter++) {
-        for (let i = 0; i < simNodes.length; i++) {
-          for (let j = i + 1; j < simNodes.length; j++) {
-            const n1 = simNodes[i];
-            const n2 = simNodes[j];
-            const dx = n2.x - n1.x;
-            const dy = n2.y - n1.y;
-            const dist = Math.hypot(dx, dy) || 1;
-            if (dist < 220) {
-              const force = (kRep / (dist * dist)) * 1.5;
-              const fx = (dx / dist) * force;
-              const fy = (dy / dist) * force;
-              if (i !== 0) {
-                n1.x -= fx;
-                n1.y -= fy;
-              }
-              if (j !== 0) {
-                n2.x += fx;
-                n2.y += fy;
-              }
-            }
-          }
-        }
-
-        filteredLinks.forEach((link) => {
-          const sIdx = simNodes.findIndex((n) => n.id === link.source);
-          const tIdx = simNodes.findIndex((n) => n.id === link.target);
-          if (sIdx >= 0 && tIdx >= 0) {
-            const sNode = simNodes[sIdx];
-            const tNode = simNodes[tIdx];
-            const dx = tNode.x - sNode.x;
-            const dy = tNode.y - sNode.y;
-            const dist = Math.hypot(dx, dy) || 1;
-            const displacement = dist - targetLen;
-            const fx = (dx / dist) * displacement * kSpring;
-            const fy = (dy / dist) * displacement * kSpring;
-            if (sIdx !== 0) {
-              sNode.x += fx;
-              sNode.y += fy;
-            }
-            if (tIdx !== 0) {
-              tNode.x -= fx;
-              tNode.y -= fy;
-            }
-          }
-        });
-
-        for (let i = 1; i < simNodes.length; i++) {
-          const n = simNodes[i];
-          n.x += (centerX - n.x) * kCenter;
-          n.y += (centerY - n.y) * kCenter;
-        }
-      }
-
-      simNodes.forEach((node) => {
-        map.set(node.id, node);
+    const list = nodes.filter((n) => activeNodeIds.has(n.id));
+    if (!list.some((n) => n.id === centerEntityId)) {
+      list.unshift({
+        id: centerEntityId,
+        name: centerEntityId,
+        type: centerEntityType,
+        category: "center",
+        level: 0,
       });
     }
+    return list;
+  }, [nodes, activeNodeIds, centerEntityId, centerEntityType]);
 
-    // 【全局几何中心校准】：无论哪种布局算法，均计算整体外接包围盒并自动平移对齐到 (500, 340)
-    if (map.size > 0) {
-      let bMinX = Infinity;
-      let bMaxX = -Infinity;
-      let bMinY = Infinity;
-      let bMaxY = -Infinity;
+  const wantGrouping = layoutMode === "hierarchy" && (groupOverride ?? activeNodes.length > 26);
+  const displayGraph = useMemo(
+    () => buildDisplayGraph(centerEntityId, activeNodes, filteredLinks, wantGrouping, expandedHubs, 6),
+    [centerEntityId, activeNodes, filteredLinks, wantGrouping, expandedHubs],
+  );
+  const canGroup = layoutMode === "hierarchy" && displayGraph.canGroup;
+  const grouped = canGroup && wantGrouping;
 
-      map.forEach((node) => {
-        bMinX = Math.min(bMinX, node.x);
-        bMaxX = Math.max(bMaxX, node.x);
-        bMinY = Math.min(bMinY, node.y);
-        bMaxY = Math.max(bMaxY, node.y);
-      });
+  const baseLayoutNodes = useMemo(
+    () =>
+      computeGraphLayout(
+        centerEntityId,
+        centerEntityType,
+        displayGraph.nodes,
+        displayGraph.links,
+        layoutMode,
+      ),
+    [centerEntityId, centerEntityType, displayGraph.nodes, displayGraph.links, layoutMode],
+  );
 
-      const boundCenterX = (bMinX + bMaxX) / 2;
-      const boundCenterY = (bMinY + bMaxY) / 2;
-      const shiftX = centerX - boundCenterX;
-      const shiftY = centerY - boundCenterY;
-
-      // 平移校正所有节点
-      map.forEach((node) => {
-        node.x = +(node.x + shiftX).toFixed(2);
-        node.y = +(node.y + shiftY).toFixed(2);
-      });
+  const positionedNodes = useMemo(() => {
+    if (Object.keys(manualPositions).length === 0) return baseLayoutNodes;
+    const merged = new Map<string, PositionedGraphNode>();
+    for (const [id, node] of baseLayoutNodes) {
+      const override = manualPositions[id];
+      merged.set(id, override ? { ...node, x: override.x, y: override.y } : node);
     }
+    return merged;
+  }, [baseLayoutNodes, manualPositions]);
 
-    return map;
-  }, [activeNodes, centerEntityId, centerEntityType, orientation, layoutMode, filteredLinks, grouped, expandedHubs, typeGroups, displayNodes]);
+  const renderLinks = displayGraph.links;
+  const hasManualPositions = Object.keys(manualPositions).length > 0;
 
-  // 渲染用的边集：聚合态用合成边（hub 边无徽章，见 qualifier），平铺态用原边。
-  const renderLinks = grouped ? displayLinks : filteredLinks;
-
-  // 将屏幕 Client 坐标精确转换为 SVG viewBox (0..1000, 0..680) 坐标
   const getSvgPoint = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
     const svg = svgRef.current;
-    if (!svg) return { x: 500, y: 340 };
+    if (!svg) return { x: viewportRef.current.w / 2, y: viewportRef.current.h / 2 };
     try {
       const pt = svg.createSVGPoint();
       pt.x = clientX;
       pt.y = clientY;
       const ctm = svg.getScreenCTM();
       if (ctm) {
-        const inverted = ctm.inverse();
-        const svgPoint = pt.matrixTransform(inverted);
-        if (Number.isFinite(svgPoint.x) && Number.isFinite(svgPoint.y)) {
-          return { x: svgPoint.x, y: svgPoint.y };
+        const svgPt = pt.matrixTransform(ctm.inverse());
+        if (Number.isFinite(svgPt.x) && Number.isFinite(svgPt.y)) {
+          return { x: svgPt.x, y: svgPt.y };
         }
       }
     } catch {
-      // 捕获不可逆矩阵异常
+      // ignore CTM inverse failure
     }
-
-    try {
-      const rect = svg.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        return {
-          x: ((clientX - rect.left) / rect.width) * 1000,
-          y: ((clientY - rect.top) / rect.height) * 680,
-        };
-      }
-    } catch {
-      // 容错处理
+    const rect = svg.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      return {
+        x: ((clientX - rect.left) / rect.width) * viewportRef.current.w,
+        y: ((clientY - rect.top) / rect.height) * viewportRef.current.h,
+      };
     }
-    return { x: 500, y: 340 };
+    return { x: viewportRef.current.w / 2, y: viewportRef.current.h / 2 };
   }, []);
 
-  // 自适应适配居中 (Auto-Fit & Centering)
   const fitToView = useCallback(
-    (customNodes?: Map<string, LayoutNode>) => {
-      const nodesMap = customNodes || layoutNodes;
+    (targetMap?: Map<string, PositionedGraphNode>) => {
+      const nodesMap = targetMap || baseLayoutNodes;
+      const vw = viewportRef.current.w || 1000;
+      const vh = viewportRef.current.h || 580;
       if (!nodesMap || nodesMap.size === 0) {
         setZoom(1);
-        setPan({ x: 0, y: 0 });
+        setPan({ x: vw / 2, y: vh / 2 });
         return;
       }
-
-      const nodeList = Array.from(nodesMap.values());
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
       let maxY = -Infinity;
-
-      nodeList.forEach((n) => {
-        const halfPillWidth = 115;
-        const topOffset = n.radius + 15;
-        const bottomOffset = n.radius + 45;
-
-        minX = Math.min(minX, n.x - halfPillWidth);
-        maxX = Math.max(maxX, n.x + halfPillWidth);
-        minY = Math.min(minY, n.y - topOffset);
-        maxY = Math.max(maxY, n.y + bottomOffset);
-      });
-
-      if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+      for (const n of nodesMap.values()) {
+        minX = Math.min(minX, n.x - n.width / 2);
+        maxX = Math.max(maxX, n.x + n.width / 2);
+        minY = Math.min(minY, n.y - n.height / 2);
+        maxY = Math.max(maxY, n.y + n.height / 2);
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
         setZoom(1);
-        setPan({ x: 0, y: 0 });
+        setPan({ x: vw / 2, y: vh / 2 });
         return;
       }
-
-      const boxWidth = Math.max(140, maxX - minX);
-      const boxHeight = Math.max(140, maxY - minY);
-      const boxCenterX = (minX + maxX) / 2;
-      const boxCenterY = (minY + maxY) / 2;
-
-      const svgWidth = 1000;
-      const svgHeight = 680;
-      const padding = 75; // 舒适的安全留白边界
-
-      const availableWidth = svgWidth - padding * 2;
-      const availableHeight = svgHeight - padding * 2;
-
-      const scaleX = availableWidth / boxWidth;
-      const scaleY = availableHeight / boxHeight;
-
-      // 缩放范围限制在 [0.45, 1.25]
-      const rawScale = Math.min(scaleX, scaleY);
-      const idealZoom = Number.isFinite(rawScale) ? Math.min(1.25, Math.max(0.45, rawScale)) : 1;
-      const roundedZoom = +idealZoom.toFixed(3);
-
-      // 将包围盒几何中心严格对准 SVG 视口中心 (500, 340)
-      const targetPanX = +(svgWidth / 2 - roundedZoom * boxCenterX).toFixed(2);
-      const targetPanY = +(svgHeight / 2 - roundedZoom * boxCenterY).toFixed(2);
-
-      setZoom(Number.isFinite(roundedZoom) ? roundedZoom : 1);
+      const padX = 56;
+      const padY = 52;
+      const boxW = Math.max(220, maxX - minX);
+      const boxH = Math.max(120, maxY - minY);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const scale = Math.min((vw - padX * 2) / boxW, (vh - padY * 2) / boxH);
+      const clamped = Number.isFinite(scale) ? Math.min(1.15, Math.max(0.22, scale)) : 1;
+      const rounded = +clamped.toFixed(3);
+      setZoom(rounded);
       setPan({
-        x: Number.isFinite(targetPanX) ? targetPanX : 0,
-        y: Number.isFinite(targetPanY) ? targetPanY : 0,
+        x: +(vw / 2 - rounded * cx).toFixed(1),
+        y: +(vh / 2 - rounded * cy).toFixed(1),
       });
     },
-    [layoutNodes]
+    [baseLayoutNodes],
   );
 
-  // 节点数据/布局改变时自动执行自适应居中
   useEffect(() => {
-    fitToView();
-  }, [layoutNodes, fitToView]);
+    const el = canvasContainerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let initialized = false;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = Math.round(entry.contentRect.width);
+        const h = Math.round(entry.contentRect.height);
+        if (w > 40 && h > 40) {
+          setViewport((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+          viewportRef.current = { w, h };
+          if (!initialized) {
+            initialized = true;
+            requestAnimationFrame(() => fitToView());
+          }
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isFullscreen, fitToView]);
 
-  // 网页窗口内最大化切换逻辑 (In-Browser Fullscreen / 窗口内铺满视口)
+  useEffect(() => {
+    fitToView(baseLayoutNodes);
+  }, [baseLayoutNodes, isFullscreen, fitToView]);
+
+  const resetPositions = useCallback(() => {
+    setManualPositions({});
+    fitToView(baseLayoutNodes);
+  }, [baseLayoutNodes, fitToView]);
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen((prev) => !prev);
   }, []);
 
-  // 对话框挂到 body 并进入浏览器顶层，不受页面祖先的 transform / contain 裁剪。
-  // 原生 dialog 约束焦点与背景交互；滚动锁只在打开期间生效，退出或卸载均恢复。
   useEffect(() => {
     if (!isFullscreen) return;
     const dialog = dialogRef.current;
@@ -855,161 +554,226 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     return () => {
       dialog.close();
       document.body.style.overflow = prevOverflow;
-      // Portal 切换会重新挂载按钮，不能依赖已从文档移除的旧按钮。
       const restoreFocus = fullscreenButtonRef.current ?? previousFocus;
       if (restoreFocus?.isConnected) restoreFocus.focus({ preventScroll: true });
     };
   }, [isFullscreen]);
 
-  // 监听容器与视口尺寸变动 (ResizeObserver)，无论是最大化切换还是窗口缩放，立即执行平滑自适应居中
-  useEffect(() => {
-    const el = canvasContainerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-
-    let rafId: number | null = null;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
-          if (rafId) cancelAnimationFrame(rafId);
-          rafId = requestAnimationFrame(() => {
-            fitToView();
-          });
-        }
-      }
-    });
-
-    observer.observe(el);
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      observer.disconnect();
-    };
-  }, [isFullscreen, fitToView]);
-
-  // 以指定 SVG 锚点为基准的定点缩放算法 (Anchor Zooming Math)
   const handleZoomAnchor = useCallback((factor: number, anchor?: { x: number; y: number }) => {
     setZoom((prevZoom) => {
-      const nextZoom = Math.min(3.5, Math.max(0.3, +(prevZoom * factor).toFixed(3)));
+      const nextZoom = Math.min(3.0, Math.max(0.15, +(prevZoom * factor).toFixed(3)));
       if (nextZoom === prevZoom) return prevZoom;
       const scaleChange = nextZoom / prevZoom;
-      const ax = anchor?.x ?? 500;
-      const ay = anchor?.y ?? 340;
-
+      const ax = anchor?.x ?? viewportRef.current.w / 2;
+      const ay = anchor?.y ?? viewportRef.current.h / 2;
       setPan((prevPan) => ({
-        x: +(ax - (ax - prevPan.x) * scaleChange).toFixed(2),
-        y: +(ay - (ay - prevPan.y) * scaleChange).toFixed(2),
+        x: +(ax - (ax - prevPan.x) * scaleChange).toFixed(1),
+        y: +(ay - (ay - prevPan.y) * scaleChange).toFixed(1),
       }));
-
       return nextZoom;
     });
   }, []);
 
-  // 内嵌图谱让普通滚轮滚动页面；按 Ctrl / ⌘ 或放大查看时才接管缩放。
   useEffect(() => {
     const el = canvasContainerRef.current;
     if (!el) return;
-
     const handleNativeWheel = (e: WheelEvent) => {
       if (!isFullscreen && !e.ctrlKey && !e.metaKey) return;
       if (e.deltaY === 0) return;
       e.preventDefault();
       e.stopPropagation();
-
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      const pt = getSvgPoint(e.clientX, e.clientY);
-      handleZoomAnchor(factor, pt);
+      handleZoomAnchor(factor, getSvgPoint(e.clientX, e.clientY));
     };
-
     el.addEventListener("wheel", handleNativeWheel, { passive: false });
-    return () => {
-      el.removeEventListener("wheel", handleNativeWheel);
-    };
+    return () => el.removeEventListener("wheel", handleNativeWheel);
   }, [isFullscreen, getSvgPoint, handleZoomAnchor]);
 
-  // 鼠标 / 触控指针拖拽平移事件处理
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if (!isFullscreen && e.pointerType === "touch") return;
-
     const target = e.target as HTMLElement | SVGElement;
-    if (target.closest("[data-node-interactive='true']")) {
-      return;
-    }
+    if (target.closest("[data-node-interactive='true']")) return;
 
     const svgPt = getSvgPoint(e.clientX, e.clientY);
-    dragRef.current = {
+    panDragRef.current = {
       isDown: true,
       startX: svgPt.x,
       startY: svgPt.y,
       startPanX: pan.x,
       startPanY: pan.y,
-      hasMoved: false,
     };
-    setIsDragging(true);
+    setIsPanning(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current.isDown) return;
-
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!panDragRef.current.isDown) return;
     const svgPt = getSvgPoint(e.clientX, e.clientY);
-    const dx = svgPt.x - dragRef.current.startX;
-    const dy = svgPt.y - dragRef.current.startY;
-
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-      dragRef.current.hasMoved = true;
-    }
-
     setPan({
-      x: +(dragRef.current.startPanX + dx).toFixed(2),
-      y: +(dragRef.current.startPanY + dy).toFixed(2),
+      x: +(panDragRef.current.startPanX + (svgPt.x - panDragRef.current.startX)).toFixed(1),
+      y: +(panDragRef.current.startPanY + (svgPt.y - panDragRef.current.startY)).toFixed(1),
     });
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current.isDown) {
-      dragRef.current.isDown = false;
-      setIsDragging(false);
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (panDragRef.current.isDown) {
+      panDragRef.current.isDown = false;
+      setIsPanning(false);
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
-        // 忽略 releasePointerCapture 异常
+        // ignore
       }
     }
   };
 
-  // 选中的节点所连接的所有图谱关系 (用于 Inspector 详细卡片)
+  const handleNodePointerDown = (e: React.PointerEvent<SVGGElement>, node: PositionedGraphNode) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const svgPt = getSvgPoint(e.clientX, e.clientY);
+    nodeDragRef.current = {
+      nodeId: node.id,
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startSvgX: svgPt.x,
+      startSvgY: svgPt.y,
+      origX: node.x,
+      origY: node.y,
+      moved: false,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleNodePointerMove = (e: React.PointerEvent<SVGGElement>, node: PositionedGraphNode) => {
+    const st = nodeDragRef.current;
+    if (!st || st.nodeId !== node.id) return;
+    e.stopPropagation();
+    const pxDist = Math.hypot(e.clientX - st.startClientX, e.clientY - st.startClientY);
+    if (!st.moved && pxDist >= 5) {
+      st.moved = true;
+      setDraggingNodeId(node.id);
+    }
+    if (!st.moved) return;
+    const svgPt = getSvgPoint(e.clientX, e.clientY);
+    const z = zoomRef.current || 1;
+    const nextX = +(st.origX + (svgPt.x - st.startSvgX) / z).toFixed(1);
+    const nextY = +(st.origY + (svgPt.y - st.startSvgY) / z).toFixed(1);
+    setManualPositions((prev) => ({
+      ...prev,
+      [node.id]: { x: nextX, y: nextY },
+    }));
+  };
+
+  const handleNodePointerUp = (e: React.PointerEvent<SVGGElement>, node: PositionedGraphNode) => {
+    const st = nodeDragRef.current;
+    if (!st || st.nodeId !== node.id) return;
+    e.stopPropagation();
+    nodeDragRef.current = null;
+    setDraggingNodeId(null);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    if (st.moved) return;
+
+    if (isHubNodeId(node.id)) {
+      const hubKey = hubKeyFromNodeId(node.id);
+      setExpandedHubs((prev) => {
+        const next = new Set(prev);
+        if (next.has(hubKey)) next.delete(hubKey);
+        else next.add(hubKey);
+        return next;
+      });
+      return;
+    }
+    setSelectedNode((prev) => (prev?.id === node.id ? null : node));
+    onNodeClick?.(node);
+  };
+
+  const focusId = hoveredNodeId || selectedNode?.id || null;
+  const highlightedIds = useMemo(() => {
+    if (!focusId && !hoveredLinkId) return null;
+    const set = new Set<string>();
+    if (focusId) {
+      set.add(focusId);
+      for (const l of renderLinks) {
+        if (l.source === focusId) set.add(l.target);
+        if (l.target === focusId) set.add(l.source);
+      }
+    }
+    if (hoveredLinkId) {
+      for (const l of renderLinks) {
+        const lid = l.id || l.source + "-" + l.target + "-" + l.type;
+        if (lid === hoveredLinkId) {
+          set.add(l.source);
+          set.add(l.target);
+        }
+      }
+    }
+    return set;
+  }, [focusId, hoveredLinkId, renderLinks]);
+
+  const passiveBadgeAllowed = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of renderLinks) {
+      if (l.is_hierarchical || l.qualifier === "__hub" || l.qualifier === "__hub-member") continue;
+      const k = l.source + "::" + l.type;
+      counts.set(k, (counts.get(k) || 0) + 1);
+      const rk = l.target + "::" + l.type;
+      counts.set(rk, (counts.get(rk) || 0) + 1);
+    }
+    const allow = new Set<string>();
+    for (const l of renderLinks) {
+      if (l.is_hierarchical || l.qualifier === "__hub" || l.qualifier === "__hub-member") continue;
+      const lid = l.id || l.source + "-" + l.target + "-" + l.type;
+      const c1 = counts.get(l.source + "::" + l.type) || 0;
+      const c2 = counts.get(l.target + "::" + l.type) || 0;
+      if (Math.max(c1, c2) <= 2) allow.add(lid);
+    }
+    return allow;
+  }, [renderLinks]);
+
   const selectedNodeRelations = useMemo(() => {
     if (!selectedNode) return [];
     const list: {
       link: GraphLink;
-      otherNode: LayoutNode | GraphNode | undefined;
+      otherNode: GraphNode | undefined;
       isOutgoing: boolean;
     }[] = [];
-
-    filteredLinks.forEach((link) => {
+    for (const link of filteredLinks) {
       if (link.source === selectedNode.id) {
-        const otherNode = layoutNodes.get(link.target) || nodes.find((n) => n.id === link.target);
+        const otherNode = positionedNodes.get(link.target) || nodes.find((n) => n.id === link.target);
         list.push({ link, otherNode, isOutgoing: true });
       } else if (link.target === selectedNode.id) {
-        const otherNode = layoutNodes.get(link.source) || nodes.find((n) => n.id === link.source);
+        const otherNode = positionedNodes.get(link.source) || nodes.find((n) => n.id === link.source);
         list.push({ link, otherNode, isOutgoing: false });
       }
-    });
-
+    }
     return list;
-  }, [selectedNode, filteredLinks, layoutNodes, nodes]);
+  }, [selectedNode, filteredLinks, positionedNodes, nodes]);
+
+  const containerClass = isFullscreen
+    ? "relative min-h-0 flex flex-col overflow-hidden select-none h-full w-full bg-background text-foreground"
+    : "relative min-h-0 flex flex-col overflow-hidden select-none rounded-card border border-border/80 bg-card/60 backdrop-blur-md shadow-sm " + className;
+
+  const canvasClass =
+    "min-h-0 flex-1 w-full relative overflow-hidden select-none " +
+    (isPanning || draggingNodeId ? "cursor-grabbing " : "cursor-grab ") +
+    (isFullscreen ? "touch-none" : "touch-pan-y touch-pinch-zoom");
 
   const graph = (
     <div
       ref={containerRef}
-      className={`relative min-h-0 flex flex-col overflow-hidden select-none ${
-        isFullscreen
-          ? "h-full w-full bg-background text-foreground"
-          : `rounded-card border border-border/80 bg-card/60 backdrop-blur-md shadow-sm ${className}`
-      }`}
+      className={containerClass}
       style={isFullscreen ? undefined : { height }}
     >
-      {/* 顶部工具栏与控制面板 */}
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-background/85 border-b border-border/60 backdrop-blur-md z-10">
         <div className="flex items-center gap-2 min-w-0">
           <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
@@ -1025,11 +789,36 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
           </div>
         </div>
 
-        {/* 布局、过滤器与控制器 */}
         <div className="flex flex-wrap items-center gap-1.5">
           {headerRightExtra && (
             <div className="mr-1 border-r border-border/60 pr-2">{headerRightExtra}</div>
           )}
+
+          {hasStructureLinks && hasRelationLinks && (
+            <div className="flex items-center bg-secondary/80 rounded-lg p-0.5 border border-border/50 text-[11px]">
+              {(
+                [
+                  ["all", t("graph.scopeAll")],
+                  ["structure", t("graph.scopeStructure")],
+                  ["relations", t("graph.scopeRelations")],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setScopeMode(mode)}
+                  className={
+                    effectiveScope === mode
+                      ? "px-2 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                      : "px-2 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {canGroup && (
             <button
               type="button"
@@ -1047,50 +836,69 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </button>
           )}
 
-          {/* 拓扑排布模式切换 (层级结构 / 环形放射 / 力导向) */}
+          {hasManualPositions && (
+            <button
+              type="button"
+              onClick={resetPositions}
+              title={t("graph.resetLayout")}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/15 text-[11px] font-medium text-primary transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{t("graph.resetLayout")}</span>
+            </button>
+          )}
+
           <div className="hidden sm:flex items-center bg-secondary/80 rounded-lg p-0.5 border border-border/50 text-[11px]">
             <button
               type="button"
-              onClick={() => setLayoutMode("hierarchy")}
+              onClick={() => {
+                setManualPositions({});
+                setLayoutMode("hierarchy");
+              }}
               title={t("graph.layoutHierarchy")}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+              className={
                 layoutMode === "hierarchy"
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+                  ? "px-2.5 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                  : "px-2.5 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+              }
             >
               <Layers className="w-3.5 h-3.5 inline mr-1" />
               {t("graph.layoutHierarchy")}
             </button>
             <button
               type="button"
-              onClick={() => setLayoutMode("radial")}
+              onClick={() => {
+                setManualPositions({});
+                setLayoutMode("radial");
+              }}
               title={t("graph.layoutRadial")}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+              className={
                 layoutMode === "radial"
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+                  ? "px-2.5 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                  : "px-2.5 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+              }
             >
               <Compass className="w-3.5 h-3.5 inline mr-1" />
               {t("graph.layoutRadial")}
             </button>
             <button
               type="button"
-              onClick={() => setLayoutMode("force")}
+              onClick={() => {
+                setManualPositions({});
+                setLayoutMode("force");
+              }}
               title={t("graph.layoutForce")}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+              className={
                 layoutMode === "force"
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+                  ? "px-2.5 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                  : "px-2.5 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+              }
             >
               <Sparkles className="w-3.5 h-3.5 inline mr-1" />
               {t("graph.layoutForce")}
             </button>
           </div>
 
-          {/* 缩放、自适应与全屏控制区 */}
           <div className="flex items-center gap-1 border-l border-border/60 pl-1.5">
             <button
               type="button"
@@ -1113,25 +921,24 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </button>
             <button
               type="button"
-              onClick={() => fitToView()}
+              onClick={() => fitToView(positionedNodes)}
               title={t("graph.fitView")}
               className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors duration-fast ease-soft"
             >
               <Scan className="w-4 h-4" />
             </button>
 
-            {/* 窗口内全屏/最大化切换按钮 */}
             <button
               ref={fullscreenButtonRef}
               type="button"
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? t("graph.exitFullscreen") : t("graph.fullscreen")}
               title={isFullscreen ? t("graph.exitFullscreen") : t("graph.fullscreen")}
-              className={`p-1.5 rounded-lg transition-all font-medium inline-flex items-center gap-1.5 ${
+              className={
                 isFullscreen
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-                  : "hover:bg-primary/10 hover:text-primary text-muted-foreground"
-              }`}
+                  ? "p-1.5 rounded-lg transition-all font-medium inline-flex items-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                  : "p-1.5 rounded-lg transition-all font-medium inline-flex items-center gap-1.5 hover:bg-primary/10 hover:text-primary text-muted-foreground"
+              }
             >
               {isFullscreen ? (
                 <>
@@ -1152,9 +959,8 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         </div>
       </div>
 
-      {/* 关系筛选：维度与选项由连线数据与 definitions 动态生成，数据里没有的维度不出现 */}
-      {relationFilter.filterable && (
-        <div className="shrink-0 max-h-[30dvh] overflow-y-auto px-4 pt-2 pb-1 border-b border-border/60 bg-background/60">
+      {effectiveScope !== "structure" && relationFilter.filterable && (
+        <div className="shrink-0 max-h-[26dvh] overflow-y-auto px-4 pt-2 pb-1.5 border-b border-border/60 bg-background/60">
           <RelationFilterBar
             facets={relationFilter.facets}
             selection={relationFilter.selection}
@@ -1163,462 +969,336 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         </div>
       )}
 
-      {/* 图谱主体 SVG 交互画布 */}
       <div
         ref={canvasContainerRef}
-        className={`min-h-0 flex-1 w-full relative cursor-grab active:cursor-grabbing overflow-hidden select-none ${isFullscreen ? "touch-none" : "touch-pan-y touch-pinch-zoom"}`}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        className={canvasClass}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={handleCanvasPointerUp}
+        onPointerCancel={handleCanvasPointerUp}
       >
         <svg
           ref={svgRef}
           className="w-full h-full block"
-          viewBox="0 0 1000 680"
-          preserveAspectRatio="xMidYMid meet"
+          viewBox={"0 0 " + viewport.w + " " + viewport.h}
         >
           <defs>
-            {/* 连线与标签投影滤镜 */}
-            <filter id="badge-drop-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id="mf-card-shadow" x="-15%" y="-15%" width="130%" height="135%">
               <feDropShadow
                 dx="0"
-                dy="1.5"
-                stdDeviation="2.5"
+                dy="2"
+                stdDeviation="3"
                 floodColor="#000000"
-                floodOpacity={isDark ? "0.35" : "0.08"}
+                floodOpacity={isDark ? "0.38" : "0.08"}
               />
             </filter>
-            <filter id="node-drop-shadow" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow
-                dx="0"
-                dy="3"
-                stdDeviation="4"
-                floodColor="#000000"
-                floodOpacity={isDark ? "0.45" : "0.15"}
-              />
-            </filter>
-
-            {/* 中心节点柔和环境光晕与聚焦光环渐变 */}
-            <radialGradient id="grad-center-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="50%" stopColor={isDark ? "#38bdf8" : "#0284c7"} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={isDark ? "#38bdf8" : "#0284c7"} stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="grad-center-ring" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={isDark ? "#38bdf8" : "#0284c7"} />
-              <stop offset="100%" stopColor={isDark ? "#818cf8" : "#4f46e5"} />
-            </linearGradient>
-
-            {/* 节点通用渐变定义（固定八实体骨架；主题色见 getEntityTypeTheme） */}
-            <linearGradient id="grad-agent" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#059669" />
-              <stop offset="100%" stopColor="#047857" />
-            </linearGradient>
-            <linearGradient id="grad-collection" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#4f46e5" />
-              <stop offset="100%" stopColor="#4338ca" />
-            </linearGradient>
-            <linearGradient id="grad-work" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#0284c7" />
-              <stop offset="100%" stopColor="#0369a1" />
-            </linearGradient>
-            <linearGradient id="grad-content_unit" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#0d9488" />
-              <stop offset="100%" stopColor="#0f766e" />
-            </linearGradient>
-            <linearGradient id="grad-expression" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#db2777" />
-              <stop offset="100%" stopColor="#be185d" />
-            </linearGradient>
-            <linearGradient id="grad-release" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#d97706" />
-              <stop offset="100%" stopColor="#b45309" />
-            </linearGradient>
-            <linearGradient id="grad-medium" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#9333ea" />
-              <stop offset="100%" stopColor="#7e22ce" />
-            </linearGradient>
-            <linearGradient id="grad-track" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#ea580c" />
-              <stop offset="100%" stopColor="#c2410c" />
-            </linearGradient>
-            <linearGradient id="grad-default" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#64748b" />
-              <stop offset="100%" stopColor="#475569" />
-            </linearGradient>
-
-            {/* 连线箭头定义 */}
-            <marker
-              id="arrow-default"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill={isDark ? "#94a3b8" : "#64748b"} opacity="0.9" />
-            </marker>
-            <marker
-              id="arrow-sky"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#0284c7" />
-            </marker>
-            <marker
-              id="arrow-emerald"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#10b981" />
-            </marker>
-            <marker
-              id="arrow-indigo"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#6366f1" />
-            </marker>
-            <marker
-              id="arrow-purple"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#a855f7" />
-            </marker>
-            <marker
-              id="arrow-amber"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#f59e0b" />
-            </marker>
-            <marker
-              id="arrow-rose"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#f43f5e" />
-            </marker>
-            <marker
-              id="arrow-teal"
-              viewBox="0 0 10 10"
-              refX="26"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#14b8a6" />
-            </marker>
+            {(["default", "structure", "emerald", "sky", "blue", "purple", "indigo", "amber", "rose", "red", "teal"] as const).map(
+              (c) => {
+                const hex =
+                  c === "structure"
+                    ? getLinkColorHex(undefined, true, isDark)
+                    : getLinkColorHex(c === "default" ? undefined : c, false, isDark);
+                return (
+                  <marker
+                    key={c}
+                    id={"mf-arrow-" + c}
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth="5.5"
+                    markerHeight="5.5"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill={hex} />
+                  </marker>
+                );
+              },
+            )}
           </defs>
 
-          {/* 根视口变换容器 (平移与缩放矩阵) */}
-          <g
-            transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}
-            style={{
-              transition: isDragging ? "none" : "transform 200ms cubic-bezier(0.16, 1, 0.3, 1)",
-            }}
-          >
-            {/* 1. 渲染拓扑连线底层 (Edges Lines Layer) */}
-            <g className="edges-lines-layer">
+          <g transform={"translate(" + pan.x + ", " + pan.y + ") scale(" + zoom + ")"}>
+            <g className="edges-layer">
               {renderLinks.map((link, idx) => {
-                const src = layoutNodes.get(link.source);
-                const tgt = layoutNodes.get(link.target);
+                const src = positionedNodes.get(link.source);
+                const tgt = positionedNodes.get(link.target);
                 if (!src || !tgt) return null;
-
-                const isHovered = hoveredLinkId === (link.id || `${link.source}-${link.target}`);
-                const colorHex = getLinkColorHex(link.color);
-                const strokeWidth = isHovered ? 2.5 : 1.8;
+                const lid = link.id || link.source + "-" + link.target + "-" + link.type;
+                const isHovered = hoveredLinkId === lid;
+                const touchesFocus =
+                  Boolean(focusId) && (link.source === focusId || link.target === focusId);
+                const active = isHovered || touchesFocus;
+                const dimmed = Boolean(highlightedIds) && !active;
+                const colorHex = getLinkColorHex(link.color, link.is_hierarchical, isDark);
+                const markerKey = link.color || (link.is_hierarchical ? "structure" : "default");
+                const { d } = buildEdgeCurve(src, tgt);
 
                 return (
                   <g
-                    key={`line-${link.id || idx}`}
+                    key={"edge-" + lid + "-" + idx}
                     data-node-interactive="true"
-                    className="transition-opacity duration-200 cursor-pointer"
-                    onMouseEnter={() => setHoveredLinkId(link.id || `${link.source}-${link.target}`)}
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHoveredLinkId(lid)}
                     onMouseLeave={() => setHoveredLinkId(null)}
-                    onClick={() => onEdgeClick?.(link)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdgeClick?.(link);
+                    }}
                   >
-                    {/* 背景透明粗线扩大鼠标交互区域 */}
-                    <line
-                      x1={src.x}
-                      y1={src.y}
-                      x2={tgt.x}
-                      y2={tgt.y}
-                      stroke="transparent"
-                      strokeWidth={18}
-                    />
-
-                    {/* 实体连线 */}
-                    <line
-                      x1={src.x}
-                      y1={src.y}
-                      x2={tgt.x}
-                      y2={tgt.y}
+                    <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
+                    <path
+                      d={d}
+                      fill="none"
                       stroke={colorHex}
-                      strokeWidth={strokeWidth}
+                      strokeWidth={active ? 2.4 : link.is_hierarchical ? 1.75 : 1.45}
                       strokeDasharray={link.is_hierarchical ? "none" : "5,3"}
-                      opacity={isHovered ? 1 : 0.75}
-                      markerEnd={`url(#arrow-${link.color || "default"})`}
+                      opacity={dimmed ? 0.18 : active ? 0.98 : link.is_hierarchical ? 0.72 : 0.58}
+                      markerEnd={"url(#mf-arrow-" + markerKey + ")"}
                     />
                   </g>
                 );
               })}
             </g>
 
-            {/* 2. 渲染拓扑节点层 (Nodes Layer: 主圆、呼吸光环、封面、标题胶囊) */}
             <g className="nodes-layer">
-              {Array.from(layoutNodes.values()).map((node) => {
+              {Array.from(positionedNodes.values()).map((node) => {
                 const isCenter = node.id === centerEntityId;
-                const isHub = !isCenter && node.id.startsWith("__hub:");
-                const hubType = isHub ? node.id.slice("__hub:".length) : "";
-                const hubOpen = isHub && expandedHubs.has(hubType);
+                const isHub = isHubNodeId(node.id);
+                const hubKey = isHub ? hubKeyFromNodeId(node.id) : "";
+                const hubOpen = isHub && expandedHubs.has(hubKey);
                 const isSelected = selectedNode?.id === node.id;
                 const isHovered = hoveredNodeId === node.id;
-                const r = node.radius;
-                const theme = getEntityTypeTheme(node.type, kindLabel, isDark);
+                const isBeingDragged = draggingNodeId === node.id;
+                const dimmed = Boolean(highlightedIds) && !highlightedIds!.has(node.id);
+                const effectiveKind = isHub ? node.category || "related" : node.type;
+                const theme = getEntityTypeTheme(effectiveKind, kindLabel, isDark);
 
-                const typeLabel = theme.label;
-                // hub 药丸只显示一行「类型名 (数量)」：类型徽章省了，名字就是标签。
-                const hubName = isHub ? `${node.name} (${node.role ?? ""})` : "";
-                const typeBadgeWidth = isHub ? 0 : Math.max(34, typeLabel.length * 11 + 10);
-                const maxNameChars = 16;
-                const truncatedName = isHub
-                  ? hubName
-                  : node.name.length > maxNameChars
-                    ? `${node.name.slice(0, maxNameChars - 1)}…`
-                    : node.name;
-                const nameWidth = truncatedName.length * 12.5;
-                const pillWidth = Math.min(240, Math.max(110, typeBadgeWidth + nameWidth + 24));
-                const pillHeight = 28;
+                const w = node.width;
+                const h = node.height;
+                const halfW = w / 2;
+                const halfH = h / 2;
+
+                const strokeColor = isCenter
+                  ? centerAccent
+                  : isSelected || isHovered || isBeingDragged
+                    ? theme.primaryColor
+                    : cardStroke;
+                const strokeWidth = isCenter ? 2.4 : isSelected || isHovered || isBeingDragged ? 2 : 1.15;
+
+                const thumbSize = isHub ? 30 : 38;
+                const thumbX = -halfW + 9;
+                const thumbY = -thumbSize / 2;
+                const textLeft = thumbX + thumbSize + 9;
+                const textMaxUnits = isHub ? 17 : 19;
+                const displayName = truncateByUnits(node.name, textMaxUnits);
+                const badgeLabel = isHub ? kindLabel(effectiveKind) : theme.label;
+                const badgeW = Math.min(84, Math.max(32, visualUnits(badgeLabel) * 5.8 + 12));
+                const subNote = isHub ? "×" + (node.role || "") : node.role ? truncateByUnits(node.role, 9) : "";
+                const clipId = "mf-clip-" + node.id.replace(/[^a-zA-Z0-9_-]/g, "_");
 
                 return (
                   <g
                     key={node.id}
                     data-node-interactive="true"
-                    transform={`translate(${node.x}, ${node.y})`}
-                    className="cursor-pointer transition-transform duration-150 group"
+                    transform={"translate(" + node.x + ", " + node.y + ")"}
+                    opacity={dimmed ? 0.28 : 1}
+                    className={isBeingDragged ? "cursor-grabbing" : "cursor-grab"}
+                    onPointerDown={(e) => handleNodePointerDown(e, node)}
+                    onPointerMove={(e) => handleNodePointerMove(e, node)}
+                    onPointerUp={(e) => handleNodePointerUp(e, node)}
+                    onPointerCancel={(e) => handleNodePointerUp(e, node)}
                     onMouseEnter={() => setHoveredNodeId(node.id)}
                     onMouseLeave={() => setHoveredNodeId(null)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isHub) {
-                        setExpandedHubs((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(hubType)) next.delete(hubType);
-                          else next.add(hubType);
-                          return next;
-                        });
-                        return;
-                      }
-                      setSelectedNode(node);
-                      onNodeClick?.(node);
-                    }}
                   >
-                    <title>{`${node.name} (${typeLabel})`}</title>
+                    <title>{isHub ? node.name + " (" + node.role + ")" : node.name + " (" + theme.label + ")"}</title>
 
-                    {/* 中心节点呼吸光环与聚焦环 (Focus Ring) */}
                     {isCenter && (
-                      <>
-                        <circle
-                          r={r + 14}
-                          fill="url(#grad-center-halo)"
-                          className="animate-pulse pointer-events-none"
-                        />
-                        <circle
-                          r={r + 6}
-                          fill="none"
-                          stroke="url(#grad-center-ring)"
-                          strokeWidth={1.8}
-                          strokeDasharray="4 3"
-                          opacity={0.85}
-                          className="pointer-events-none"
-                        />
-                      </>
-                    )}
-
-                    {/* 选中/悬浮状态的高亮光环 (非中心节点) */}
-                    {!isCenter && (isSelected || isHovered) && (
-                      <circle
-                        r={r + 6}
+                      <rect
+                        x={-halfW - 4}
+                        y={-halfH - 4}
+                        width={w + 8}
+                        height={h + 8}
+                        rx={13}
                         fill="none"
-                        stroke={theme.primaryColor}
-                        strokeWidth={2}
-                        strokeOpacity={0.65}
-                        className="pointer-events-none animate-pulse"
+                        stroke={centerAccent}
+                        strokeWidth={1.4}
+                        strokeDasharray="4 3"
+                        opacity={0.65}
+                        className="pointer-events-none"
                       />
                     )}
 
-                    {/* 节点主圆底色（hub 没有渐变定义，走主题纯色） */}
-                    <circle
-                      r={r}
-                      fill={isCenter ? centerFill : isHub ? theme.bgFill : `url(#grad-${node.type})`}
-                      stroke={isCenter ? centerBorder : theme.stroke}
-                      strokeWidth={isCenter ? 3.5 : 2.5}
-                      filter="url(#node-drop-shadow)"
+                    <rect
+                      x={-halfW}
+                      y={-halfH}
+                      width={w}
+                      height={h}
+                      rx={10}
+                      fill={cardBg}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      filter="url(#mf-card-shadow)"
                     />
 
-                    {/* 封面图片剪裁区 */}
-                    {node.cover_image_url ? (
+                    <rect
+                      x={-halfW}
+                      y={-halfH + 8}
+                      width={3}
+                      height={h - 16}
+                      rx={1.5}
+                      fill={isCenter ? centerAccent : theme.primaryColor}
+                    />
+
+                    {node.cover_image_url && !isHub ? (
                       <>
-                        <clipPath id={`clip-${node.id}`}>
-                          <circle r={r - 3} />
+                        <clipPath id={clipId}>
+                          <rect x={thumbX} y={thumbY} width={thumbSize} height={thumbSize} rx={7} />
                         </clipPath>
+                        <rect
+                          x={thumbX}
+                          y={thumbY}
+                          width={thumbSize}
+                          height={thumbSize}
+                          rx={7}
+                          fill={theme.bgFill}
+                        />
                         <image
                           href={node.cover_image_url}
-                          x={-(r - 3)}
-                          y={-(r - 3)}
-                          width={(r - 3) * 2}
-                          height={(r - 3) * 2}
+                          x={thumbX}
+                          y={thumbY}
+                          width={thumbSize}
+                          height={thumbSize}
                           preserveAspectRatio="xMidYMid slice"
-                          clipPath={`url(#clip-${node.id})`}
+                          clipPath={"url(#" + clipId + ")"}
                         />
                       </>
                     ) : (
+                      <>
+                        <rect
+                          x={thumbX}
+                          y={thumbY}
+                          width={thumbSize}
+                          height={thumbSize}
+                          rx={7}
+                          fill={theme.bgFill}
+                        />
+                        <text
+                          x={thumbX + thumbSize / 2}
+                          y={4.5}
+                          textAnchor="middle"
+                          fontSize={isHub ? "15" : "11"}
+                          fontWeight="700"
+                          fill={theme.textFill}
+                          className="pointer-events-none font-mono select-none"
+                        >
+                          {isHub ? (hubOpen ? "−" : "+") : effectiveKind.slice(0, 2).toUpperCase()}
+                        </text>
+                      </>
+                    )}
+
+                    <rect
+                      x={textLeft}
+                      y={-halfH + 8}
+                      width={badgeW}
+                      height={15}
+                      rx={4}
+                      fill={theme.bgFill}
+                    />
+                    <text
+                      x={textLeft + badgeW / 2}
+                      y={-halfH + 18.5}
+                      textAnchor="middle"
+                      fontSize="9.5"
+                      fontWeight="700"
+                      fill={theme.textFill}
+                      className="pointer-events-none font-sans select-none"
+                    >
+                      {truncateByUnits(badgeLabel, 12)}
+                    </text>
+
+                    {subNote && (
                       <text
-                        textAnchor="middle"
-                        y={isCenter ? 5 : 4}
-                        fontSize={isCenter ? "14" : "12"}
-                        fontWeight="bold"
-                        fill="#ffffff"
+                        x={halfW - 9}
+                        y={-halfH + 18.5}
+                        textAnchor="end"
+                        fontSize="10"
+                        fontWeight="600"
+                        fill={subFill}
                         className="pointer-events-none font-mono select-none"
                       >
-                        {isHub ? (hubOpen ? "−" : "+") : node.type.slice(0, 2).toUpperCase()}
+                        {subNote}
                       </text>
                     )}
 
-                    {/* 节点下方名称与类型双层清晰药丸 (Node Title & Type Badge) */}
-                    <g transform={`translate(0, ${r + 20})`}>
-                      <rect
-                        x={-pillWidth / 2}
-                        y={-pillHeight / 2}
-                        width={pillWidth}
-                        height={pillHeight}
-                        rx={pillHeight / 2}
-                        fill={capsuleBg}
-                        stroke={isSelected || isHovered ? theme.primaryColor : capsuleStroke}
-                        strokeWidth={isSelected || isHovered ? 1.5 : 1}
-                        filter="url(#badge-drop-shadow)"
-                      />
-
-                      {!isHub && (
-                        <>
-                          <rect
-                            x={-pillWidth / 2 + 4}
-                            y={-9}
-                            width={typeBadgeWidth}
-                            height={18}
-                            rx={9}
-                            fill={theme.bgFill}
-                          />
-                          <text
-                            x={-pillWidth / 2 + 4 + typeBadgeWidth / 2}
-                            y={3.5}
-                            textAnchor="middle"
-                            fontSize="10"
-                            fontWeight="700"
-                            fill={theme.textFill}
-                            className="pointer-events-none select-none font-sans"
-                          >
-                            {typeLabel}
-                          </text>
-                        </>
-                      )}
-
-                      <text
-                        x={isHub ? 0 : (-pillWidth / 2 + 4 + typeBadgeWidth + (pillWidth / 2 - 6)) / 2}
-                        y={4.5}
-                        textAnchor="middle"
-                        fontSize="13"
-                        fontWeight="600"
-                        fill={nodeNameFill}
-                        className="pointer-events-none select-none font-sans"
-                      >
-                        {truncatedName}
-                      </text>
-                    </g>
+                    <text
+                      x={textLeft}
+                      y={halfH - 11}
+                      textAnchor="start"
+                      fontSize="12"
+                      fontWeight="600"
+                      fill={titleFill}
+                      className="pointer-events-none font-sans select-none"
+                    >
+                      {displayName}
+                    </text>
                   </g>
                 );
               })}
             </g>
 
-            {/* 3. 渲染连线谓词徽章层 (Edge Badges Top Layer) */}
-            <g className="edges-badges-layer">
+            <g className="edge-badges-layer">
               {renderLinks.map((link, idx) => {
-                const src = layoutNodes.get(link.source);
-                const tgt = layoutNodes.get(link.target);
-                if (!src || !tgt) return null;
-                // 合成 hub 边不画谓词徽章：类型名已在 hub 药丸上，画了就是满屏重复。
                 if (link.qualifier === "__hub" || link.qualifier === "__hub-member") return null;
+                const src = positionedNodes.get(link.source);
+                const tgt = positionedNodes.get(link.target);
+                if (!src || !tgt) return null;
+                const lid = link.id || link.source + "-" + link.target + "-" + link.type;
+                const isHovered = hoveredLinkId === lid;
+                const touchesFocus =
+                  Boolean(focusId) && (link.source === focusId || link.target === focusId);
+                const showBadge = isHovered || touchesFocus || (!highlightedIds && passiveBadgeAllowed.has(lid));
+                if (!showBadge) return null;
 
-                const isHovered = hoveredLinkId === (link.id || `${link.source}-${link.target}`);
-                const colorHex = getLinkColorHex(link.color);
-
-                const badgePos = calculateEdgeBadgePosition(src, tgt);
-
-                const badgeLabel = link.label || link.type;
-                const badgeWidth = Math.max(68, badgeLabel.length * 12 + 24);
-                const badgeHeight = 24;
+                const labelText = truncateByUnits(link.label || link.type, 16);
+                if (!labelText) return null;
+                const { midX, midY } = buildEdgeCurve(src, tgt);
+                const colorHex = getLinkColorHex(link.color, link.is_hierarchical, isDark);
+                const badgeW = Math.max(52, visualUnits(labelText) * 6.2 + 22);
+                const badgeH = 20;
 
                 return (
                   <g
-                    key={`badge-${link.id || idx}`}
+                    key={"badge-" + lid + "-" + idx}
                     data-node-interactive="true"
-                    transform={`translate(${badgePos.x}, ${badgePos.y})`}
-                    className="cursor-pointer transition-all duration-150"
-                    onMouseEnter={() => setHoveredLinkId(link.id || `${link.source}-${link.target}`)}
+                    transform={"translate(" + midX + ", " + midY + ")"}
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHoveredLinkId(lid)}
                     onMouseLeave={() => setHoveredLinkId(null)}
-                    onClick={() => onEdgeClick?.(link)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdgeClick?.(link);
+                    }}
                   >
                     <rect
-                      x={-badgeWidth / 2}
-                      y={-badgeHeight / 2}
-                      width={badgeWidth}
-                      height={badgeHeight}
-                      rx={6}
+                      x={-badgeW / 2}
+                      y={-badgeH / 2}
+                      width={badgeW}
+                      height={badgeH}
+                      rx={5}
                       fill={edgeBadgeBg}
-                      stroke={isHovered ? colorHex : edgeBadgeStroke}
-                      strokeWidth={isHovered ? 1.5 : 1}
-                      filter="url(#badge-drop-shadow)"
-                      className="transition-all duration-base ease-soft"
+                      stroke={isHovered || touchesFocus ? colorHex : edgeBadgeStroke}
+                      strokeWidth={isHovered || touchesFocus ? 1.4 : 1}
                     />
-                    <circle cx={-badgeWidth / 2 + 10} cy={0} r={3} fill={colorHex} />
+                    <circle cx={-badgeW / 2 + 8} cy={0} r={2.6} fill={colorHex} />
                     <text
-                      x={4}
-                      y={3.8}
+                      x={3}
+                      y={3.5}
                       textAnchor="middle"
-                      fontSize="11"
+                      fontSize="10"
                       fontWeight="600"
                       fill={edgeBadgeText}
                       className="pointer-events-none font-sans select-none"
                     >
-                      {badgeLabel}
+                      {labelText}
                     </text>
                   </g>
                 );
@@ -1627,23 +1307,22 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
           </g>
         </svg>
 
-        {/* 底部交互操作提示浮层 */}
         <div className="absolute bottom-3 left-4 pointer-events-none text-[11px] text-muted-foreground/90 flex items-center gap-1.5 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-panel border border-border/50 shadow-xs">
           <Info className="w-3.5 h-3.5 text-primary shrink-0" />
           <span>{t("graph.interactiveHint")}</span>
         </div>
       </div>
 
-      {/* 侧边节点详细信息检查器 (Property Inspector Popover) */}
       {showInspector && selectedNode && (
         <div className="absolute top-14 right-4 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100%-4.5rem)] overflow-y-auto rounded-panel border border-border bg-card/98 backdrop-blur-xl p-4 shadow-2xl z-20 space-y-3.5 animate-in duration-200">
           <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-border/60">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1">
                 <span
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-chip border ${
+                  className={
+                    "text-[10px] font-semibold px-2 py-0.5 rounded-chip border " +
                     getEntityTypeTheme(selectedNode.type, kindLabel, isDark).badgeBgClass
-                  }`}
+                  }
                 >
                   {getEntityTypeTheme(selectedNode.type, kindLabel, isDark).label}
                 </span>
@@ -1656,7 +1335,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
               <h4 className="text-sm font-bold text-foreground truncate" title={selectedNode.name}>
                 {selectedNode.name}
               </h4>
-              {selectedNode.original_name && (
+              {selectedNode.original_name && selectedNode.original_name !== selectedNode.name && (
                 <p className="text-xs text-muted-foreground truncate" title={selectedNode.original_name}>
                   {selectedNode.original_name}
                 </p>
@@ -1671,7 +1350,6 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </button>
           </div>
 
-          {/* 封面海报大图预览 */}
           {selectedNode.cover_image_url && (
             <div className="relative w-full max-h-44 rounded-lg overflow-hidden border border-border/60 bg-muted/60 flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1683,41 +1361,38 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </div>
           )}
 
-          {/* 实体基础属性网格 */}
           {(selectedNode.country || selectedNode.disambiguation) && (
-          <div className="space-y-1.5 text-xs text-muted-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/40">
-            {selectedNode.country && (
-              <div className="flex justify-between items-center">
-                <span className="flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-muted-foreground" />
-                  {t("graph.country")}:
-                </span>
-                <span className="font-mono text-foreground font-medium">{selectedNode.country}</span>
-              </div>
-            )}
-
-            {selectedNode.disambiguation && (
-              <div className="pt-1 text-[11px] text-muted-foreground border-t border-border/40">
-                <span className="font-semibold text-foreground/80">{t("graph.disambiguation")}: </span>
-                {selectedNode.disambiguation}
-              </div>
-            )}
-          </div>
+            <div className="space-y-1.5 text-xs text-muted-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/40">
+              {selectedNode.country && (
+                <div className="flex justify-between items-center">
+                  <span className="flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-muted-foreground" />
+                    {t("graph.country")}:
+                  </span>
+                  <span className="font-mono text-foreground font-medium">{selectedNode.country}</span>
+                </div>
+              )}
+              {selectedNode.disambiguation && (
+                <div className="pt-1 text-[11px] text-muted-foreground border-t border-border/40">
+                  <span className="font-semibold text-foreground/80">{t("graph.disambiguation")}: </span>
+                  {selectedNode.disambiguation}
+                </div>
+              )}
+            </div>
           )}
 
-          {/* 图谱中与此节点的关联关系列表 */}
           <div className="space-y-2">
             <h5 className="text-xs font-semibold text-foreground flex items-center justify-between">
               <span>{t("graph.connectedEdges")}</span>
-              <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.2 rounded bg-secondary">
+              <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.5 rounded bg-secondary">
                 {selectedNodeRelations.length}
               </span>
             </h5>
 
-            <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 text-xs">
+            <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 text-xs">
               {selectedNodeRelations.length > 0 ? (
                 selectedNodeRelations.map((rel, i) => {
-                  const relColor = getLinkColorHex(rel.link.color);
+                  const relColor = getLinkColorHex(rel.link.color, rel.link.is_hierarchical, isDark);
                   return (
                     <div
                       key={rel.link.id || i}
@@ -1727,21 +1402,30 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                         {rel.isOutgoing ? (
                           <ArrowRight className="w-3 h-3 text-primary shrink-0" />
                         ) : (
-                          <ArrowLeft className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <ArrowLeft className="w-3 h-3 text-success shrink-0" />
                         )}
                         <span
-                          className="font-medium px-1.5 py-0.5 rounded text-[10px]"
+                          className="font-medium px-1.5 py-0.5 rounded text-[10px] truncate max-w-[115px]"
                           style={{
-                            backgroundColor: `${relColor}15`,
+                            backgroundColor: relColor + "18",
                             color: relColor,
                           }}
                         >
-                          {rel.link.label}
+                          {rel.link.label || rel.link.type}
                         </span>
                       </div>
-                      <span className="font-medium text-foreground truncate max-w-[110px]" title={rel.otherNode?.name}>
-                        {rel.otherNode?.name || "Target"}
-                      </span>
+                      {rel.otherNode ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedNode(rel.otherNode!)}
+                          className="font-medium text-foreground hover:text-primary truncate max-w-[115px] text-right"
+                          title={rel.otherNode.name}
+                        >
+                          {rel.otherNode.name}
+                        </button>
+                      ) : (
+                        <span className="font-medium text-muted-foreground truncate max-w-[115px]">—</span>
+                      )}
                     </div>
                   );
                 })
@@ -1753,7 +1437,6 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </div>
           </div>
 
-          {/* 底部操作区：进入详情档案 */}
           <div className="pt-2.5 border-t border-border/60 flex items-center justify-end gap-2">
             <Link
               href={catalogEntityHref(selectedNode.id)}
@@ -1772,7 +1455,6 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
   return (
     <>
-      {/* 保留内嵌位置的高度，关闭放大视图后页面仍处于原来的滚动位置。 */}
       <div aria-hidden="true" className={className} style={{ height }} />
       {createPortal(
         <dialog

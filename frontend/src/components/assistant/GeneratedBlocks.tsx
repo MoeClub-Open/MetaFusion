@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Search } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { getKindName, useDefinitions } from "@/lib/definitions";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { parseGeneratedBlocks, type GeneratedBlock } from "@/lib/generatedBlocks";
@@ -134,7 +135,8 @@ function EntityCoverThumb({ url, title }: { url?: string; title: string }) {
 }
 
 function EntitiesGrid({ block }: { block: EntitiesBlock }) {
-  const { tr } = useI18n();
+  const { tr, locale } = useI18n();
+  const { kinds } = useDefinitions();
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase();
@@ -173,7 +175,7 @@ function EntitiesGrid({ block }: { block: EntitiesBlock }) {
               <div className="flex items-center gap-1.5">
                 {item.kind && (
                   <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                    {tr(`kinds.${item.kind}`, item.kind)}
+                    {getKindName(kinds, item.kind, locale, tr(`catalog.kind.${item.kind}`, item.kind))}
                   </span>
                 )}
                 <span className="truncate text-xs font-semibold text-text-strong group-hover:text-primary">

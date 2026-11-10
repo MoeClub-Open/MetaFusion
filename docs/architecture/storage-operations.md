@@ -40,6 +40,8 @@
 
 ## 当前能力边界
 
+- **主站仅目录图片模式（`STORAGE_CATALOG_ASSETS_ONLY=true`）**：主站编排默认开启，仅接收实体 `pictures[]` 位图（JPEG/PNG/WebP/AVIF/GIF），完成落盘时核验文件头魔数（不符回 `415 unsupported_media_type`）；`initiate` 禁带 `target_entity_id`，公开 `bind`/`unbind` 及非 `cover_image` 用途回 `403 catalog_assets_only`。
+- **独立资源站扩展**：独立资源站设 `STORAGE_CATALOG_ASSETS_ONLY=false`，调用主站 `/api/catalog/entities/{id}` 与 `/identity` 读取元数据及可见性；主站配置 `NEXT_PUBLIC_RESOURCE_STATION_URL` 后开放外跳入口。
 - 媒体分析与预览：存储服务只收原始文件、按权限分发，**不做转码与媒体分析**。
 - BT 种子、分享率治理、零拷贝（对象存储内部拷贝）等仍属未确认需求，不作为前提。
 
