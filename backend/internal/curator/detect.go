@@ -190,10 +190,10 @@ func notDecided(code string) string {
 }
 
 func (s *Service) detectDuplicateTitles(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.kind,btrim(e.document->>'title'),array_agg(e.id::text ORDER BY e.id)
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.kind,btrim(e.title),array_agg(e.id::text ORDER BY e.id)
 		FROM catalog.entities e
 		WHERE e.state='active' AND e.kind IN ('agent','work','release','collection')
-		  AND btrim(COALESCE(e.document->>'title',''))<>''`+notDecided(CodeDuplicateTitle)+`
+		  AND btrim(e.title)<>''`+notDecided(CodeDuplicateTitle)+`
 		GROUP BY 1,2 HAVING count(*)>1
 		ORDER BY count(*) DESC,1,2 LIMIT $1`, duplicateGroupLimit)
 	if err != nil {
@@ -230,7 +230,7 @@ func (s *Service) detectDuplicateTitles(ctx context.Context) ([]candidate, error
 }
 
 func (s *Service) detectWorkMissingForm(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,btrim(e.document->>'title')
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,btrim(e.title)
 		FROM catalog.entities e
 		WHERE e.state='active' AND e.kind='work'
 		  AND COALESCE(btrim(e.document->'attributes'->>'creation_form'),'')=''`+notDecided(CodeWorkMissingForm)+`
@@ -252,7 +252,7 @@ func (s *Service) detectWorkMissingForm(ctx context.Context) ([]candidate, error
 }
 
 func (s *Service) detectTVAnimeWithoutAgent(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,btrim(e.document->>'title')
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,btrim(e.title)
 		FROM catalog.entities e
 		WHERE e.state='active' AND e.kind='work' AND e.document->'attributes'->>'creation_form'='tv_anime'
 		  AND NOT EXISTS (
@@ -278,7 +278,7 @@ func (s *Service) detectTVAnimeWithoutAgent(ctx context.Context) ([]candidate, e
 }
 
 func (s *Service) detectReleaseWithoutSubject(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,btrim(e.document->>'title')
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,btrim(e.title)
 		FROM catalog.entities e
 		WHERE e.state='active' AND e.kind='release'
 		  AND NOT EXISTS (SELECT 1 FROM catalog.release_subjects s WHERE s.release_id=e.id)`+notDecided(CodeReleaseWithoutSubject)+`
@@ -300,7 +300,7 @@ func (s *Service) detectReleaseWithoutSubject(ctx context.Context) ([]candidate,
 }
 
 func (s *Service) detectTranslationZHKana(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.document->>'title'),e.document->'translations'->'zh-CN'->>'title'
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.title),e.document->'translations'->'zh-CN'->>'title'
 		FROM catalog.entities e
 		WHERE e.state='active' AND COALESCE(e.document->'translations'->'zh-CN'->>'title','') ~ '[ぁ-んァ-ヶ]'`+notDecided(CodeTranslationZHKana)+`
 		ORDER BY e.updated_at DESC,e.id LIMIT $1`, detectorLimit)
@@ -321,7 +321,7 @@ func (s *Service) detectTranslationZHKana(ctx context.Context) ([]candidate, err
 }
 
 func (s *Service) detectDuplicateTagValues(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.document->>'title'),e.document->'attributes'->'tags'
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.title),e.document->'attributes'->'tags'
 		FROM catalog.entities e
 		WHERE e.state='active' AND jsonb_typeof(e.document->'attributes'->'tags')='array'
 		  AND CASE WHEN jsonb_typeof(e.document->'attributes'->'tags')='array' THEN
@@ -354,7 +354,7 @@ func (s *Service) detectDuplicateTagValues(ctx context.Context) ([]candidate, er
 }
 
 func (s *Service) detectDuplicatePictureValues(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.document->>'title'),e.document->'pictures'
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.title),e.document->'pictures'
 		FROM catalog.entities e
 		WHERE e.state='active' AND jsonb_typeof(e.document->'pictures')='array'
 		  AND CASE WHEN jsonb_typeof(e.document->'pictures')='array' THEN
@@ -405,7 +405,7 @@ func (s *Service) detectDuplicatePictureValues(ctx context.Context) ([]candidate
 }
 
 func (s *Service) detectMissingPicture(ctx context.Context) ([]candidate, error) {
-	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.document->>'title')
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.title)
 		FROM catalog.entities e
 		WHERE e.state='active' AND e.kind IN ('agent','work','release','collection')
 		  AND CASE WHEN jsonb_typeof(e.document->'pictures')='array' THEN jsonb_array_length(e.document->'pictures')=0 ELSE true END
@@ -454,7 +454,7 @@ func (s *Service) EntityStillHas(ctx context.Context, finding Finding) (bool, er
 	switch finding.Code {
 	case CodeDuplicateTitle:
 		var n int
-		err = s.Catalog.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.entities WHERE state='active' AND kind=$1 AND btrim(COALESCE(document->>'title',''))=btrim($2)`, entity.Kind, entity.Title).Scan(&n)
+		err = s.Catalog.DB.QueryRowContext(ctx, `SELECT count(*) FROM catalog.entities WHERE state='active' AND kind=$1 AND btrim(title)=btrim($2)`, entity.Kind, entity.Title).Scan(&n)
 		return n > 1, err
 	case CodeWorkMissingForm:
 		return strings.TrimSpace(stringValue(entity.Attributes["creation_form"])) == "", nil

@@ -74,6 +74,15 @@ func attributeReferenceProjections(d Definitions) []attributeReferenceProjection
 	return out
 }
 
+func intersectsKinds(a, b []string) bool {
+	for _, x := range a {
+		if contains(b, x) {
+			return true
+		}
+	}
+	return false
+}
+
 func attributeEntityLinksSQL(d Definitions, filters relationshipFilters, args *[]any) string {
 	if len(filters.Classes) > 0 && !contains(filters.Classes, "reference") {
 		return ""
@@ -85,6 +94,15 @@ func attributeEntityLinksSQL(d Definitions, filters relationshipFilters, args *[
 	branches := []string{}
 	for _, projection := range attributeReferenceProjections(d) {
 		if len(filters.RuleCodes) > 0 && !contains(filters.RuleCodes, projection.rule.Code) {
+			continue
+		}
+		canOutgoing := filters.Direction != "incoming" &&
+			(filters.SubjectKind == "" || contains(projection.rule.SourceKinds, filters.SubjectKind)) &&
+			(len(filters.PeerKinds) == 0 || intersectsKinds(projection.field.Kinds, filters.PeerKinds))
+		canIncoming := filters.Direction != "outgoing" &&
+			(filters.SubjectKind == "" || contains(projection.field.Kinds, filters.SubjectKind)) &&
+			(len(filters.PeerKinds) == 0 || intersectsKinds(projection.rule.SourceKinds, filters.PeerKinds))
+		if !canOutgoing && !canIncoming {
 			continue
 		}
 		value, path, position := "e.document->'attributes'", "", "0"
@@ -110,20 +128,21 @@ func attributeEntityLinksSQL(d Definitions, filters relationshipFilters, args *[
 		// otherwise valid public query into a database error.
 		text := "(" + value + " #>> '{}')"
 		targetID := "CASE WHEN jsonb_typeof(" + value + ")='string' AND " + text + " ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN " + text + "::uuid END"
-		var pattern any = (*args)[0]
-		for i := len(projection.segments) - 1; i >= 0; i-- {
-			segment := projection.segments[i]
-			if segment.list {
-				pattern = []any{pattern}
-			} else {
-				pattern = map[string]any{segment.code: pattern}
-			}
-		}
 		candidate := "e.id=$1::uuid"
-		if filters.Direction != "outgoing" {
+		if canIncoming {
+			var pattern any = (*args)[0]
+			for i := len(projection.segments) - 1; i >= 0; i-- {
+				segment := projection.segments[i]
+				if segment.list {
+					pattern = []any{pattern}
+				} else {
+					pattern = map[string]any{segment.code: pattern}
+				}
+			}
 			incomingCandidate := "e.document->'attributes' @> " + bind(encode(pattern)) + "::jsonb"
-			candidate = "(e.id=$1::uuid OR " + incomingCandidate + ")"
-			if filters.Direction == "incoming" {
+			if canOutgoing {
+				candidate = "(e.id=$1::uuid OR " + incomingCandidate + ")"
+			} else {
 				candidate = incomingCandidate
 			}
 		}

@@ -643,52 +643,58 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		}
 		switch e.Kind {
 		case "content_unit":
-			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.content_units(id,work_id,parent_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET parent_id=EXCLUDED.parent_id", e.ID, e.WorkID, nullable(e.ParentID))
+			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.content_units(id,work_id,parent_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET parent_id=EXCLUDED.parent_id WHERE catalog.content_units.parent_id IS DISTINCT FROM EXCLUDED.parent_id", e.ID, e.WorkID, nullable(e.ParentID))
 		case "expression":
-			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.expressions(id,work_id,content_unit_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET content_unit_id=EXCLUDED.content_unit_id", e.ID, e.WorkID, nullable(e.ContentUnitID))
+			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.expressions(id,work_id,content_unit_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET content_unit_id=EXCLUDED.content_unit_id WHERE catalog.expressions.content_unit_id IS DISTINCT FROM EXCLUDED.content_unit_id", e.ID, e.WorkID, nullable(e.ContentUnitID))
 		case "medium":
-			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.mediums(id,release_id,parent_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET parent_id=EXCLUDED.parent_id", e.ID, e.ReleaseID, nullable(e.ParentID))
+			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.mediums(id,release_id,parent_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET parent_id=EXCLUDED.parent_id WHERE catalog.mediums.parent_id IS DISTINCT FROM EXCLUDED.parent_id", e.ID, e.ReleaseID, nullable(e.ParentID))
 		case "track":
-			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.tracks(id,medium_id,parent_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET parent_id=EXCLUDED.parent_id", e.ID, e.MediumID, nullable(e.ParentID))
+			_, err = tx.ExecContext(ctx, "INSERT INTO catalog.tracks(id,medium_id,parent_id) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET parent_id=EXCLUDED.parent_id WHERE catalog.tracks.parent_id IS DISTINCT FROM EXCLUDED.parent_id", e.ID, e.MediumID, nullable(e.ParentID))
 			if err != nil {
 				return err
 			}
-			if _, err = tx.ExecContext(ctx, "DELETE FROM catalog.track_contents WHERE track_id=$1", e.ID); err != nil {
-				return err
-			}
-			for _, c := range e.Contents {
-				if _, err = tx.ExecContext(ctx, "INSERT INTO catalog.track_contents(track_id,expression_id,position,locator,attributes,sources) VALUES($1,$2,$3,$4,$5,$6)", e.ID, c.ExpressionID, c.Position, encode(c.Locator), encode(c.Attributes), encode(inclusionSources(c.Sources))); err != nil {
-					return err
+			if create || encode(old.Contents) != encode(e.Contents) {
+				if !create {
+					if _, err = tx.ExecContext(ctx, "DELETE FROM catalog.track_contents WHERE track_id=$1", e.ID); err != nil {
+						return err
+					}
+				}
+				for _, c := range e.Contents {
+					if _, err = tx.ExecContext(ctx, "INSERT INTO catalog.track_contents(track_id,expression_id,position,locator,attributes,sources) VALUES($1,$2,$3,$4,$5,$6)", e.ID, c.ExpressionID, c.Position, encode(c.Locator), encode(c.Attributes), encode(inclusionSources(c.Sources))); err != nil {
+						return err
+					}
 				}
 			}
 		case "release":
-			if _, err = tx.ExecContext(ctx, "DELETE FROM catalog.release_subjects WHERE release_id=$1", e.ID); err != nil {
-				return err
-			}
-			for _, x := range e.Subjects {
-				if _, err = tx.ExecContext(ctx, "INSERT INTO catalog.release_subjects(release_id,work_id,role,position,attributes) VALUES($1,$2,$3,$4,$5)", e.ID, x.WorkID, x.Role, x.Position, encode(x.Attributes)); err != nil {
-					return err
+			if create || encode(old.Subjects) != encode(e.Subjects) {
+				if !create {
+					if _, err = tx.ExecContext(ctx, "DELETE FROM catalog.release_subjects WHERE release_id=$1", e.ID); err != nil {
+						return err
+					}
+				}
+				for _, x := range e.Subjects {
+					if _, err = tx.ExecContext(ctx, "INSERT INTO catalog.release_subjects(release_id,work_id,role,position,attributes) VALUES($1,$2,$3,$4,$5)", e.ID, x.WorkID, x.Role, x.Position, encode(x.Attributes)); err != nil {
+						return err
+					}
 				}
 			}
 		}
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM catalog.external_links WHERE entity_id=$1`, e.ID); err != nil {
-			return err
-		}
-		for _, link := range e.ExternalLinks {
-			if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.external_links(entity_id,entity_kind,kind,url,external_id,role,origin,source_refs) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8)`,
-				e.ID, e.Kind, link.Kind, link.URL, link.ExternalID, link.Role, link.Origin, encode(link.SourceRefs)); err != nil {
+		if (create && len(e.ExternalLinks) > 0) || (!create && encode(old.ExternalLinks) != encode(e.ExternalLinks)) {
+			if err = replaceExternalLinksTx(ctx, tx, e, !create); err != nil {
 				return err
 			}
 		}
-		missing, err := undeclaredReleaseSubject(ctx, tx, e)
-		if err != nil {
-			return err
-		}
-		if missing {
-			return fmt.Errorf("undeclared_release_subject")
+		if create || (e.Kind == "release" && encode(old.Subjects) != encode(e.Subjects)) || (e.Kind == "track" && encode(old.Contents) != encode(e.Contents)) {
+			missing, err := undeclaredReleaseSubject(ctx, tx, e)
+			if err != nil {
+				return err
+			}
+			if missing {
+				return fmt.Errorf("undeclared_release_subject")
+			}
 		}
 		if err := audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity.saved"); err != nil {
 			return err
@@ -713,6 +719,21 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 		return e, nil
 	}
 	return e, err
+}
+
+func replaceExternalLinksTx(ctx context.Context, tx *sql.Tx, e Entity, deleteExisting bool) error {
+	if deleteExisting {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM catalog.external_links WHERE entity_id=$1`, e.ID); err != nil {
+			return err
+		}
+	}
+	for _, link := range e.ExternalLinks {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.external_links(entity_id,entity_kind,kind,url,external_id,role,origin,source_refs) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8)`,
+			e.ID, e.Kind, link.Kind, link.URL, link.ExternalID, link.Role, link.Origin, encode(link.SourceRefs)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // undeclaredReleaseSubject 只复核本次写入可能打破的收录归属：release 重写

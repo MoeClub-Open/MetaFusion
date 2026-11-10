@@ -28,7 +28,7 @@ func retentionFixturePolicy(t *testing.T) RetentionPolicy {
 
 func TestRetentionPolicyConfiguration(t *testing.T) {
 	p := retentionFixturePolicy(t)
-	if p.OutboxDays != 7 || p.IdempotencyDays != 7 || p.Interval != time.Hour ||
+	if p.OutboxDays != 7 || p.IdempotencyDays != 7 || p.CuratorTranscriptDays != 30 || p.Interval != time.Hour ||
 		len(p.RequiredConsumers) != 1 || p.RequiredConsumers[0] != openSearchConsumer {
 		t.Fatalf("defaults: %+v", p)
 	}

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -153,7 +155,29 @@ func referencesID(f Field, value any, id string) bool {
 // SQL 只做文本预过滤（合并期一次性扫描），是否真引用由 relationReferencesID 按
 // definitions 声明的 entity 路径判定——不做 JSON 字符串替换。
 func relationsWithAttributeReference(ctx context.Context, tx *sql.Tx, d Definitions, sourceID string, skip map[string]bool) ([]Relation, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT document FROM catalog.relations WHERE document::text LIKE '%'||$1||'%' ORDER BY id", sourceID)
+	patterns := map[string]bool{}
+	for _, rule := range d.Relations {
+		for _, code := range rule.Fields {
+			for _, value := range relationshipReferencePatterns(d.Fields[code], sourceID) {
+				patterns[encode(map[string]any{code: value})] = true
+			}
+		}
+	}
+	if len(patterns) == 0 {
+		return []Relation{}, nil
+	}
+	ordered := make([]string, 0, len(patterns))
+	for pattern := range patterns {
+		ordered = append(ordered, pattern)
+	}
+	sort.Strings(ordered)
+	args := make([]any, 0, len(ordered))
+	clauses := make([]string, 0, len(ordered))
+	for _, pattern := range ordered {
+		args = append(args, pattern)
+		clauses = append(clauses, "document->'attributes' @> $"+strconv.Itoa(len(args))+"::jsonb")
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT document FROM catalog.relations WHERE ("+strings.Join(clauses, " OR ")+") ORDER BY id", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +202,73 @@ func relationsWithAttributeReference(ctx context.Context, tx *sql.Tx, d Definiti
 	return out, rows.Err()
 }
 
+func mergeRecordFieldClauses(column string, f Field, id string, args *[]any) string {
+	clauses := []string{}
+	for _, pattern := range relationshipReferencePatterns(f, id) {
+		*args = append(*args, encode(pattern))
+		clauses = append(clauses, column+" @> $"+strconv.Itoa(len(*args))+"::jsonb")
+	}
+	if len(clauses) == 0 {
+		return "false"
+	}
+	return strings.Join(clauses, " OR ")
+}
+
+func mergeCandidateEntityIDs(ctx context.Context, tx *sql.Tx, d Definitions, sourceID, targetID string) ([]string, error) {
+	args := []any{sourceID, targetID}
+	subjectAttrs := mergeRecordFieldClauses("attributes", d.Fields["subject_attributes"], sourceID, &args)
+	contentLoc := mergeRecordFieldClauses("locator", d.Fields["locator"], sourceID, &args)
+	contentAttrs := mergeRecordFieldClauses("attributes", d.Fields["inclusion_attributes"], sourceID, &args)
+	patterns := map[string]bool{}
+	for code, field := range d.Fields {
+		if code == "subject_attributes" || code == "locator" || code == "inclusion_attributes" {
+			continue
+		}
+		for _, value := range relationshipReferencePatterns(field, sourceID) {
+			patterns[encode(map[string]any{code: value})] = true
+		}
+	}
+	ordered := make([]string, 0, len(patterns))
+	for pattern := range patterns {
+		ordered = append(ordered, pattern)
+	}
+	sort.Strings(ordered)
+	entityClauses := make([]string, 0, len(ordered))
+	for _, pattern := range ordered {
+		args = append(args, pattern)
+		entityClauses = append(entityClauses, "document->'attributes' @> $"+strconv.Itoa(len(args))+"::jsonb")
+	}
+	entityAttrPred := "false"
+	if len(entityClauses) > 0 {
+		entityAttrPred = strings.Join(entityClauses, " OR ")
+	}
+	query := fmt.Sprintf(`SELECT id::text FROM catalog.entities
+		WHERE state NOT IN ('deleted','merged') AND id <> $1::uuid AND (
+			id = $2::uuid
+			OR id IN (SELECT id FROM catalog.content_units WHERE work_id=$1::uuid OR parent_id=$1::uuid)
+			OR id IN (SELECT id FROM catalog.expressions WHERE work_id=$1::uuid OR content_unit_id=$1::uuid)
+			OR id IN (SELECT id FROM catalog.mediums WHERE release_id=$1::uuid OR parent_id=$1::uuid)
+			OR id IN (SELECT id FROM catalog.tracks WHERE medium_id=$1::uuid OR parent_id=$1::uuid)
+			OR id IN (SELECT release_id FROM catalog.release_subjects WHERE work_id=$1::uuid OR (%s))
+			OR id IN (SELECT track_id FROM catalog.track_contents WHERE expression_id=$1::uuid OR (%s) OR (%s))
+			OR (%s)
+		) ORDER BY id`, subjectAttrs, contentLoc, contentAttrs, entityAttrPred)
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // mergeReferences moves identity references atomically and audits every affected record.
 // Conflicting relationship cardinality and containment are rejected, never discarded.
 func mergeReferences(ctx context.Context, tx *sql.Tx, source, target Entity, u User, in LifecycleEdit) error {
@@ -190,21 +281,7 @@ func mergeReferences(ctx context.Context, tx *sql.Tx, source, target Entity, u U
 	if err != nil {
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT id FROM catalog.entities WHERE state NOT IN ('deleted','merged') ORDER BY id")
-	if err != nil {
-		return err
-	}
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	rows.Close()
+	ids, err := mergeCandidateEntityIDs(ctx, tx, v.Document, source.ID, target.ID)
 	if err != nil {
 		return err
 	}
@@ -387,6 +464,11 @@ func mergeReferences(ctx context.Context, tx *sql.Tx, source, target Entity, u U
 		}
 		if err != nil {
 			return err
+		}
+		if e.ID == target.ID && len(source.ExternalLinks) > 0 {
+			if err = replaceExternalLinksTx(ctx, tx, e, true); err != nil {
+				return err
+			}
 		}
 		stored := e
 		stored.WorkID = ""

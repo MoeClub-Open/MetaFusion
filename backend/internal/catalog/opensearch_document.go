@@ -149,7 +149,10 @@ func makeSearchDocument(e Entity) searchDocument {
 	if row, ok := e.Translations[e.OriginalLanguage]; ok && !row.Nonofficial && row.Title != "" {
 		sortTitle = row.Title
 	}
-	add := func(dst *[]string, value string) {
+	seenTitles := make(map[string]struct{}, len(e.Translations)+1)
+	seenText := make(map[string]struct{}, 1+len(e.Translations)*3)
+	seenExact := make(map[string]struct{}, 1+len(e.Translations)*3)
+	add := func(dst *[]string, seen map[string]struct{}, value string) {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			return
@@ -157,6 +160,10 @@ func makeSearchDocument(e Entity) searchDocument {
 		if utf8.RuneCountInString(value) > 4096 {
 			value = string([]rune(value)[:4096])
 		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
 		*dst = append(*dst, value)
 	}
 	addText := func(value string) {
@@ -164,10 +171,16 @@ func makeSearchDocument(e Entity) searchDocument {
 		if value == "" {
 			return
 		}
-		add(&text, value)
-		exact = append(exact, splitSearchText(value)...)
+		add(&text, seenText, value)
+		for _, chunk := range splitSearchText(value) {
+			if _, ok := seenExact[chunk]; ok {
+				continue
+			}
+			seenExact[chunk] = struct{}{}
+			exact = append(exact, chunk)
+		}
 	}
-	add(&titles, e.Title)
+	add(&titles, seenTitles, e.Title)
 	addText(e.Title)
 	locales := make([]string, 0, len(e.Translations))
 	for locale := range e.Translations {
@@ -176,7 +189,7 @@ func makeSearchDocument(e Entity) searchDocument {
 	sort.Strings(locales)
 	for _, locale := range locales {
 		translation := e.Translations[locale]
-		add(&titles, translation.Title)
+		add(&titles, seenTitles, translation.Title)
 		addText(translation.Title)
 		addText(translation.Summary)
 		// Index the full article rather than silently truncating it at add's
@@ -192,7 +205,8 @@ func makeSearchDocument(e Entity) searchDocument {
 		}
 	}
 
-	for _, tag := range searchTags(e.Attributes["tags"]) {
+	tags := searchTags(e.Attributes["tags"])
+	for _, tag := range tags {
 		addText(tag)
 	}
 	// External links are searchable alongside titles, aliases, and summaries.
@@ -215,7 +229,7 @@ func makeSearchDocument(e Entity) searchDocument {
 		Kind:             e.Kind,
 		State:            e.State,
 		CreatedBy:        e.CreatedBy,
-		Tags:             searchTags(e.Attributes["tags"]),
+		Tags:             tags,
 		OriginalLanguage: e.OriginalLanguage,
 		WorkID:           e.WorkID,
 		ContentUnitID:    e.ContentUnitID,

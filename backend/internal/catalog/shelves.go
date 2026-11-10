@@ -326,7 +326,7 @@ func shelfFilter(sh Shelf, args *[]any, alias string) []string {
 	if rels := trimAll(sh.Query.Relations); len(rels) > 0 {
 		*args = append(*args, pq.Array(rels))
 		parts = append(parts, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM catalog.relations r WHERE (r.source_id=%s.id OR r.target_id=%s.id) AND r.document->>'type' = ANY($%d))",
+			"EXISTS (SELECT 1 FROM catalog.relations r WHERE (r.source_id=%s.id OR r.target_id=%s.id) AND r.type = ANY($%d))",
 			alias, alias, len(*args)))
 	}
 	return parts

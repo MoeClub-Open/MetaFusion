@@ -295,17 +295,27 @@ func (s *Service) AddTask(ctx context.Context, in TaskInput, actor string) (Find
 }
 
 func (s *Service) Children(ctx context.Context, parent string) ([]Run, error) {
-	page, err := s.Runs(ctx, RunFilter{ParentID: parent}, 200, 0)
+	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT `+runColumns+` FROM curator.runs
+		WHERE parent_run_id=$1 ORDER BY started_at DESC,id DESC LIMIT 200`, parent)
 	if err != nil {
 		return nil, err
 	}
-	for i := range page.Items {
-		page.Items[i], err = s.GetRun(ctx, page.Items[i].ID)
-		if err != nil {
+	defer rows.Close()
+	out := []Run{}
+	for rows.Next() {
+		var r Run
+		var mid string
+		var messages []byte
+		if err := rows.Scan(&r.ID, &r.FindingID, &r.EntityID, &r.Kind, &r.Trigger, &r.Status, &mid, &r.Decision, &r.Reason,
+			&r.Sources, &r.ToolTrace, &r.Detail, &r.WorkspaceID, &r.PullRequestID, &r.Merged, &r.AutoMerged,
+			&r.Error, &r.InputTokens, &r.OutputTokens, &r.Credits, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, &r.ParentRunID, &r.Role, &messages); err != nil {
 			return nil, err
 		}
+		r.ModelID = mid
+		_ = json.Unmarshal(messages, &r.Messages)
+		out = append(out, r)
 	}
-	return page.Items, nil
+	return out, rows.Err()
 }
 
 func (s *Service) finishManager(ctx context.Context, run Run) error {

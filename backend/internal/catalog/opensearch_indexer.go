@@ -94,7 +94,9 @@ func (s *Store) syncOpenSearch(ctx context.Context) error {
 }
 
 func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) error {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id,type,entity_id,version,payload,created_at
+	rows, err := s.DB.QueryContext(ctx, `SELECT id,type,entity_id,version,
+		CASE WHEN jsonb_typeof(o.payload)='object' THEN jsonb_strip_nulls(jsonb_build_object('id', o.payload->'id', 'kind', o.payload->'kind')) ELSE o.payload END,
+		created_at
 		FROM catalog.outbox o
 		WHERE o.type LIKE 'entity.%'
 		  AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
@@ -119,9 +121,11 @@ func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) erro
 	if len(events) == 0 {
 		return nil
 	}
+	eventIDs := make([]string, 0, len(events))
 	ids := make([]string, 0, len(events))
 	seen := make(map[string]bool, len(events))
 	for _, event := range events {
+		eventIDs = append(eventIDs, event.ID)
 		if !strings.HasPrefix(event.Type, "entity.") {
 			continue
 		}
@@ -160,18 +164,9 @@ func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) erro
 	if err := c.writeDocuments(ctx, docs, deletedIDs, true); err != nil {
 		return err
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, event := range events {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.deliveries(consumer,event_id)
-			VALUES($1,$2) ON CONFLICT DO NOTHING`, openSearchConsumer, event.ID); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
+	_, err = s.DB.ExecContext(ctx, `INSERT INTO catalog.deliveries(consumer,event_id)
+		SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`, openSearchConsumer, pq.Array(eventIDs))
+	return err
 }
 
 func (s *Store) searchIndexEntities(ctx context.Context, ids []string) (map[string]Entity, error) {

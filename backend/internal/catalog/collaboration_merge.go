@@ -557,9 +557,13 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 		return out, err
 	}
 	for _, p := range plan {
-		current, version, err := workspaceMainObject(ctx, tx, p.Object.Target, p.Object.ID, u)
-		if err != nil {
-			return out, err
+		current, version := p.Current, p.CurrentVersion
+		if !workspaceSameFact(p.Current, p.Merged, p.Object.Target) {
+			var err error
+			current, version, err = workspaceMainObject(ctx, tx, p.Object.Target, p.Object.ID, u)
+			if err != nil {
+				return out, err
+			}
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_objects SET base_version=$4,base_document=$5,head_document=$5,document=$5,updated_at=now() WHERE workspace_id=$1 AND target=$2 AND target_id=$3`, w.ID, p.Object.Target, p.Object.ID, version, nullableJSON(current)); err != nil {
 			return out, err

@@ -158,7 +158,9 @@ func relationshipEntitiesFrom(ctx context.Context, q queryer, ids []string, u *U
 		userID = u.ID
 	}
 	rows, err := q.QueryContext(ctx, `SELECT id::text,kind,coalesce((document->>'version')::bigint,0),
-	 coalesce(document->>'title',''),coalesce(document->>'original_language',''),coalesce(document->'translations','{}'::jsonb)
+	 coalesce(document->>'title',''),coalesce(document->>'original_language',''),
+	 coalesce((SELECT jsonb_object_agg(k, CASE WHEN jsonb_typeof(v)='object' THEN v - 'body' ELSE v END)
+	   FROM jsonb_each(CASE WHEN jsonb_typeof(document->'translations')='object' THEN document->'translations' ELSE '{}'::jsonb END) AS t(k,v)), '{}'::jsonb)
 	 FROM catalog.entities WHERE id=ANY($1::uuid[])
 	 AND ($2::boolean OR state='active' OR created_by=$3::uuid)`, pq.Array(ids), manage, userID)
 	if err != nil {
@@ -236,6 +238,15 @@ func queryRelationshipsFrom(ctx context.Context, q queryer, in RelationshipQuery
 		filters.PeerKinds = nil
 	}
 	endpointIDs := []string{}
+	seenEndpoints := map[string]bool{}
+	addEndpoint := func(id string) {
+		if id != "" && !seenEndpoints[id] {
+			seenEndpoints[id] = true
+			if _, ok := out.Entities[id]; !ok {
+				endpointIDs = append(endpointIDs, id)
+			}
+		}
+	}
 	for _, id := range in.IDs {
 		self, ok := subjects[id]
 		if !ok {
@@ -243,15 +254,18 @@ func queryRelationshipsFrom(ctx context.Context, q queryer, in RelationshipQuery
 			continue
 		}
 		out.Entities[id] = self
-		page, err := entityLinksFrom(ctx, q, id, limit, offset, u, defs, filters)
+		subjectFilters := filters
+		subjectFilters.SubjectKind = self.Kind
+		page, err := entityLinksFrom(ctx, q, id, limit, offset, u, defs, subjectFilters)
 		if err != nil {
 			return out, err
 		}
 		out.Pages = append(out.Pages, RelationshipQueryPage{SubjectID: id, Items: page.Items, Limit: limit, Offset: offset, HasMore: page.HasMore})
 		for _, link := range page.Items {
-			endpointIDs = append(endpointIDs, link.SourceID, link.TargetID)
+			addEndpoint(link.SourceID)
+			addEndpoint(link.TargetID)
 			for _, ref := range link.References {
-				endpointIDs = append(endpointIDs, ref.EntityID)
+				addEndpoint(ref.EntityID)
 			}
 		}
 	}

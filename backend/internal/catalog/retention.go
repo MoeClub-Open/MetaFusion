@@ -22,14 +22,15 @@ const (
 // RequiredConsumers must include every enabled consumer of the known entity
 // events. A disabled integration is omitted by the server's explicit wiring.
 type RetentionPolicy struct {
-	OutboxDays        int
-	IdempotencyDays   int
-	Interval          time.Duration
-	RequiredConsumers []string
+	OutboxDays            int
+	IdempotencyDays       int
+	CuratorTranscriptDays int
+	Interval              time.Duration
+	RequiredConsumers     []string
 }
 
 func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error) {
-	p := RetentionPolicy{OutboxDays: 7, IdempotencyDays: 7, Interval: time.Hour,
+	p := RetentionPolicy{OutboxDays: 7, IdempotencyDays: 7, CuratorTranscriptDays: 30, Interval: time.Hour,
 		RequiredConsumers: []string{openSearchConsumer}}
 	if value := strings.TrimSpace(getenv("CATALOG_OUTBOX_RETENTION_DAYS")); value != "" {
 		parsed, err := strconv.Atoi(value)
@@ -45,6 +46,13 @@ func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error)
 		}
 		p.IdempotencyDays = parsed
 	}
+	if value := strings.TrimSpace(getenv("CATALOG_CURATOR_TRANSCRIPT_RETENTION_DAYS")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 0 || parsed > 36500 {
+			return p, fmt.Errorf("invalid CATALOG_CURATOR_TRANSCRIPT_RETENTION_DAYS: expected 0..36500 days")
+		}
+		p.CuratorTranscriptDays = parsed
+	}
 	if value := strings.TrimSpace(getenv("CATALOG_RETENTION_INTERVAL_SECONDS")); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed < 60 || parsed > 86400 {
@@ -57,6 +65,7 @@ func RetentionPolicyFromEnv(getenv func(string) string) (RetentionPolicy, error)
 
 func (p RetentionPolicy) validate() error {
 	if p.OutboxDays < 0 || p.OutboxDays > 36500 || p.IdempotencyDays < 0 || p.IdempotencyDays > 36500 ||
+		p.CuratorTranscriptDays < 0 || p.CuratorTranscriptDays > 36500 ||
 		p.Interval < time.Minute || p.Interval > 24*time.Hour {
 		return fmt.Errorf("invalid_catalog_retention_policy")
 	}
@@ -72,9 +81,10 @@ func (p RetentionPolicy) validate() error {
 }
 
 type RetentionResult struct {
-	Events          int64
-	Deliveries      int64
-	IdempotencyKeys int64
+	Events             int64
+	Deliveries         int64
+	IdempotencyKeys    int64
+	CuratorTranscripts int64
 }
 
 // RunRetention waits one interval before the first bounded cleanup, so startup
@@ -100,15 +110,16 @@ func (s *Store) RunRetention(ctx context.Context, policy RetentionPolicy) {
 				result.Events += removed.Events
 				result.Deliveries += removed.Deliveries
 				result.IdempotencyKeys += removed.IdempotencyKeys
-				if err != nil || (removed.Events < retentionBatchSize && removed.IdempotencyKeys < retentionBatchSize) {
+				result.CuratorTranscripts += removed.CuratorTranscripts
+				if err != nil || (removed.Events < retentionBatchSize && removed.IdempotencyKeys < retentionBatchSize && removed.CuratorTranscripts < retentionBatchSize) {
 					break
 				}
 			}
 			cancel()
 			if err != nil && ctx.Err() == nil {
 				log.Printf("catalog retention delayed: %v", err)
-			} else if result.Events != 0 || result.Deliveries != 0 || result.IdempotencyKeys != 0 {
-				log.Printf("catalog retention: events=%d deliveries=%d idempotency_keys=%d", result.Events, result.Deliveries, result.IdempotencyKeys)
+			} else if result.Events != 0 || result.Deliveries != 0 || result.IdempotencyKeys != 0 || result.CuratorTranscripts != 0 {
+				log.Printf("catalog retention: events=%d deliveries=%d idempotency_keys=%d curator_transcripts=%d", result.Events, result.Deliveries, result.IdempotencyKeys, result.CuratorTranscripts)
 			}
 		}
 	}
@@ -148,6 +159,26 @@ func (s *Store) CleanupRetention(ctx context.Context, policy RetentionPolicy) (R
 			return RetentionResult{}, err
 		}
 		if result.IdempotencyKeys, err = deleted.RowsAffected(); err != nil {
+			return RetentionResult{}, err
+		}
+	}
+	if policy.CuratorTranscriptDays > 0 {
+		pruned, err := tx.ExecContext(ctx, `UPDATE curator.runs SET messages='[]'::jsonb, tool_trace='[]'::jsonb
+			WHERE id IN (
+				SELECT r.id FROM curator.runs r
+				WHERE r.status IN ('completed','failed')
+				  AND r.finished_at < now() - make_interval(days => $1)
+				  AND (r.messages <> '[]'::jsonb OR r.tool_trace <> '[]'::jsonb)
+				  AND NOT EXISTS (
+				    SELECT 1 FROM curator.findings f
+				    WHERE f.last_run_id = r.id AND f.status IN ('open','running','failed')
+				  )
+				ORDER BY r.finished_at, r.id LIMIT $2 FOR UPDATE SKIP LOCKED
+			)`, policy.CuratorTranscriptDays, retentionBatchSize)
+		if err != nil {
+			return RetentionResult{}, err
+		}
+		if result.CuratorTranscripts, err = pruned.RowsAffected(); err != nil {
 			return RetentionResult{}, err
 		}
 	}

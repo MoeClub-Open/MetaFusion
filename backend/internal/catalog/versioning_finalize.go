@@ -39,19 +39,25 @@ func pendingCatalogRecords(ctx context.Context, tx *sql.Tx) ([]CommitObject, err
 	if err != nil {
 		return nil, err
 	}
-	entities, err := entityDocuments(ctx, tx, entityIDs)
-	if err != nil {
-		return nil, err
+	if len(objects) == 0 {
+		return objects, nil
 	}
-	for id, e := range entities {
-		if e.Kind == "release" {
-			e.Subjects = []Subject{}
-			entities[id] = e
+	entities := map[string]Entity{}
+	if len(entityIDs) > 0 {
+		entities, err = entityDocuments(ctx, tx, entityIDs)
+		if err != nil {
+			return nil, err
 		}
-	}
-	entities, err = fillStructural(ctx, tx, entities)
-	if err != nil {
-		return nil, err
+		for id, e := range entities {
+			if e.Kind == "release" {
+				e.Subjects = []Subject{}
+				entities[id] = e
+			}
+		}
+		entities, err = fillStructural(ctx, tx, entities)
+		if err != nil {
+			return nil, err
+		}
 	}
 	relations := map[string]Relation{}
 	if len(relationIDs) > 0 {
@@ -112,67 +118,67 @@ func finalizeCatalogVersion(ctx context.Context, tx *sql.Tx) error {
 	}
 	// Restrict attribution to this transaction's touched records before taking
 	// the global head lock; the target/version index avoids a whole-history walk.
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT a.user_id,a.name
-		FROM catalog.pending_record_versions p JOIN catalog.revisions r ON r.target_id=p.target_id::text
-		JOIN catalog.revision_commits rc ON rc.revision_id=r.id JOIN catalog.commit_authors a ON a.commit_id=rc.commit_id
-		WHERE p.transaction_id=txid_current() AND r.xmin::text::bigint=(txid_current() & 4294967295)`)
-	if err != nil {
-		return err
-	}
 	authors := []CollaborationAuthor{}
-	for rows.Next() {
-		var a CollaborationAuthor
-		if err = rows.Scan(&a.ID, &a.Name); err != nil {
-			rows.Close()
+	if source != "" {
+		rows, err := tx.QueryContext(ctx, `SELECT DISTINCT a.user_id,a.name
+			FROM catalog.pending_record_versions p JOIN catalog.revisions r ON r.target_id=p.target_id::text
+			JOIN catalog.revision_commits rc ON rc.revision_id=r.id JOIN catalog.commit_authors a ON a.commit_id=rc.commit_id
+			WHERE p.transaction_id=txid_current() AND r.xmin::text::bigint=(txid_current() & 4294967295)`)
+		if err != nil {
 			return err
 		}
-		authors = append(authors, a)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
+		for rows.Next() {
+			var a CollaborationAuthor
+			if err = rows.Scan(&a.ID, &a.Name); err != nil {
+				rows.Close()
+				return err
+			}
+			authors = append(authors, a)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
 	}
 	if len(authors) == 0 && actor != "system" {
 		authors = append(authors, CollaborationAuthor{ID: actor, Name: name})
 	}
 	changeJSON, authorJSON := encode(changes), encode(authors)
-	var parent string
-	if err = tx.QueryRowContext(ctx, `SELECT commit_id::text FROM catalog.catalog_head WHERE singleton FOR UPDATE`).Scan(&parent); err != nil {
-		return err
-	}
 	id := newID()
 	request := map[string]any{"operation": "integrate", "source_head": source}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,parent_id,merge_parent_id,message,kind,snapshot_scope,merged_at,merged_by) VALUES($1,$2,$3,$4,'{}',$5,$6,$7,$8,'rebase','catalog',now(),$2)`, id, actor, requestHash(request), encode(request), encode(commitAuthor{ID: actor, Username: name}), parent, nullable(source), message); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commits(id,actor_id,request_hash,request,result,author_snapshot,parent_id,merge_parent_id,message,kind,snapshot_scope,merged_at,merged_by) SELECT $1,$2,$3,$4,'{}',$5,commit_id,$6,$7,'rebase','catalog',now(),$2 FROM catalog.catalog_head WHERE singleton FOR UPDATE`, id, actor, requestHash(request), encode(request), encode(commitAuthor{ID: actor, Username: name}), nullable(source), message); err != nil {
 		return err
 	}
 	sources := []string{}
 	if source != "" {
 		sources = append(sources, source)
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commit_operations VALUES($1,'integrate',$2::uuid[])`, id, pq.Array(sources)); err != nil {
-		return err
-	}
 	var sequence int64
-	if err = tx.QueryRowContext(ctx, `INSERT INTO catalog.catalog_versions(commit_id) VALUES($1) RETURNING sequence`, id).Scan(&sequence); err != nil {
+	if err = tx.QueryRowContext(ctx, `WITH ins_ver AS (
+		INSERT INTO catalog.catalog_versions(commit_id) VALUES($1) RETURNING sequence
+	), ins_op AS (
+		INSERT INTO catalog.commit_operations VALUES($1,'integrate',$2::uuid[])
+	), ins_auth AS (
+		INSERT INTO catalog.commit_authors(commit_id,user_id,name)
+		SELECT $1,id,name FROM jsonb_to_recordset($3::jsonb) AS a(id text,name text) ON CONFLICT DO NOTHING
+	), upd_head AS (
+		UPDATE catalog.catalog_head SET commit_id=$1 WHERE singleton
+	), del_pending AS (
+		DELETE FROM catalog.pending_record_versions WHERE transaction_id=txid_current()
+	) SELECT sequence FROM ins_ver`, id, pq.Array(sources), authorJSON).Scan(&sequence); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `WITH changes AS (
-		SELECT * FROM jsonb_to_recordset($3::jsonb) AS c(target text,id uuid,base_version bigint,"before" jsonb,"after" jsonb)
-	), records AS (
-		INSERT INTO catalog.catalog_record_versions(sequence,target,target_id,document)
-		SELECT $2,target,id,NULLIF("after",'null'::jsonb) FROM changes
-	) INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,base_document,before_document,after_document)
-		SELECT $1,target,id,base_version,NULLIF("before",'null'::jsonb),NULLIF("before",'null'::jsonb),NULLIF("after",'null'::jsonb) FROM changes`, id, sequence, changeJSON); err != nil {
-		return err
+	if len(changes) > 0 {
+		if _, err = tx.ExecContext(ctx, `WITH changes AS (
+			SELECT * FROM jsonb_to_recordset($3::jsonb) AS c(target text,id uuid,base_version bigint,"before" jsonb,"after" jsonb)
+		), records AS (
+			INSERT INTO catalog.catalog_record_versions(sequence,target,target_id,document)
+			SELECT $2,target,id,NULLIF("after",'null'::jsonb) FROM changes
+		) INSERT INTO catalog.commit_objects(commit_id,target,target_id,base_version,base_document,before_document,after_document)
+			SELECT $1,target,id,base_version,NULLIF("before",'null'::jsonb),NULLIF("before",'null'::jsonb),NULLIF("after",'null'::jsonb) FROM changes`, id, sequence, changeJSON); err != nil {
+			return err
+		}
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog.commit_authors(commit_id,user_id,name)
-		SELECT $1,id,name FROM jsonb_to_recordset($2::jsonb) AS a(id text,name text) ON CONFLICT DO NOTHING`, id, authorJSON); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE catalog.catalog_head SET commit_id=$1 WHERE singleton`, id); err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, `DELETE FROM catalog.pending_record_versions WHERE transaction_id=txid_current()`)
-	return err
+	return nil
 }
