@@ -75,3 +75,36 @@ test("buildDisplayGraph folds deep leaf fan-outs while preserving intermediate h
   assert.ok(expanded.nodes.some((n) => n.id === "t1"));
   assert.ok(expanded.nodes.some((n) => n.id === "t7"));
 });
+
+test("buildDisplayGraph and computeGraphLayout fold and wrap 1:1 track-expression chains", () => {
+  const nodes: GraphNode[] = [
+    { id: "r1", name: "Album", type: "release", category: "release", level: 0 },
+    { id: "m1", name: "Digital", type: "medium", category: "medium", level: 1 },
+  ];
+  const links: GraphLink[] = [
+    { id: "rm", source: "r1", target: "m1", type: "release_id", label: "Medium", is_hierarchical: true },
+  ];
+  for (let i = 1; i <= 10; i++) {
+    nodes.push({ id: `t${i}`, name: `Track ${i}`, type: "track", category: "track", level: 2, order: i });
+    nodes.push({ id: `e${i}`, name: `Expr ${i}`, type: "expression", category: "expression", level: 3 });
+    links.push({ id: `mt${i}`, source: "m1", target: `t${i}`, type: "medium_id", label: "Track", is_hierarchical: true });
+    links.push({ id: `te${i}`, source: `t${i}`, target: `e${i}`, type: "contents", label: "Expression", is_hierarchical: true });
+  }
+
+  const folded = buildDisplayGraph("r1", nodes, links, true, new Set(), 4);
+  assert.equal(folded.canGroup, true);
+  assert.ok(folded.nodes.some((n) => n.id === "__hub:m1::medium_id"));
+  assert.ok(!folded.nodes.some((n) => n.id === "t1"));
+  assert.ok(!folded.nodes.some((n) => n.id === "e1"));
+
+  const pos = computeGraphLayout("r1", "release", nodes, links, "hierarchy", { maxColsPerGroup: 3 });
+  const xs = Array.from(pos.values()).map((n) => n.x);
+  const spanX = Math.max(...xs) - Math.min(...xs);
+  assert.ok(spanX <= 3 * 236, `expected wrapped width <= 708, got ${spanX}`);
+  for (let i = 1; i <= 10; i++) {
+    const t = pos.get(`t${i}`)!;
+    const e = pos.get(`e${i}`)!;
+    assert.equal(t.x, e.x);
+    assert.ok(e.y > t.y && e.y - t.y <= 120);
+  }
+});

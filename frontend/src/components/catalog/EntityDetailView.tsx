@@ -16,6 +16,7 @@ import { useCatalog } from "@/components/catalog/CatalogProvider";
 import {
   api,
   Entity,
+  type Relation,
   fetchAllPages,
   mapLimit,
   title,
@@ -199,6 +200,7 @@ export function EntityDetailView({ id }: { id: string }) {
   // 复制失败的分支：null 表示没有失败。复制不是"点了没反应"的动作，失败必须可见。
   const [copyFailed, setCopyFailed] = useState<"id" | "link" | null>(null);
   const [relationViewMode, setRelationViewMode] = useState<"cards" | "graph">("cards");
+  const [staffViewMode, setStaffViewMode] = useState<"cards" | "graph">("cards");
   // 画廊灯箱打开在第几张（null=关闭）。索引即 pictures 的数组下标：顺序就是作者定的
   // 展示顺序，灯箱翻图也只按这个顺序走，不再二次排序。
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -499,8 +501,15 @@ export function EntityDetailView({ id }: { id: string }) {
   // Graph nodes & links：节点摘要同样取自响应 entities 表，且每条关系的两端都建节点
   // （属性引用边的对端原先不在图上）；中心节点用 entities[subject_id] 的摘要，
   // 不依赖"页面上已知的实体"。缺表时才回退已知实体，仍缺则退回短 id。
-  const { graphNodes, graphLinks } = useMemo(() => {
-    if (!entity) return { graphNodes: [], graphLinks: [] };
+  const { graphNodes, graphLinks, structuralRelations, graphEntities } = useMemo(() => {
+    if (!entity) {
+      return {
+        graphNodes: [] as GraphNode[],
+        graphLinks: [] as GraphLink[],
+        structuralRelations: [] as Omit<Relation, "version">[],
+        graphEntities: {} as Record<string, Entity>,
+      };
+    }
     const centerId = entity.id || id;
     const knownEntities: Record<string, Entity> = { ...relatedEntities, ...directoryData.relatedEntities, ...inclusionExpressions.expressions };
     const registerEntity = (e: Entity | null | undefined) => {
@@ -542,8 +551,10 @@ export function EntityDetailView({ id }: { id: string }) {
       { ...nodeOf(centerId, 0), cover_image_url: resolvedCover.url || undefined },
     ];
     const links: GraphLink[] = [];
+    const structRels: Omit<Relation, "version">[] = [];
     const seenNodes = new Set<string>([centerId]);
     const seenEdges = new Set<string>();
+    const seenStructRels = new Set<string>();
     const ensureNode = (nid: string, level = 1) => {
       if (!nid || seenNodes.has(nid)) return;
       seenNodes.add(nid);
@@ -557,6 +568,23 @@ export function EntityDetailView({ id }: { id: string }) {
       resolveLocalizedName(defs?.structure?.release?.subject_reverse_names, locale, "") || kindLabel("release");
     const trackContentLabel =
       resolveLocalizedName(defs?.structure?.track?.content_names, locale, "") || kindLabel("expression");
+    const toStructRule = (parent: Entity, child: Entity, code: string): { rule: string; src: string; tgt: string } | null => {
+      if (code === "subject:release:work") {
+        const relId = parent.kind === "release" ? parent.id! : child.id!;
+        const workId = parent.kind === "work" ? parent.id! : child.id!;
+        return { rule: "structure:release_subject", src: relId, tgt: workId };
+      }
+      if (code === "contents") return { rule: "structure:track_content", src: parent.id!, tgt: child.id! };
+      if (code === "work_id" && child.kind === "content_unit") return { rule: "structure:work_content_unit", src: parent.id!, tgt: child.id! };
+      if (code === "work_id" && child.kind === "expression") return { rule: "structure:work_expression", src: parent.id!, tgt: child.id! };
+      if (code === "content_unit_id" && child.kind === "expression") return { rule: "structure:content_unit_expression", src: parent.id!, tgt: child.id! };
+      if (code === "release_id" && child.kind === "medium") return { rule: "structure:release_medium", src: parent.id!, tgt: child.id! };
+      if (code === "medium_id" && child.kind === "track") return { rule: "structure:medium_track", src: parent.id!, tgt: child.id! };
+      if (code === "parent_id" && child.kind === "content_unit") return { rule: "structure:content_unit_parent", src: parent.id!, tgt: child.id! };
+      if (code === "parent_id" && child.kind === "medium") return { rule: "structure:medium_parent", src: parent.id!, tgt: child.id! };
+      if (code === "parent_id" && child.kind === "track") return { rule: "structure:track_parent", src: parent.id!, tgt: child.id! };
+      return null;
+    };
     const addStructEdge = (parent: Entity | null | undefined, child: Entity | null | undefined, code: string, label: string) => {
       if (!parent?.id || !child?.id || parent.id === child.id) return;
       const edgeKey = `${parent.id}->${child.id}::${code}`;
@@ -574,6 +602,23 @@ export function EntityDetailView({ id }: { id: string }) {
         label,
         is_hierarchical: true,
       });
+      if (parent.id === centerId || child.id === centerId) {
+        const mapped = toStructRule(parent, child, code);
+        if (mapped) {
+          const sk = `${mapped.src}->${mapped.tgt}::${mapped.rule}`;
+          if (!seenStructRels.has(sk)) {
+            seenStructRels.add(sk);
+            structRels.push({
+              id: `struct-rel:${sk}`,
+              type: mapped.rule,
+              source_id: mapped.src,
+              target_id: mapped.tgt,
+              position: 0,
+              attributes: {},
+            });
+          }
+        }
+      }
     };
 
     if (motherWork) {
@@ -683,9 +728,23 @@ export function EntityDetailView({ id }: { id: string }) {
         label: getRelationName(defs, dr.type, true, locale, relationshipRules),
         is_hierarchical: true,
       });
+      if (dr.source_id === centerId || dr.target_id === centerId) {
+        const sk = `${dr.source_id}->${dr.target_id}::${dr.type}`;
+        if (!seenStructRels.has(sk)) {
+          seenStructRels.add(sk);
+          structRels.push({
+            id: `dir-rel:${sk}`,
+            type: dr.type,
+            source_id: dr.source_id,
+            target_id: dr.target_id,
+            position: 0,
+            attributes: {},
+          });
+        }
+      }
     }
 
-    return { graphNodes: nodes, graphLinks: links };
+    return { graphNodes: nodes, graphLinks: links, structuralRelations: structRels, graphEntities: knownEntities };
   }, [
     entity,
     relations,
@@ -840,6 +899,7 @@ export function EntityDetailView({ id }: { id: string }) {
       ),
     [categorizedRelations, defs]
   );
+  const relationsDirectoryItems = mediaRelations.length > 0 ? mediaRelations : structuralRelations;
 
   // 分类展示顺序：按实体 kind 与已有字段匹配的模板声明 relation_groups。
   const relationGroupOrder = useMemo(() => {
@@ -914,7 +974,7 @@ export function EntityDetailView({ id }: { id: string }) {
     // 因此目录在场时以目录计数，且不再重复渲染子实体网格。
     { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : (directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0)) + aggregate.count, visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0 || aggregate.count > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "releases", label: t("entity.page.navReleases"), badge: sectionFailures.occurrences ? undefined : (entity?.kind === "work" ? workReleaseCount : occurrences.length), visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
-    { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : (mediaRelations.length > 0 ? relationCount(mediaRelations.length) : graphLinks.length), visible: sectionFailures.relations || mediaRelations.length > 0 || graphLinks.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : (mediaRelations.length > 0 ? relationCount(mediaRelations.length) : relationsDirectoryItems.length), visible: sectionFailures.relations || relationsDirectoryItems.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
     { id: "community", label: t("entity.page.communityTitle"), badge: communityPosts.length, visible: communityEnabled, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisionTotal, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
@@ -1435,12 +1495,22 @@ export function EntityDetailView({ id }: { id: string }) {
                 groupOrder={relationGroupOrder}
                 truncated={relationsTruncated}
                 onOpenGraph={() => {
-                  setRelationViewMode("graph");
-                  select(mediaRelations.length > 0 || graphLinks.length > 0 ? "relations" : "staff");
+                  if (relationsDirectoryItems.length > 0) {
+                    setRelationViewMode("graph");
+                    select("relations");
+                  } else {
+                    setStaffViewMode("graph");
+                    select("staff");
+                  }
                 }}
                 onOpenType={(type) => {
-                  setRelationViewMode("cards");
-                  select(isCreditRelation(defs, type) ? "staff" : "relations");
+                  if (isCreditRelation(defs, type)) {
+                    setStaffViewMode("cards");
+                    select("staff");
+                  } else {
+                    setRelationViewMode("cards");
+                    select("relations");
+                  }
                 }}
               />
             )}
@@ -1456,9 +1526,9 @@ export function EntityDetailView({ id }: { id: string }) {
                     <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
                       <button
                         type="button"
-                        onClick={() => setRelationViewMode("cards")}
+                        onClick={() => setStaffViewMode("cards")}
                         className={`px-2.5 py-1 rounded-md transition-all ${
-                          relationViewMode === "cards"
+                          staffViewMode === "cards"
                             ? "bg-surface text-text-strong font-semibold shadow-xs"
                             : "text-text-faint hover:text-gray-900 dark:hover:text-white"
                         }`}
@@ -1467,9 +1537,9 @@ export function EntityDetailView({ id }: { id: string }) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setRelationViewMode("graph")}
+                        onClick={() => setStaffViewMode("graph")}
                         className={`px-2.5 py-1 rounded-md transition-all ${
-                          relationViewMode === "graph"
+                          staffViewMode === "graph"
                             ? "bg-surface text-text-strong font-semibold shadow-xs"
                             : "text-text-faint hover:text-gray-900 dark:hover:text-white"
                         }`}
@@ -1484,9 +1554,11 @@ export function EntityDetailView({ id }: { id: string }) {
                     {relationCount(staffCredits.length + staffRelations.length)}
                   </span>
                 </SectionTitle>
-                {relationViewMode === "graph" ? (
+                {staffViewMode === "graph" ? (
                   <InteractiveRelationGraph
-                    height="clamp(360px, 65dvh, 640px)"
+                    embedded
+                    defaultScope="relations"
+                    height="clamp(360px, 60dvh, 620px)"
                     centerEntityId={entity.id || id}
                     centerEntityType={entity.kind}
                     orientation={
@@ -1683,12 +1755,12 @@ export function EntityDetailView({ id }: { id: string }) {
             {/* ============================================================ */}
             {/* Section 5: Relations & Graph (关联作品与图谱)                 */}
             {/* ============================================================ */}
-            {active === "relations" && (mediaRelations.length > 0 || graphLinks.length > 0) && (
+            {active === "relations" && relationsDirectoryItems.length > 0 && (
               <Card id="relations" padding="section" className="space-y-4 shadow-soft">
                 <SectionTitle
                   icon={<Network className="w-4 h-4 text-primary" strokeWidth={1.5} />}
                   actions={
-                    mediaRelations.length > 0 ? (
+                    graphLinks.length > 0 ? (
                     <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
                     <button
                       type="button"
@@ -1718,13 +1790,15 @@ export function EntityDetailView({ id }: { id: string }) {
                 >
                   {t("entity.page.relationsTitle")}
                   <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                    {mediaRelations.length > 0 ? relationCount(mediaRelations.length) : graphLinks.length}
+                    {mediaRelations.length > 0 ? relationCount(mediaRelations.length) : relationsDirectoryItems.length}
                   </span>
                 </SectionTitle>
 
-                {relationViewMode === "graph" || mediaRelations.length === 0 ? (
+                {relationViewMode === "graph" ? (
                     <InteractiveRelationGraph
-                      height="clamp(360px, 65dvh, 640px)"
+                      embedded
+                      defaultScope={mediaRelations.length > 0 ? "all" : "structure"}
+                      height="clamp(360px, 60dvh, 620px)"
                       centerEntityId={entity.id || id}
                       centerEntityType={entity.kind}
                       orientation={
@@ -1738,7 +1812,7 @@ export function EntityDetailView({ id }: { id: string }) {
                       links={graphLinks}
                     />
                 ) : (
-                  <EntityRelationDirectory subjectId={entity.id || id} relations={mediaRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
+                  <EntityRelationDirectory subjectId={entity.id || id} relations={relationsDirectoryItems} entities={graphEntities} groupOrder={relationGroupOrder} />
                 )}
                 {loadAllRelationsButton}
               </Card>

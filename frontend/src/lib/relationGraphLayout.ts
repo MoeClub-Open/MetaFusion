@@ -107,7 +107,7 @@ export interface DisplayGraphResult {
   links: GraphLink[];
 }
 
-/** Multi-level collapsible leaf grouping: folds large leaf fan-outs (>= 5 leaves) at any tree depth. */
+/** Multi-level collapsible fan-out grouping: folds large leaf or pure-subtree fan-outs at any tree depth. */
 export function buildDisplayGraph(
   centerEntityId: string,
   activeNodes: readonly GraphNode[],
@@ -117,13 +117,51 @@ export function buildDisplayGraph(
   minGroupSize = 5,
 ): DisplayGraphResult {
   const byId = new Map(activeNodes.map((n) => [n.id, n]));
-  const { hopDist } = computeHopTree(centerEntityId, activeLinks);
-  const degree = new Map<string, number>();
-  for (const l of activeLinks) {
-    if (l.source === l.target) continue;
-    degree.set(l.source, (degree.get(l.source) || 0) + 1);
-    degree.set(l.target, (degree.get(l.target) || 0) + 1);
+  const { hopDist, parentNode } = computeHopTree(centerEntityId, activeLinks);
+  const hopChildren = new Map<string, string[]>();
+  for (const [child, parent] of parentNode) {
+    const list = hopChildren.get(parent) || [];
+    list.push(child);
+    hopChildren.set(parent, list);
   }
+  const incident = new Map<string, GraphLink[]>();
+  for (const l of activeLinks) {
+    if (!l.source || !l.target || l.source === l.target) continue;
+    let sl = incident.get(l.source);
+    if (!sl) { sl = []; incident.set(l.source, sl); }
+    sl.push(l);
+    let tl = incident.get(l.target);
+    if (!tl) { tl = []; incident.set(l.target, tl); }
+    tl.push(l);
+  }
+
+  const collectPureSubtree = (rootId: string, parentId: string): { ids: string[]; depthOk: boolean } | null => {
+    const ids = new Set<string>([rootId]);
+    const queue: { id: string; d: number }[] = [{ id: rootId, d: 0 }];
+    for (let i = 0; i < queue.length; i++) {
+      const { id, d } = queue[i];
+      if (d > 2) return null;
+      for (const ch of hopChildren.get(id) || []) {
+        if (ch === centerEntityId) return null;
+        ids.add(ch);
+        queue.push({ id: ch, d: d + 1 });
+      }
+    }
+    let parentEdgeCount = 0;
+    for (const id of ids) {
+      for (const l of incident.get(id) || []) {
+        const peer = l.source === id ? l.target : l.source;
+        if (ids.has(peer)) continue;
+        if (id === rootId && peer === parentId) {
+          parentEdgeCount += 1;
+          continue;
+        }
+        return null;
+      }
+    }
+    if (parentEdgeCount !== 1) return null;
+    return { ids: [...ids], depthOk: true };
+  };
 
   interface LeafBucket {
     key: string;
@@ -133,6 +171,7 @@ export function buildDisplayGraph(
     color?: string;
     isHierarchical?: boolean;
     memberIds: string[];
+    subtreeIds: string[];
     memberLinks: GraphLink[];
     sampleKind: string;
   }
@@ -144,7 +183,9 @@ export function buildDisplayGraph(
     const parentId = ds <= dt ? link.source : link.target;
     const leafId = parentId === link.source ? link.target : link.source;
     if (leafId === centerEntityId) continue;
-    if ((degree.get(leafId) || 0) !== 1) continue;
+    if (parentNode.get(leafId) !== parentId) continue;
+    const pure = collectPureSubtree(leafId, parentId);
+    if (!pure) continue;
     const leafNode = byId.get(leafId);
     if (!leafNode) continue;
     const key = `${parentId}::${link.type}`;
@@ -158,6 +199,7 @@ export function buildDisplayGraph(
         color: link.color,
         isHierarchical: link.is_hierarchical,
         memberIds: [],
+        subtreeIds: [],
         memberLinks: [],
         sampleKind: leafNode.type,
       };
@@ -165,11 +207,16 @@ export function buildDisplayGraph(
     }
     if (!b.memberIds.includes(leafId)) {
       b.memberIds.push(leafId);
+      for (const sid of pure.ids) {
+        if (!b.subtreeIds.includes(sid)) b.subtreeIds.push(sid);
+      }
       b.memberLinks.push(link);
     }
   }
 
-  const collapsible = [...buckets.values()].filter((b) => b.memberIds.length >= minGroupSize);
+  const collapsible = [...buckets.values()]
+    .filter((b) => b.memberIds.length >= minGroupSize)
+    .sort((a, b) => (hopDist.get(a.parentId) ?? 0) - (hopDist.get(b.parentId) ?? 0));
   const canGroup = collapsible.length > 0;
   if (!grouped || !canGroup) {
     return { canGroup, nodes: [...activeNodes], links: [...activeLinks] };
@@ -181,11 +228,12 @@ export function buildDisplayGraph(
   const outLinks: GraphLink[] = [];
 
   for (const b of collapsible) {
+    if (hiddenLeafIds.has(b.parentId)) continue;
     const hubId = `__hub:${b.key}`;
     const open = expandedHubs.has(b.key);
     for (const ml of b.memberLinks) foldedLinkSet.add(ml);
     if (!open) {
-      for (const mid of b.memberIds) hiddenLeafIds.add(mid);
+      for (const sid of b.subtreeIds) hiddenLeafIds.add(sid);
     }
     outNodes.push({
       id: hubId,
@@ -250,22 +298,46 @@ function orientHierarchyEdge(
 ): { upper: string; lower: string } {
   const sNode = byId.get(link.source);
   const tNode = byId.get(link.target);
-  const sKind = sNode?.type || link.source_type || "";
-  const tKind = tNode?.type || link.target_type || "";
+  const rawSKind = sNode?.type || link.source_type || "";
+  const rawTKind = tNode?.type || link.target_type || "";
+  const sKind = rawSKind === "__hub" ? sNode?.category || "" : rawSKind;
+  const tKind = rawTKind === "__hub" ? tNode?.category || "" : rawTKind;
 
   // Hub edges: if hub represents creators/agents on a non-agent center, place hub above parent; otherwise below.
-  if (tKind === "__hub") {
-    if (tNode?.category === "agent" && centerEntityType !== "agent" && sKind !== "agent") {
+  if (rawTKind === "__hub") {
+    if (tKind === "agent" && centerEntityType !== "agent" && sKind !== "agent") {
       return { upper: link.target, lower: link.source };
+    }
+    const st = SKELETON_TIER[sKind];
+    const tt = SKELETON_TIER[tKind];
+    if (st !== undefined && tt !== undefined && st !== tt) {
+      return st < tt ? { upper: link.source, lower: link.target } : { upper: link.target, lower: link.source };
     }
     return { upper: link.source, lower: link.target };
   }
-  if (sKind === "__hub") {
-    if (link.qualifier === "__hub-member" && sNode?.category === "agent" && centerEntityType !== "agent") {
+  if (rawSKind === "__hub") {
+    if (link.qualifier === "__hub-member") {
+      if (sKind === "agent" && centerEntityType !== "agent") {
+        return { upper: link.target, lower: link.source };
+      }
+      const st = SKELETON_TIER[sKind];
+      const tt = SKELETON_TIER[tKind];
+      if (st !== undefined && tt !== undefined && st < tt) {
+        return { upper: link.source, lower: link.target };
+      }
+      const centerTier = SKELETON_TIER[centerEntityType];
+      if (st !== undefined && centerTier !== undefined && st < centerTier) {
+        return { upper: link.target, lower: link.source };
+      }
+      return { upper: link.source, lower: link.target };
+    }
+    if (sKind === "agent" && centerEntityType !== "agent" && tKind !== "agent") {
       return { upper: link.target, lower: link.source };
     }
-    if (sNode?.category === "agent" && centerEntityType !== "agent" && tKind !== "agent") {
-      return { upper: link.target, lower: link.source };
+    const st = SKELETON_TIER[sKind];
+    const tt = SKELETON_TIER[tKind];
+    if (st !== undefined && tt !== undefined && st !== tt) {
+      return st < tt ? { upper: link.source, lower: link.target } : { upper: link.target, lower: link.source };
     }
     return { upper: link.source, lower: link.target };
   }
@@ -311,6 +383,7 @@ export function computeGraphLayout(
   nodes: readonly GraphNode[],
   links: readonly GraphLink[],
   layoutMode: GraphLayoutMode,
+  options?: { maxColsPerGroup?: number },
 ): Map<string, PositionedGraphNode> {
   const map = new Map<string, PositionedGraphNode>();
   if (nodes.length === 0) return map;
@@ -549,7 +622,9 @@ export function computeGraphLayout(
   const COL_STEP = 236;
   const LAYER_STEP = 134;
   const SUB_ROW_STEP = 80;
-  const MAX_COLS_PER_GROUP = 5;
+  const PAIR_CHILD_DY = 96;
+  const PAIR_ROW_STEP = 192;
+  const MAX_COLS_PER_GROUP = Math.max(2, Math.min(8, options?.maxColsPerGroup ?? 5));
 
   // Primary parent in adjacent closer-to-center layer for grouping & subtree centering.
   const primaryParent = new Map<string, string>();
@@ -580,6 +655,18 @@ export function computeGraphLayout(
 
   // Compute horizontal span (in columns) required by each subtree on positive and negative sides.
   const spanCols = new Map<string, number>();
+  const isSingleLeafChainKid = (m: string, side: 1 | -1): boolean => {
+    const ch = treeChildren.get(m) || [];
+    if (ch.length === 0) return true;
+    if (side < 0 || ch.length > 1) return false;
+    const only = ch[0];
+    const lm = layerOf.get(m) ?? 0;
+    return (
+      (layerOf.get(only) ?? 0) === lm + 1 &&
+      (treeChildren.get(only) || []).length === 0 &&
+      (upAdj.get(only) || []).length <= 1
+    );
+  };
   const computeSpan = (id: string, side: 1 | -1, visited = new Set<string>()): number => {
     if (visited.has(id)) return 1;
     visited.add(id);
@@ -590,10 +677,10 @@ export function computeGraphLayout(
       spanCols.set(`${side}:${id}`, 1);
       return 1;
     }
-    // Leaf kids without grandchildren wrap at MAX_COLS_PER_GROUP columns!
-    const leafKids = kids.filter((k) => (treeChildren.get(k) || []).length === 0);
-    const branchKids = kids.filter((k) => (treeChildren.get(k) || []).length > 0);
-    const leafCols = leafKids.length > 0 ? Math.min(MAX_COLS_PER_GROUP, leafKids.length) : 0;
+    // Leaf kids and 1:1 chain-leaf kids wrap at MAX_COLS_PER_GROUP columns.
+    const wrappableKids = kids.filter((k) => isSingleLeafChainKid(k, side));
+    const branchKids = kids.filter((k) => !isSingleLeafChainKid(k, side));
+    const leafCols = wrappableKids.length > 0 ? Math.min(MAX_COLS_PER_GROUP, wrappableKids.length) : 0;
     const branchCols = branchKids.reduce((s, k) => s + computeSpan(k, side, new Set(visited)), 0);
     const total = Math.max(1, leafCols + branchCols);
     spanCols.set(`${side}:${id}`, total);
@@ -606,7 +693,10 @@ export function computeGraphLayout(
 
   const xPos = new Map<string, number>();
   const subRowOffset = new Map<string, number>();
+  const customOffsetY = new Map<string, { baseLayer: number; dy: number }>();
+  const prePlacedIds = new Set<string>();
   const extraLayerRows = new Map<number, number>();
+  const extraLayerPx = new Map<number, number>();
 
   // Place layer 0 centered at x = 0.
   const l0 = layers.get(0) || [centerEntityId];
@@ -621,7 +711,8 @@ export function computeGraphLayout(
     const sideLayers = sortedLayerNums.filter((l) => (side > 0 ? l > 0 : l < 0));
     if (side < 0) sideLayers.sort((a, b) => b - a); // -1, -2, -3...
     for (const l of sideLayers) {
-      const list = layers.get(l)!;
+      const list = layers.get(l)!.filter((id) => !prePlacedIds.has(id));
+      if (list.length === 0) continue;
       // Group nodes in this layer by primaryParent (preserving barycenter order).
       const groups: { parent: string; members: string[] }[] = [];
       const gMap = new Map<string, string[]>();
@@ -639,10 +730,15 @@ export function computeGraphLayout(
 
       // Assign desired center for each group = parent's x, with collision-free interval packing.
       let maxSubRowsInLayer = 1;
+      let maxExtraPxInLayer = 0;
       const intervals: { center: number; width: number; place: (cx: number) => void }[] = [];
       for (const g of groups) {
         const desiredCenter = xPos.get(g.parent) ?? 0;
         const allLeaf = g.members.every((m) => (treeChildren.get(m) || []).length === 0);
+        const allChainLeaf =
+          !allLeaf &&
+          side > 0 &&
+          g.members.every((m) => isSingleLeafChainKid(m, side));
         if (allLeaf && g.members.length > MAX_COLS_PER_GROUP) {
           const cols = MAX_COLS_PER_GROUP;
           const rows = Math.ceil(g.members.length / cols);
@@ -659,6 +755,36 @@ export function computeGraphLayout(
                 const rowSpan = (rowCount - 1) * COL_STEP;
                 xPos.set(m, cx - rowSpan / 2 + c * COL_STEP);
                 subRowOffset.set(m, r);
+              });
+            },
+          });
+        } else if (allChainLeaf && g.members.length > MAX_COLS_PER_GROUP) {
+          const cols = MAX_COLS_PER_GROUP;
+          const rows = Math.ceil(g.members.length / cols);
+          const spanBottom = (rows - 1) * PAIR_ROW_STEP + PAIR_CHILD_DY;
+          maxExtraPxInLayer = Math.max(maxExtraPxInLayer, Math.max(0, spanBottom - LAYER_STEP));
+          const width = cols * COL_STEP;
+          intervals.push({
+            center: desiredCenter,
+            width,
+            place: (cx) => {
+              g.members.forEach((m, idx) => {
+                const r = Math.floor(idx / cols);
+                const c = idx % cols;
+                const rowCount = Math.min(cols, g.members.length - r * cols);
+                const rowSpan = (rowCount - 1) * COL_STEP;
+                const mx = cx - rowSpan / 2 + c * COL_STEP;
+                const dy = r * PAIR_ROW_STEP;
+                xPos.set(m, mx);
+                subRowOffset.set(m, 0);
+                customOffsetY.set(m, { baseLayer: l, dy });
+                const kid = (treeChildren.get(m) || [])[0];
+                if (kid) {
+                  prePlacedIds.add(kid);
+                  xPos.set(kid, mx);
+                  subRowOffset.set(kid, 0);
+                  customOffsetY.set(kid, { baseLayer: l, dy: dy + PAIR_CHILD_DY });
+                }
               });
             },
           });
@@ -695,6 +821,7 @@ export function computeGraphLayout(
       }
       intervals.forEach((iv, i) => iv.place(centers[i]));
       extraLayerRows.set(l, maxSubRowsInLayer - 1);
+      if (maxExtraPxInLayer > 0) extraLayerPx.set(l, maxExtraPxInLayer);
     }
   };
 
@@ -706,7 +833,8 @@ export function computeGraphLayout(
   let posCursorY = 0;
   for (const l of sortedLayerNums.filter((n) => n > 0)) {
     const prevExtra = extraLayerRows.get(l - 1) || 0;
-    posCursorY += LAYER_STEP + prevExtra * SUB_ROW_STEP;
+    const prevPairPx = extraLayerPx.get(l - 2) || 0;
+    posCursorY += LAYER_STEP + Math.max(prevExtra * SUB_ROW_STEP, prevPairPx);
     layerBaseY.set(l, posCursorY);
   }
   let negCursorY = 0;
@@ -719,9 +847,10 @@ export function computeGraphLayout(
 
   for (const n of allNodes) {
     const l = layerOf.get(n.id) ?? 0;
-    const baseY = layerBaseY.get(l) ?? 0;
-    const subRow = subRowOffset.get(n.id) ?? 0;
-    const y = baseY + subRow * SUB_ROW_STEP;
+    const customY = customOffsetY.get(n.id);
+    const y = customY
+      ? (layerBaseY.get(customY.baseLayer) ?? 0) + customY.dy
+      : (layerBaseY.get(l) ?? 0) + (subRowOffset.get(n.id) ?? 0) * SUB_ROW_STEP;
     const x = xPos.get(n.id) ?? 0;
     const sz = nodeBoxSize(n.id, centerEntityId);
     map.set(n.id, {

@@ -24,7 +24,6 @@ import {
   Minimize2,
   Sparkles,
   ExternalLink,
-  Info,
   Network,
   Layers,
   Compass,
@@ -53,6 +52,8 @@ export interface InteractiveRelationGraphProps {
   showInspector?: boolean;
   title?: string;
   headerRightExtra?: React.ReactNode;
+  embedded?: boolean;
+  defaultScope?: "all" | "structure" | "relations";
 }
 
 type GraphScopeMode = "all" | "structure" | "relations";
@@ -257,6 +258,8 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   showInspector = true,
   title,
   headerRightExtra,
+  embedded = false,
+  defaultScope = "all",
 }) => {
   const { t, tr, locale } = useI18n();
   const { kinds } = useDefinitions();
@@ -307,11 +310,23 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const [pan, setPan] = useState({ x: 500, y: 290 });
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    active: boolean;
+    dist0: number;
+    startZoom: number;
+    worldX: number;
+    worldY: number;
+  }>({ active: false, dist0: 1, startZoom: 1, worldX: 0, worldY: 0 });
+  const pinchCooldownRef = useRef(false);
+
   const [isPanning, setIsPanning] = useState(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [layoutMode, setLayoutMode] = useState<GraphLayoutMode>("hierarchy");
-  const [scopeMode, setScopeMode] = useState<GraphScopeMode>("all");
+  const [scopeMode, setScopeMode] = useState<GraphScopeMode>(defaultScope);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
@@ -323,7 +338,8 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     setManualPositions({});
     setExpandedHubs(new Set());
     setSelectedNode(null);
-  }, [centerEntityId]);
+    setScopeMode(defaultScope);
+  }, [centerEntityId, defaultScope]);
 
   const themePaint = (name: string, fallback: string) => {
     if (typeof window === "undefined") return fallback;
@@ -404,10 +420,13 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     return list;
   }, [nodes, activeNodeIds, centerEntityId, centerEntityType]);
 
-  const wantGrouping = layoutMode === "hierarchy" && (groupOverride ?? activeNodes.length > 26);
+  const isCompact = viewport.w < 640;
+  const maxColsPerGroup = viewport.w < 520 ? 2 : viewport.w < 860 ? 3 : 5;
+  const minGroupSize = isCompact ? 4 : 5;
+  const wantGrouping = layoutMode === "hierarchy" && (groupOverride ?? activeNodes.length > (isCompact ? 10 : 24));
   const displayGraph = useMemo(
-    () => buildDisplayGraph(centerEntityId, activeNodes, filteredLinks, wantGrouping, expandedHubs, 6),
-    [centerEntityId, activeNodes, filteredLinks, wantGrouping, expandedHubs],
+    () => buildDisplayGraph(centerEntityId, activeNodes, filteredLinks, wantGrouping, expandedHubs, minGroupSize),
+    [centerEntityId, activeNodes, filteredLinks, wantGrouping, expandedHubs, minGroupSize],
   );
   const canGroup = layoutMode === "hierarchy" && displayGraph.canGroup;
   const grouped = canGroup && wantGrouping;
@@ -420,8 +439,9 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         displayGraph.nodes,
         displayGraph.links,
         layoutMode,
+        { maxColsPerGroup },
       ),
-    [centerEntityId, centerEntityType, displayGraph.nodes, displayGraph.links, layoutMode],
+    [centerEntityId, centerEntityType, displayGraph.nodes, displayGraph.links, layoutMode, maxColsPerGroup],
   );
 
   const positionedNodes = useMemo(() => {
@@ -465,7 +485,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   }, []);
 
   const fitToView = useCallback(
-    (targetMap?: Map<string, PositionedGraphNode>) => {
+    (targetMap?: Map<string, PositionedGraphNode>, mode: "auto" | "full" = "full") => {
       const nodesMap = targetMap || baseLayoutNodes;
       const vw = viewportRef.current.w || 1000;
       const vh = viewportRef.current.h || 580;
@@ -489,14 +509,30 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         setPan({ x: vw / 2, y: vh / 2 });
         return;
       }
-      const padX = 56;
-      const padY = 52;
+      const padX = vw < 640 ? 18 : 48;
+      const padY = vw < 640 ? 18 : 44;
       const boxW = Math.max(220, maxX - minX);
       const boxH = Math.max(120, maxY - minY);
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
       const scale = Math.min((vw - padX * 2) / boxW, (vh - padY * 2) / boxH);
       const clamped = Number.isFinite(scale) ? Math.min(1.15, Math.max(0.22, scale)) : 1;
+      if (mode === "auto" && vw < 640 && clamped < 0.52) {
+        const centerNode = nodesMap.get(centerEntityId);
+        const focusZoom = 0.65;
+        const fx = centerNode ? centerNode.x : cx;
+        const halfSpanY = Math.max(0, (vh / 2 - padY) / focusZoom);
+        const fy =
+          boxH * focusZoom <= vh - padY * 2
+            ? cy
+            : Math.min(maxY - halfSpanY, Math.max(minY + halfSpanY, centerNode ? centerNode.y : cy));
+        setZoom(focusZoom);
+        setPan({
+          x: +(vw / 2 - focusZoom * fx).toFixed(1),
+          y: +(vh / 2 - focusZoom * fy).toFixed(1),
+        });
+        return;
+      }
       const rounded = +clamped.toFixed(3);
       setZoom(rounded);
       setPan({
@@ -504,7 +540,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
         y: +(vh / 2 - rounded * cy).toFixed(1),
       });
     },
-    [baseLayoutNodes],
+    [baseLayoutNodes, centerEntityId],
   );
 
   useEffect(() => {
@@ -520,7 +556,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
           viewportRef.current = { w, h };
           if (!initialized) {
             initialized = true;
-            requestAnimationFrame(() => fitToView());
+            requestAnimationFrame(() => fitToView(undefined, "auto"));
           }
         }
       }
@@ -530,12 +566,12 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   }, [isFullscreen, fitToView]);
 
   useEffect(() => {
-    fitToView(baseLayoutNodes);
+    fitToView(baseLayoutNodes, "auto");
   }, [baseLayoutNodes, isFullscreen, fitToView]);
 
   const resetPositions = useCallback(() => {
     setManualPositions({});
-    fitToView(baseLayoutNodes);
+    fitToView(baseLayoutNodes, "auto");
   }, [baseLayoutNodes, fitToView]);
 
   const toggleFullscreen = useCallback(() => {
@@ -589,9 +625,85 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     return () => el.removeEventListener("wheel", handleNativeWheel);
   }, [isFullscreen, getSvgPoint, handleZoomAnchor]);
 
+  const startPinchFromActivePointers = () => {
+    const pts = [...activePointersRef.current.values()];
+    if (pts.length < 2) return;
+    const p1 = getSvgPoint(pts[0].x, pts[0].y);
+    const p2 = getSvgPoint(pts[1].x, pts[1].y);
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const dist0 = Math.max(12, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+    const curZoom = zoomRef.current || 1;
+    const curPan = panRef.current;
+    pinchRef.current = {
+      active: true,
+      dist0,
+      startZoom: curZoom,
+      worldX: (midX - curPan.x) / curZoom,
+      worldY: (midY - curPan.y) / curZoom,
+    };
+    pinchCooldownRef.current = true;
+    if (panDragRef.current.isDown) {
+      panDragRef.current.isDown = false;
+      setIsPanning(false);
+    }
+    if (nodeDragRef.current) {
+      const prevDrag = nodeDragRef.current;
+      nodeDragRef.current = null;
+      setDraggingNodeId(null);
+      if (prevDrag.moved) {
+        setManualPositions((prev) => ({
+          ...prev,
+          [prevDrag.nodeId]: { x: prevDrag.origX, y: prevDrag.origY },
+        }));
+      }
+    }
+  };
+
+  const handleCanvasPointerDownCapture = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointersRef.current.size >= 2) {
+      startPinchFromActivePointers();
+    }
+  };
+
+  const handleCanvasPointerMoveCapture = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!activePointersRef.current.has(e.pointerId)) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pinchRef.current.active || activePointersRef.current.size < 2) return;
+    e.stopPropagation();
+    const pts = [...activePointersRef.current.values()];
+    const p1 = getSvgPoint(pts[0].x, pts[0].y);
+    const p2 = getSvgPoint(pts[1].x, pts[1].y);
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const dist = Math.max(12, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+    const rawZoom = pinchRef.current.startZoom * (dist / pinchRef.current.dist0);
+    const nextZoom = Math.min(3.0, Math.max(0.15, +rawZoom.toFixed(3)));
+    const nextPan = {
+      x: +(midX - pinchRef.current.worldX * nextZoom).toFixed(1),
+      y: +(midY - pinchRef.current.worldY * nextZoom).toFixed(1),
+    };
+    zoomRef.current = nextZoom;
+    panRef.current = nextPan;
+    setZoom(nextZoom);
+    setPan(nextPan);
+  };
+
+  const handleCanvasPointerEndCapture = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) {
+      pinchRef.current.active = false;
+    }
+    if (activePointersRef.current.size === 0) {
+      pinchCooldownRef.current = false;
+    }
+  };
+
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    if (!isFullscreen && e.pointerType === "touch") return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (pinchRef.current.active || activePointersRef.current.size >= 2) return;
     const target = e.target as HTMLElement | SVGElement;
     if (target.closest("[data-node-interactive='true']")) return;
 
@@ -600,20 +712,26 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       isDown: true,
       startX: svgPt.x,
       startY: svgPt.y,
-      startPanX: pan.x,
-      startPanY: pan.y,
+      startPanX: panRef.current.x,
+      startPanY: panRef.current.y,
     };
     setIsPanning(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
   const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!panDragRef.current.isDown) return;
+    if (!panDragRef.current.isDown || pinchRef.current.active || pinchCooldownRef.current) return;
     const svgPt = getSvgPoint(e.clientX, e.clientY);
-    setPan({
+    const nextPan = {
       x: +(panDragRef.current.startPanX + (svgPt.x - panDragRef.current.startX)).toFixed(1),
       y: +(panDragRef.current.startPanY + (svgPt.y - panDragRef.current.startY)).toFixed(1),
-    });
+    };
+    panRef.current = nextPan;
+    setPan(nextPan);
   };
 
   const handleCanvasPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -629,7 +747,8 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
   };
 
   const handleNodePointerDown = (e: React.PointerEvent<SVGGElement>, node: PositionedGraphNode) => {
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (pinchRef.current.active || activePointersRef.current.size >= 2) return;
     e.stopPropagation();
     const svgPt = getSvgPoint(e.clientX, e.clientY);
     nodeDragRef.current = {
@@ -652,10 +771,10 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
   const handleNodePointerMove = (e: React.PointerEvent<SVGGElement>, node: PositionedGraphNode) => {
     const st = nodeDragRef.current;
-    if (!st || st.nodeId !== node.id) return;
+    if (!st || st.nodeId !== node.id || pinchRef.current.active || pinchCooldownRef.current) return;
     e.stopPropagation();
     const pxDist = Math.hypot(e.clientX - st.startClientX, e.clientY - st.startClientY);
-    if (!st.moved && pxDist >= 5) {
+    if (!st.moved && pxDist >= 6) {
       st.moved = true;
       setDraggingNodeId(node.id);
     }
@@ -681,7 +800,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
     } catch {
       // ignore
     }
-    if (st.moved) return;
+    if (st.moved || pinchCooldownRef.current) return;
 
     if (isHubNodeId(node.id)) {
       const hubKey = hubKeyFromNodeId(node.id);
@@ -761,12 +880,13 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
 
   const containerClass = isFullscreen
     ? "relative min-h-0 flex flex-col overflow-hidden select-none h-full w-full bg-background text-foreground"
+    : embedded
+      ? "relative min-h-0 flex flex-col overflow-hidden select-none rounded-lg border border-line bg-muted/20 " + className
     : "relative min-h-0 flex flex-col overflow-hidden select-none rounded-card border border-border/80 bg-card/60 backdrop-blur-md shadow-sm " + className;
 
   const canvasClass =
-    "min-h-0 flex-1 w-full relative overflow-hidden select-none " +
-    (isPanning || draggingNodeId ? "cursor-grabbing " : "cursor-grab ") +
-    (isFullscreen ? "touch-none" : "touch-pan-y touch-pinch-zoom");
+    "min-h-0 flex-1 w-full relative overflow-hidden select-none touch-none " +
+    (isPanning || draggingNodeId ? "cursor-grabbing" : "cursor-grab");
 
   const graph = (
     <div
@@ -774,22 +894,24 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       className={containerClass}
       style={isFullscreen ? undefined : { height }}
     >
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-background/85 border-b border-border/60 backdrop-blur-md z-10">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
-            <Network className="w-4 h-4" />
-          </div>
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2 bg-background/85 border-b border-border/60 backdrop-blur-md z-10">
+        {(!embedded || isFullscreen) && (
           <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-xs font-semibold text-foreground truncate">
-              {title || t("graph.title")}
-            </h3>
-            <span className="text-[10px] font-mono font-medium text-muted-foreground px-2 py-0.5 rounded-chip bg-secondary border border-border/40 shrink-0">
-              {t("graph.connectedNodes", { count: activeNodes.length })}
-            </span>
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
+              <Network className="w-4 h-4" />
+            </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-xs font-semibold text-foreground truncate">
+                {title || t("graph.title")}
+              </h3>
+              <span className="text-[10px] font-mono font-medium text-muted-foreground px-2 py-0.5 rounded-chip bg-secondary border border-border/40 shrink-0">
+                {t("graph.connectedNodes", { count: activeNodes.length })}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-1 flex-wrap items-center gap-1.5 min-w-0">
           {headerRightExtra && (
             <div className="mr-1 border-r border-border/60 pr-2">{headerRightExtra}</div>
           )}
@@ -848,22 +970,23 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </button>
           )}
 
-          <div className="hidden sm:flex items-center bg-secondary/80 rounded-lg p-0.5 border border-border/50 text-[11px]">
+          <div className="flex items-center bg-secondary/80 rounded-lg p-0.5 border border-border/50 text-[11px]">
             <button
               type="button"
               onClick={() => {
                 setManualPositions({});
                 setLayoutMode("hierarchy");
               }}
+              aria-label={t("graph.layoutHierarchy")}
               title={t("graph.layoutHierarchy")}
               className={
                 layoutMode === "hierarchy"
-                  ? "px-2.5 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
-                  : "px-2.5 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+                  ? "inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                  : "inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
               }
             >
-              <Layers className="w-3.5 h-3.5 inline mr-1" />
-              {t("graph.layoutHierarchy")}
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">{t("graph.layoutHierarchy")}</span>
             </button>
             <button
               type="button"
@@ -871,15 +994,16 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                 setManualPositions({});
                 setLayoutMode("radial");
               }}
+              aria-label={t("graph.layoutRadial")}
               title={t("graph.layoutRadial")}
               className={
                 layoutMode === "radial"
-                  ? "px-2.5 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
-                  : "px-2.5 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+                  ? "inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                  : "inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
               }
             >
-              <Compass className="w-3.5 h-3.5 inline mr-1" />
-              {t("graph.layoutRadial")}
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">{t("graph.layoutRadial")}</span>
             </button>
             <button
               type="button"
@@ -887,19 +1011,20 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                 setManualPositions({});
                 setLayoutMode("force");
               }}
+              aria-label={t("graph.layoutForce")}
               title={t("graph.layoutForce")}
               className={
                 layoutMode === "force"
-                  ? "px-2.5 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
-                  : "px-2.5 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
+                  ? "inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all bg-background text-foreground shadow-xs"
+                  : "inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all text-muted-foreground hover:text-foreground"
               }
             >
-              <Sparkles className="w-3.5 h-3.5 inline mr-1" />
-              {t("graph.layoutForce")}
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">{t("graph.layoutForce")}</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-1 border-l border-border/60 pl-1.5">
+          <div className="ml-auto flex items-center gap-0.5 sm:border-l sm:border-border/60 sm:pl-1.5">
             <button
               type="button"
               onClick={() => handleZoomAnchor(1.25)}
@@ -921,7 +1046,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             </button>
             <button
               type="button"
-              onClick={() => fitToView(positionedNodes)}
+              onClick={() => fitToView(positionedNodes, "full")}
               title={t("graph.fitView")}
               className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors duration-fast ease-soft"
             >
@@ -960,7 +1085,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       </div>
 
       {effectiveScope !== "structure" && relationFilter.filterable && (
-        <div className="shrink-0 max-h-[26dvh] overflow-y-auto px-4 pt-2 pb-1.5 border-b border-border/60 bg-background/60">
+        <div className="shrink-0 max-h-[22dvh] overflow-y-auto px-2.5 sm:px-3.5 py-1.5 border-b border-border/60 bg-background/60">
           <RelationFilterBar
             facets={relationFilter.facets}
             selection={relationFilter.selection}
@@ -972,6 +1097,10 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
       <div
         ref={canvasContainerRef}
         className={canvasClass}
+        onPointerDownCapture={handleCanvasPointerDownCapture}
+        onPointerMoveCapture={handleCanvasPointerMoveCapture}
+        onPointerUpCapture={handleCanvasPointerEndCapture}
+        onPointerCancelCapture={handleCanvasPointerEndCapture}
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
@@ -1307,15 +1436,21 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
           </g>
         </svg>
 
-        <div className="absolute bottom-3 left-4 pointer-events-none text-[11px] text-muted-foreground/90 flex items-center gap-1.5 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-panel border border-border/50 shadow-xs">
-          <Info className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span>{t("graph.interactiveHint")}</span>
-        </div>
       </div>
 
       {showInspector && selectedNode && (
-        <div className="absolute top-14 right-4 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100%-4.5rem)] overflow-y-auto rounded-panel border border-border bg-card/98 backdrop-blur-xl p-4 shadow-2xl z-20 space-y-3.5 animate-in duration-200">
-          <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-border/60">
+        <div className="absolute inset-x-2 bottom-2 max-h-[50%] sm:inset-x-auto sm:bottom-auto sm:top-12 sm:right-3 sm:w-80 sm:max-h-[calc(100%-3.5rem)] flex flex-col overflow-hidden rounded-panel border border-border bg-card/98 backdrop-blur-xl shadow-2xl z-20 animate-in duration-200">
+          <div className="shrink-0 flex items-start justify-between gap-2.5 px-3 pt-3 pb-2 sm:px-4 sm:pt-4 border-b border-border/60">
+            {selectedNode.cover_image_url && (
+              <div className="w-11 h-11 sm:hidden shrink-0 rounded-md overflow-hidden border border-border/60 bg-muted/60">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selectedNode.cover_image_url}
+                  alt={selectedNode.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1">
                 <span
@@ -1332,7 +1467,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
                   </span>
                 )}
               </div>
-              <h4 className="text-sm font-bold text-foreground truncate" title={selectedNode.name}>
+              <h4 className="text-xs sm:text-sm font-bold text-foreground line-clamp-2 break-words" title={selectedNode.name}>
                 {selectedNode.name}
               </h4>
               {selectedNode.original_name && selectedNode.original_name !== selectedNode.name && (
@@ -1344,14 +1479,15 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
             <button
               type="button"
               onClick={() => setSelectedNode(null)}
-              className="text-muted-foreground hover:text-foreground text-xs p-1.5 rounded-lg hover:bg-secondary transition-colors duration-fast ease-soft"
+              className="shrink-0 text-muted-foreground hover:text-foreground text-xs p-1.5 rounded-lg hover:bg-secondary transition-colors duration-fast ease-soft"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5 sm:px-4 sm:py-3 space-y-2.5 sm:space-y-3">
           {selectedNode.cover_image_url && (
-            <div className="relative w-full max-h-44 rounded-lg overflow-hidden border border-border/60 bg-muted/60 flex items-center justify-center">
+            <div className="hidden sm:flex relative w-full max-h-44 rounded-lg overflow-hidden border border-border/60 bg-muted/60 items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={selectedNode.cover_image_url}
@@ -1389,7 +1525,7 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
               </span>
             </h5>
 
-            <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 text-xs">
+            <div className="max-h-28 sm:max-h-40 overflow-y-auto space-y-1.5 pr-1 text-xs">
               {selectedNodeRelations.length > 0 ? (
                 selectedNodeRelations.map((rel, i) => {
                   const relColor = getLinkColorHex(rel.link.color, rel.link.is_hierarchical, isDark);
@@ -1436,8 +1572,9 @@ export const InteractiveRelationGraph: React.FC<InteractiveRelationGraphProps> =
               )}
             </div>
           </div>
+          </div>
 
-          <div className="pt-2.5 border-t border-border/60 flex items-center justify-end gap-2">
+          <div className="shrink-0 px-3 py-2 sm:px-4 sm:py-2.5 border-t border-border/60 flex items-center justify-end gap-2 bg-card/98">
             <Link
               href={catalogEntityHref(selectedNode.id)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors duration-fast ease-soft shadow-xs"

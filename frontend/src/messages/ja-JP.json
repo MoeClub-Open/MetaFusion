@@ -582,7 +582,6 @@
   "graph.scopeStructure": "構造階層",
   "graph.scopeRelations": "関連・クレジット",
   "graph.inspectEntity": "エンティティの詳細を表示",
-  "graph.interactiveHint": "ノードをドラッグして配置調整 · 空白ドラッグで移動 · Ctrl/⌘ + スクロールでズーム · クリックで詳細",
   "users.profile.editSettings": "プロフィールと設定を編集",
   "users.profile.copyId": "ID をコピー",
   "users.profile.copied": "コピーしました",

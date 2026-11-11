@@ -582,7 +582,6 @@
   "graph.scopeStructure": "Structure",
   "graph.scopeRelations": "Relations",
   "graph.inspectEntity": "View Entity Archive",
-  "graph.interactiveHint": "Drag nodes to reposition · Drag canvas to pan · Ctrl/⌘ + scroll to zoom · Click a node for details",
   "users.profile.editSettings": "Edit Profile & Settings",
   "users.profile.copyId": "Copy ID",
   "users.profile.copied": "Copied",

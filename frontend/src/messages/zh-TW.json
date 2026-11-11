@@ -582,7 +582,6 @@
   "graph.scopeStructure": "結構階層",
   "graph.scopeRelations": "關聯署名",
   "graph.inspectEntity": "進入實體詳情檔案",
-  "graph.interactiveHint": "拖曳節點調整位置 · 拖曳空白處平移 · Ctrl/⌘ + 滾輪縮放 · 點擊節點查看詳情",
   "users.profile.editSettings": "編輯資料與設定",
   "users.profile.copyId": "複製 ID",
   "users.profile.copied": "已複製",

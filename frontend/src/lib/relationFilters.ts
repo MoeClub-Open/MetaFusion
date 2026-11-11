@@ -136,7 +136,7 @@ function optionLabelOf(
     }
     return vocab.ungroupedLabel;
   }
-  return relationTypeLabelOf(rows, value, vocab);
+  return relationTypeLabelOf(rows.filter((r) => r.type === value), value, vocab);
 }
 
 /**

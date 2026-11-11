@@ -130,7 +130,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       title={count === undefined ? label : `${label} (${count})`}
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-control border text-xs transition-all cursor-pointer ${
+      className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-control border text-xs transition-all cursor-pointer ${
         active
           ? "bg-primary text-primary-foreground border-primary font-medium shadow-xs"
           : "border-line bg-black/[0.03] dark:bg-white/[0.04] text-gray-600 dark:text-gray-300 hover:border-primary/40 hover:text-gray-900 dark:hover:text-white"
@@ -165,7 +165,10 @@ export function RelationFilterBar({
   return (
     <div className={`space-y-1.5 ${className}`}>
       {shown.map((facet) => (
-        <div key={facet.id} className="flex flex-wrap items-center gap-1.5">
+        <div
+          key={facet.id}
+          className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0"
+        >
           <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-text-muted">
             {facet.label}
           </span>

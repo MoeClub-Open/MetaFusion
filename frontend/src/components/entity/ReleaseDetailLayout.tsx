@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, Entity, mapLimit, title as entityTitle } from "@/components/catalog/api";
+import { api, Entity, type Relation, mapLimit, title as entityTitle } from "@/components/catalog/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { canEditEntity } from "@/lib/permissions";
@@ -509,12 +509,24 @@ export default function ReleaseDetailLayout() {
   );
 
   const extraReleaseRelations = useMemo(
-    () => overviewReleaseRelations.filter((r) => !isCreditRelation(dynamicDefs, r.type)),
-    [overviewReleaseRelations, dynamicDefs],
+    () =>
+      releaseRelItems.filter(
+        (r) =>
+          !isCreditRelation(dynamicDefs, r.type) &&
+          dynamicDefs?.relations?.[r.type]?.aggregate !== true,
+      ),
+    [releaseRelItems, dynamicDefs],
   );
 
-  const { releaseGraphNodes, releaseGraphLinks } = useMemo(() => {
-    if (!release) return { releaseGraphNodes: [] as GraphNode[], releaseGraphLinks: [] as GraphLink[] };
+  const { releaseGraphNodes, releaseGraphLinks, releaseStructuralRelations, releaseGraphEntities } = useMemo(() => {
+    if (!release) {
+      return {
+        releaseGraphNodes: [] as GraphNode[],
+        releaseGraphLinks: [] as GraphLink[],
+        releaseStructuralRelations: [] as Omit<Relation, "version">[],
+        releaseGraphEntities: {} as Record<string, Entity>,
+      };
+    }
     const centerId = release.id || releaseId;
     const kindLabelOf = (k: string) => getKindName(kinds, k, locale, tr(`catalog.kind.${k}`, k));
     const known: Record<string, Entity> = { ...releaseRelEntities, ...works, ...expressions };
@@ -544,8 +556,10 @@ export default function ReleaseDetailLayout() {
     };
     const nodes: GraphNode[] = [nodeOf(centerId, 0)];
     const links: GraphLink[] = [];
+    const structRels: Omit<Relation, "version">[] = [];
     const seen = new Set<string>([centerId]);
     const seenEdges = new Set<string>();
+    const seenStructRels = new Set<string>();
     const ensureNode = (nid: string, level = 1) => {
       if (!nid || seen.has(nid)) return;
       seen.add(nid);
@@ -556,7 +570,7 @@ export default function ReleaseDetailLayout() {
       return resolveLocalizedName(f?.names, locale, "") || kindLabelOf(childKind);
     };
     const releaseSubjectLabel =
-      resolveLocalizedName(dynamicDefs?.structure?.release?.subject_reverse_names, locale, "") || kindLabelOf("release");
+      resolveLocalizedName(dynamicDefs?.structure?.release?.subject_names, locale, "") || kindLabelOf("work");
     const trackContentLabel =
       resolveLocalizedName(dynamicDefs?.structure?.track?.content_names, locale, "") || kindLabelOf("expression");
     const addStructEdge = (parent: Entity | null | undefined, child: Entity | null | undefined, code: string, label: string) => {
@@ -580,7 +594,23 @@ export default function ReleaseDetailLayout() {
 
     for (const s of release.subjects || []) {
       const w = works[s.work_id];
-      if (w) addStructEdge(w, release, "subject:release:work", releaseSubjectLabel);
+      if (w) {
+        addStructEdge(w, release, "subject:release:work", releaseSubjectLabel);
+        if (w.id) {
+          const sk = `${centerId}->${w.id}::structure:release_subject`;
+          if (!seenStructRels.has(sk)) {
+            seenStructRels.add(sk);
+            structRels.push({
+              id: `struct-rel:${sk}`,
+              type: "structure:release_subject",
+              source_id: centerId,
+              target_id: w.id,
+              position: 0,
+              attributes: {},
+            });
+          }
+        }
+      }
     }
     const medMap = new Map(media.filter((r) => r.medium.id).map((r) => [r.medium.id!, r.medium]));
     for (const row of media) {
@@ -590,6 +620,18 @@ export default function ReleaseDetailLayout() {
         addStructEdge(medMap.get(med.parent_id), med, "parent_id", structFieldLabel("medium", "parent_id"));
       } else {
         addStructEdge(release, med, "release_id", structFieldLabel("medium", "release_id"));
+        const sk = `${centerId}->${med.id}::structure:release_medium`;
+        if (!seenStructRels.has(sk)) {
+          seenStructRels.add(sk);
+          structRels.push({
+            id: `struct-rel:${sk}`,
+            type: "structure:release_medium",
+            source_id: centerId,
+            target_id: med.id,
+            position: 0,
+            attributes: {},
+          });
+        }
       }
       const trkMap = new Map(row.tracks.filter((x) => x.id).map((x) => [x.id!, x]));
       for (const trk of row.tracks) {
@@ -623,8 +665,18 @@ export default function ReleaseDetailLayout() {
         is_hierarchical: dynamicDefs?.relations?.[r.type]?.aggregate === true,
       });
     }
-    return { releaseGraphNodes: nodes, releaseGraphLinks: links };
+    return {
+      releaseGraphNodes: nodes,
+      releaseGraphLinks: links,
+      releaseStructuralRelations: structRels,
+      releaseGraphEntities: known,
+    };
   }, [release, releaseId, releaseRelItems, releaseRelEntities, works, media, expressions, kinds, tr, locale, titleOrder, dynamicDefs, relationshipRules]);
+
+  const releaseDirectoryRelations = useMemo(
+    () => [...extraReleaseRelations, ...releaseStructuralRelations],
+    [extraReleaseRelations, releaseStructuralRelations],
+  );
 
   useEffect(() => {
     if (!releaseId) return;
@@ -1351,7 +1403,68 @@ export default function ReleaseDetailLayout() {
                 </button>
               </Card>
             )}
-            <div className="overflow-x-auto -mx-3.5 sm:-mx-4 px-3.5 sm:px-4">
+            <div className="md:hidden divide-y divide-line-subtle">
+              {expressionIds.slice((occPage - 1) * OCC_PAGE_SIZE, occPage * OCC_PAGE_SIZE).map((exprId) => {
+                const occ = occurrences[exprId] || [];
+                const sibs = expressionSiblings[exprId] || [];
+                const expr = expressions[exprId];
+                const exprLabel = expr ? entityTitle(expr, locale) : exprId.slice(0, 8);
+                const expanded = !!expandedOcc[exprId];
+                const shown = expanded ? occ : occ.slice(0, OCC_PAGE_SIZE);
+                const hiddenOcc = occ.length - shown.length;
+                return (
+                  <div key={exprId} className="py-2.5 space-y-1.5 text-xs">
+                    <div className="font-semibold text-text-strong break-words">{exprLabel}</div>
+                    {occ.length === 0 && sibs.length === 0 ? (
+                      <p className="font-mono text-[11px] text-text-muted">{t("release.detail.sameRecordingEmpty")}</p>
+                    ) : (
+                      <div className="space-y-1.5 pl-2 border-l-2 border-line-subtle">
+                        {shown.map((o, i) => {
+                          const trk = occurrenceEntities[o.track_id];
+                          const dur = formatDuration(Number(trk?.attributes?.duration) || 0);
+                          return (
+                            <div key={`${exprId}-m-${i}`} className="space-y-0.5">
+                              <Link href={`/catalog/${o.release_id}`} className="text-primary font-medium hover:underline break-words block">
+                                {entityTitle(occurrenceEntities[o.release_id], locale)}
+                              </Link>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-text-faint">
+                                <span>{entityTitle(occurrenceEntities[o.medium_id], locale)}</span>
+                                <span>#{trk?.number || trk?.position} {entityTitle(trk, locale)}</span>
+                                {dur !== "—" && <span className="tabular-nums">{dur}</span>}
+                                <GroupAttributeInline defs={dynamicDefs} code="inclusion_attributes" value={o.attributes || undefined} locale={locale} className="text-[10px] font-sans" />
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {sibs.length > 0 && (
+                          <div className="pt-1 text-[11px] text-text-faint">
+                            {t("release.detail.sameUnitSiblings", { count: sibs.length })}
+                            {sibs.slice(0, 3).map((o, i) => (
+                              <span key={`${exprId}-msib-${i}`} className="ml-2 inline-block">
+                                <Link href={`/catalog/${o.release_id}`} className="text-primary hover:underline">{entityTitle(occurrenceEntities[o.release_id], locale)}</Link>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {(hiddenOcc > 0 || (expanded && occ.length > OCC_PAGE_SIZE)) && (
+                          <div className="pt-0.5 text-[11px] text-text-muted">
+                            {hiddenOcc > 0 ? t("release.detail.moreOccurrences", { count: hiddenOcc }) : null}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedOcc((prev) => ({ ...prev, [exprId]: !prev[exprId] }))}
+                              className="ml-2 text-primary hover:underline"
+                            >
+                              {expanded ? t("release.detail.collapseOccurrences") : t("release.detail.showAllOccurrences")}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden md:block overflow-x-auto -mx-3.5 sm:-mx-4 px-3.5 sm:px-4">
               <table className="w-full text-left text-xs min-w-[720px]">
                 <thead className="font-mono text-[10px] uppercase tracking-wider text-text-faint border-b border-line-subtle">
                   <tr>
@@ -1459,12 +1572,12 @@ export default function ReleaseDetailLayout() {
         )}
 
                 <AggregateRelationList entityId={releaseId} onCount={setAggregateCount} />
-        {(extraReleaseRelations.length > 0 || releaseGraphLinks.length > 0) && (
+        {(releaseDirectoryRelations.length > 0 || releaseGraphLinks.length > 0) && (
           <Card padding="section" className="space-y-4">
             <SectionTitle
               icon={<Network className="w-4 h-4 text-primary" strokeWidth={1.5} />}
               actions={
-                extraReleaseRelations.length > 0 ? (
+                releaseDirectoryRelations.length > 0 && releaseGraphLinks.length > 0 ? (
                   <div className="flex items-center gap-1 bg-black/[0.04] dark:bg-white/[0.06] p-0.5 rounded-lg text-xs font-mono">
                     <button
                       type="button"
@@ -1494,12 +1607,14 @@ export default function ReleaseDetailLayout() {
             >
               {t("entity.page.relationsTitle")}
               <span className="ml-1.5 px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                {extraReleaseRelations.length === 0 || releaseRelView === "graph" ? releaseGraphLinks.length : extraReleaseRelations.length}
+                {releaseDirectoryRelations.length > 0 ? releaseDirectoryRelations.length : releaseGraphLinks.length}
               </span>
             </SectionTitle>
-            {extraReleaseRelations.length === 0 || releaseRelView === "graph" ? (
+            {releaseDirectoryRelations.length === 0 || releaseRelView === "graph" ? (
               <InteractiveRelationGraph
-                height="clamp(360px, 65dvh, 640px)"
+                embedded
+                defaultScope={extraReleaseRelations.length > 0 ? "all" : "structure"}
+                height="clamp(360px, 60dvh, 620px)"
                 centerEntityId={release.id || releaseId}
                 centerEntityType="release"
                 orientation="release"
@@ -1509,14 +1624,14 @@ export default function ReleaseDetailLayout() {
             ) : (
               <EntityRelationDirectory
                 subjectId={release.id || releaseId}
-                relations={extraReleaseRelations}
-                entities={releaseRelEntities}
+                relations={releaseDirectoryRelations}
+                entities={releaseGraphEntities}
                 groupOrder={releaseRelationGroupOrder}
               />
             )}
           </Card>
         )}
-        {aggregateCount === 0 && expressionIds.length === 0 && extraReleaseRelations.length === 0 && releaseGraphLinks.length === 0 && <EmptyPanel />}
+        {aggregateCount === 0 && expressionIds.length === 0 && releaseDirectoryRelations.length === 0 && releaseGraphLinks.length === 0 && <EmptyPanel />}
         </div>
 
         <div role="tabpanel" id="panel-comments" aria-labelledby="tab-comments" hidden={activeSection !== "comments"} className="space-y-4">
