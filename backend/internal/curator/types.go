@@ -64,6 +64,7 @@ type Settings struct {
 	SweepDetector          int             `json:"sweep_detector"`
 	LastSweepAt            *time.Time      `json:"last_sweep_at,omitempty"`
 	LastRunAt              *time.Time      `json:"last_run_at,omitempty"`
+	SweepRequestedAt       *time.Time      `json:"-"`
 	UpdatedAt              time.Time       `json:"updated_at"`
 }
 

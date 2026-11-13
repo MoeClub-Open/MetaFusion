@@ -221,7 +221,7 @@ COMPOSE_ENV="--env-file fixture.env"
 docker() {
     printf 'CALL:%s\n' "$*"
     case "$*" in
-        *" stop backend mcp")
+        *" stop backend agent-worker mcp")
             [ "$SCENARIO" != stop-failed ] || return 9 ;;
         *" backend-migrate up")
             [ "$SCENARIO" != up-failed ] || return 9 ;;
@@ -236,7 +236,7 @@ docker() {
     esac
 }
 '''
-    expected_stop = "CALL:compose --env-file fixture.env -f docker-compose.yml -f docker-compose.prod.yml -f digest.yml stop backend mcp"
+    expected_stop = "CALL:compose --env-file fixture.env -f docker-compose.yml -f docker-compose.prod.yml -f digest.yml stop backend agent-worker mcp"
     expected_up = "CALL:compose --env-file fixture.env -f docker-compose.yml -f docker-compose.prod.yml -f digest.yml run --rm --no-deps backend-migrate up"
     failures = []
     for scenario, success in scenarios:
@@ -371,8 +371,11 @@ def main():
         if worker and (worker.get("command") != ["/app/storage-server", "worker"]
                        or worker.get("image") != (services.get("storage") or {}).get("image")):
             problems.append("%s: storage-worker 必须与 storage 共用镜像并显式调用 storage-server worker" % rel)
+        agent_worker = services.get("agent-worker")
+        if agent_worker and agent_worker.get("image") != (services.get("backend") or {}).get("image"):
+            problems.append("%s: agent-worker 必须与 backend 共用同一运行镜像" % rel)
         sources = {}
-        for key in ("backend", "backend-migrate"):
+        for key in ("backend", "agent-worker", "backend-migrate"):
             b = (services.get(key) or {}).get("build")
             if not isinstance(b, dict):
                 continue
@@ -383,6 +386,9 @@ def main():
         why = migrator_same_source(sources.get("backend"), sources.get("backend-migrate"))
         if why:
             problems.append("%s: %s" % (rel, why))
+        why_worker = migrator_same_source(sources.get("backend"), sources.get("agent-worker"))
+        if why_worker:
+            problems.append("%s: %s" % (rel, why_worker.replace("backend-migrate", "agent-worker")))
 
     # 3. 必填变量必须写进模板，否则照着 .env.example 建的 .env 起不来
     template = os.path.join(root, ".env.example")

@@ -132,7 +132,12 @@ func (h HTTP) resume(c *gin.Context) {
 }
 
 func (h HTTP) sweep(c *gin.Context) {
-	h.Service.ForceSweep()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	if err := h.Service.ForceSweep(ctx); err != nil {
+		respond(c, nil, err)
+		return
+	}
 	h.audit(c, "curator.sweep_requested", "curator_settings", "", nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

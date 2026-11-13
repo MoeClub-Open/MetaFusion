@@ -20,7 +20,7 @@
 #   一样保持单实例固定名。
 #   扩容时沿用同一发布清单的 digest 覆盖，并加 --scale backend=2 --scale auth=2。
 #   连接池总量预算：目录库每进程 MaxOpenConns=64（backend/internal/catalog/store.go），
-#   连接池预算 = 64 × 目录副本数 + 32 × (账号+互动+存储+MCP副本数) + 迁移作业(1) + 运维连接，必须 ≤ postgres max_connections；
+#   连接池预算 = 64 × backend副本数 + (32 + 1 LISTEN) × agent-worker副本数 + 32 × (账号+互动+存储+MCP副本数) + 迁移作业(1) + 运维连接，必须 ≤ postgres max_connections；
 #   加副本前先核算，不够先调大库侧再扩（进程内限流同理按副本数折算，见目标架构 §4 R3）。
 #   单实例限定：带本地卷的服务（postgres/pg_data、storage/storage_data 本地暂存、
 #   rustfs/s3_data）不扩；多副本的对象源必须是共享的 rustfs，纯本地目录模式只许单实例。
@@ -61,6 +61,13 @@ services:
     logging: *default-logging
     build: !reset null
     # R3：去固定名；扩容前先按头注释核算连接池总量预算
+    container_name: !reset null
+    image: ${IMAGE_PREFIX:-ghcr.io/moeclub-open/metafusion}/backend:${IMAGE_TAG:-latest}
+    restart: always
+
+  agent-worker:
+    logging: *default-logging
+    build: !reset null
     container_name: !reset null
     image: ${IMAGE_PREFIX:-ghcr.io/moeclub-open/metafusion}/backend:${IMAGE_TAG:-latest}
     restart: always

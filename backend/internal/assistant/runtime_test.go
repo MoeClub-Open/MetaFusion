@@ -171,3 +171,30 @@ func TestAgentRechecksScopeBeforeBuyingAnotherCall(t *testing.T) {
 		t.Fatalf("paused work reserved credits or reached provider: %v %v", err, f.events)
 	}
 }
+
+func TestAgentRechecksScopeBeforePostToolSynthesis(t *testing.T) {
+	call := ToolCall{ID: "read", Type: "function"}
+	call.Function.Name, call.Function.Arguments = "catalog_get", `{}`
+	f := &runtimeFixture{responses: []CompletionResponse{
+		{Message: Message{ToolCalls: []ToolCall{call}}},
+		{Message: Message{ToolCalls: []ToolCall{call}}},
+		{Message: Message{Content: "synthesized"}},
+	}}
+	leaseLost := errors.New("assistant_request_not_active")
+	checks := 0
+	req := ChatRequest{
+		ClientRequestID: uuid.NewString(),
+		beforeCompletion: func() error {
+			checks++
+			if checks == 3 {
+				return leaseLost
+			}
+			return nil
+		},
+	}
+	_, err := runCompletion(context.Background(), f, nil, catalog.User{ID: "owner"}, req, nil, true, "chat", "")
+	wantEvents := []string{"reserve", "complete", "settle", "reserve", "complete", "settle"}
+	if !errors.Is(err, leaseLost) || checks != 3 || !reflect.DeepEqual(f.events, wantEvents) {
+		t.Fatalf("post-tool synthesis bypassed beforeCompletion: err=%v checks=%d events=%v", err, checks, f.events)
+	}
+}

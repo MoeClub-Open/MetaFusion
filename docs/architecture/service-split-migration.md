@@ -6,7 +6,7 @@
 
 | 运行单元 | 职责与数据 | 对外入口 | 仓库 |
 | --- | --- | --- | --- |
-| catalog | 八实体、动态定义、结构、关系、修订、搜索、货架、外部库与通知；catalog.*；AI 配置、凭据、用量、积分与生成缓存为同进程 assistant.* 模块 | 目录/助手 API 与目录管理台 | MetaFusion（本仓） |
+| catalog | 八实体、动态定义、结构、关系、修订、搜索、货架、外部库与通知（`catalog.*`），以及 AI 助手与自动维护（`assistant.*`、`curator.*`）；经 `CATALOG_RUNTIME_ROLE` 拆分为 `backend`（`api`）与 `agent-worker`（`worker`）同镜像两类进程 | 目录/助手 API 与目录管理台（`agent-worker` 不对外暴露路由） | MetaFusion（本仓） |
 | auth | 账号、会话、令牌、OAuth2/OIDC、权限组和开发者中心；auth.* | 账号 API、自助应用与管理台 | metafusion-auth |
 | community | 论坛、短评、合集、收藏和私信；community.* | 互动 API 与管理台 | metafusion-community |
 | storage | 文件、哈希、去重、上传、绑定和访问控制；storage.* | 存储 API 与管理台 | metafusion-storage |
@@ -73,7 +73,7 @@
 
 各服务只读写本域 schema，不建跨业务外键、不跨服务 JOIN。运行角色与共享审计的唯一授权源为 `deploy/sql/roles-least-privilege.sql`，验证为 `verify-role-isolation.sql`；详细身份、对象归属和撤权条件见[数据库角色](./database-roles.md)。
 
-目录同进程的助手模块拥有独立 `assistant` schema，与 `catalog` 同属目录运行身份；不构成外围服务，也不允许其他服务直读配置、BYO 密钥或会话。助手复用账号认证与目录提交，Provider/Model、平台预算、用户积分、token 用量及介绍缓存的边界见[核心实现](./catalog-core-implementation.md#ai-助手与计费边界)。
+目录服务与 `agent-worker` 共用同一二进制与 `mf_catalog` 运行身份，共同管理 `catalog`、`assistant`、`curator` 三个 schema，通过 PostgreSQL 行锁租约、advisory lock 与 `metafusion_agent_wake` 通道跨进程协同；其他外围服务不得直读这三套 schema。Provider/Model、平台预算、用户积分、token 用量及后台执行边界见[核心实现](./catalog-core-implementation.md#ai-助手与计费边界)。
 
 community/storage 通过目录 HTTP 解析当前实体身份与可见性，使用 `/api/catalog/entities/{id}/identity` 的 canonical、kind 与别名。404 表示不存在或不可见，超时与上游故障必须明确失败，不能默认公开、返回假空集合或无限重试。capabilities 只声明部署状态，不探活外围服务。
 

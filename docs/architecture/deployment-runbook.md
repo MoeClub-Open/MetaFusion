@@ -12,7 +12,7 @@ python3 scripts/check_release_manifest.py --strict --expect-tag sha-<short-sha> 
   --expect-sha <full-sha> --expect-lock deploy/versions.lock release-manifest.yaml
 ```
 
-清单 v2 必须包含 backend、frontend、migrator 的真实 digest。`deploy.sh pull` 按 digest 拉取三个镜像，从锁定检出构建兄弟服务及其 UI；迁移器必须与后端同源。部署要求各服务运行 DSN，以及仅交给一次性 `auth-migrate` 的 `AUTH_MIGRATION_DATABASE_URL`。该结构身份不得注入账号 HTTP 服务；私钥仅归 auth，配置检查不得打印凭据。
+清单 v2 必须包含 backend、frontend、migrator 的真实 digest。`deploy.sh pull` 按 digest 拉取三个镜像（生成覆盖时将 `backend` 与 `agent-worker` 同步钉死至同一 backend digest），从锁定检出构建兄弟服务及其 UI；迁移器必须与后端同源。部署要求各服务运行 DSN，以及仅交给一次性 `auth-migrate` 的 `AUTH_MIGRATION_DATABASE_URL`。该结构身份不得注入账号 HTTP 服务；私钥仅归 auth，配置检查不得打印凭据。
 
 网关候选校验读取当前 Compose 配置声明的镜像，离线校验、容器重建和 reload 使用同一组覆盖文件。生产拉取路径必须一直保留 `docker-compose.prod.yml` 与发布清单生成的覆盖，不能在重载网关时退回基础编排。
 
@@ -37,7 +37,7 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 039 升级身份候选函数并重建其索引，使 `nonofficial_aliases` 参与同步查重；只将查询仍符合内置旧规则的六个系统货架改为 `creation_form` 词项筛选，音乐货架同时识别早期的 `song/album` 和后来的 `music/song/album` 两种规则，保留人工增设的字段、词项和关系条件。该迁移不改实体、关系、修订或工作副本中的编目事实，不按自由标签猜测作品类型、主体类型或译名性质；迁移不可逆，契约版本为39。
 
-040 建立 `curator` schema（自动维护 Agent 的配置、候选与运行记录），不新增服务或迁移命令；升级仍用 `mf-migrate up`，并用库 owner 重跑 `roles-least-privilege.sql` 与 `verify-role-isolation.sql`，确认目录运行身份 `mf_catalog` 同时覆盖 `catalog`、`assistant` 和 `curator`，其余服务均不可访问。迁移只建空表和单例配置，不扫描或改写实体事实；调度器随目录进程启动，但默认未启用，须先在管理台「自动维护」页选定模型并启用。调度以 advisory 锁 740211 保证单实例，月额度经助手积分账本充值并以 `assistant.usage` 的 `curator:<code>` 用途记账；连接断开会取消当前执行并重新竞争调度锁；每次模型调用预留均检查本月已用和待结算积分，赠分与充值不放宽月额度。连续执行故障达到阈值自动暂停，预算不足不触发故障暂停。低风险自动合并只接受服务端按实际 PR 差异复核通过的两类机械修复（候选实体自身的 `attributes.tags` 完全重复项去重、pictures 完全重复项去重），其余修改一律生成 PR。迁移不可逆，契约版本为40；升级后回读账本 40、确认 `curator.settings` 有单例行，并以 `mf_catalog` 身份确认三张 curator 表可读写再启动服务。
+040 建立 `curator` schema（自动维护 Agent 的配置、候选与运行记录），044（`agent_executor_split`）补齐后台对话持久队列列（`mode`、`execution_payload`、`lease_owner`、`lease_until`、`started_at`）与 `curator.settings.sweep_requested_at`，将目录结构契约升至 44。主编排通过 `CATALOG_RUNTIME_ROLE` 将目录拆分为 `backend`（`api`）与 `agent-worker`（`worker`）两类容器，共用同一镜像与 `mf_catalog` 身份，不新增数据库角色或迁移命令；单容器开发（如 `metadata-only`）保持默认 `all`。升级后回读账本 44，确认 `/health` 中 `backend` 返回 `role=api`、`agent-worker` 返回 `role=worker`。
 
 存量升级必须依次执行匹配版本的 `up` → `status` → `seed` → `check-refs`。`seed` 补入 `agent_type` 字段、词表及四个主体细分模板；仅当该字段本次首次补入时，将其加入已有 `agent_profile` 的徽章、分面和对应分区，既有字段位置与人工配置保留，重复执行不恢复管理员随后移除的展示项。缺失的主体类型仍保持空值，旧译名不自动标记为官方或非官方，历史名称和语言键不批量改写。`medium_formats` 从活动子载体现算，不迁移为持久化属性。
 
@@ -106,13 +106,13 @@ IMAGE_TAG=sha-<short-sha> deploy/deploy.sh pull
 
 037 record_versioning 将结构契约升为37，增加独立分支成员、冻结 PR 提交集、不可变快照/操作/替代关系、reflog、标签与 stash。迁移不重写旧请求、作者和父链；对旧历史仅回填已知记录，并从迁移时的真实完整目录创建明确基线。后续正式合入在同一事务追加稀疏记录快照和全局 head。停写后使用匹配 migrator 执行 up，核对存量实体、结构侧表、关系及旧提交摘要，再启动同批后端、前端、助手、MCP、技能与存储；分页历史和重放协议不能混用旧客户端。存储内部保留请求增加逐引用的 source_workspace_id，仅允许目录服务在验证冻结快照可读后转移相同实体/资产的保留，原保存者不变；无需额外存储 SQL 迁移。037 不可逆，回退必须恢复匹配整库及应用组。
 
-`deploy.sh` 的目录结构迁移入口统一停止 `backend` 与 `mcp`，停止失败时不执行迁移；后续迁移、账本或引用检查失败也不自动重启两者。完整发布在所有迁移和检查通过后统一启动应用组；单独执行 `migrate` 或 `fast backend` 后，MCP 保持停止，须待匹配的 MCP 镜像与迁移就绪再启动，不能恢复旧 MCP 写入端。
+`deploy.sh` 的目录结构迁移入口统一停止 `backend`、`agent-worker` 与 `mcp`，停止失败时不执行迁移；后续迁移、账本或引用检查失败也不自动重启写入端。完整发布在所有迁移和检查通过后统一启动应用组；`fast backend` 或 `fast agent-worker` 会在迁移与检查通过后同批更新并拉起 `backend` 与 `agent-worker`，MCP 仍须待匹配的镜像与迁移就绪再启动。
 
 工作副本、提交、原始请求、修订和贡献关联永久保留，恢复不能只回滚实体表。`CATALOG_OUTBOX_RETENTION_DAYS=7`、`CATALOG_IDEMPOTENCY_RETENTION_DAYS=7` 可设0永久保留，允许0–36500天；防重复创建记录只用于短期重试识别，超期按批删除。`CATALOG_RETENTION_INTERVAL_SECONDS=3600`，允许60–86400秒。清理每轮共享30秒预算，最多20批，每事务每类最多500条，事件只删已确认部分；未确认消费者事件保留。删除/合并贡献独立记录，不依赖队列长期存在。来源资格策略与提交载荷过期清理配置均已移除。
 
 自托管封面的副本保留、私有预览与合入绑定要求目录配置 `STORAGE_URL`，目录与存储两侧显式填写同值的 `STORAGE_CATALOG_LIFECYCLE_SECRET`；没有自动生成或共享密钥的机制。默认空值仅适用于不使用自托管封面的安装，涉及资产的副本操作会明确返回 `503 storage_unavailable`。主编排提供内部存储 URL，metadata-only 可接外部存储服务；上线前同时执行存储 011 迁移。内部接口和资产回收验收见[存储运行约定](./storage-operations.md)。
 
-CATALOG_DB_MAX_OPEN_CONNS 默认64（1–256），CATALOG_DB_MAX_IDLE_CONNS 默认32（0–maxOpen），其他服务与 MCP 默认32/16。PostgreSQL 编排默认 max_connections=512，两份编排均给 `/dev/shm` 256 MiB，CI PostgreSQL 同值。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.ts。
+`backend` 默认连接池 `CATALOG_DB_MAX_OPEN_CONNS=64` / `IDLE=32`，`agent-worker` 经 `CATALOG_WORKER_DB_MAX_OPEN_CONNS=32` / `IDLE=16` 独立设置（范围 1–256 / 0–maxOpen），其他服务与 MCP 默认 32/16；`agent-worker` 的共享 `LISTEN metafusion_agent_wake` 另占每副本 1 条长连接。PostgreSQL 编排默认 max_connections=512，两份编排均给 `/dev/shm` 256 MiB，CI PostgreSQL 同值。缩小 open 时同步设置 idle；副本连接总和须给迁移和运维留预算。提高上限不是容量优化证据，压测仅在独立容量环境运行 bench_catalog_reads.ts。
 
 ## 云端 MCP 接线
 
@@ -152,12 +152,12 @@ cd deploy
 
 034 为同进程 AI 助手建立 `assistant` schema，不新增独立服务、数据库或迁移命令。升级仍使用 `mf-migrate up`，并用库 owner 重跑 `roles-least-privilege.sql` 与 `verify-role-isolation.sql`。目录运行身份必须同时覆盖 `catalog` 和 `assistant`，其余服务不得访问 `assistant`；现有运行角色的 DDL 权限阶段不因新增模块自动收敛。
 
-`AI_ENCRYPTION_KEY` 仅注入 backend，用于 AES-256-GCM 加密平台 Provider 和个人 BYO API 密钥。使用 `openssl rand -base64 32` 生成 base64 编码的32字节随机值，写入受限、未跟踪的部署配置，不输出真实值。留空允许读取后台配置与记录，凭据写入及模型调用不可用。该密钥与 `MCP_ENCRYPTION_KEY` 各自管理，不复用。
+`AI_ENCRYPTION_KEY` 仅注入 `backend` 与 `agent-worker`，用于 AES-256-GCM 加解密平台 Provider 和个人 BYO API 密钥。使用 `openssl rand -base64 32` 生成 base64 编码的32字节随机值，写入受限、未跟踪的部署配置，不输出真实值。留空允许读取后台配置与记录，凭据写入及模型调用不可用。该密钥与 `MCP_ENCRYPTION_KEY` 各自管理，不复用。
 
 全库备份包含 `assistant` 中的配置、积分、预算、token 用量、会话和缓存；恢复可用凭据还必须保留与备份对应的 `AI_ENCRYPTION_KEY`。仅恢复数据库而丢失或直接更换密钥会使原凭据无法解密，须重新录入或先完成明确的凭据重新加密迁移。密钥只进入受限配置备份，不放入版本库或公开备份清单。
 
 上线前先在后台配置 Provider、Model 的价格和额度、平台与供应方预算，再启用助手。使用可控测试模型验证：平台调用预留与结算、明确未调用或被拒绝时释放、用量未知时的保守记账、BYO 不扣积分、重复请求不重复扣费、编辑按原审核规则进入提交、重复采纳不重复奖励，以及介绍缓存命中与依赖变化后的失效。核对实际 token 统计和费用，不能仅凭问答返回成功断言账本正确。公开 MediaWiki 来源在后台单独配置，读取保留许可与署名；接入百科不自动写入目录事实。
 
-按上游模型协议配置 `max_tokens_parameter=max_tokens|max_completion_tokens`，BYO 的 `upstream_model` 覆盖不放宽平台登记的 token 上限。中断恢复由 backend 每分钟回收超过10分钟的预留：未调用的释放，已调用但无权威用量的按预留上界记为 unknown。后台 `/api/assistant/admin/requests` 可查封存请求与部分结果；仅超过10分钟的 pending 可带说明取消，取消不撤销已执行修改、不删除用量或释放该请求 ID 重新执行。
+按上游模型协议配置 `max_tokens_parameter=max_tokens|max_completion_tokens`，BYO 的 `upstream_model` 覆盖不放宽平台登记的 token 上限。中断恢复由 `agent-worker`（或 `all` 模式下的 `backend`）每分钟回收超过10分钟的预留：未调用的释放，已调用但无权威用量的按预留上界记为 unknown。后台 `/api/assistant/admin/requests` 可查封存请求与部分结果；仅超过10分钟的 pending 可带说明取消，取消不撤销已执行修改、不删除用量或释放该请求 ID 重新执行。
 
 自动维护 Agent 复用 `assistant` 的 Provider、模型与积分账本，不引入第二套凭据或预算表。启用前在「自动维护」页选定模型、调度间隔、每小时运行上限、月额度和允许的治理范围；月额度按月在助手账本充值，实际调用记入 `assistant.usage`（用途 `curator:<code>`），余额不足或预算超限时本次运行失败并保留候选。关闭、暂停停止后续派发、模型调用与副本写入；已发出的请求正常结算，已生成的工作副本、提交、PR、候选与审计保留，恢复后读取已保存的原请求和回执继续。管理接口读取需要 `assistant.manage`，所有变更操作还需要 `catalog.review.manage`。验收时先手动触发一次扫描并运行一条候选，核对产生的运行记录、工作副本/PR 与审计行，再启用自动调度。

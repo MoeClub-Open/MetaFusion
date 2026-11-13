@@ -231,7 +231,7 @@ jobs:
           banned_s3 = {"STORAGE_S3_ACCESS_KEY", "STORAGE_S3_SECRET_KEY",
                        "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"}
           bad = []
-          for name in ("backend", "auth", "community", "storage"):
+          for name in ("backend", "agent-worker", "auth", "community", "storage"):
               env = (svcs.get(name) or {}).get("environment") or []
               keys = set()
               for item in env:
@@ -250,7 +250,7 @@ jobs:
               for b in bad:
                   print("  - " + b)
               sys.exit(1)
-          print("[%s] 凭据隔离通过：4 个服务仅本域 DSN（键名已核对，值未打印）" % which)
+          print("[%s] 凭据隔离通过：5 个服务仅本域 DSN（键名已核对，值未打印）" % which)
           PYEOF
           docker compose -f deploy/docker-compose.yml config | python3 /tmp/assert_keys.py base
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml config | python3 /tmp/assert_keys.py prod

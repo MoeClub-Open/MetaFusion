@@ -43,6 +43,15 @@ const (
 // Run keeps one scheduler per database. The advisory lock is session-scoped,
 // so a crashed process releases it when its connection closes.
 func (s *Service) Run(ctx context.Context) {
+	s.wg.Add(1)
+	defer s.wg.Done()
+	if s.Assistant != nil {
+		s.Assistant.SubscribeWake(ctx, func(extra string) {
+			if extra == "" || extra == "curator" {
+				s.wakeLocal()
+			}
+		})
+	}
 	for ctx.Err() == nil {
 		conn, err := s.Catalog.DB.Conn(ctx)
 		if err != nil {
@@ -124,8 +133,11 @@ func (s *Service) schedule(ctx context.Context) {
 		if err = s.discoverReviews(ctx, settings); err != nil {
 			slog.Warn("curator review discovery failed", "err", err)
 		}
-		forced := s.forceSweep.Swap(false)
+		forced := s.forceSweep.Swap(false) || settings.SweepRequestedAt != nil
 		if pending, e := s.PendingCount(ctx, settings); e == nil && (forced || pending < sweepBacklogLimit) {
+			if settings.SweepRequestedAt != nil {
+				_ = s.AckSweepRequest(ctx, *settings.SweepRequestedAt)
+			}
 			s.runSweep(ctx, settings)
 		}
 		tasks, e := s.dueTasks(ctx, settings)

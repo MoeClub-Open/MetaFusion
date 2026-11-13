@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -83,6 +84,7 @@ type MissionEngine struct {
 
 	instanceID string
 	rootCtx    context.Context
+	running    atomic.Bool
 	mu         sync.Mutex
 	active     map[string]*activeMissionHandle
 	wg         sync.WaitGroup
@@ -102,6 +104,20 @@ func (e *MissionEngine) Run(ctx context.Context) {
 	e.mu.Lock()
 	e.rootCtx = ctx
 	e.mu.Unlock()
+	e.running.Store(true)
+	defer e.running.Store(false)
+	if e.Store != nil {
+		e.Store.SubscribeWake(ctx, func(extra string) {
+			switch {
+			case extra == "":
+				e.scanAndResume(ctx)
+			case strings.HasPrefix(extra, "mission:"):
+				e.wakeLocal(strings.TrimPrefix(extra, "mission:"))
+			case strings.HasPrefix(extra, "mission_stop:"):
+				e.interruptLocal(strings.TrimPrefix(extra, "mission_stop:"))
+			}
+		})
+	}
 	e.scanAndResume(ctx)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -130,6 +146,20 @@ func (e *MissionEngine) stopAll() {
 }
 
 func (e *MissionEngine) Wake(missionID string) {
+	if e == nil || e.Store == nil || e.Catalog == nil || !validID(missionID) {
+		return
+	}
+	if !e.running.Load() && !e.Store.LocalExecution() {
+		e.Store.NotifyWake(context.Background(), "mission:"+missionID)
+		return
+	}
+	e.wakeLocal(missionID)
+	if e.Store.DSN != "" {
+		e.Store.NotifyWake(context.Background(), "mission:"+missionID)
+	}
+}
+
+func (e *MissionEngine) wakeLocal(missionID string) {
 	if e == nil || e.Store == nil || e.Catalog == nil || !validID(missionID) {
 		return
 	}
@@ -171,6 +201,16 @@ func (e *MissionEngine) Wake(missionID string) {
 }
 
 func (e *MissionEngine) Interrupt(missionID string) {
+	if e == nil || !validID(missionID) {
+		return
+	}
+	e.interruptLocal(missionID)
+	if e.Store != nil && (!e.running.Load() || e.Store.DSN != "") {
+		e.Store.NotifyWake(context.Background(), "mission_stop:"+missionID)
+	}
+}
+
+func (e *MissionEngine) interruptLocal(missionID string) {
 	if e == nil {
 		return
 	}
@@ -199,7 +239,7 @@ func (e *MissionEngine) scanAndResume(ctx context.Context) {
 	}
 	rows.Close()
 	for _, id := range ids {
-		e.Wake(id)
+		e.wakeLocal(id)
 	}
 }
 
@@ -281,17 +321,10 @@ func (e *MissionEngine) buildCreditBudget(ctx context.Context, m Mission) (*Cred
 }
 
 func (e *MissionEngine) checkActorValid(ctx context.Context, m Mission) error {
-	if m.Scope != "user" || e.Catalog == nil || e.Catalog.Creds == nil || !e.Catalog.Creds.Enabled() {
+	if m.Scope != "user" {
 		return nil
 	}
-	st, err := e.Catalog.Creds.Lookup(ctx, m.Actor.ID)
-	if err != nil {
-		return nil
-	}
-	if st.Banned || (m.Actor.TokenVersion > 0 && !st.Match(m.Actor.TokenVersion)) {
-		return errors.New("assistant_actor_reauth_required")
-	}
-	return nil
+	return checkActorCredentials(ctx, e.Catalog, m.Actor)
 }
 
 func (e *MissionEngine) missionLoop(ctx context.Context, missionID string, wake <-chan struct{}) {
@@ -338,6 +371,10 @@ func (e *MissionEngine) missionLoop(ctx context.Context, missionID string, wake 
 			return
 		}
 		if err := e.checkActorValid(leaseCtx, m); err != nil {
+			if errors.Is(err, errAuthUnavailable) {
+				slog.Warn("mission actor credential check unavailable", "mission_id", missionID, "err", err)
+				return
+			}
 			e.pauseWithError(missionID, safeRuntimeCode(err))
 			return
 		}
@@ -396,6 +433,14 @@ func (e *MissionEngine) missionLoop(ctx context.Context, missionID string, wake 
 					if leaseCtx.Err() != nil {
 						return
 					}
+					if errors.Is(planErr, errAuthUnavailable) {
+						slog.Warn("mission planner deferred on auth unavailable", "mission_id", missionID)
+						return
+					}
+					if errors.Is(planErr, errActorReauthRequired) {
+						e.pauseWithError(missionID, safeRuntimeCode(planErr))
+						return
+					}
 					e.failMission(missionID, safeRuntimeCode(planErr))
 					return
 				}
@@ -432,9 +477,17 @@ func (e *MissionEngine) missionLoop(ctx context.Context, missionID string, wake 
 		}
 		batch := ready[:batchSize]
 
-		hasDiscovery, budgetHit := e.runWorkerBatch(leaseCtx, mLatest, tasks, batch, budget)
+		hasDiscovery, budgetHit, authDeferred, reauthRequired := e.runWorkerBatch(leaseCtx, mLatest, tasks, batch, budget)
 		_ = e.syncSpentCredits(context.WithoutCancel(leaseCtx), &mLatest)
 		if leaseCtx.Err() != nil {
+			return
+		}
+		if reauthRequired {
+			e.pauseWithError(missionID, safeRuntimeCode(errActorReauthRequired))
+			return
+		}
+		if authDeferred {
+			slog.Warn("mission worker deferred on auth unavailable", "mission_id", missionID)
 			return
 		}
 		if budgetHit {
@@ -621,6 +674,9 @@ func (e *MissionEngine) runPlannerRound(ctx context.Context, m *Mission, tasks [
 		MaxRounds:           8,
 		Timeout:             180 * time.Second,
 		CreditBudget:        budget,
+		BeforeCompletion: func() error {
+			return e.checkActorValid(ctx, *m)
+		},
 		Checkpoint: func(cr CompletionRun) error {
 			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
@@ -786,9 +842,11 @@ type workerOutcome struct {
 	hasDiscovery   bool
 	budgetHit      bool
 	retryableDefer bool
+	authDeferred   bool
+	reauthRequired bool
 }
 
-func (e *MissionEngine) runWorkerBatch(ctx context.Context, m Mission, allTasks []MissionTask, batch []MissionTask, budget *CreditBudget) (hasDiscovery bool, budgetHit bool) {
+func (e *MissionEngine) runWorkerBatch(ctx context.Context, m Mission, allTasks []MissionTask, batch []MissionTask, budget *CreditBudget) (hasDiscovery bool, budgetHit bool, authDeferred bool, reauthRequired bool) {
 	byID := make(map[string]MissionTask, len(allTasks))
 	for _, t := range allTasks {
 		byID[t.ID] = t
@@ -825,6 +883,12 @@ func (e *MissionEngine) runWorkerBatch(ctx context.Context, m Mission, allTasks 
 		}
 		if o.budgetHit {
 			budgetHit = true
+		}
+		if o.authDeferred {
+			authDeferred = true
+		}
+		if o.reauthRequired {
+			reauthRequired = true
 		}
 	}
 	return
@@ -916,6 +980,17 @@ func (e *MissionEngine) runSingleWorker(ctx context.Context, m Mission, task Mis
 		MaxRounds:           workerMaxRounds,
 		Timeout:             workerTimeout,
 		CreditBudget:        budget,
+		BeforeCompletion: func() error {
+			return e.checkActorValid(ctx, m)
+		},
+		BeforeTool: func(call ToolCall) (ToolCall, error) {
+			if !isCatalogReadOnlyTool(call.Function.Name) {
+				if err := e.checkActorValid(ctx, m); err != nil {
+					return call, err
+				}
+			}
+			return call, nil
+		},
 		AfterTool: func(call ToolCall, val any, toolErr error) error {
 			if toolErr != nil {
 				return nil
@@ -957,14 +1032,18 @@ func (e *MissionEngine) runSingleWorker(ctx context.Context, m Mission, task Mis
 		}
 	}
 
-	if ctx.Err() != nil && (errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded)) {
+	if errors.Is(runErr, errAuthUnavailable) || (ctx.Err() != nil && (errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded))) {
 		cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, _ = e.Store.DB.ExecContext(cctx, "UPDATE assistant.mission_tasks SET status='queued',messages=$2,input_tokens=$3,output_tokens=$4,credits=$5,workspace_id=$6,pull_request_id=$7,merged=$8,model_id=$9,updated_at=now() WHERE id=$1 AND status='running'",
 			task.ID, jsonBytes(result.Messages), baseInput+result.Usage.InputTokens, baseOutput+result.Usage.OutputTokens, baseCredits+result.CreditsSpent,
 			nullableID(observedWorkspaceID), nullableID(observedPRID), observedMerged, nullableID(workerModel),
 		)
+		out.authDeferred = errors.Is(runErr, errAuthUnavailable)
 		return out
+	}
+	if errors.Is(runErr, errActorReauthRequired) {
+		out.reauthRequired = true
 	}
 
 	if runErr == nil || result.CreditsSpent > 0 || len(result.ToolResults) > 0 {

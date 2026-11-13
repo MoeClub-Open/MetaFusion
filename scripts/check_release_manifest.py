@@ -189,7 +189,7 @@ def compose_override(doc):
     refs, bad = pull_refs(doc)
     if bad:
         return "", bad
-    services = (("backend", refs[0]), ("backend-migrate", refs[1]), ("frontend", refs[2]))
+    services = (("backend", refs[0]), ("agent-worker", refs[0]), ("backend-migrate", refs[1]), ("frontend", refs[2]))
     lines = ["services:"]
     for name, ref in services:
         lines.extend(("  %s:" % name, "    image: %s" % json.dumps(ref)))
@@ -280,6 +280,8 @@ def selftest():
     override, bad = compose_override(copy.deepcopy(base))
     want(bad == [] and 'image: "ghcr.io/m/backend@' + good_digest + '"' in override,
          "Compose 覆盖使用后端 digest")
+    want('agent-worker:\n    image: "ghcr.io/m/backend@' + good_digest + '"' in override,
+         "Compose 覆盖同步钉死 agent-worker digest")
     want('backend-migrate:\n    image: "ghcr.io/m/migrator@' + good_digest + '"' in override,
          "Compose 覆盖使用迁移器 digest")
     override, bad = compose_override(unk)
@@ -361,7 +363,7 @@ def main():
                 return 1
             with open(args.write_compose_override, "w", encoding="utf-8") as fh:
                 fh.write(override)
-            print("已生成按摘要运行的 Compose 覆盖：backend / backend-migrate / frontend")
+            print("已生成按摘要运行的 Compose 覆盖：backend / agent-worker / backend-migrate / frontend")
         if args.print_pull_refs:
             for ref in refs:
                 print(ref)

@@ -59,6 +59,8 @@ func responseError(err error) (status int, code string) {
 		status, code = 504, "assistant_request_timeout"
 	case code == "assistant_forbidden":
 		status = 403
+	case code == "auth_unavailable":
+		status = 503
 	case code == "assistant_upstream_failed":
 		status = 502
 	case code == "assistant_request_failed":
@@ -414,6 +416,14 @@ func (h HTTP) chat(c *gin.Context) {
 	if balance, bErr := h.Store.SyncCredits(c.Request.Context(), u.ID); bErr == nil {
 		initial.Balance = balance
 	}
+	if in.Background && !h.Store.LocalExecution() {
+		if err = h.Store.enqueueBackgroundChat(c.Request.Context(), u, in, conv, initial, messages); err != nil {
+			writeResponse(c, nil, err)
+			return
+		}
+		c.JSON(200, initial)
+		return
+	}
 	if err = h.Store.persistChat(c.Request.Context(), u.ID, in.ClientRequestID, conv, initial, "pending"); err != nil {
 		writeResponse(c, nil, err)
 		return
@@ -434,6 +444,8 @@ func (h HTTP) chat(c *gin.Context) {
 			}, "pending")
 		}
 		runCtx, cancelRun := context.WithTimeout(bgBase, 5*time.Minute)
+		h.Store.registerActiveChat(in.ClientRequestID, conv.ID, cancelRun)
+		defer h.Store.unregisterActiveChat(in.ClientRequestID)
 		defer cancelRun()
 		run, runErr := h.complete(runCtx, u, in, messages, true, "chat", "")
 		if run.Messages == nil {
@@ -446,8 +458,13 @@ func (h HTTP) chat(c *gin.Context) {
 		finishCtx, cancelFinish := context.WithTimeout(bgBase, 10*time.Second)
 		defer cancelFinish()
 		if finishErr := h.Store.finishChat(finishCtx, u.ID, in.ClientRequestID, conv, response); finishErr != nil {
-			response.Status = "failed"
-			response.Error = "assistant_response_persistence_failed"
+			if errors.Is(finishErr, errChatLeaseLost) {
+				response.Status = "failed"
+				response.Error = "assistant_request_interrupted"
+			} else {
+				response.Status = "failed"
+				response.Error = "assistant_response_persistence_failed"
+			}
 		} else if response.Error != "" {
 			response.Status = "failed"
 		} else {
@@ -569,7 +586,7 @@ func (h HTTP) deleteConversation(admin bool) gin.HandlerFunc {
 		}
 		// Keep the sealed request ID after deleting message content. Otherwise a
 		// delayed retry could spend tokens and apply a catalog mutation again.
-		_, err = tx.ExecContext(c.Request.Context(), `UPDATE assistant.chat_requests SET response=jsonb_build_object('conversation_id',$1::text,'error','assistant_conversation_deleted'),updated_at=now() WHERE conversation_id=$1`, id)
+		_, err = tx.ExecContext(c.Request.Context(), `UPDATE assistant.chat_requests SET response=jsonb_build_object('conversation_id',$1::text,'error','assistant_conversation_deleted'),execution_payload='{}'::jsonb,lease_owner='',lease_until=NULL,updated_at=now() WHERE conversation_id=$1`, id)
 		if err == nil {
 			err = tx.Commit()
 		}
@@ -577,6 +594,7 @@ func (h HTTP) deleteConversation(admin bool) gin.HandlerFunc {
 			writeResponse(c, nil, err)
 			return
 		}
+		h.Store.NotifyWake(c.Request.Context(), "chat_cancel_conv:"+id)
 		c.Status(204)
 	}
 }

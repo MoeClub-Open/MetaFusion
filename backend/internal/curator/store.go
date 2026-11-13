@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +30,7 @@ var (
 )
 
 const settingsColumns = `enabled,COALESCE(model_id::text,''),interval_seconds,max_runs_per_hour,monthly_credit_allowance,auto_merge_low_risk,allow_structures,allow_sources,allow_names,allow_dedupe,system_user_id,reviewer_user_id,paused,paused_reason,consecutive_failures,sweep_cursor_updated_at,COALESCE(sweep_cursor_id::text,''),sweep_detector,last_sweep_at,last_run_at,updated_at,execution`
+const settingsColumnsWithSweep = settingsColumns + `,sweep_requested_at`
 
 const findingColumns = `f.id::text,COALESCE(f.entity_id::text,''),f.entity_kind,COALESCE(e.title,''),f.code,f.severity,f.priority,f.signature,f.details,f.status,f.decision,f.reason,f.sources,f.attempts,f.next_attempt_at,f.last_error,COALESCE(f.last_run_id::text,''),COALESCE(f.workspace_id::text,''),COALESCE(f.pull_request_id::text,''),f.merged,f.auto_merged,f.last_seen_at,f.resolved_at,f.created_at,f.updated_at,COALESCE(f.review_pr_id::text,'')`
 
@@ -41,6 +43,7 @@ type Service struct {
 	forceSweep atomic.Bool
 	leaseHeld  atomic.Bool
 	lease      atomic.Pointer[schedulerLease]
+	wg         sync.WaitGroup
 }
 
 func New(cat *catalog.Store, asst *assistant.Store) *Service {
@@ -61,19 +64,69 @@ func New(cat *catalog.Store, asst *assistant.Store) *Service {
 	return svc
 }
 
+func (s *Service) Wait() {
+	if s != nil {
+		s.wg.Wait()
+	}
+}
+
 func (s *Service) Wake() {
+	s.wakeLocal()
+	if s != nil && s.Assistant != nil && !s.leaseHeld.Load() {
+		s.Assistant.NotifyWake(context.Background(), "curator")
+	}
+}
+
+func (s *Service) wakeLocal() {
+	if s == nil {
+		return
+	}
 	select {
 	case s.wake <- struct{}{}:
 	default:
 	}
 }
 
-func (s *Service) ForceSweep() {
+func (s *Service) ForceSweep(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if s.Catalog != nil && s.Catalog.DB != nil {
+		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err := s.Catalog.DB.ExecContext(qctx, `UPDATE curator.settings SET sweep_requested_at=now(),updated_at=now() WHERE singleton`)
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
 	s.forceSweep.Store(true)
 	s.Wake()
+	return nil
 }
 
-func (s *Service) LeaseHeld() bool { return s.leaseHeld.Load() }
+func (s *Service) AckSweepRequest(ctx context.Context, upTo time.Time) error {
+	_, err := s.Catalog.DB.ExecContext(ctx, `UPDATE curator.settings SET sweep_requested_at=NULL WHERE singleton AND sweep_requested_at <= $1`, upTo)
+	return err
+}
+
+func (s *Service) LeaseHeld() bool {
+	if s == nil {
+		return false
+	}
+	if s.leaseHeld.Load() {
+		return true
+	}
+	if s.Catalog == nil || s.Catalog.DB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var held bool
+	if err := s.Catalog.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND classid=0 AND objid=740211 AND objsubid=1 AND granted)`).Scan(&held); err != nil {
+		return false
+	}
+	return held
+}
 
 func nullableID(id string) any {
 	if strings.TrimSpace(id) == "" {
@@ -85,11 +138,11 @@ func nullableID(id string) any {
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	var v Settings
 	var model, cursorID string
-	err := s.Catalog.DB.QueryRowContext(ctx, `SELECT `+settingsColumns+` FROM curator.settings WHERE singleton`).Scan(
+	err := s.Catalog.DB.QueryRowContext(ctx, `SELECT `+settingsColumnsWithSweep+` FROM curator.settings WHERE singleton`).Scan(
 		&v.Enabled, &model, &v.IntervalSeconds, &v.MaxRunsPerHour, &v.MonthlyCreditAllowance,
 		&v.AutoMergeLowRisk, &v.AllowStructures, &v.AllowSources, &v.AllowNames, &v.AllowDedupe,
 		&v.SystemUserID, &v.ReviewerUserID, &v.Paused, &v.PausedReason, &v.ConsecutiveFailures,
-		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution,
+		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution, &v.SweepRequestedAt,
 	)
 	v.ModelID, v.SweepCursorID = model, cursorID
 	return v, err
@@ -105,14 +158,14 @@ func (s *Service) SaveSettings(ctx context.Context, in Settings) (Settings, erro
 		enabled=$1,model_id=$2,interval_seconds=$3,max_runs_per_hour=$4,monthly_credit_allowance=$5,
 		auto_merge_low_risk=$6,allow_structures=$7,allow_sources=$8,allow_names=$9,allow_dedupe=$10,
 		execution=$11,updated_at=now()
-		WHERE singleton RETURNING `+settingsColumns,
+		WHERE singleton RETURNING `+settingsColumnsWithSweep,
 		in.Enabled, nullableID(in.ModelID), in.IntervalSeconds, in.MaxRunsPerHour, in.MonthlyCreditAllowance,
 		in.AutoMergeLowRisk, in.AllowStructures, in.AllowSources, in.AllowNames, in.AllowDedupe, assistantJSON(in.Execution),
 	).Scan(
 		&v.Enabled, &model, &v.IntervalSeconds, &v.MaxRunsPerHour, &v.MonthlyCreditAllowance,
 		&v.AutoMergeLowRisk, &v.AllowStructures, &v.AllowSources, &v.AllowNames, &v.AllowDedupe,
 		&v.SystemUserID, &v.ReviewerUserID, &v.Paused, &v.PausedReason, &v.ConsecutiveFailures,
-		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution,
+		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution, &v.SweepRequestedAt,
 	)
 	v.ModelID, v.SweepCursorID = model, cursorID
 	return v, err
@@ -123,11 +176,11 @@ func (s *Service) SetPaused(ctx context.Context, paused bool, reason string) (Se
 	var model, cursorID string
 	err := s.Catalog.DB.QueryRowContext(ctx, `UPDATE curator.settings SET paused=$1,paused_reason=$2,
 		consecutive_failures=CASE WHEN $1 THEN consecutive_failures ELSE 0 END,updated_at=now()
-		WHERE singleton RETURNING `+settingsColumns, paused, truncate(reason, 200)).Scan(
+		WHERE singleton RETURNING `+settingsColumnsWithSweep, paused, truncate(reason, 200)).Scan(
 		&v.Enabled, &model, &v.IntervalSeconds, &v.MaxRunsPerHour, &v.MonthlyCreditAllowance,
 		&v.AutoMergeLowRisk, &v.AllowStructures, &v.AllowSources, &v.AllowNames, &v.AllowDedupe,
 		&v.SystemUserID, &v.ReviewerUserID, &v.Paused, &v.PausedReason, &v.ConsecutiveFailures,
-		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution,
+		&v.SweepCursorUpdatedAt, &cursorID, &v.SweepDetector, &v.LastSweepAt, &v.LastRunAt, &v.UpdatedAt, &v.Execution, &v.SweepRequestedAt,
 	)
 	v.ModelID, v.SweepCursorID = model, cursorID
 	return v, err

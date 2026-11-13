@@ -35,6 +35,42 @@ func (s *Store) RunOpenSearchIndexer(ctx context.Context) {
 	}
 }
 
+// RunOpenSearchMonitor refreshes search readiness for API-only instances when
+// index maintenance runs in a separate worker process.
+func (s *Store) RunOpenSearchMonitor(ctx context.Context) {
+	if s.OpenSearch == nil {
+		return
+	}
+	check := func() {
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		initialized, err := s.OpenSearch.isInitialized(probeCtx)
+		s.OpenSearch.ready.Store(err == nil && initialized)
+		delayed := err != nil
+		if !delayed && s.DB != nil {
+			var backlogDelayed bool
+			dbErr := s.DB.QueryRowContext(probeCtx, `SELECT EXISTS(
+				SELECT 1 FROM catalog.outbox o
+				WHERE o.type LIKE 'entity.%' AND o.created_at < now() - interval '2 minutes'
+				AND NOT EXISTS (SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+			)`, openSearchConsumer).Scan(&backlogDelayed)
+			delayed = dbErr != nil || backlogDelayed
+		}
+		s.OpenSearch.indexingDelayed.Store(delayed)
+	}
+	check()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			check()
+		}
+	}
+}
+
 func (s *Store) syncOpenSearch(ctx context.Context) error {
 	conn, err := s.DB.Conn(ctx)
 	if err != nil {

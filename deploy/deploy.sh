@@ -318,7 +318,7 @@ banned_db = {"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 banned_s3 = {"STORAGE_S3_ACCESS_KEY", "STORAGE_S3_SECRET_KEY",
               "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"}
 bad = []
-for name in ("backend", "auth", "community", "storage", "mcp"):
+for name in ("backend", "agent-worker", "auth", "community", "storage", "mcp"):
     env = (svcs.get(name, {}) or {}).get("environment", {}) or {}
     keys = set(env.keys())
     leak = sorted(keys & banned_db)
@@ -338,7 +338,7 @@ if bad:
     for b in bad:
         print("  - " + b)
     sys.exit(1)
-print("业务容器凭据隔离通过：5 个服务仅本域 DSN（键名已核对，值未打印）")
+print("业务容器凭据隔离通过：6 个服务仅本域 DSN（键名已核对，值未打印）")
 ' || {
         echo "❌ 凭据隔离断言失败：业务容器不得持有管理/对象凭据（审计 O01），部署中止" >&2
         return 1
@@ -350,12 +350,12 @@ print("业务容器凭据隔离通过：5 个服务仅本域 DSN（键名已核�
 # ENTRYPOINT，少了 --entrypoint 参数会被交给 /app/server，一条迁移都不会执行
 # （backend/Dockerfile 的 server 阶段是 ENTRYPOINT ["/app/server"]）。
 function stop_catalog_writes() {
-    echo "🛑 迁移前停止 backend 与 MCP，避免旧写入端在协议切换后继续写入..."
-    if ! docker compose $COMPOSE_ENV -f docker-compose.yml "$@" stop backend mcp; then
-        echo "❌ 无法确认 backend 与 MCP 均已停写：迁移中止，请先停止所有目录写入端" >&2
+    echo "🛑 迁移前停止 backend、agent-worker 与 MCP，避免旧写入端在协议切换后继续写入..."
+    if ! docker compose $COMPOSE_ENV -f docker-compose.yml "$@" stop backend agent-worker mcp; then
+        echo "❌ 无法确认 backend、agent-worker 与 MCP 均已停写：迁移中止，请先停止所有目录写入端" >&2
         return 1
     fi
-    echo "   backend 与 MCP 已停止；失败不会自动重启，请保持两者停写直至迁移与检查通过并就绪匹配的应用版本"
+    echo "   backend、agent-worker 与 MCP 已停止；失败不会自动重启，请保持停写直至迁移与检查通过并就绪匹配的应用版本"
 }
 
 function migrate_up_checked() {
@@ -455,15 +455,18 @@ case "$ACTION" in
         if [ -n "$TARGET" ]; then
             echo "⚡ 增量更新指定服务 [$TARGET]..."
             docker compose $COMPOSE_ENV build "$TARGET"
-            if [ "$TARGET" = "backend" ]; then
+            if [ "$TARGET" = "backend" ] || [ "$TARGET" = "agent-worker" ]; then
+                docker compose $COMPOSE_ENV build backend agent-worker
                 docker compose $COMPOSE_ENV -f docker-compose.yml build backend-migrate
                 migrate_up_checked
                 seed_checked
                 check_refs_report
+                docker compose $COMPOSE_ENV up -d --no-deps backend agent-worker
+            else
+                if [ "$TARGET" = "auth" ]; then migrate_auth_checked; fi
+                if [ "$TARGET" = "mcp" ]; then docker compose $COMPOSE_ENV run --rm --no-deps mcp-migrate; fi
+                docker compose $COMPOSE_ENV up -d --no-deps "$TARGET"
             fi
-            if [ "$TARGET" = "auth" ]; then migrate_auth_checked; fi
-            if [ "$TARGET" = "mcp" ]; then docker compose $COMPOSE_ENV run --rm --no-deps mcp-migrate; fi
-            docker compose $COMPOSE_ENV up -d --no-deps "$TARGET"
         else
             echo "⚡ 增量构建并更新全部服务 (复用 BuildKit 缓存)..."
             # 不带服务名即构建**所有**带 build 段的服务：拆分后子系统在兄弟仓库，

@@ -102,8 +102,16 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 43 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 43 required (run mf-migrate up)")
+	if contractVersion != 44 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 44 required (run mf-migrate up)")
+	}
+	var executorSplitReady bool
+	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='assistant' AND table_name='chat_requests' AND column_name='execution_payload')
+		AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='curator' AND table_name='settings' AND column_name='sweep_requested_at')`).Scan(&executorSplitReady); err != nil {
+		return err
+	}
+	if !executorSplitReady {
+		return fmt.Errorf("incompatible_schema: agent executor split columns required (run mf-migrate up)")
 	}
 	var hasCommitProvenance bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='revisions' AND column_name='commit_id')`).Scan(&hasCommitProvenance); err != nil {

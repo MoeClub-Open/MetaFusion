@@ -442,6 +442,11 @@ func runCompletionInternal(ctx context.Context, backend completionBackend, cat *
 		}
 	}
 	if len(tools) > 0 && strings.TrimSpace(run.Answer) == "" && ctx.Err() == nil {
+		if req.beforeCompletion != nil {
+			if err = req.beforeCompletion(); err != nil {
+				return run, err
+			}
+		}
 		synthMessages := append(append([]Message(nil), run.Messages...), Message{
 			Role:    "user",
 			Content: "[System Notice] Tool execution rounds are complete. Summarize all completed operations, modified or inspected records (using /catalog/<id> links), field/translation/relation changes, and final merge/PR/workspace status in the user's language. Do not invoke any tools.",
@@ -520,6 +525,13 @@ func formatPushReceiptSummary(receipts []catalog.WorkspacePushResult) string {
 func safeRuntimeCode(err error) string {
 	if err == nil {
 		return ""
+	}
+	if u, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, sub := range u.Unwrap() {
+			if c := safeRuntimeCode(sub); c != "" && c != "assistant_request_failed" {
+				return c
+			}
+		}
 	}
 	code := err.Error()
 	if len(code) > 100 || code == "" {
@@ -606,7 +618,11 @@ func (s *Store) claimChat(ctx context.Context, owner string, req ChatRequest) (C
 	if err != nil {
 		return conv, nil, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO assistant.chat_requests(id,owner_id,conversation_id,status,request_hash) VALUES($1,$2,$3,'pending',$4)`, req.ClientRequestID, owner, conv.ID, hash)
+	mode := "sync"
+	if req.Background {
+		mode = "background"
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO assistant.chat_requests(id,owner_id,conversation_id,status,mode,request_hash) VALUES($1,$2,$3,'pending',$4,$5)`, req.ClientRequestID, owner, conv.ID, mode, hash)
 	if err != nil {
 		return conv, nil, ErrConflict
 	}
@@ -655,6 +671,17 @@ func (s *Store) persistChat(ctx context.Context, owner, requestID string, conv C
 		return err
 	}
 	defer tx.Rollback()
+	var curStatus, curLeaseOwner string
+	err = tx.QueryRowContext(ctx, `SELECT status, COALESCE(lease_owner, '') FROM assistant.chat_requests WHERE id=$1 AND owner_id=$2 FOR UPDATE`, requestID, owner).Scan(&curStatus, &curLeaseOwner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errChatLeaseLost
+	}
+	if err != nil {
+		return err
+	}
+	if expected := chatLeaseOwnerFromContext(ctx); curStatus != "pending" || (expected != "" && curLeaseOwner != expected) {
+		return errChatLeaseLost
+	}
 	var stored []Message
 	if status == "pending" {
 		stored = make([]Message, 0, len(response.Messages))
@@ -680,7 +707,11 @@ func (s *Store) persistChat(ctx context.Context, owner, requestID string, conv C
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE assistant.chat_requests SET status=$1,response=$2,updated_at=now() WHERE id=$3 AND owner_id=$4 AND status='pending'`, status, b, requestID, owner)
+	if status == "pending" {
+		_, err = tx.ExecContext(ctx, `UPDATE assistant.chat_requests SET status=$1,response=$2,updated_at=now() WHERE id=$3 AND owner_id=$4 AND status='pending'`, status, b, requestID, owner)
+	} else {
+		_, err = tx.ExecContext(ctx, `UPDATE assistant.chat_requests SET status=$1,response=$2,execution_payload='{}'::jsonb,lease_owner='',lease_until=NULL,updated_at=now() WHERE id=$3 AND owner_id=$4 AND status='pending'`, status, b, requestID, owner)
+	}
 	if err != nil {
 		return err
 	}
@@ -770,7 +801,7 @@ func (h HTTP) cancelRequest(c *gin.Context) {
 	}
 	// Live requests have a 150-second deadline. Ten minutes leaves room for
 	// accounting and persistence, and prevents cancelling a running edit.
-	res, e := h.Store.DB.ExecContext(c.Request.Context(), `UPDATE assistant.chat_requests SET status='failed',response=response||jsonb_build_object('error','assistant_request_interrupted','admin_cancel_note',$2::text,'cancelled_by',$3::text),updated_at=now() WHERE id=$1 AND status='pending' AND created_at<now()-interval '10 minutes'`, c.Param("id"), in.Note, catalog.RequestUser(c).ID)
+	res, e := h.Store.DB.ExecContext(c.Request.Context(), `UPDATE assistant.chat_requests SET status='failed',response=response||jsonb_build_object('error','assistant_request_interrupted','admin_cancel_note',$2::text,'cancelled_by',$3::text),execution_payload='{}'::jsonb,lease_owner='',lease_until=NULL,updated_at=now() WHERE id=$1 AND status='pending' AND created_at<now()-interval '10 minutes'`, c.Param("id"), in.Note, catalog.RequestUser(c).ID)
 	if e != nil {
 		writeResponse(c, nil, e)
 		return
@@ -784,5 +815,6 @@ func (h HTTP) cancelRequest(c *gin.Context) {
 		writeResponse(c, nil, ErrConflict)
 		return
 	}
+	h.Store.NotifyWake(c.Request.Context(), "chat_cancel:"+c.Param("id"))
 	h.getRequest(true)(c)
 }

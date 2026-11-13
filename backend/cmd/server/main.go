@@ -35,6 +35,18 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required for the catalog runtime")
 	}
+	role := strings.ToLower(strings.TrimSpace(env("CATALOG_RUNTIME_ROLE", "all")))
+	var runAPI, runWorker bool
+	switch role {
+	case "all":
+		runAPI, runWorker = true, true
+	case "api":
+		runAPI, runWorker = true, false
+	case "worker":
+		runAPI, runWorker = false, true
+	default:
+		log.Fatalf("invalid CATALOG_RUNTIME_ROLE %q: expected all, api, or worker", role)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -55,14 +67,21 @@ func main() {
 	// 限流策略已在上面的只读检查里载入快照。这里再起一个每分钟的刷新：
 	// 策略只有一处写入入口，但服务是多副本的，保存方只刷新自己的快照，
 	// 其余副本靠 etag 轮询收敛（没有变化就一次索引查询，不反序列化）。
-	go s.RunRateLimitPolicyRefresher(ctx)
+	if runAPI {
+		go s.RunRateLimitPolicyRefresher(ctx)
+	}
 	search, searchErr := catalog.NewOpenSearchClient(os.Getenv("OPENSEARCH_URL"), os.Getenv("OPENSEARCH_USERNAME"), os.Getenv("OPENSEARCH_PASSWORD"))
 	if searchErr != nil {
 		log.Fatalf("OpenSearch configuration invalid: %v", searchErr)
 	}
 	s.OpenSearch = search
-	go s.RunOpenSearchIndexer(ctx)
-	log.Print("OpenSearch entity search enabled; PostgreSQL supplies authoritative content and authorization")
+	if runWorker {
+		go s.RunOpenSearchIndexer(ctx)
+		log.Print("OpenSearch entity search and outbox indexer enabled")
+	} else {
+		go s.RunOpenSearchMonitor(ctx)
+		log.Print("OpenSearch entity search enabled (read/probe mode; indexer runs on worker)")
+	}
 	retention, err := catalog.RetentionPolicyFromEnv(os.Getenv)
 	if err != nil {
 		log.Fatalf("catalog retention configuration invalid: %v", err)
@@ -73,14 +92,18 @@ func main() {
 		if err := catalog.ValidateStorageLifecycleConfig(storageURL, storageSecret); err != nil {
 			log.Fatalf("storage lifecycle configuration invalid: %v", err)
 		}
-	} else {
+	} else if runWorker {
 		log.Print("storage lifecycle consumer disabled: STORAGE_CATALOG_LIFECYCLE_SECRET is not configured")
 	}
 	if storageURL != "" && storageSecret != "" {
 		retention.RequiredConsumers = append(retention.RequiredConsumers, catalog.StorageLifecycleConsumer)
-		go s.RunStorageLifecycle(ctx, storageURL, storageSecret)
+		if runWorker {
+			go s.RunStorageLifecycle(ctx, storageURL, storageSecret)
+		}
 	}
-	go s.RunRetention(ctx, retention)
+	if runWorker {
+		go s.RunRetention(ctx, retention)
+	}
 
 	// 审计写入器（跨服务契约 §3）：一个后台 goroutine + 有界队列，挂在 Store 上供
 	// registerGroup 的中间件使用。关停时排空队列——进程直接退会把队列里最后一批行丢掉。
@@ -151,7 +174,8 @@ func main() {
 		r.Use(cors.New(cors.Config{
 			AllowOrigins:     strings.Split(origins, ","),
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowHeaders:     []string{"Authorization", "Content-Type", "Accept-Language", "X-Request-ID", "Idempotency-Key"},
+			AllowHeaders:     []string{"Authorization", "Content-Type", "Accept-Language", "X-Request-ID", "Idempotency-Key", "If-None-Match"},
+			ExposeHeaders:    []string{"ETag"},
 			AllowCredentials: true,
 		}))
 	}
@@ -172,40 +196,40 @@ func main() {
 		log.Print("AI_ENCRYPTION_KEY is not configured: LLM credential writes and calls are disabled")
 	}
 	aiStore := assistant.NewStore(s.DB, aiKey)
-	go func() {
-		timer := time.NewTicker(time.Minute)
-		defer timer.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-				recoveryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				_, recoveryErr := aiStore.RecoverReservations(recoveryCtx, time.Now().Add(-10*time.Minute))
-				cancel()
-				if recoveryErr != nil && ctx.Err() == nil {
-					log.Print("assistant: abandoned usage reservation recovery failed")
+	aiStore.DSN = dsn
+	aiStore.SetLocalExecution(false)
+	missionEngine := aiStore.EnsureMissionEngine(s)
+	curatorService := curator.New(s, aiStore)
+	if runWorker {
+		go func() {
+			timer := time.NewTicker(time.Minute)
+			defer timer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					recoveryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+					_, recoveryErr := aiStore.RecoverReservations(recoveryCtx, time.Now().Add(-10*time.Minute))
+					cancel()
+					if recoveryErr != nil && ctx.Err() == nil {
+						log.Print("assistant: abandoned usage reservation recovery failed")
+					}
 				}
 			}
-		}
-	}()
-	catalog.RegisterOpenAPIModule("assistant", assistant.AddOpenAPI)
-	catalogHTTP.Register(r)
-	missionEngine := aiStore.EnsureMissionEngine(s)
-	catalogHTTP.RegisterModule(r, assistant.HTTP{Store: aiStore, Catalog: s, Missions: missionEngine}.Register)
-
-	// 持续审核：确定性检测器入队，后台 Agent 逐条核实，只通过工作副本写入；
-	// 低风险白名单由服务端二次比对后再自动合入，其余一律停留在 PR。
-	curatorService := curator.New(s, aiStore)
-	go missionEngine.Run(ctx)
-	go curatorService.Run(ctx)
-	catalog.RegisterOpenAPIModule("curator", curator.AddOpenAPI)
-	catalogHTTP.RegisterModule(r, curator.HTTP{Service: curatorService}.Register)
-
-	// 能力清单是**部署态声明**：子系统拆出去之后，能力由部署配置声明（见 capabilities 包），
-	// 目录不探测上游、不发任何出站请求，清单只有 {id, enabled}。它是唯一的公开只读端点，
-	// 注册在 /api 组之外（匿名可读，不需要身份也不需要审计）。
-	capabilities.New(os.Getenv).Register(r)
+		}()
+		go aiStore.RunBackgroundChats(ctx, s)
+		go missionEngine.Run(ctx)
+		go curatorService.Run(ctx)
+	}
+	if runAPI {
+		catalog.RegisterOpenAPIModule("assistant", assistant.AddOpenAPI)
+		catalog.RegisterOpenAPIModule("curator", curator.AddOpenAPI)
+		catalogHTTP.Register(r)
+		catalogHTTP.RegisterModule(r, assistant.HTTP{Store: aiStore, Catalog: s, Missions: missionEngine}.Register)
+		catalogHTTP.RegisterModule(r, curator.HTTP{Service: curatorService}.Register)
+		capabilities.New(os.Getenv).Register(r)
+	}
 
 	// /healthz 是进程存活；/health 与其它服务同形（status+service），供网关/运维面聚合探针统一读取。
 	// /health 另外带 definitions（见 catalog.DefinitionStatus）：etag 标记当前生效文档，
@@ -214,7 +238,7 @@ func main() {
 	// "重启到好为止"的循环，那正是要根除的 CrashLoop。探针判据：definitions.degraded == true。
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "live"}) })
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "live", "service": "metafusion-catalog", "definitions": s.DefinitionStatus(), "search_ready": s.OpenSearch.Ready(), "search_indexing_delayed": s.OpenSearch.IndexingDelayed()})
+		c.JSON(200, gin.H{"status": "live", "service": "metafusion-catalog", "role": role, "definitions": s.DefinitionStatus(), "search_ready": s.OpenSearch.Ready(), "search_indexing_delayed": s.OpenSearch.IndexingDelayed()})
 	})
 	// 浅探针只探本进程自己的依赖（PG），必须保持毫秒级：编排的 healthcheck 每 10 秒打它一次。
 	// 跨服务依赖另开 deep=1（编排与常规探针都不带这个参数），因此不会把探针拖慢。
@@ -254,7 +278,7 @@ func main() {
 
 	done := make(chan error, 1)
 	go func() {
-		log.Print("MetaFusion catalog core ready (PostgreSQL baseline)")
+		log.Printf("MetaFusion catalog runtime ready (role=%s)", role)
 		done <- server.ListenAndServe()
 	}()
 
@@ -263,7 +287,18 @@ func main() {
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdown); err != nil {
-			log.Fatalf("server shutdown error: %v", err)
+			log.Printf("server shutdown error: %v", err)
+		}
+		drainDone := make(chan struct{})
+		go func() {
+			aiStore.Wait()
+			curatorService.Wait()
+			close(drainDone)
+		}()
+		select {
+		case <-drainDone:
+		case <-time.After(20 * time.Second):
+			log.Print("background worker drain timed out after 20s")
 		}
 	case err := <-done:
 		if errors.Is(err, http.ErrServerClosed) {

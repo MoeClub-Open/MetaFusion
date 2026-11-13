@@ -20,9 +20,9 @@
 
 ## AI 助手与计费边界
 
-`backend/internal/assistant` 与目录共用 backend 进程及数据库连接，独立 `assistant` schema 由目录迁移工具管理。Provider 保存接口地址、协议、加密密钥与供应方预算；Model 独立关联 Provider，保存上游模型名、输入/缓存输入/输出价格、积分费率及上下文限制。平台金额以整数 `microusd` 保存，1 USD = 1,000,000 microusd；每百万 token 单价与用户积分是不同账本。调用预留额度后按上游用量结算，无法确认消耗时按上界保守记为 unknown/usage_estimated；记录保留价格快照、token、金额和失败状态，防止修改当前价格后重算历史账单。
+`backend/internal/assistant` 与目录共用同一镜像及 `mf_catalog` 数据库身份，由 `CATALOG_RUNTIME_ROLE=all|api|worker` 切分运行时职责：主编排中 `backend`（`api`）承载 HTTP 接口、同步对话（`background=false`）与状态查询，`agent-worker`（`worker`）独立承载后台对话（`background=true`）、用户长任务（Mission）、自动维护（Curator）、OpenSearch outbox 索引、存储生命周期投递与过期清理。Provider 保存接口地址、协议、加密密钥与供应方预算；Model 独立关联 Provider，保存上游模型名、输入/缓存输入/输出价格、积分费率及上下文限制。平台金额以整数 `microusd` 保存，1 USD = 1,000,000 microusd；每百万 token 单价与用户积分是不同账本。调用预留额度后按上游用量结算，无法确认消耗时按上界保守记为 unknown/usage_estimated；记录保留价格快照、token、金额和失败状态，防止修改当前价格后重算历史账单。
 
-Model 的 `max_tokens_parameter` 明确选择上游输出上限字段 `max_tokens` 或 `max_completion_tokens`。用户自备 API 分为 `assistant.byo_providers`（接口地址、协议与加密密钥）与 `assistant.byo_models`（所属自备服务商、上游模型名、上下文窗口、最大输出与参数名）；聊天、介绍生成和自动维护的 `model_id` 均可指向平台模型或本人启用的自备模型，不依赖平台预先登记同名模型。`POST /api/assistant/chat` 支持 `background=true` 后台执行：请求确认封存后立即返回 `status=pending`，独立后台上下文最多执行5分钟并在每轮模型与工具完成后 checkpoint 到 `assistant.conversations`（过滤 `system` 消息）及 `assistant.chat_requests`；会话返回 `active_request_id`，用户可通过 `GET /api/assistant/requests` 与 `GET /api/assistant/requests/:id` 查询进度和最终结果。后台可查看封存请求及结果，仅能取消创建超过10分钟的 pending 请求；取消保留既有回执、用量和幂等 ID，不撤销已完成目录修改。backend 每分钟回收超过10分钟的预留，已调用但消耗未知的请求按预留上界保守计费。
+Model 的 `max_tokens_parameter` 明确选择上游输出上限字段 `max_tokens` 或 `max_completion_tokens`。用户自备 API 分为 `assistant.byo_providers`（接口地址、协议与加密密钥）与 `assistant.byo_models`（所属自备服务商、上游模型名、上下文窗口、最大输出与参数名）；聊天、介绍生成和自动维护的 `model_id` 均可指向平台模型或本人启用的自备模型，不依赖平台预先登记同名模型。`POST /api/assistant/chat` 在 `background=true` 时经迁移 044 将执行快照封存至 `assistant.chat_requests.execution_payload` 并发送 `metafusion_agent_wake` 立即返回 `status=pending`；`agent-worker` 以 `FOR UPDATE SKIP LOCKED` 认领（45 秒租约、12 秒续租，每轮模型与写工具执行前复核租约归属并经 `Creds.Lookup` fail-closed 复核封禁与 `TokenVersion`），checkpoint 与落定均在事务内先锁定 `assistant.chat_requests` 校验 `pending` 与租约持有者后再更新会话，落定或取消后清空 `execution_payload` 并广播取消信号。租约过期恢复时，对无结果的工具调用补入 `assistant_interrupted_tool_result_unknown`，禁止自动重放写操作。`agent-worker` 每分钟回收超过 10 分钟的孤儿预留，已调用但消耗未知的请求按预留上界保守计费。
 
 注册赠分在用户首次使用助手账户时唯一记账；实际合入的目录编辑提交按合入时间和奖励生效时间唯一奖励，副本保存、未合入提交及重基操作不计采纳。`byo_providers` 与 `byo_models` 仅由所属用户使用，调用记录保存 `byo_provider_id` 与模型快照并计 token，不扣平台积分；赞助支付未实现，管理员可通过有唯一操作 ID 的积分调整记账。平台与自备服务商密钥均使用 `AI_ENCRYPTION_KEY` 加密，API 仅返回存在标记及掩码提示。未配置加密密钥时保留配置和记录读取，禁止密钥写入与模型调用。
 
@@ -32,7 +32,7 @@ Model 的 `max_tokens_parameter` 明确选择上游输出上限字段 `max_token
 
 `backend/internal/curator` 复用助手运行器和目录副本协议。迁移 041 在既有 settings/findings/runs 上增加执行配置、审核 PR 输入、父子运行关系和消息，不复制第二套任务队列、目录事实或模型账本。原候选、回执、运行和暂停状态均保留；旧运行没有父节点，不虚构主 Agent 历史。读取需要 `assistant.manage`，变更还需要 `catalog.review.manage`。
 
-PostgreSQL advisory 锁 740211 保证只有一个定时调度器。持锁连接每5秒探活，丢失连接即取消运行；每次模型调用、委派及工具执行前重读启停和范围配置。定时器先用数据库查询发现待审核 PR，再按游标轮转已有质量检测器。没有到期待办时不创建主 Agent 运行、不调用模型；空扫描不保留重复运行行。启用范围内积压达到200条后暂停新质量扫描。`interval_seconds` 是两轮检查间隔，`max_runs_per_hour` 限制子任务执行数，`execution.max_children` 限制单个主 Agent 的子 Agent 数。
+PostgreSQL advisory 锁 740211 保证只有一个定时调度器；API 进程通过查询 `pg_locks`（`objid=740211`）汇报跨进程持锁状态，并通过持久化 `curator.settings.sweep_requested_at` 与 `metafusion_agent_wake` 触发立即扫描或中断。持锁连接每5秒探活，丢失连接即取消运行；每次模型调用、委派及工具执行前重读启停和范围配置。定时器先用数据库查询发现待审核 PR，再按游标轮转已有质量检测器。没有到期待办时不创建主 Agent 运行、不调用模型；空扫描不保留重复运行行。启用范围内积压达到200条后暂停新质量扫描。`interval_seconds` 是两轮检查间隔，`max_runs_per_hour` 限制子任务执行数，`execution.max_children` 限制单个主 Agent 的子 Agent 数。
 
 存在待办时调用主 Agent，主 Agent 通过受控 `curator_delegate` 工具按任务类型创建独立上下文的子 Agent，并接收结果继续分工。内置 review（冻结 PR 审核）、research（查证与资料补全）、repair（机械修复）三类。工具只能委派本轮列出的任务，服务器校验类型、范围、小时额度与子 Agent 数；重复委派同一父运行和任务时回放原子运行结果。管理员也可通过 `/api/curator/tasks` 布置任务，任务 UUID 封存原输入。无实体的任务先查询定位对象，仍不得批量灌入未经阅读的数据。
 
@@ -84,7 +84,7 @@ Release.subjects 是发行声明覆盖的作品，Work 的组成关系表达创�
 | `GET /api/catalog/expressions/:id/composition` | 有序 parts/wholes |
 | `GET /api/catalog/releases/:id/editions` | 显式 group/editions；未分组时为 null/[] |
 
-两个投影均在 RepeatableRead 事务内读取，带 `definition_etag` 并裁剪不可见或终态对端，不另建图谱事实表。
+两个投影均在 RepeatableRead 事务内读取，带 `definition_etag` 并裁剪不可见或终态对端，不另建图谱事实表。高频只读端点 `GET /api/catalog/definitions`、`GET /api/catalog/entities/:id` 与 `GET /api/catalog/releases/:id/toc` 均输出 RFC 9110 `ETag` 并处理 `If-None-Match`（`304 Not Modified`）；其中 `definitions` 为公开协商缓存，实体详情与发行目录将当前查看者身份纳入摘要并标记 `private, no-cache` 且合并保留 `Vary` 中的 `Origin, Cookie, Authorization`，隔离私有可见性。
 
 单条收录在工作副本中使用 `action=content` 增加、替换或删除，替换可用 inclusion.position 重排；与其他实体和关系变更一起提交，合入时才产生 Track 修订及 outbox。`track_contents.sources` 是可选的直接来源，不从提交说明自动补造。单条编辑保留其余不可见历史收录；普通编辑者不能用裁剪后的公开视图删改隐藏事实。
 

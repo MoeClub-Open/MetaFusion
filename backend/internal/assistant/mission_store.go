@@ -21,10 +21,16 @@ type MissionPlanItem struct {
 }
 
 type MissionActor struct {
-	ID           string   `json:"id"`
-	Username     string   `json:"username"`
-	Permissions  []string `json:"permissions,omitempty"`
-	TokenVersion int64    `json:"token_version,omitempty"`
+	ID                  string   `json:"id"`
+	Username            string   `json:"username"`
+	Email               string   `json:"email,omitempty"`
+	Groups              []string `json:"groups,omitempty"`
+	Permissions         []string `json:"permissions,omitempty"`
+	FromPAT             bool     `json:"from_pat,omitempty"`
+	CatalogReviewExempt bool     `json:"catalog_review_exempt,omitempty"`
+	IsThirdParty        bool     `json:"is_third_party,omitempty"`
+	TokenName           string   `json:"token_name,omitempty"`
+	TokenVersion        int64    `json:"token_version,omitempty"`
 }
 
 type Mission struct {
@@ -231,10 +237,16 @@ func scanMissionPlannerRun(row scanner) (MissionPlannerRun, error) {
 
 func ActorFromCatalogUser(u catalog.User) MissionActor {
 	return MissionActor{
-		ID:           u.ID,
-		Username:     u.Username,
-		Permissions:  append([]string(nil), u.Permissions...),
-		TokenVersion: u.TokenVersion,
+		ID:                  u.ID,
+		Username:            u.Username,
+		Email:               u.Email,
+		Groups:              append([]string(nil), u.Groups...),
+		Permissions:         append([]string(nil), u.Permissions...),
+		FromPAT:             u.FromPAT,
+		CatalogReviewExempt: u.CatalogReviewExempt,
+		IsThirdParty:        u.IsThirdParty,
+		TokenName:           u.TokenName,
+		TokenVersion:        u.TokenVersion,
 	}
 }
 
@@ -246,11 +258,22 @@ func (a MissionActor) catalogUser(preferPR bool) catalog.User {
 		}
 		perms = append(perms, p)
 	}
+	exempt := a.CatalogReviewExempt
+	if preferPR {
+		exempt = false
+	}
 	return catalog.User{
-		ID:           a.ID,
-		Username:     a.Username,
-		Permissions:  perms,
-		TokenVersion: a.TokenVersion,
+		ID:                  a.ID,
+		Username:            a.Username,
+		Email:               a.Email,
+		Groups:              append([]string(nil), a.Groups...),
+		Permissions:         perms,
+		FromPAT:             a.FromPAT,
+		CatalogReviewExempt: exempt,
+		ForcePullRequest:    preferPR,
+		IsThirdParty:        a.IsThirdParty,
+		TokenName:           a.TokenName,
+		TokenVersion:        a.TokenVersion,
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,17 +19,46 @@ import (
 
 type Store struct {
 	DB            *sql.DB
+	DSN           string
 	EncryptionKey []byte
 	// CompletionClient is an optional code-only test transport. Production leaves
 	// it nil so every connection uses the shared publicweb DNS validation.
 	CompletionClient *http.Client
+	localExecDisabled atomic.Bool
+	chatWake          chan struct{}
+	activeChatsMu     sync.Mutex
+	activeChats       map[string]activeChatRun
+	wakeSubs          wakeListenerState
 	bg               sync.WaitGroup
 	missionsMu       sync.Mutex
 	missions         *MissionEngine
 }
 
 func NewStore(db *sql.DB, key []byte) *Store {
-	return &Store{DB: db, EncryptionKey: append([]byte(nil), key...)}
+	return &Store{
+		DB:            db,
+		EncryptionKey: append([]byte(nil), key...),
+		chatWake:      make(chan struct{}, 1),
+		activeChats:   map[string]activeChatRun{},
+		wakeSubs:      wakeListenerState{subs: map[uint64]func(string){}},
+	}
+}
+func (s *Store) LocalExecution() bool {
+	return s == nil || !s.localExecDisabled.Load()
+}
+func (s *Store) SetLocalExecution(enabled bool) {
+	if s != nil {
+		s.localExecDisabled.Store(!enabled)
+	}
+}
+func (s *Store) signalChatWake() {
+	if s == nil || s.chatWake == nil {
+		return
+	}
+	select {
+	case s.chatWake <- struct{}{}:
+	default:
+	}
 }
 func (s *Store) EnsureMissionEngine(cat *catalog.Store) *MissionEngine {
 	s.missionsMu.Lock()

@@ -66,6 +66,24 @@ services:
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/ready"]
 
+  agent-worker:
+    logging: *default-logging
+    image: metafusion-backend-dev:${METAFUSION_TAG:-local}
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: builder
+    entrypoint: ["go", "run", "./cmd/server"]
+    working_dir: /app
+    environment:
+      - CGO_ENABLED=0
+    volumes:
+      - ../backend:/app:ro
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/ready"]
+
   docs-site:
     logging: *default-logging
     build:
