@@ -85,7 +85,7 @@ export function RevisionSnapshotContent({ snapshot, definitions, kinds = {}, ass
             <span>{t("revisions.snapshotNonofficialAliases")}: </span>{row.nonofficial_aliases.join(" · ")}
           </div>}
           {row.summary && <p className="whitespace-pre-line text-sm leading-relaxed text-text-body">{row.summary}</p>}
-          {row.body && <CatalogArticle content={row.body} lang={lang} idPrefix={`revision-${entity.version || 0}-${lang}`} />}
+          {row.body && <CatalogArticle content={row.body} lang={lang} idPrefix={`revision-${entity.version || 0}-${lang}`} assetContext={assetContext} />}
         </div>
       </details>)}</div>
     </Section>}

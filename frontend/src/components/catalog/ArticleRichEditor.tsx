@@ -1,28 +1,37 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
-import { Bold, Italic, Strikethrough, List, ListOrdered, Quote, Code, Link2, ImagePlus, Table2, Undo2, Redo2, Sigma, Superscript, Minus, Unlink } from "lucide-react";
+import { Bold, Italic, Strikethrough, List, ListOrdered, Quote, Code, Link2, ImagePlus, Table2, Undo2, Redo2, Sigma, Superscript, Minus, Unlink, Upload, Loader2 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { Modal } from "@/components/ui/Modal";
 import { articleRichExtensions, articleRoundTripSafe, articleInsertionURL, articleFootnoteExists } from "@/lib/articleRichText";
+import { catalogInlineAssetPreviewUrl, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
+import { storageErrorKey, uploadCatalogImage } from "@/lib/storage";
 import "katex/dist/katex.min.css";
 
 type Insert = { type: "link" | "image" | "footnote" | "math"; primary: string; secondary: string; block?: boolean; position?: number; existing?: boolean };
 
-export default function ArticleRichEditor({ value, onChange, onUnsupported, locale, labelId }: {
-  value: string; onChange: (markdown: string) => void; onUnsupported: () => void; locale: string; labelId: string;
+export default function ArticleRichEditor({ value, onChange, onUnsupported, locale, labelId, assetContext }: {
+  value: string; onChange: (markdown: string) => void; onUnsupported: () => void; locale: string; labelId: string; assetContext?: CatalogAssetContext;
 }) {
   const { t } = useI18n();
   const latest = useRef({ value, onChange, onUnsupported });
   latest.current = { value, onChange, onUnsupported };
+  const assetContextRef = useRef<CatalogAssetContext | undefined>(assetContext);
+  assetContextRef.current = assetContext;
   const emitted = useRef(value);
   const ready = useRef(false);
   const [insert, setInsert] = useState<Insert | null>(null);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editor = useEditor({
     extensions: articleRichExtensions((latex, position, block) => { setError(""); setInsert({ type: "math", primary: latex, secondary: "", position, block, existing: true }); },
-      (raw) => { const match = /^\[\^([^\]]+)\]:\s*([\s\S]*)$/.exec(raw); if (match) { setError(""); setInsert({ type: "footnote", primary: match[1], secondary: match[2].replace(/\n {4}/g, "\n"), existing: true }); } }),
+      (raw) => { const match = /^\[\^([^\]]+)\]:\s*([\s\S]*)$/.exec(raw); if (match) { setError(""); setInsert({ type: "footnote", primary: match[1], secondary: match[2].replace(/\n {4}/g, "\n"), existing: true }); } },
+      assetContextRef),
     content: value, contentType: "markdown", immediatelyRender: false,
     editorProps: { attributes: { role: "textbox", "aria-multiline": "true", "aria-labelledby": labelId, lang: locale, class: "article-rich-content", spellcheck: "true" } },
     onCreate: ({ editor: current }) => {
@@ -44,6 +53,63 @@ export default function ArticleRichEditor({ value, onChange, onUnsupported, loca
     ready.current = articleRoundTripSafe(value, editor.getMarkdown());
     if (!ready.current) latest.current.onUnsupported();
   }, [editor, value]);
+
+  useEffect(() => () => { uploadAbortRef.current?.abort(); }, []);
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const imgs = editor.view.dom.querySelectorAll("img");
+    imgs.forEach((img) => {
+      const canonical = img.getAttribute("data-canonical-src") || img.getAttribute("src") || "";
+      if (!canonical.startsWith("/api/storage/assets/")) return;
+      const next = catalogInlineAssetPreviewUrl(canonical, assetContext);
+      if (next !== canonical) {
+        img.setAttribute("data-canonical-src", canonical);
+        if (img.getAttribute("src") !== next) img.setAttribute("src", next);
+      } else {
+        img.removeAttribute("data-canonical-src");
+        if (img.getAttribute("src") !== canonical) img.setAttribute("src", canonical);
+      }
+    });
+  }, [editor, assetContext]);
+
+  const closeModal = () => {
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    setUploading(false);
+    setUploadProgress(0);
+    setInsert(null);
+  };
+
+  const onPickImageFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || file.size <= 0) return;
+    uploadAbortRef.current?.abort();
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    setError("");
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const uploaded = await uploadCatalogImage(file, {
+        signal: controller.signal,
+        onProgress: (pct) => { if (!controller.signal.aborted) setUploadProgress(pct); },
+      });
+      if (controller.signal.aborted) return;
+      setInsert((prev) => prev && prev.type === "image" ? { ...prev, primary: uploaded.url } : prev);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      const mapped = storageErrorKey(err);
+      setError(mapped.vars ? t(mapped.key, mapped.vars) : t(mapped.key));
+    } finally {
+      if (uploadAbortRef.current === controller) {
+        uploadAbortRef.current = null;
+        setUploading(false);
+        setUploadProgress(0);
+      }
+    }
+  };
 
   const state = useEditorState({ editor, selector: ({ editor: current }) => ({
     bold: current?.isActive("bold"), italic: current?.isActive("italic"), strike: current?.isActive("strike"),
@@ -137,16 +203,23 @@ export default function ArticleRichEditor({ value, onChange, onUnsupported, loca
         onMouseDown={(event) => event.preventDefault()} onClick={() => editor?.chain().focus()[command]().run()}>{t(`catalog.article.tools.${command}`)}</button>)}
     </div>}
     <EditorContent editor={editor} />
-    <Modal open={!!insert} title={insert ? t(`catalog.article.tools.${insert.type}`) : ""} onClose={() => setInsert(null)} initialFocus="input:not(:disabled),textarea">
+    <Modal open={!!insert} title={insert ? t(`catalog.article.tools.${insert.type}`) : ""} onClose={closeModal} initialFocus="input:not(:disabled),textarea">
       <div className="space-y-3">
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         {insert && <form className="cv-form space-y-4" onSubmit={applyInsert}>
+          {insert.type === "image" && <div className="flex flex-wrap items-center gap-2">
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif" className="hidden" onChange={(ev) => void onPickImageFile(ev)} />
+            <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5">
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              <span>{uploading ? t("editor.pictureUploading", { progress: uploadProgress }) : t("catalog.upload")}</span>
+            </button>
+          </div>}
           <label className="block space-y-1 text-xs text-text-muted"><span>{t(`catalog.article.insert.${insert.type === "link" || insert.type === "image" ? "url" : insert.type === "footnote" ? "identifier" : "formula"}`)}</span>
             <input autoComplete="off" required disabled={insert.type === "footnote" && insert.existing} value={insert.primary} onChange={(event) => setInsert({ ...insert, primary: event.target.value })} className="w-full rounded-lg border border-line bg-surfaceSubtle p-2 text-sm text-text-body" /></label>
           {insert.type !== "math" && <label className="block space-y-1 text-xs text-text-muted"><span>{t(`catalog.article.insert.${insert.type === "footnote" ? "reference" : insert.type === "image" ? "alt" : "label"}`)}</span>
             <textarea value={insert.secondary} required={insert.type === "footnote"} rows={insert.type === "footnote" ? 5 : 2} onChange={(event) => setInsert({ ...insert, secondary: event.target.value })} className="w-full rounded-lg border border-line bg-surfaceSubtle p-2 text-sm text-text-body" /></label>}
           {insert.type === "math" && !insert.existing && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={insert.block} onChange={(event) => setInsert({ ...insert, block: event.target.checked })} />{t("catalog.article.insert.blockMath")}</label>}
-          <div className="flex justify-end gap-2"><button type="button" onClick={() => setInsert(null)}>{t("common.cancel")}</button><button type="submit" className="cv-primary">{t("catalog.article.insert.apply")}</button></div>
+          <div className="flex justify-end gap-2"><button type="button" onClick={closeModal}>{t("common.cancel")}</button><button type="submit" disabled={uploading} className="cv-primary">{t("catalog.article.insert.apply")}</button></div>
         </form>}
       </div>
     </Modal>

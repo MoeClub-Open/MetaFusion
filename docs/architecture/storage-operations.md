@@ -32,15 +32,14 @@
   并带 `ETag`（资产 sha256）与 `If-None-Match` → 304，避免每次加载都整份回源对象存储。
   预签名地址会过期、签名 Host 又是显式配置的 `STORAGE_S3_PUBLIC_ENDPOINT`，
   只能当一次性取件用，不能当稳定地址。
-  自托管封面走这条：一张图一条 `binding_role=cover_image` 的绑定，目录侧在该 `Picture` 上写
-  `asset_id`（同一个资产 UUID）+ `url`（该 `content` 地址）。**顺序与用途都在目录侧**——
-  哪张是封面由 `pictures[]` 的数组顺序决定（首张即封面），`storage.bindings` 没有 position 列，
+  自托管目录图片（实体 `pictures[]` 及多语言正文 `translations[*].body` Markdown 插图）统一走这条：每份引用资产对应一条 `binding_role=cover_image` 绑定，`pictures[]` 显式写 `asset_id` + `url`，正文内联插图使用规范相对路径 `/api/storage/assets/{id}/content`。**封面语义仍在目录侧**——
+  只有 `pictures[0]` 是实体封面，正文插图不参与封面选择，`storage.bindings` 没有 position 列，
   不在这里再造一套顺序；目录侧也不跨服务校验 `asset_id` 是否存在或已被封禁（无跨服务事务），
   取不到对象时前端退化成程序封面而不是画破图。
 
 ## 当前能力边界
 
-- **主站仅目录图片模式（`STORAGE_CATALOG_ASSETS_ONLY=true`）**：主站编排默认开启，仅接收实体 `pictures[]` 位图（JPEG/PNG/WebP/AVIF/GIF），完成落盘时核验文件头魔数（不符回 `415 unsupported_media_type`）；`initiate` 禁带 `target_entity_id`，公开 `bind`/`unbind` 及非 `cover_image` 用途回 `403 catalog_assets_only`。
+- **主站仅目录图片模式（`STORAGE_CATALOG_ASSETS_ONLY=true`）**：主站编排默认开启，仅接收实体 `pictures[]` 与正文内联插图位图（JPEG/PNG/WebP/AVIF/GIF），完成落盘时核验文件头魔数（不符回 `415 unsupported_media_type`）；`initiate` 禁带 `target_entity_id`，公开 `bind`/`unbind` 及非 `cover_image` 用途回 `403 catalog_assets_only`。
 - **独立资源站扩展**：独立资源站设 `STORAGE_CATALOG_ASSETS_ONLY=false`，调用主站 `/api/catalog/entities/{id}` 与 `/identity` 读取元数据及可见性；主站配置 `NEXT_PUBLIC_RESOURCE_STATION_URL` 后开放外跳入口。
 - 媒体分析与预览：存储服务只收原始文件、按权限分发，**不做转码与媒体分析**。
 - BT 种子、分享率治理、零拷贝（对象存储内部拷贝）等仍属未确认需求，不作为前提。
@@ -57,7 +56,7 @@
 - 删除撤 canonical 与历史 aliases 的全部文件绑定；合并迁移全部用途并去重，保留历史别名图片资产。
   TrackContent 只有 Expression 收录引用，替换收录不会撤 Track 或 Expression 文件。
   工作副本保存图片时建立私有引用，不增加公开绑定；合入前按保存者的真实身份验证授权，合入后的生命周期投递才创建 `cover_image`，并撤已移除的封面绑定。其他用途不变，公开绑定接口禁止直接新增或删除 `cover_image`。
-- 存储011迁移保存工作副本的私有资产引用；未决保存暂保留48小时，GC到期后通过目录内部接口精确核对 workspace/entity/asset 的当前值、不可变提交、正式目录快照和搁置记录。确认无引用才删除，目录不可用时保留；已提交历史的原图持续受保护。
+- 存储011迁移保存工作副本的私有资产引用（同时覆盖 `pictures[]` 与正文内联 `/api/storage/assets/{id}/content` 引用）；未决保存暂保留48小时，GC到期后通过目录内部接口精确核对 workspace/entity/asset 的当前值、不可变提交、正式目录快照和搁置记录。确认无引用才删除，目录不可用时保留；已提交历史的原图持续受保护。
   派生/恢复从可读快照转移同一实体/资产的私有保留，逐引用 source_workspace_id 仅由认证目录服务提供，存储仍验证原保留及资产可用性。副本、PR和提交（含正式目录检查点）图片分别经目录上下文鉴权代理读取，PR只包含推送时冻结的图片；代理响应 `private, no-store`，不改变权威图片地址。共享服务密钥与 `STORAGE_URL` 是自托管封面协作的必要配置。
 - 重复 Bind 保留绑定 ID、创建者与创建时间，并刷新内部确认时间；旧快照只撤确认时间不晚于该次目录写入的封面。
   存储迁移 `000008` 将存量确认时间从迁移时刻保守起算；旧实体图片绑定在下一次目录新写入后才按新快照撤销。

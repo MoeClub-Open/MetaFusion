@@ -343,7 +343,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
-		respond(c, gin.H{"etag": v.ETag, "document": v.Document, "updated_at": v.UpdatedAt, "kinds": KindNameRecords(), "relationship_rules": ReadRelationshipRules(v.Document)}, nil)
+		respondCached(c, gin.H{"etag": v.ETag, "document": v.Document, "updated_at": v.UpdatedAt, "kinds": KindNameRecords(), "relationship_rules": ReadRelationshipRules(v.Document)}, nil, true)
 	})
 	// 标签聚合：标签不是独立字典表，而是散落在各实体的 attributes.tags 中。
 	// jsonb_array_elements_text 展开数组就地统计频次，供前端标签云与筛选建议；
@@ -501,7 +501,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.EntityBatch(ctx, in, user(c))
 		respond(c, v, err)
 	})
-	cat.GET("/entities/:id", func(c *gin.Context) { e, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); respond(c, e, err) })
+	cat.GET("/entities/:id", func(c *gin.Context) { e, err := s.Get(c.Request.Context(), c.Param("id"), user(c)); respondCached(c, e, err, false) })
 	cat.GET("/entities/:id/quality", func(c *gin.Context) {
 		v, err := s.EntityQuality(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, v, err)
@@ -518,7 +518,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	})
 	cat.GET("/releases/:id/toc", func(c *gin.Context) {
 		v, err := s.ReleaseTableOfContents(c.Request.Context(), c.Param("id"), user(c))
-		respond(c, v, err)
+		respondCached(c, v, err, false)
 	})
 	cat.GET("/releases/:id/editions", func(c *gin.Context) {
 		v, err := s.ReleaseEditions(c.Request.Context(), c.Param("id"), user(c))

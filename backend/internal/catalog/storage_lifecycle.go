@@ -338,6 +338,9 @@ func (s *Store) currentStorageLifecycle(ctx context.Context, id string) (storage
 				assets[picture.AssetID] = true
 			}
 		}
+		for id := range articleBodyAssetIDs(entity) {
+			assets[id] = true
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()

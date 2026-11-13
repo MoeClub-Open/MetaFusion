@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/authContext";
 import { getAuthLoginUrl } from "@/lib/services";
 import { EntityPicker, FieldInput, ErrorMessage, GroupFieldInput, NamesEditor, WorkspaceEntityPickerProvider } from "./Fields";
 import { EntityCover } from "@/components/common/EntityCover";
-import { catalogPicturePreviewUrl } from "@/lib/catalogAssetPreview";
+import { catalogPicturePreviewUrl, extractDocumentAssetIds, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
 import { LanguagePicker } from "@/components/common/LanguagePicker";
 import { RelationEditorField, type RelationDraft } from "@/components/editor/RelationEditorField";
 import { Select } from "@/components/ui/Select";
@@ -22,14 +22,9 @@ import { effectiveSchemeFields, getKindName, getTermName, matchSchemes, resolveK
 import { COVER_PICTURE_INDEX, MAX_ENTITY_PICTURES, PICTURE_ROLE_VOCABULARY } from "@/lib/cover";
 import {
   assetContentUrl,
-  completeUpload,
-  initiateUpload,
   isAssetUuid,
-  putFile,
-  sha256HexOfFile,
   storageErrorKey,
-  streamUploadUrl,
-  StorageRequestError,
+  uploadCatalogImage,
 } from "@/lib/storage";
 import { canonicalLanguageCode, languageLabel } from "@/lib/languages";
 import { ApiError } from "@/lib/api/client";
@@ -178,6 +173,17 @@ export function EntityEditor({
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  const workspaceAssetContext = useMemo<CatalogAssetContext | undefined>(() => {
+    if (!workspace?.id) return undefined;
+    const allowed = new Set<string>();
+    for (const object of workspace.objects || []) {
+      if (object.target !== "entity") continue;
+      extractDocumentAssetIds(object.document, allowed);
+      extractDocumentAssetIds(object.base, allowed);
+      extractDocumentAssetIds(object.committed, allowed);
+    }
+    return { kind: "workspace", id: workspace.id, allowedAssetIds: allowed };
+  }, [workspace]);
   useEffect(() => {
     let active = true;
     const request = new AbortController();
@@ -479,57 +485,16 @@ export function EntityEditor({
     setUploadingIndex(index);
     setUploadProgress(0);
     try {
-      const sha256 = await sha256HexOfFile(file);
-      if (viewerRef.current !== userId) return;
-      uploadSignal?.throwIfAborted();
-      const init = await initiateUpload({
-        fileName: file.name,
-        fileSize: file.size,
-        sha256Hash: sha256,
-        mimeType: file.type || "application/octet-stream",
-        // 自托管图片用途码：与 storage 预设 cover_image 一致。
-        bindingRole: "cover_image",
-      }, uploadSignal);
-      if (viewerRef.current !== userId) return;
-      if (!init.is_instant_upload) {
-        const report = (loaded: number, total: number) => {
-          if (viewerRef.current === userId && !uploadSignal?.aborted) setUploadProgress(total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0);
-        };
-        const direct = init.direct_upload_url;
-        const presigned = init.presigned_urls && init.presigned_urls[0];
-        const runPut = async (url: string) => {
-          uploadSignal?.throwIfAborted();
-          const upload = putFile(url, file, {
-            onProgress: report,
-            errorCode: (code, status) => new StorageRequestError(code, status),
-          });
-          uploadSignal?.addEventListener("abort", upload.abort, { once: true });
-          try { return await upload.promise; }
-          finally { uploadSignal?.removeEventListener("abort", upload.abort); }
-        };
-        if (direct) {
-          await runPut(new URL(direct, window.location.origin).toString());
-        } else if (presigned) {
-          try {
-            await runPut(presigned);
-          } catch (err) {
-            if (viewerRef.current !== userId) return;
-            // 预签名地址不可达/CORS：回退服务端流式接收（与 EntityResourceFiles 同策略）。
-            const status = err instanceof StorageRequestError ? err.status : -1;
-            if (status !== 0 && status !== 403) throw err;
-            await runPut(streamUploadUrl(init.asset_id));
-          }
-        } else {
-          await runPut(streamUploadUrl(init.asset_id));
-        }
-      }
-      if (viewerRef.current !== userId) return;
-      setUploadProgress(100);
-      await completeUpload(init.asset_id, init.upload_id, undefined, uploadSignal);
+      const uploaded = await uploadCatalogImage(file, {
+        signal: uploadSignal,
+        onProgress: (pct) => {
+          if (viewerRef.current === userId && !uploadSignal?.aborted) setUploadProgress(pct);
+        },
+      });
       if (viewerRef.current !== userId) return;
       patchPicture(index, {
-        asset_id: init.asset_id,
-        url: assetContentUrl(init.asset_id),
+        asset_id: uploaded.assetId,
+        url: uploaded.url,
       });
     } catch (err) {
       if (viewerRef.current !== userId) return;
@@ -916,7 +881,7 @@ export function EntityEditor({
               ariaLabel={t("catalog.addLocale")} variant="field" />
           </div>
           {activeLocale ? <ArticleEditor key={activeLocale} value={activeTr.body || ""} locale={activeLocale}
-            onChange={(body) => setTranslation({ body })} /> : <p className="cv-hint">{t("catalog.translationEmpty")}</p>}
+            assetContext={workspaceAssetContext} onChange={(body) => setTranslation({ body })} /> : <p className="cv-hint">{t("catalog.translationEmpty")}</p>}
         </fieldset>
       </EditorPanel>
       {/* 结构区仅在当前层级有字段或收录入口时显示。 */}
@@ -1393,12 +1358,7 @@ export function EntityEditor({
           const urlKey = String(p.url || "").trim();
           const isDuplicate = !!urlKey && (pictureUrlCounts.get(urlKey) || 0) > 1;
           const assetId = String(p.asset_id || "").trim();
-          const referencedInWorkspace = assetId && workspace.objects.some((object) => {
-            const pictures = object.target === "entity" ? object.document?.pictures : undefined;
-            return Array.isArray(pictures) && pictures.some((picture) => picture && typeof picture === "object"
-              && picture.asset_id === assetId && picture.url === p.url);
-          });
-          const previewUrl = referencedInWorkspace ? catalogPicturePreviewUrl(p, { kind: "workspace", id: workspace.id }) : urlKey;
+          const previewUrl = catalogPicturePreviewUrl(p, workspaceAssetContext) || urlKey;
           const assetInvalid = !isAssetUuid(assetId);
           const caption = local(p.caption, locale, e.original_language, "");
           return (

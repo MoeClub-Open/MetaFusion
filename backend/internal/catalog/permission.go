@@ -55,7 +55,7 @@ func (u User) Can(code string) bool {
 // CanBypassReview follows the account's current group permissions. PAT scopes
 // still govern each operation; account eligibility never grants editing rights.
 func (u User) CanBypassReview() bool {
-	if u.ID == "" || u.IsThirdParty {
+	if u.ID == "" || u.IsThirdParty || u.ForcePullRequest {
 		return false
 	}
 	if u.FromPAT {

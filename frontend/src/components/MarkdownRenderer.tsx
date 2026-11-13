@@ -12,6 +12,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { parseGeneratedBlocks } from "@/lib/generatedBlocks";
 import { GeneratedBlocksView } from "@/components/assistant/GeneratedBlocks";
 import { normalizeLatexDelimiters, remarkArticleHeadings } from "@/lib/markdown";
+import { catalogInlineAssetPreviewUrl, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
 export { normalizeLatexDelimiters } from "@/lib/markdown";
 
 import "katex/dist/katex.min.css";
@@ -26,6 +27,7 @@ interface MarkdownRendererProps {
   headingPrefix?: string;
   footnoteLabel?: string;
   footnoteBackLabel?: string;
+  assetContext?: CatalogAssetContext;
 }
 
 const ENTITY_PATH_RE = /^(?:https?:\/\/(?:www\.)?(?:findverse\.cc|metafusion\.cc))?\/(?:catalog|agent|collection|work|content_unit|content-unit|expression|release|medium|track)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#].*)?$/i;
@@ -138,6 +140,7 @@ export default function MarkdownRenderer({
   headingPrefix,
   footnoteLabel,
   footnoteBackLabel,
+  assetContext,
 }: MarkdownRendererProps) {
   const normalizedContent = useMemo(() => normalizeLatexDelimiters(content), [content]);
 
@@ -238,13 +241,17 @@ export default function MarkdownRenderer({
               </a>
             );
           },
-          img: ({ ...props }) => (
-            <img
-              className="rounded-lg max-h-96 max-w-full object-contain my-2.5 border border-line shadow-xs"
-              loading="lazy"
-              {...props}
-            />
-          ),
+          img: ({ src, ...props }) => {
+            const resolvedSrc = typeof src === "string" ? catalogInlineAssetPreviewUrl(src, assetContext) : src;
+            return (
+              <img
+                className="rounded-lg max-h-96 max-w-full object-contain my-2.5 border border-line shadow-xs"
+                loading="lazy"
+                src={resolvedSrc}
+                {...props}
+              />
+            );
+          },
           del: ({ ...props }) => <del className="line-through text-text-muted" {...props} />,
           code: ({ node, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || "");

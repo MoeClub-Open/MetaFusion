@@ -276,6 +276,71 @@ export function streamUploadUrl(assetId: string): string {
   return `${STORAGE_API_BASE}/upload/stream/${encodeURIComponent(assetId)}`;
 }
 
+export interface UploadCatalogImageOptions {
+  signal?: AbortSignal;
+  onProgress?: (percent: number) => void;
+}
+
+/**
+ * 目录自托管图片直传（实体 pictures[] 与正文内联插图共用）：
+ * sha256 -> initiate(cover_image) -> direct/presigned/stream PUT -> complete。
+ * 编辑副本阶段仅返回规范地址，不提前建公开绑定；保存副本与合入时由目录服务统一留存与绑定。
+ */
+export async function uploadCatalogImage(
+  file: File,
+  options?: UploadCatalogImageOptions
+): Promise<{ assetId: string; url: string }> {
+  const signal = options?.signal;
+  const sha256 = await sha256HexOfFile(file);
+  signal?.throwIfAborted();
+  const init = await initiateUpload({
+    fileName: file.name,
+    fileSize: file.size,
+    sha256Hash: sha256,
+    mimeType: file.type || "application/octet-stream",
+    bindingRole: "cover_image",
+  }, signal);
+  signal?.throwIfAborted();
+  if (!init.is_instant_upload) {
+    const report = (loaded: number, total: number) => {
+      if (!signal?.aborted && options?.onProgress) {
+        options.onProgress(total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0);
+      }
+    };
+    const runPut = async (url: string) => {
+      signal?.throwIfAborted();
+      const upload = putFile(url, file, {
+        onProgress: report,
+        errorCode: (code, status) => new StorageRequestError(code, status),
+      });
+      signal?.addEventListener("abort", upload.abort, { once: true });
+      try { return await upload.promise; }
+      finally { signal?.removeEventListener("abort", upload.abort); }
+    };
+    const direct = init.direct_upload_url;
+    const presigned = init.presigned_urls && init.presigned_urls[0];
+    if (direct) {
+      const base = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "http://localhost";
+      await runPut(new URL(direct, base).toString());
+    } else if (presigned) {
+      try {
+        await runPut(presigned);
+      } catch (err) {
+        const status = err instanceof StorageRequestError ? err.status : -1;
+        if (status !== 0 && status !== 403) throw err;
+        await runPut(streamUploadUrl(init.asset_id));
+      }
+    } else {
+      await runPut(streamUploadUrl(init.asset_id));
+    }
+  }
+  signal?.throwIfAborted();
+  options?.onProgress?.(100);
+  await completeUpload(init.asset_id, init.upload_id, undefined, signal);
+  const assetId = init.asset_id.trim().toLowerCase();
+  return { assetId, url: assetContentUrl(assetId) };
+}
+
 /** 下载结果：presigned 表示已把预签名直链交给浏览器（能否打开取决于对象存储对外地址）。 */
 export interface DownloadResult {
   mode: "presigned" | "stream";

@@ -51,15 +51,15 @@ func (h HTTP) registerStorageAssetReferences(r *gin.Engine) {
 		 SELECT payload,n FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY i(payload,n)
 		), matches AS (SELECT payload,n,
 		 EXISTS(SELECT 1 FROM catalog.workspace_objects o WHERE o.workspace_id=(payload->>'workspace_id')::uuid AND o.target='entity' AND o.target_id=(payload->>'entity_id')::uuid
-		 AND (COALESCE(o.document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))
-		 OR COALESCE(o.base_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))
-		 OR COALESCE(o.head_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))))
-		 OR EXISTS(SELECT 1 FROM catalog.workspace_stashes s CROSS JOIN LATERAL jsonb_array_elements(s.objects) o WHERE s.workspace_id=(payload->>'workspace_id')::uuid AND o->>'target'='entity' AND o->>'id'=payload->>'entity_id' AND (COALESCE(o->'base'->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id')) OR COALESCE(o->'document'->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id')))) AS live,
+		 AND (`+sqlDocumentReferencesAsset("o.document", "payload->>'asset_id'")+`
+		 OR `+sqlDocumentReferencesAsset("o.base_document", "payload->>'asset_id'")+`
+		 OR `+sqlDocumentReferencesAsset("o.head_document", "payload->>'asset_id'")+`))
+		 OR EXISTS(SELECT 1 FROM catalog.workspace_stashes s CROSS JOIN LATERAL jsonb_array_elements(s.objects) o WHERE s.workspace_id=(payload->>'workspace_id')::uuid AND o->>'target'='entity' AND o->>'id'=payload->>'entity_id' AND (`+sqlDocumentReferencesAsset("o->'base'", "payload->>'asset_id'")+` OR `+sqlDocumentReferencesAsset("o->'document'", "payload->>'asset_id'")+`)) AS live,
 		 EXISTS(SELECT 1 FROM catalog.commit_objects o JOIN catalog.workspace_commits co ON co.commit_id=o.commit_id WHERE co.workspace_id=(payload->>'workspace_id')::uuid AND o.target='entity' AND o.target_id=(payload->>'entity_id')::uuid
-		 AND (COALESCE(o.base_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))
-		 OR COALESCE(o.before_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))
-		 OR COALESCE(o.after_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))))
-		 OR EXISTS(SELECT 1 FROM catalog.commit_snapshots o JOIN catalog.workspace_commits wc ON wc.commit_id=o.commit_id WHERE wc.workspace_id=(payload->>'workspace_id')::uuid AND o.target='entity' AND o.target_id=(payload->>'entity_id')::uuid AND (COALESCE(o.document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id')) OR COALESCE(o.base_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id')))) OR EXISTS(SELECT 1 FROM catalog.catalog_record_versions v WHERE v.target='entity' AND v.target_id=(payload->>'entity_id')::uuid AND COALESCE(v.document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',payload->>'asset_id'))) AS committed
+		 AND (`+sqlDocumentReferencesAsset("o.base_document", "payload->>'asset_id'")+`
+		 OR `+sqlDocumentReferencesAsset("o.before_document", "payload->>'asset_id'")+`
+		 OR `+sqlDocumentReferencesAsset("o.after_document", "payload->>'asset_id'")+`))
+		 OR EXISTS(SELECT 1 FROM catalog.commit_snapshots o JOIN catalog.workspace_commits wc ON wc.commit_id=o.commit_id WHERE wc.workspace_id=(payload->>'workspace_id')::uuid AND o.target='entity' AND o.target_id=(payload->>'entity_id')::uuid AND (`+sqlDocumentReferencesAsset("o.document", "payload->>'asset_id'")+` OR `+sqlDocumentReferencesAsset("o.base_document", "payload->>'asset_id'")+`)) OR EXISTS(SELECT 1 FROM catalog.catalog_record_versions v WHERE v.target='entity' AND v.target_id=(payload->>'entity_id')::uuid AND `+sqlDocumentReferencesAsset("v.document", "payload->>'asset_id'")+`) AS committed
 		 FROM input) SELECT payload->>'workspace_id',payload->>'entity_id',payload->>'asset_id',live OR committed,committed FROM matches ORDER BY n`, encode(in.References))
 		if err != nil {
 			respond(c, nil, err)

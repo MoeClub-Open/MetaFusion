@@ -34,6 +34,9 @@ func previewReferenceInDocuments(workspaceID, entityID, assetID string, document
 				return catalogAssetPreviewReference{WorkspaceID: workspaceID, EntityID: entity.ID, AssetID: assetID}, true
 			}
 		}
+		if articleBodyAssetIDs(entity)[assetID] {
+			return catalogAssetPreviewReference{WorkspaceID: workspaceID, EntityID: entity.ID, AssetID: assetID}, true
+		}
 	}
 	return catalogAssetPreviewReference{}, false
 }
@@ -65,7 +68,7 @@ func (s *Store) workspaceAssetPreview(ctx context.Context, workspaceID, assetID 
 		CROSS JOIN LATERAL (VALUES(o.base_document),(o.before_document),(o.after_document)) v(document)
 		WHERE c.workspace_id=$1 AND o.target='entity'
 		UNION ALL SELECT o.target_id,v.document FROM catalog.commit_snapshots o JOIN catalog.workspace_commits c ON c.commit_id=o.commit_id CROSS JOIN LATERAL(VALUES(o.base_document),(o.document)) v(document) WHERE c.workspace_id=$1 AND o.target='entity'
-	) refs WHERE COALESCE(document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',$2::text))
+	) refs WHERE `+sqlDocumentReferencesAsset("document", "$2::text")+`
 	ORDER BY target_id LIMIT 1`, workspaceID, assetID).Scan(&entityID)
 	if err != nil {
 		return catalogAssetPreviewReference{}, err

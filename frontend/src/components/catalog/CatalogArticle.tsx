@@ -4,8 +4,9 @@ import { useEffect, useMemo } from "react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { useI18n } from "@/i18n/I18nProvider";
 import { articleHeadings } from "@/lib/markdown";
+import type { CatalogAssetContext } from "@/lib/catalogAssetPreview";
 
-export function CatalogArticle({ content, idPrefix = "article", lang }: { content: string; idPrefix?: string; lang?: string }) {
+export function CatalogArticle({ content, idPrefix = "article", lang, assetContext }: { content: string; idPrefix?: string; lang?: string; assetContext?: CatalogAssetContext }) {
   const { t } = useI18n();
   const headings = useMemo(() => articleHeadings(content, idPrefix), [content, idPrefix]);
   useEffect(() => {
@@ -35,7 +36,7 @@ export function CatalogArticle({ content, idPrefix = "article", lang }: { conten
           </nav>
         </details>
       )}
-      <MarkdownRenderer content={content} headingPrefix={idPrefix} footnoteLabel={t("catalog.article.references")} footnoteBackLabel={t("catalog.article.backReference")}
+      <MarkdownRenderer content={content} headingPrefix={idPrefix} footnoteLabel={t("catalog.article.references")} footnoteBackLabel={t("catalog.article.backReference")} assetContext={assetContext}
         className="[&_h1]:scroll-mt-28 [&_h2]:scroll-mt-28 [&_h3]:scroll-mt-28 [&_h4]:scroll-mt-28 [&_h5]:scroll-mt-28 [&_h6]:scroll-mt-28 [&_[id]]:scroll-mt-28" />
     </article>
   );

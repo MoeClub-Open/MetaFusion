@@ -29,7 +29,7 @@ func versionAssetSources(ctx context.Context, q queryer, raw json.RawMessage) (c
 func versionAssetHolder(ctx context.Context, q queryer, entity, asset string) (string, error) {
 	var wid string
 	err := q.QueryRowContext(ctx, `SELECT wc.workspace_id::text FROM catalog.commit_snapshots o JOIN catalog.workspace_commits wc ON wc.commit_id=o.commit_id
- WHERE o.target='entity' AND o.target_id=$1 AND (COALESCE(o.document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',$2::text)) OR COALESCE(o.base_document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',$2::text)))
+ WHERE o.target='entity' AND o.target_id=$1 AND (`+sqlDocumentReferencesAsset("o.document", "$2::text")+` OR `+sqlDocumentReferencesAsset("o.base_document", "$2::text")+`)
  ORDER BY wc.workspace_id LIMIT 1`, entity, asset).Scan(&wid)
 	return wid, err
 }
@@ -61,7 +61,7 @@ func (s *Store) catalogVersionAssetPreview(ctx context.Context, id, asset string
 		}
 	}
 	ids, err := collaborationIDs(ctx, tx, `WITH latest AS(SELECT DISTINCT ON(target_id) target_id,document FROM catalog.catalog_record_versions WHERE target='entity' AND sequence<=(SELECT sequence FROM catalog.catalog_versions WHERE commit_id=$1) ORDER BY target_id,sequence DESC)
- SELECT target_id::text FROM latest WHERE COALESCE(document->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',$2::text)) ORDER BY target_id`, id, asset)
+ SELECT target_id::text FROM latest WHERE `+sqlDocumentReferencesAsset("document", "$2::text")+` ORDER BY target_id`, id, asset)
 	if err != nil {
 		return catalogAssetPreviewReference{}, err
 	}

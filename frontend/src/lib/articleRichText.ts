@@ -10,6 +10,7 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { ArticleFootnoteView } from "@/components/catalog/ArticleFootnoteView";
+import { catalogInlineAssetPreviewUrl, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
 
 const FootnoteReference = Node.create({
   name: "articleFootnoteReference", inline: true, group: "inline", atom: true,
@@ -57,9 +58,27 @@ const FootnoteDefinition = Node.create({
 });
 
 export function articleRichExtensions(onMath?: (latex: string, position: number, block: boolean) => void,
-  onFootnote?: (raw: string, position: number) => void): AnyExtension[] {
+  onFootnote?: (raw: string, position: number) => void,
+  assetContextRef?: { current?: CatalogAssetContext }): AnyExtension[] {
+  const ArticleImage = Image.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        src: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.getAttribute("data-canonical-src") || element.getAttribute("src"),
+          renderHTML: (attributes: Record<string, unknown>) => {
+            const raw = typeof attributes.src === "string" ? attributes.src : "";
+            if (!raw) return {};
+            const projected = catalogInlineAssetPreviewUrl(raw, assetContextRef?.current);
+            return projected !== raw ? { src: projected, "data-canonical-src": raw } : { src: raw };
+          },
+        },
+      };
+    },
+  });
   return [StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, defaultProtocol: "https" } }),
-    TableKit.configure({ table: { resizable: false } }), Image.configure({ inline: true, allowBase64: false }),
+    TableKit.configure({ table: { resizable: false } }), ArticleImage.configure({ inline: true, allowBase64: false }),
     FootnoteDefinition.configure({ onEdit: onFootnote }), FootnoteReference,
     Mathematics.configure({ katexOptions: { throwOnError: false, trust: false },
       inlineOptions: { onClick: (node, position) => onMath?.(String(node.attrs.latex), position, false) },

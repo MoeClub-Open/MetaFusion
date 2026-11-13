@@ -108,7 +108,7 @@ export function RevisionVisualDiff({ before, after, oldLabel, newLabel, definiti
     if (key.startsWith("attributes.")) return fieldValue(key.slice(11), value);
     if (key.startsWith("translations.") && key.endsWith(".body") && typeof value === "string") {
       return <div lang={key.split(".")[1]}><MarkdownRenderer content={value} headingPrefix={`${prefix}-${side}-${key.replace(/[^\w-]/g, "-")}`}
-        footnoteLabel={t("catalog.article.references")} footnoteBackLabel={t("catalog.article.backReference")} /></div>;
+        footnoteLabel={t("catalog.article.references")} footnoteBackLabel={t("catalog.article.backReference")} assetContext={assetContext} /></div>;
     }
     if (key === "kind") return kindLabel(String(value));
     if (key === "type" && typeof value === "string") return getRelationName(definitions, value, true, locale);

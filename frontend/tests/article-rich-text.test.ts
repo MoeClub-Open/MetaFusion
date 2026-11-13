@@ -58,3 +58,16 @@ test("insertions accept catalog/storage paths and public links without executabl
   for (const value of ["javascript:alert(1)", "data:image/svg+xml,<svg/>", "//example.org/image.png", "relative-path", "file:///secret"]) assert.equal(articleInsertionURL(value), null);
   assert.equal(articleInsertionURL("mailto:contact@example.org", true), null);
 });
+
+test("private workspace context never leaks projected preview paths into serialized Markdown", () => {
+  const wsID = "11111111-2222-4333-8444-555555555555";
+  const assetID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const canonical = `![内页插图](/api/storage/assets/${assetID}/content)`;
+  const extensions = articleRichExtensions(undefined, undefined, { current: { kind: "workspace", id: wsID } });
+  const markdown = new MarkdownManager({ extensions });
+  const parsed = markdown.parse(canonical);
+  const serialized = markdown.serialize(parsed);
+  assert.ok(articleRoundTripSafe(canonical, serialized));
+  assert.ok(!serialized.includes("/api/catalog/workspaces/"), serialized);
+  assert.ok(serialized.includes(`/api/storage/assets/${assetID}/content`), serialized);
+});

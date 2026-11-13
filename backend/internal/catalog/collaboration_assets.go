@@ -10,8 +10,76 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
+
+const (
+	markdownAltRegex         = `([^\[\]\\]|\\.|\[([^\[\]\\]|\\.)*\])*`
+	markdownAssetPrefixRegex = `(!\[` + markdownAltRegex + `\][[:space:]]*\([[:space:]]*<?|(^|\n)[[:blank:]]*\[[^\]\n]+\]:[[:space:]]*<?)`
+	markdownAssetSuffixRegex = `([[:space:]>)"]|$)`
+)
+
+var (
+	reBodyStorageToken = regexp.MustCompile(markdownAssetPrefixRegex + `(/api/storage/assets/[^[:space:]>)"]*)`)
+)
+
+func sqlDocumentReferencesAsset(docExpr, assetExpr string) string {
+	needle := `'/api/storage/assets/' || (` + assetExpr + `) || '/content'`
+	pattern := `'` + markdownAssetPrefixRegex + `/api/storage/assets/' || (` + assetExpr + `) || '/content` + markdownAssetSuffixRegex + `'`
+	return `(COALESCE(` + docExpr + `->'pictures','[]'::jsonb) @> jsonb_build_array(jsonb_build_object('asset_id',` + assetExpr + `))` +
+		` OR EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(` + docExpr + `->'translations')='object' THEN ` + docExpr + `->'translations' ELSE '{}'::jsonb END) tr` +
+		` WHERE strpos(COALESCE(tr.value->>'body',''), ` + needle + `) > 0 AND COALESCE(tr.value->>'body','') ~ (` + pattern + `)))`
+}
+
+func extractCanonicalBodyAssetID(rawPath string) (string, bool) {
+	id, ok := strings.CutPrefix(rawPath, "/api/storage/assets/")
+	if !ok {
+		return "", false
+	}
+	id, ok = strings.CutSuffix(id, "/content")
+	if !ok || !collaborationID(id) {
+		return "", false
+	}
+	return id, true
+}
+
+func articleBodyAssetIDs(entity Entity) map[string]bool {
+	assets := map[string]bool{}
+	for _, tr := range entity.Translations {
+		if !strings.Contains(tr.Body, "/api/storage/assets/") {
+			continue
+		}
+		for _, m := range reBodyStorageToken.FindAllStringSubmatch(tr.Body, -1) {
+			if len(m) < 2 {
+				continue
+			}
+			if id, ok := extractCanonicalBodyAssetID(m[len(m)-1]); ok {
+				assets[id] = true
+			}
+		}
+	}
+	return assets
+}
+
+func malformedBodyAssetURLs(entity Entity) []string {
+	var bad []string
+	for _, tr := range entity.Translations {
+		if !strings.Contains(tr.Body, "/api/storage/assets/") {
+			continue
+		}
+		for _, m := range reBodyStorageToken.FindAllStringSubmatch(tr.Body, -1) {
+			if len(m) < 2 {
+				continue
+			}
+			token := m[len(m)-1]
+			if _, ok := extractCanonicalBodyAssetID(token); !ok {
+				bad = append(bad, token)
+			}
+		}
+	}
+	return bad
+}
 
 type storageAssetReference struct {
 	SourceWorkspaceID string   `json:"source_workspace_id,omitempty"`
@@ -47,6 +115,7 @@ func relativeWorkspaceAssetURL(raw string) bool {
 // successful save participates in owner authorization, retention and binding.
 func validateWorkspacePictureAssetIDs(after json.RawMessage, baselines ...json.RawMessage) error {
 	legacy := map[string]bool{}
+	legacyBody := map[string]bool{}
 	for _, raw := range baselines {
 		if rawNull(raw) {
 			continue
@@ -60,6 +129,9 @@ func validateWorkspacePictureAssetIDs(after json.RawMessage, baselines ...json.R
 				legacy[p.URL] = true
 			}
 		}
+		for _, u := range malformedBodyAssetURLs(e) {
+			legacyBody[u] = true
+		}
 	}
 	if rawNull(after) {
 		return nil
@@ -70,6 +142,11 @@ func validateWorkspacePictureAssetIDs(after json.RawMessage, baselines ...json.R
 	}
 	for _, p := range e.Pictures {
 		if p.AssetID == "" && relativeWorkspaceAssetURL(p.URL) && !legacy[p.URL] {
+			return fmt.Errorf("invalid_picture_asset")
+		}
+	}
+	for _, u := range malformedBodyAssetURLs(e) {
+		if !legacyBody[u] {
 			return fmt.Errorf("invalid_picture_asset")
 		}
 	}
@@ -97,6 +174,9 @@ func workspaceCoverAssets(raw json.RawMessage) (Entity, map[string]bool, error) 
 			return entity, nil, fmt.Errorf("picture_asset_url_mismatch")
 		}
 		assets[picture.AssetID] = true
+	}
+	for id := range articleBodyAssetIDs(entity) {
+		assets[id] = true
 	}
 	return entity, assets, nil
 }
