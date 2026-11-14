@@ -416,6 +416,15 @@ func Defaults() Definitions {
 		{"doujin_album", names4("同人专辑", "同人專輯", "同人アルバム", "Doujin album"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration", "duration_source"}}),
 			"edition_date", nil, nil},
+		{"ep", names4("迷你专辑 / EP", "迷你專輯 / EP", "ミニアルバム・EP", "Extended play (EP)"), tplSections(
+			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration", "duration_source"}}),
+			"edition_date", nil, nil},
+		{"soundtrack", names4("原声集", "原聲集", "サウンドトラック", "Original soundtrack"), tplSections(
+			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration", "duration_source"}}),
+			"edition_date", nil, nil},
+		{"compilation_album", names4("精选集 / 合辑", "精選輯 / 合輯", "ベスト・コンピレーション", "Compilation album"), tplSections(
+			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration", "duration_source"}}),
+			"edition_date", nil, nil},
 		// --- 动画 ---
 		{"tv_anime", names4("TV动画", "TV動畫", "TVアニメ", "TV animation"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "episodes", "platform"}},
@@ -427,6 +436,10 @@ func Defaults() Definitions {
 		{"ova", names4("OVA", "OVA（原創動畫錄影帶）", "OVA（オリジナルビデオアニメ）", "OVA"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "episodes", "platform"}}),
 			"edition_date", []string{"episodes"}, nil},
+		{"ona", names4("Web动画", "網路動畫", "Webアニメ", "Web animation (ONA)"), tplSections(
+			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "episodes", "platform"}},
+			Section{Names: names4("放送信息", "放送資訊", "放送情報", "Broadcast"), Fields: []string{"broadcast_start", "broadcast_weekday", "broadcast_end", "air_network"}}),
+			"broadcast_start", []string{"air_network", "episodes"}, []string{"broadcast_weekday"}},
 		// --- 漫画 ---
 		{"manga_volume", names4("漫画单行本", "漫畫單行本", "単行本", "Manga volume"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "volume_count", "magazine"}}),
@@ -466,6 +479,9 @@ func Defaults() Definitions {
 		{"photobook", names4("写真集", "寫真集", "写真集", "Photobook"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "volume_count"}}),
 			"edition_date", []string{"volume_count"}, nil},
+		{"artbook", names4("画集 / 设定集", "畫集 / 設定集", "画集・設定資料集", "Artbook / setting book"), tplSections(
+			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "volume_count"}}),
+			"edition_date", []string{"volume_count"}, nil},
 		// --- 影视 ---
 		{"film", names4("电影", "電影", "映画", "Film"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration", "platform"}}),
@@ -474,6 +490,9 @@ func Defaults() Definitions {
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "episodes", "platform"}},
 			Section{Names: names4("放送信息", "放送資訊", "放送情報", "Broadcast"), Fields: []string{"broadcast_start", "broadcast_weekday", "broadcast_end", "air_network"}}),
 			"broadcast_start", []string{"air_network", "episodes"}, []string{"broadcast_weekday"}},
+		{"music_video", names4("音乐视频", "音樂影片", "ミュージックビデオ", "Music video"), tplSections(
+			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration", "platform"}}),
+			"edition_date", []string{"platform"}, nil},
 		// --- 个人创作 ---
 		{"personal", names4("个人创作", "個人創作", "個人制作", "Personal creation"), tplSections(
 			Section{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"language", "duration"}}),
@@ -487,7 +506,7 @@ func Defaults() Definitions {
 	// 不写“小说/音乐”等业务分类，也不需要预先选择字段方案。
 	applicableByKind := map[string][]string{
 		"agent":      {},
-		"collection": {"language"},
+		"collection": {"language", "begin_date", "end_date"},
 		"work": {"language", "edition_date", "copyright", "imdb", "infobox", "events",
 			"duration", "duration_source", "author", "volume_count", "magazine", "begin_date",
 			"end_date", "episodes", "platform", "broadcast_start", "broadcast_weekday",
@@ -540,6 +559,7 @@ func Defaults() Definitions {
 	//   peer      对端是同层级对象（作品↔作品、发行↔发行…），不产生署名主体
 	relSlot := map[string]string{
 		"created_by":        "person",
+		"produced_by":       "person",
 		"performed_by":      "person",
 		"photographed_by":   "person",
 		"modeled_by":        "person",
@@ -575,15 +595,16 @@ func Defaults() Definitions {
 		d.Relations[code] = RelationDefinition{Names: n, ReverseNames: rev, SourceKinds: src, TargetKinds: tgt, Fields: []string{"role", "credit_role", "character_rank", "context", "character", "language", "begin_date", "end_date", "scope"}, ParticipantSlot: relSlot[code], CountsAsCredit: group == "credits", Group: group, GroupNames: groupNames[group], Acyclic: acyclic, Enabled: true}
 	}
 	for _, x := range []relSeed{
-		{"created_by", names4("创作者", "創作者", "作者", "Created by"), names4("创作了", "創作了", "制作した", "Creator of")},
+		{"created_by", names4("原作 / 作者", "原作 / 作者", "原作・著者", "Created by"), names4("原作 / 著作", "原作 / 著作", "原作・著作", "Creator of")},
+		{"produced_by", names4("制作 / 出品", "製作 / 出品", "制作・プロデュース", "Produced by"), names4("制作了", "製作了", "制作・プロデュースした", "Producer of")},
 		{"performed_by", names4("表演者", "表演者", "歌唱・演奏", "Performed by"), names4("表演了", "表演了", "歌唱・演奏した", "Performer of")},
 		{"photographed_by", names4("摄影者", "攝影者", "撮影", "Photographed by"), names4("拍摄了", "拍攝了", "撮影した", "Photographer of")},
 		{"modeled_by", names4("出镜者", "出鏡者", "モデル", "Modeled by"), names4("出镜于", "出鏡於", "出演した", "Model in")},
 		{"developed_by", names4("开发者", "開發者", "開発", "Developed by"), names4("开发了", "開發了", "開発した", "Developer of")},
-		{"voiced_by", names4("配音者", "配音者", "声優", "Voiced by"), names4("配音于", "配音於", "声を担当した", "Voice actor in")},
 	} {
 		addRel(x.code, x.names, x.rev, []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
 	}
+	addRel("voiced_by", names4("配音者", "配音者", "声優", "Voiced by"), names4("配音于", "配音於", "声を担当した", "Voice actor in"), []string{"work", "content_unit", "expression", "release", "agent"}, []string{"agent"}, "credits", false)
 	// 分媒介署名关系：音乐（作曲/作词/编曲）、影视与动画（导演/编剧）、书籍（插画/朗读）。
 	// 均为 agent 目标、group=credits，后台 DefinitionsEditor 可继续增删改。
 	for _, x := range []struct {
@@ -594,11 +615,11 @@ func Defaults() Definitions {
 	}{
 		{"composed_by", names4("作曲者", "作曲者", "作曲", "Composed by"), names4("作曲了", "作曲了", "作曲した", "Composer of"), []string{"work", "content_unit", "expression"}},
 		{"lyricist_of", names4("作词者", "作詞者", "作詞", "Lyricist of"), names4("作词了", "作詞了", "作詞した", "Lyricist for"), []string{"work", "content_unit", "expression"}},
-		{"arranged_by", names4("编曲者", "編曲者", "編曲", "Arranged by"), names4("编曲了", "編曲了", "編曲した", "Arranger of"), []string{"work", "expression"}},
-		{"directed_by", names4("导演", "導演", "監督", "Directed by"), names4("执导了", "執導了", "監督した", "Director of"), []string{"work", "content_unit"}},
-		{"written_by", names4("编剧", "編劇", "脚本", "Written by"), names4("编写了", "編寫了", "脚本を書いた", "Writer of"), []string{"work", "content_unit"}},
-		{"illustrated_by", names4("插画者", "插畫者", "イラスト", "Illustrated by"), names4("绘制了", "繪製了", "イラストを描いた", "Illustrator of"), []string{"work", "content_unit", "release"}},
-		{"narrated_by", names4("朗读 / 旁白", "朗讀 / 旁白", "ナレーション", "Narrated by"), names4("朗读了", "朗讀了", "ナレーションを担当した", "Narrator of"), []string{"expression", "release"}},
+		{"arranged_by", names4("编曲者", "編曲者", "編曲", "Arranged by"), names4("编曲了", "編曲了", "編曲した", "Arranger of"), []string{"work", "content_unit", "expression"}},
+		{"directed_by", names4("导演", "導演", "監督", "Directed by"), names4("执导了", "執導了", "監督した", "Director of"), []string{"work", "content_unit", "expression"}},
+		{"written_by", names4("编剧", "編劇", "脚本", "Written by"), names4("编写了", "編寫了", "脚本を書いた", "Writer of"), []string{"work", "content_unit", "expression"}},
+		{"illustrated_by", names4("插画者", "插畫者", "イラスト", "Illustrated by"), names4("绘制了", "繪製了", "イラストを描いた", "Illustrator of"), []string{"work", "content_unit", "expression", "release"}},
+		{"narrated_by", names4("朗读 / 旁白", "朗讀 / 旁白", "ナレーション", "Narrated by"), names4("朗读了", "朗讀了", "ナレーションを担当した", "Narrator of"), []string{"work", "content_unit", "expression", "release"}},
 	} {
 		addRel(x.code, x.names, x.rev, x.src, []string{"agent"}, "credits", false)
 	}
@@ -636,8 +657,8 @@ func Defaults() Definitions {
 	// 番位走 character_rank 词表（main/supporting/guest/ensemble/narrator/cameo）：可检索、可多语言。
 	// 不再借 credit_role —— 那是"来源里的职位原文"，混用会导致番位既不可查也不能翻译。
 	addRel("character_in", names4("角色登场", "角色登場", "登場", "Character in"), names4("登场角色", "登場角色", "登場キャラクター", "Characters in"), []string{"agent"}, []string{"work", "collection"}, "credits", false)
-	// 通用署名兜底：外部来源的职位文本没有贴切既有关系码时（分镜、企画、制作、
-	// 制片人等），用它承载"谁参与了这部作品"，职位原文落在 credit_role。
+	// 通用署名兜底：外部来源的职位文本没有贴切既有关系码时（音响监督、美术监督、
+	// 色彩设计、剪辑、分镜、单集演出、录音/混音等），用它承载"谁参与了这部作品"，职位原文落在 credit_role。
 	// 有精确关系码时不使用，避免同一署名重复两条边。
 	addRel("credit_for", names4("参与主体", "參與主體", "参加主体", "Contributors"), names4("参与记录", "參與記錄", "参加記録", "Contributions"), []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
 	// 译者关系：若默认信用关系里缺译者（translated_by 或等价）则补一个，
@@ -651,7 +672,7 @@ func Defaults() Definitions {
 			}
 		}
 		if !hasTranslator {
-			addRel("translated_by", names4("译者", "譯者", "翻訳者", "Translated by"), names4("翻译了", "翻譯了", "翻訳した", "Translator of"), []string{"work", "content_unit", "expression"}, []string{"agent"}, "credits", false)
+			addRel("translated_by", names4("译者", "譯者", "翻訳者", "Translated by"), names4("翻译了", "翻譯了", "翻訳した", "Translator of"), []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
 		}
 	}
 	// 场景示例默认关闭，管理员可在 GUI 启用；medium_formats 防止影响 CD、纸书与音视频定位。
@@ -688,6 +709,17 @@ func Defaults() Definitions {
 		forms.Terms[code] = Term{Names: template.Names, Enabled: true}
 		match := []TemplateCondition{{Field: "creation_form", Operator: "equals", Value: code}}
 		template.Match, template.Priority = &match, 10
+		if !contains(template.BadgeFields, "creation_form") {
+			template.BadgeFields = append([]string{"creation_form"}, template.BadgeFields...)
+		}
+		if !contains(template.FacetFields, "creation_form") {
+			template.FacetFields = append([]string{"creation_form"}, template.FacetFields...)
+		}
+		if len(template.Sections) > 0 && !contains(template.Sections[0].Fields, "creation_form") {
+			sec := template.Sections[0]
+			sec.Fields = append([]string{"creation_form"}, sec.Fields...)
+			template.Sections = append([]Section{sec}, template.Sections[1:]...)
+		}
 		d.Templates[code] = template
 	}
 	song := d.Templates["single"]
@@ -697,7 +729,7 @@ func Defaults() Definitions {
 	d.Templates["song"] = song
 	forms.Terms["song"] = Term{Names: song.Names, Enabled: true}
 	d.Vocabularies["creation_form"] = forms
-	d.Fields["creation_form"] = Field{Names: forms.Names, Type: "enum", Vocabulary: "creation_form", ApplicableKinds: []string{"work"}, Enabled: true, Searchable: true}
+	d.Fields["creation_form"] = Field{Names: forms.Names, Type: "enum", Vocabulary: "creation_form", ApplicableKinds: []string{"work"}, Enabled: true, Searchable: true, Comparable: true}
 	emptyMatch := []TemplateCondition{}
 	generic := d.Templates["generic"]
 	generic.Match = &emptyMatch
@@ -706,6 +738,7 @@ func Defaults() Definitions {
 	releaseTemplate.Match = &emptyMatch
 	d.Templates["release"] = releaseTemplate
 	addAgentDefinitions(&d)
+	addCollectionAndStructuralDefinitions(&d)
 	addMusicTagDefinitions(&d)
 	return d
 }

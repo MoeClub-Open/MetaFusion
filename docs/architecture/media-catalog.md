@@ -12,7 +12,7 @@
 | 结构关系 | 表达归属、目录位置或有序收录 | 章节属于作品、轨位收录表达 |
 | 语义关系 | 两端有独立身份，连接不改变所有权 | 配乐用于游戏、改编自、演员出演角色 |
 
-先查外部 ID、合并重定向、同作品下的稳定标识和来源。题名相近只生成待核对候选，不能自动合并。译名、平台、介质、销售地区或修订日期本身不产生新 Work；实质内容变化才考虑新 Expression，公开产品或发行条件变化才考虑新 Release。只有可独立编目的组成创作才建另一 Work，不为填满层级造空节点。
+先查外部 ID、合并重定向、同作品下的稳定标识、核心归一化题名（`title_core`）及近似题名候选（`include_approximate=true` 返回 `title_similar`）。Agent 新建实体前必须执行近似候选查重并核对 `assessment` 与候选详情，题名相近只生成待核对候选，不能自动合并。译名、平台、介质、销售地区或修订日期本身不产生新 Work；实质内容变化才考虑新 Expression，公开产品或发行条件变化才考虑新 Release。只有可独立编目的组成创作才建另一 Work，不为填满层级造空节点。
 
 来源 URL 也不是产品的唯一身份：一个商品页可同时描述多个版本。以 [Bushiroad Music 商品目录](https://bushiroad-music.com/musics/) 和 [Bangumi 条目](https://bgm.tv/subject/633836) 为例，应分别核对商品标识、载体、实际内容与逐集署名；公告中的未来发行可以建档，但不能记为已经上市。
 
@@ -33,9 +33,9 @@ flowchart LR
 
 | 身份 | 示例与边界 |
 | --- | --- |
-| Agent | 艺人、作者、角色各有身份；同一人的作曲、演唱或声优职位是关系 |
-| Collection | 跨媒体企划、系列；企划不等于专辑，包装盒不必造作品 |
-| Work | 歌曲、独立编排的专辑、一季动画、小说；歌曲与主打它的单曲商品分开 |
+| Agent | 艺人、作者、机构、角色各有身份（`agent_type`：person/group/organization/character）；乐队与成员用 `member_of` 关联，原作归 `created_by`，动画制作公司/出品/社团/厂商归 `produced_by`，无专用码的幕后职责才用 `credit_for` |
+| Collection | 跨媒体企划、作品系列、选集、展会特辑（`collection_type`：franchise/series/anthology/event_catalog），经 `includes` 聚合各季动画、游戏、漫画与音乐作品 |
+| Work | 歌曲（`creation_form=song`）、单曲/EP/专辑/原声集（`single`/`ep`/`original_album`/`soundtrack`）、一季动画、小说；详情页标题栏紧邻实体 `kind` 并列展示主分类徽章 |
 | ContentUnit | 稳定章节、分集或路线；独立歌曲不复制成专辑章节 |
 | Expression | 某次录音、译文、剪辑；换介质或编码不自动产生新表达 |
 | Release | 通常盘、限定盘、地区产品、正式数字发布 |

@@ -5,7 +5,7 @@ import { entityOperation, normalizeEditorEntity } from "../src/lib/catalogCommit
 import { emptyEntity } from "../src/components/catalog/api";
 import { matchesEntityQuery } from "../src/lib/entitySearch";
 import { shelfExploreParam } from "../src/lib/homeSections";
-import { getEntityTagLabels, type DynamicDefinitions } from "../src/lib/definitions";
+import { entityBadges, getEntityTagLabels, type DynamicDefinitions } from "../src/lib/definitions";
 import { inferCoverRatio } from "../src/lib/cover";
 
 test("pickRecordTitle prefers official translation then base title before nonofficial translation", () => {
@@ -115,11 +115,15 @@ test("getEntityTagLabels prepends controlled primary classification and deduplic
     fields: {
       creation_form: { names: { "zh-CN": "创作形态" }, type: "enum", vocabulary: "creation_form", enabled: true },
       agent_type: { names: { "zh-CN": "主体类型" }, type: "enum", vocabulary: "agent_type", enabled: true },
+      collection_type: { names: { "zh-CN": "集合类型" }, type: "enum", vocabulary: "collection_type", enabled: true },
+      edition_date: { names: { "zh-CN": "发行日期" }, type: "date", enabled: true },
+      episodes: { names: { "zh-CN": "话数" }, type: "number", enabled: true },
     },
     vocabularies: {
       creation_form: {
         names: { "zh-CN": "创作形态" },
         terms: {
+          song: { names: { "zh-CN": "歌曲", "en-US": "Song" }, enabled: true },
           original_album: { names: { "zh-CN": "原创专辑", "en-US": "Original album" }, enabled: true },
           light_novel: { names: { "zh-CN": "轻小说", "en-US": "Light novel" }, enabled: true },
         },
@@ -128,6 +132,12 @@ test("getEntityTagLabels prepends controlled primary classification and deduplic
         names: { "zh-CN": "主体类型" },
         terms: {
           group: { names: { "zh-CN": "团体 / 组合", "en-US": "Group / unit" }, enabled: true },
+        },
+      },
+      collection_type: {
+        names: { "zh-CN": "集合类型" },
+        terms: {
+          franchise: { names: { "zh-CN": "跨媒体企划", "en-US": "Media franchise" }, enabled: true },
         },
       },
       tags: {
@@ -139,7 +149,17 @@ test("getEntityTagLabels prepends controlled primary classification and deduplic
       },
     },
     relations: {},
-    templates: {},
+    templates: {
+      song: {
+        names: { "zh-CN": "歌曲" },
+        kinds: ["work"],
+        match: [{ field: "creation_form", operator: "equals", value: "song" }],
+        priority: 10,
+        primary_date_field: "edition_date",
+        badge_fields: ["creation_form", "episodes"],
+        sections: [],
+      },
+    },
     schemes: {},
     structure: {},
   };
@@ -155,6 +175,26 @@ test("getEntityTagLabels prepends controlled primary classification and deduplic
   assert.deepEqual(
     getEntityTagLabels(defs, "agent", { agent_type: "group", tags: ["rock"] }, "en-US"),
     ["Group / unit", "rock"],
+  );
+  assert.deepEqual(
+    getEntityTagLabels(defs, "collection", { collection_type: "franchise" }, "zh-CN"),
+    ["跨媒体企划"],
+  );
+  assert.deepEqual(
+    entityBadges(
+      { kind: "work", attributes: { creation_form: "song", edition_date: "2021-08-18", episodes: 1 } },
+      defs,
+      "zh-CN",
+    ),
+    [
+      { kind: "subtype", text: "歌曲" },
+      { kind: "date", text: "2021-08-18" },
+      { kind: "field", text: "1" },
+    ],
+  );
+  assert.deepEqual(
+    entityBadges({ kind: "collection", attributes: { collection_type: "franchise" } }, defs, "zh-CN"),
+    [{ kind: "subtype", text: "跨媒体企划" }],
   );
 });
 

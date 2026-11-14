@@ -415,13 +415,13 @@ func dmmMediumFormat(channel string) string {
 func dmmArtistRelation(channel string) (entityType, role, relationType string) {
 	switch channel {
 	case "dc/doujin", "mono/doujin":
-		return "organization", "サークル", "created_by"
+		return "organization", "サークル", "produced_by"
 	case "dlsoft", "mono/game":
-		return "organization", "メーカー", "developed_by"
+		return "organization", "メーカー", "produced_by"
 	case "digital/anim", "mono/anime", "digital/vug2":
-		return "organization", "メーカー", "created_by"
+		return "organization", "メーカー", "produced_by"
 	case "digital/comic", "digital/book":
-		return "organization", "出版社", "created_by"
+		return "organization", "出版社", "produced_by"
 	default:
 		return "organization", "発売元", "credit_for"
 	}
@@ -448,7 +448,7 @@ func dmmArtistPreviews(ref dmmRef, ld dmmJSONLD) []ExternalSourceArtistPreview {
 		})
 	}
 	add(ld.Brand.Name, entityType, role, relation)
-	add(ld.Author.Name, "person", "著者", "credit_for")
+	add(ld.Author.Name, "person", "著者", "created_by")
 	return out
 }
 

@@ -145,6 +145,9 @@ func OpenAPI() map[string]any {
 	if ctxProp, ok := identityProps["context"].(map[string]any); ok {
 		ctxProp["description"] = "Optional ranking context (creator/performer/label agent UUIDs, catalog_number values). Adjusts confidence and recommended_action only — never filters candidates out. Same-name different-artist entities remain in the result."
 	}
+	if approxProp, ok := identityProps["include_approximate"].(map[string]any); ok {
+		approxProp["description"] = "When true, also recalls substring and pg_trgm approximate title candidates (assessed with title_similar and recommended_action=review) in addition to exact, alias, and core-normalized title matches."
+	}
 	if matchSchema, ok := schemas["IdentityCandidateMatch"].(map[string]any); ok {
 		if props, ok := matchSchema["properties"].(map[string]any); ok {
 			if a, ok := props["assessment"].(map[string]any); ok {

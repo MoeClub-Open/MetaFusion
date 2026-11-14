@@ -11,7 +11,7 @@ func TestDefaultsCreditRelations(t *testing.T) {
 	if err := d.Validate(); err != nil {
 		t.Fatalf("defaults invalid: %v", err)
 	}
-	for _, code := range []string{"composed_by", "lyricist_of", "arranged_by", "directed_by", "written_by", "illustrated_by", "narrated_by"} {
+	for _, code := range []string{"produced_by", "composed_by", "lyricist_of", "arranged_by", "directed_by", "written_by", "illustrated_by", "narrated_by"} {
 		r, ok := d.Relations[code]
 		if !ok {
 			t.Errorf("missing credit relation %s", code)
@@ -29,21 +29,34 @@ func TestDefaultsCreditRelations(t *testing.T) {
 // stringScalarMap 若只认 float64 会静默丢弃外部 ID。
 func TestBangumiCreditRelationMapping(t *testing.T) {
 	cases := map[string]string{
-		"导演":    "directed_by",
-		"CG 导演": "directed_by",
-		"脚本":    "written_by",
-		"系列构成":  "written_by",
-		"插入歌作词": "lyricist_of",
-		"插入歌作曲": "composed_by",
-		"編曲":    "arranged_by",
-		"人物设定":  "illustrated_by",
-		"摄影监督":  "photographed_by",
-		"旁白":    "narrated_by",
-		"配音":    "voiced_by",
+		"原作":        "created_by",
+		"动画制作":      "produced_by",
+		"アニメーション制作": "produced_by",
+		"製片人":       "produced_by",
+		"制作":        "produced_by",
+		"导演":        "directed_by",
+		"CG 导演":     "directed_by",
+		"脚本":        "written_by",
+		"系列构成":      "written_by",
+		"插入歌作词":     "lyricist_of",
+		"插入歌作曲":     "composed_by",
+		"編曲":        "arranged_by",
+		"人物设定":      "illustrated_by",
+		"人物原案":      "illustrated_by",
+		"主题歌演出":     "performed_by",
+		"插入歌演出":     "performed_by",
+		"摄影监督":      "photographed_by",
+		"旁白":        "narrated_by",
+		"配音":        "voiced_by",
 		// 无对应语义关系：保持为空，不虚构
-		"製片人": "",
-		"企画":  "",
-		"制作":  "",
+		"企画":   "",
+		"演出":   "",
+		"音响监督": "",
+		"CG 导演助理": "",
+		"助理制片人": "",
+		"摄影助理": "",
+		"攝影監督補佐": "",
+		"作画監督補佐": "",
 	}
 	for in, want := range cases {
 		if got := bangumiCreditRelation(in); got != want {

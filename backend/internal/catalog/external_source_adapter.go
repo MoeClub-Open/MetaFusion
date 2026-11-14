@@ -617,13 +617,22 @@ type bangumiSubjectActor struct {
 func bangumiCreditRelation(relation string) string {
 	r := strings.TrimSpace(relation)
 	switch {
+	// 助理/补佐等辅助职位一律走兜底 credit_for 并保留原始职位文本，避免被下方主职位词根抢先命中。
+	case containsAny(r, "助理", "補佐", "アシスタント", "辅助", "輔助"):
+		return ""
 	// 摄影/作画等复合职位要先于"监督/导演"判断，否则"摄影监督"会被
 	// 更宽的"监督"规则抢先命中成 directed_by。
 	case containsAny(r, "摄影", "攝影"):
 		return "photographed_by"
-	case containsAny(r, "作画", "作畫", "人物原案", "人物设定", "角色设计", "キャラクターデザイン", "插画", "插畫"):
+	case containsAny(r, "音响监督", "音響監督", "美术监督", "美術監督", "音响制作", "音響制作"):
+		return ""
+	case containsAny(r, "作画", "作畫", "人物原案", "人物设定", "角色设计", "キャラクターデザイン", "插画", "插畫", "原画", "原畫"):
 		return "illustrated_by"
-	case containsAny(r, "导演", "監督", "监督", "演出"):
+	case containsAny(r, "原作", "原案", "作者", "著者"):
+		return "created_by"
+	case containsAny(r, "主题歌演出", "插入歌演出", "挿入歌演出", "歌唱", "演唱", "演奏", "艺术家"):
+		return "performed_by"
+	case containsAny(r, "导演", "監督", "监督"):
 		return "directed_by"
 	case containsAny(r, "脚本", "编剧", "系列构成", "劇本"):
 		return "written_by"
@@ -633,10 +642,16 @@ func bangumiCreditRelation(relation string) string {
 		return "arranged_by"
 	case containsAny(r, "作曲"):
 		return "composed_by"
+	case containsAny(r, "开发", "開発"):
+		return "developed_by"
+	case containsAny(r, "翻译", "翻訳", "译者", "譯者"):
+		return "translated_by"
 	case containsAny(r, "旁白", "ナレーション", "朗读", "朗読"):
 		return "narrated_by"
 	case containsAny(r, "配音", "声优", "声優", "CV"):
 		return "voiced_by"
+	case containsAny(r, "动画制作", "アニメーション制作", "制作", "製作", "出品", "制片人", "製片人", "プロデューサー"):
+		return "produced_by"
 	}
 	return ""
 }

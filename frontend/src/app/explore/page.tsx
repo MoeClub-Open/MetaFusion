@@ -457,7 +457,13 @@ function ExploreInner() {
   };
 
   const activeFacetFieldCode =
-    currentKind === "work" ? "creation_form" : currentKind === "agent" ? "agent_type" : "";
+    currentKind === "work"
+      ? "creation_form"
+      : currentKind === "agent"
+        ? "agent_type"
+        : currentKind === "collection"
+          ? "collection_type"
+          : "";
   const activeFacetField = activeFacetFieldCode ? definitions?.fields?.[activeFacetFieldCode] : undefined;
   const activeFacetVocabCode = activeFacetField?.vocabulary || activeFacetFieldCode;
   const activeFacetTerms = useMemo(() => {

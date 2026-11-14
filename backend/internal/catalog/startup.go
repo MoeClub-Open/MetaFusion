@@ -102,8 +102,8 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 44 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 44 required (run mf-migrate up)")
+	if contractVersion != 45 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 45 required (run mf-migrate up)")
 	}
 	var executorSplitReady bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='assistant' AND table_name='chat_requests' AND column_name='execution_payload')
@@ -122,7 +122,10 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	}
 	var candidateLookupReady bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT to_regprocedure('catalog.identity_candidate_terms(jsonb)') IS NOT NULL
-		AND EXISTS(SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('catalog.entities_identity_candidates_idx') AND indisvalid)`).Scan(&candidateLookupReady); err != nil {
+		AND to_regprocedure('catalog.identity_core_title(text)') IS NOT NULL
+		AND to_regprocedure('catalog.identity_search_text(jsonb)') IS NOT NULL
+		AND EXISTS(SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('catalog.entities_identity_candidates_idx') AND indisvalid)
+		AND EXISTS(SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('catalog.entities_title_trgm_idx') AND indisvalid)`).Scan(&candidateLookupReady); err != nil {
 		return err
 	}
 	if !candidateLookupReady {

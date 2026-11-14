@@ -550,17 +550,17 @@ func dlsiteArtistPreviews(p *dlsiteParsed) []ExternalSourceArtistPreview {
 			})
 		}
 	}
-	// 社团是主要创作/出品方：建 organization、挂 created_by，并带 RG 外部身份。
+	// 社团是制作/出品方：建 organization、挂 produced_by，并带 RG 外部身份。
 	if p.Maker != "" {
 		external := map[string]any{}
 		if p.MakerID != "" {
 			external["dlsite_maker"] = p.MakerID
 			external["metafusion_import"] = "dlsite:circle:" + p.MakerID
 		}
-		add([]string{p.Maker}, "organization", "サークル", "created_by", external)
+		add([]string{p.Maker}, "organization", "サークル", "produced_by", external)
 	}
 	// 信息表中的分职署名：作者 / 剧本 / 插画 / 音乐，挂精确关系码。
-	add(p.Credits["作者"], "person", "著者", "credit_for", nil)
+	add(p.Credits["作者"], "person", "著者", "created_by", nil)
 	add(p.Credits["シナリオ"], "person", "シナリオ", "written_by", nil)
 	add(p.Credits["イラスト"], "person", "イラスト", "illustrated_by", nil)
 	add(p.Credits["音楽"], "person", "音楽", "composed_by", nil)

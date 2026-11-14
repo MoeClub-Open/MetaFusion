@@ -107,12 +107,13 @@ func assistantToolDefinitions() []map[string]any {
 			"rule_codes": stringsList("Published relationship rule code."), "peer_kinds": list(kind, 8), "limit": limit, "offset": integer(0, 1000000),
 			"include_entities": boolProp("Include top-level entities dictionary with extra translations/covers (default false; peer_id/peer_kind/peer_title are already inline on each edge)."),
 		}, "ids")),
-		tool("catalog_candidates", "Find identity candidates before creating records. Candidates help locate existing identities and never authorize an automatic merge. Candidate lookup is optional. If details_complete=false, use catalog_get for details.", object(map[string]any{
+		tool("catalog_candidates", "Find identity candidates (exact, alias, core-normalized, and approximate title matches) before creating records. Required before creating a new entity; inspect assessment (reuse|review|distinct, matched_fields, conflicts) and read catalog_get before deciding whether to reuse an existing identity or create a distinct one.", object(map[string]any{
 			"kind": kind, "titles": list(str("Original or officially supported title."), 20),
-			"external_links": list(object(map[string]any{"kind": str("External database code."), "value": str("Actual identifier or URL.")}, "kind", "value"), 20),
-			"attributes":     list(object(map[string]any{"key": str("Published field code."), "value": str("Exact identifier value.")}, "key", "value"), 20),
-			"work_id":        uuid("Work scope."), "release_id": uuid("Release scope."), "medium_id": uuid("Medium scope."), "limit": integer(1, 1000),
-			"context": object(map[string]any{"creator": list(uuid("Known creator entity ID."), 20), "performer": list(uuid("Known performer entity ID."), 20), "label": list(uuid("Known label entity ID."), 20), "catalog_number": list(str("Known catalog number."), 20)}),
+			"external_links":      list(object(map[string]any{"kind": str("External database code."), "value": str("Actual identifier or URL.")}, "kind", "value"), 20),
+			"attributes":          list(object(map[string]any{"key": str("Published field code."), "value": str("Exact identifier value.")}, "key", "value"), 20),
+			"work_id":             uuid("Work scope."), "release_id": uuid("Release scope."), "medium_id": uuid("Medium scope."), "limit": integer(1, 1000),
+			"include_approximate": boolProp("Recall substring and pg_trgm approximate title candidates (assessed with title_similar and recommended_action=review) alongside exact, alias, and core-normalized matches. Defaults to true when titles are supplied."),
+			"context":             object(map[string]any{"creator": list(uuid("Known creator entity ID."), 20), "performer": list(uuid("Known performer entity ID."), 20), "label": list(uuid("Known label entity ID."), 20), "catalog_number": list(str("Known catalog number."), 20)}),
 		}, "kind")),
 		tool("catalog_definitions", "Read catalog definitions without UI templates. Start with section=index (entity_top_level_fields are fixed schema fields; field_codes are /attributes keys). Request needed codes from fields, relations, structure, vocabularies, external_databases, or terms (with vocabulary).", object(map[string]any{
 			"section": map[string]any{"type": "string", "enum": []string{"index", "fields", "relations", "structure", "vocabularies", "terms", "external_databases"}},
@@ -410,18 +411,10 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		includeEntities := in.IncludeEntities != nil && *in.IncludeEntities
 		return assistantRelationshipsOutputWithOptions(ctx, s, out, &u, includeEntities), nil
 	case "catalog_candidates":
-		var in catalog.IdentityCandidateQuery
-		if err := decodeAssistantToolArgs(args, &in); err != nil {
+		in, err := decodeAssistantCandidateQuery(args)
+		if err != nil {
 			return nil, err
 		}
-		limit := 10
-		if in.Limit != nil {
-			limit = *in.Limit
-		}
-		if limit < 1 || limit > 1000 {
-			return nil, errors.New("invalid_limit")
-		}
-		in.Limit = &limit
 		out, err := s.FindIdentityCandidates(ctx, in, &u)
 		if err != nil {
 			return nil, err
@@ -835,9 +828,20 @@ func assistantCandidateOutput(out catalog.IdentityCandidateResponse) any {
 	// IDs alone are not evidence that the model inspected those candidates.
 	items := make([]map[string]any, 0, len(out.Items))
 	for _, item := range out.Items {
-		entry := map[string]any{"matched": map[string]any{"id": item.Matched.ID, "kind": item.Matched.Kind, "version": item.Matched.Version}, "canonical": nil}
+		matched := map[string]any{"id": item.Matched.ID, "kind": item.Matched.Kind, "version": item.Matched.Version}
+		if item.Matched.Title != "" {
+			matched["title"] = truncateRunes(item.Matched.Title, 120)
+		}
+		entry := map[string]any{"matched": matched, "canonical": nil}
 		if item.Canonical != nil {
-			entry["canonical"] = map[string]any{"id": item.Canonical.ID, "kind": item.Canonical.Kind, "version": item.Canonical.Version}
+			canonical := map[string]any{"id": item.Canonical.ID, "kind": item.Canonical.Kind, "version": item.Canonical.Version}
+			if item.Canonical.Title != "" {
+				canonical["title"] = truncateRunes(item.Canonical.Title, 120)
+			}
+			entry["canonical"] = canonical
+		}
+		if item.Assessment != nil {
+			entry["assessment"] = item.Assessment
 		}
 		if item.ResolutionError != "" {
 			entry["resolution_error"] = item.ResolutionError
@@ -845,6 +849,31 @@ func assistantCandidateOutput(out catalog.IdentityCandidateResponse) any {
 		items = append(items, entry)
 	}
 	return map[string]any{"items": items, "total": out.Total, "complete": out.Complete, "basis": out.Basis, "details_complete": false, "hint": "All returned candidate identities are preserved. Read catalog_get for candidate details before deciding which identity is correct or marking IDs reviewed."}
+}
+
+func decodeAssistantCandidateQuery(args json.RawMessage) (catalog.IdentityCandidateQuery, error) {
+	var rawIn struct {
+		catalog.IdentityCandidateQuery
+		IncludeApproximate *bool `json:"include_approximate"`
+	}
+	if err := decodeAssistantToolArgs(args, &rawIn); err != nil {
+		return catalog.IdentityCandidateQuery{}, err
+	}
+	in := rawIn.IdentityCandidateQuery
+	limit := 10
+	if in.Limit != nil {
+		limit = *in.Limit
+	}
+	if limit < 1 || limit > 1000 {
+		return catalog.IdentityCandidateQuery{}, errors.New("invalid_limit")
+	}
+	in.Limit = &limit
+	if rawIn.IncludeApproximate != nil {
+		in.IncludeApproximate = *rawIn.IncludeApproximate
+	} else if len(in.Titles) > 0 {
+		in.IncludeApproximate = true
+	}
+	return in, nil
 }
 
 func assistantToolLimit(limit *int) (int, error) {

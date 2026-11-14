@@ -150,7 +150,7 @@ func TestPreviewDLsite(t *testing.T) {
 	if len(res.Work.Aliases) != 1 || res.Work.Aliases[0] != "tesutoonseisakuhin" {
 		t.Errorf("aliases=%v", res.Work.Aliases)
 	}
-	// 社团 1 条 created_by + 个人 4 条分职关系。
+	// 社团 1 条 produced_by + 个人 4 条分职关系。
 	if len(res.Artists) != 5 {
 		t.Fatalf("artists=%+v", res.Artists)
 	}
@@ -158,16 +158,16 @@ func TestPreviewDLsite(t *testing.T) {
 	for _, a := range res.Artists {
 		rels[a.Name+"|"+a.RelationType] = a
 	}
-	circle, ok := rels["テストサークル|created_by"]
+	circle, ok := rels["テストサークル|produced_by"]
 	if !ok {
-		t.Fatalf("missing circle created_by")
+		t.Fatalf("missing circle produced_by")
 	}
 	// 社团带 RG 外部身份（GA4 data-maker_id 与表格 href 一致）。
 	if fmt.Sprint(previewLinkID(circle.ExternalLinks, "dlsite_maker")) != "RG12345" || fmt.Sprint(previewLinkID(circle.ExternalLinks, "metafusion_import")) != "dlsite:circle:RG12345" {
 		t.Errorf("circle external=%v", circle.ExternalLinks)
 	}
 	for _, key := range []string{
-		"如月十二|credit_for",
+		"如月十二|created_by",
 		"如月十二|written_by", "如月十二|illustrated_by", "如月十二|composed_by",
 	} {
 		if _, ok := rels[key]; !ok {

@@ -152,11 +152,18 @@ func TestPreviewDMM(t *testing.T) {
 	if res.MediaType != "audio" {
 		t.Errorf("media type=%s", res.MediaType)
 	}
-	if len(res.Artists) != 1 || res.Artists[0].Name != "テストサークル" || res.Artists[0].RelationType != "created_by" {
+	if len(res.Artists) != 1 || res.Artists[0].Name != "テストサークル" || res.Artists[0].RelationType != "produced_by" {
 		t.Fatalf("artists=%+v", res.Artists)
 	}
 	if len(res.Mediums) != 1 || res.Mediums[0].Format != "digital" {
 		t.Fatalf("mediums=%+v", res.Mediums)
+	}
+
+	// 游戏品牌（メーカー）统一映射为 produced_by，与 DLsite/关系规范一致。
+	for _, ch := range []string{"dlsoft", "mono/game"} {
+		if typ, role, rel := dmmArtistRelation(ch); typ != "organization" || role != "メーカー" || rel != "produced_by" {
+			t.Fatalf("dmmArtistRelation(%q) = (%q,%q,%q), want organization/メーカー/produced_by", ch, typ, role, rel)
+		}
 	}
 }
 

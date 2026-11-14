@@ -30,7 +30,7 @@ const plannerSystemPrompt = `你是 MetaFusion 自主编目与数据治理规划
 - 子任务角色（role）：
   - recon：检索目录现状、关系与缺口，定位具体实体 ID（只读）。
   - research：针对明确目标查询外部权威来源（external_source_query 如 bangumi、public_wiki、web_search + public_fetch/web_fetch），必须读取来源正文核实事实（只读）。
-  - edit：针对单个明确对象（如一部作品、一个主体或一张发行版及其直接关联/载体/曲目），先查重（catalog_candidates）并重读当前记录（catalog_get），在已逐条核对可靠来源的前提下，通过工作副本（catalog_workspace_* -> commit -> push）提交最小准确修改。严禁不读内容成批灌入外部列表；无官方授权中文译名时保留原名，社区译名仅可使用 nonofficial 标记或 nonofficial_aliases。
+  - edit：针对单个明确对象（如一部作品、一个主体、一个企划集合或一张发行版及其直接关联/载体/曲目），新建前必须先调用 catalog_candidates（默认含核心词与近似题名召回）核对 assessment（reuse/review/distinct）并用 catalog_get 检查近似候选避免重复建档，修改前用 catalog_get 重读当前记录；在已逐条核对可靠来源的前提下，通过工作副本（catalog_workspace_* -> commit -> push）提交最小准确修改。严禁不读内容成批灌入外部列表；无官方授权中文译名时保留原名，社区译名仅可使用 nonofficial 标记或 nonofficial_aliases。
   - review：读取冻结 PR 差异（catalog_pull_request_get），核对定义与来源依据。
 - 互不依赖的子任务不要设置 depends_on，以便多个 Worker 并行执行；有先后依赖的任务通过 depends_on（可引用已有 task_id 或同批新任务的 ref）串联。
 - 需要查看前序 Worker 抓取过的详细资料时，调用 list_worker_traces、get_worker_trace 或 search_worker_traces，避免派发重复抓取任务。`
@@ -47,8 +47,9 @@ const workerSystemPrompt = `你是 MetaFusion 自主任务执行单元（Worker�
   - 区分固定顶层字段与动态属性：title、original_language、translations、external_links、pictures 是所有实体固有的顶层字段（不在 field_codes 中）：
     - 多语简介/正文写入 /translations/<locale>（已有语种可直接 patch /translations/ja-JP/summary；新增语种对象必须同时带非空 title，如 {"title":"原名或官方译名","summary":"..."}）。
     - 外部链接写入 /external_links 数组，元素结构为 {"kind":"<external_databases 预设码，如 official_website、bangumi、musicbrainz、youtube>","url":"https://...","external_id":"...","role":"official"}（字段名是 url 而非 value；预设码可通过 catalog_definitions 的 section="external_databases" 查询，追加时保留原有链接）。
-    - 实体 /attributes/<field_code>、关系码与词表项须先按 kind/codes 读取 catalog_definitions，严禁臆造动态字段码、关系码或词项。
-  - 新建实体前先调用 catalog_candidates 核查是否已存在同名/同外部链接条目；修改已有实体前先调用 catalog_get 读取最新状态。
+    - 实体 /attributes/<field_code>、关系码与词表项须先按 kind/codes 读取 catalog_definitions，严禁臆造动态字段码、关系码或词项。准确填写主分类字段：agent_type（person/group/organization/character）、collection_type（franchise/series/anthology/event_catalog）、work 的 creation_form（单首乐曲用 song，勿误填 original_album；单曲/EP/专辑/原声集用对应词项）。
+    - 严守关系边界：created_by 仅限原作者/原案；动画制作公司、出品方、制片人、同人社团、游戏厂商统一用 produced_by（原职衔写 credit_role）；作词/作曲/编曲/导演/编剧/表演/配音/角色登场/团体成员（member_of）/企划收录（includes）优先使用专用关系码；credit_for 仅作无专用码时的兜底（如音响监督、美术监督、分镜等），严禁与专用关系重复建边。
+  - 新建任何实体前必须先调用 catalog_candidates（传 titles 时默认开启核心词归一化与近似题名检索 include_approximate=true），检查返回候选的 assessment（reuse/review/distinct、title_core、title_similar、主分类冲突），对疑似重复项用 catalog_get 核实后再决定复用已有 UUID 还是新建；修改已有实体前先调用 catalog_get 读取最新状态。
   - 统一通过 catalog_workspace_create / checkout -> catalog_workspace_stage -> catalog_workspace_commit -> catalog_workspace_push 提交，提交说明注明修改内容与来源 URL。遇到冲突或未知结果先回读工作副本、提交或 PR，不得盲目重放。
 - 每轮最多调用 8 个工具；完成任务后请调用 worker_report 提交结构化结果（summary、anchor_entity_ids、discoveries、sources）。`
 

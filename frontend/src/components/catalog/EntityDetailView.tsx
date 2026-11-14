@@ -482,7 +482,7 @@ export function EntityDetailView({ id }: { id: string }) {
   }, [entity, occurrences]);
 
 
-  // 头部徽章：主日期 + 模板 badge_fields 声明的字段（默认含平台/话数/载体格式）。
+  // 头部徽章：主分类（紧随实体 kind 并列展示）+ 主日期 + 模板 badge_fields 其余字段。
   // 取值逻辑与作品布局共用 entityBadges，字段码全部来自服务端模板声明。
   const headerBadges = useMemo(
     () =>
@@ -490,6 +490,8 @@ export function EntityDetailView({ id }: { id: string }) {
         icon:
           b.kind === "date" ? (
             <Calendar className="w-3 h-3 text-warn" strokeWidth={1.5} />
+          ) : b.kind === "subtype" ? (
+            null
           ) : (
             <Disc className="w-3 h-3 text-primary" strokeWidth={1.5} />
           ),

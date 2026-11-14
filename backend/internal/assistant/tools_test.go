@@ -205,20 +205,47 @@ func TestAssistantSearchSummariesNeverIncludeArticleOrOwner(t *testing.T) {
 func TestAssistantCandidatesPreserveAllIdentityIDsWhenDetailsAreLarge(t *testing.T) {
 	input := catalog.IdentityCandidateResponse{Total: 26, Complete: true, Basis: "postgres_repeatable_read"}
 	for i := 0; i < 26; i++ {
-		candidate := catalog.IdentityCandidateEntity{ID: "candidate-" + string(rune('a'+i)), Kind: "work", Version: 1, Attributes: map[string]any{"data": strings.Repeat("x", maxAssistantToolOutput/20)}}
-		input.Items = append(input.Items, catalog.IdentityCandidateMatch{Matched: candidate, Canonical: &candidate})
+		candidate := catalog.IdentityCandidateEntity{ID: "candidate-" + string(rune('a'+i)), Kind: "work", Title: "Candidate Title", Version: 1, Attributes: map[string]any{"data": strings.Repeat("x", maxAssistantToolOutput/20)}}
+		assess := &catalog.CandidateAssessment{MatchedFields: []string{"title_similar"}, Confidence: 0.12, RecommendedAction: catalog.ActionReview}
+		input.Items = append(input.Items, catalog.IdentityCandidateMatch{Matched: candidate, Canonical: &candidate, Assessment: assess})
 	}
 	result := assistantCandidateOutput(input).(map[string]any)
 	if result["complete"] != true || result["details_complete"] != false {
 		t.Fatalf("identity-set and detail completeness were confused: %#v", result)
 	}
 	items := result["items"].([]map[string]any)
-	if len(items) != 26 || items[25]["canonical"].(map[string]any)["id"] != "candidate-z" {
+	if len(items) != 26 || items[25]["canonical"].(map[string]any)["id"] != "candidate-z" || items[25]["assessment"] == nil {
 		t.Fatalf("candidate identities were silently truncated: %#v", result)
 	}
 	bounded, err := boundedAssistantToolOutput(result)
 	if err != nil || bounded.(map[string]any)["items"] == nil {
 		t.Fatalf("full identity set did not fit the output boundary: %v %#v", err, bounded)
+	}
+}
+
+func TestAssistantCandidateQueryDefaultsApproximateForTitles(t *testing.T) {
+	q, err := decodeAssistantCandidateQuery(json.RawMessage(`{"kind":"work","titles":["BanG Dream!"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.IncludeApproximate || q.Limit == nil || *q.Limit != 10 {
+		t.Fatalf("expected include_approximate=true by default when titles present: %+v", q)
+	}
+
+	qExplicitFalse, err := decodeAssistantCandidateQuery(json.RawMessage(`{"kind":"work","titles":["BanG Dream!"],"include_approximate":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qExplicitFalse.IncludeApproximate {
+		t.Fatalf("expected explicit include_approximate=false to be preserved: %+v", qExplicitFalse)
+	}
+
+	qExtOnly, err := decodeAssistantCandidateQuery(json.RawMessage(`{"kind":"work","external_links":[{"kind":"bangumi","value":"185792"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qExtOnly.IncludeApproximate {
+		t.Fatalf("expected include_approximate=false when no titles supplied: %+v", qExtOnly)
 	}
 }
 

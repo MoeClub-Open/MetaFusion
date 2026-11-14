@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -41,9 +42,54 @@ const (
 )
 
 var identitySpace = regexp.MustCompile(`[\t\n\v\f\r \x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+`)
+var (
+	identityCorpAffixRe = regexp.MustCompile(`^(?:株式会社|有限会社|合同会社|合資会社|一般社団法人|公益財団法人|\(株\)|\(有\)|㈱|㈲)\s*|\s*(?:株式会社|有限会社|合同会社|合資会社|一般社団法人|公益財団法人|\(株\)|\(有\)|㈱|㈲)$`)
+	identityCorpEnRe    = regexp.MustCompile(`(?i)(?:\s*,\s*|\s+)(?:co\.?,?\s*ltd\.?|inc\.?|corp\.?|corporation|ltd\.?|llc|gmbh)$`)
+	identityQualifierRe = regexp.MustCompile(`(?i)\s*(?:[(]|\[|【)\s*(?:tv\s*anime|tvアニメ|テレビアニメ|アニメ|anime|劇場版|劇場|映画|movie|film|ova|ona|漫画|マンガ|manga|コミック|comic|小説|ライトノベル|novel|light\s*novel|ゲーム|game|シングル|single|アルバム|album|ep|ost|サウンドトラック|soundtrack|cd|bd|dvd|blu-?ray|lp|mv|pv|バンド|band|ユニット|unit|グループ|group|キャラクター|character)\s*(?:[)]|\]|】)$`)
+	// Explicit locale-independent punctuation/whitespace ranges kept identical across Go, PostgreSQL, and TypeScript.
+	// Preserves prolonged sound mark (ー \u30FC) and iteration marks (々 \u3005, 〆 \u3006, 〇 \u3007), while stripping middle dot (・ \u30FB) and ASCII/CJK punctuation.
+	identityCoreStripRe = regexp.MustCompile(`[\x00-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{00A0}-\x{00BF}\x{2000}-\x{206F}\x{2E00}-\x{2E7F}\x{3000}-\x{3004}\x{3008}-\x{303A}\x{303D}-\x{303F}\x{30FB}\x{FE30}-\x{FE6F}\x{FF61}-\x{FF65}]+`)
+)
 
 func identityTitle(s string) string {
 	return strings.ToLower(strings.TrimSpace(identitySpace.ReplaceAllString(s, " ")))
+}
+
+func foldFullwidthASCII(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 0xFF01 && r <= 0xFF5E:
+			b.WriteRune(r - 0xFEE0)
+		case r == 0x3000:
+			b.WriteByte(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func identityCoreTitle(s string) string {
+	folded := strings.ToLower(strings.TrimSpace(identitySpace.ReplaceAllString(foldFullwidthASCII(s), " ")))
+	if folded == "" {
+		return ""
+	}
+	cur := folded
+	if stripped := strings.TrimSpace(identityCorpAffixRe.ReplaceAllString(cur, "")); stripped != "" {
+		cur = stripped
+	}
+	if stripped := strings.TrimSpace(identityCorpEnRe.ReplaceAllString(cur, "")); stripped != "" {
+		cur = stripped
+	}
+	if stripped := strings.TrimSpace(identityQualifierRe.ReplaceAllString(cur, "")); stripped != "" {
+		cur = stripped
+	}
+	if stripped := identityCoreStripRe.ReplaceAllString(cur, ""); stripped != "" {
+		return stripped
+	}
+	return cur
 }
 
 // IdentityBatchQuery is one entry in POST /entities/candidates/batch.
@@ -200,12 +246,21 @@ func loadCreditPeers(ctx context.Context, q queryer, entityIDs []string) (map[st
 	}
 	rows, err := q.QueryContext(ctx, `SELECT source_id::text, target_id::text, type
 		FROM catalog.relations
-		WHERE type IN ('created_by','performed_by') AND source_id = ANY($1::uuid[])
+		WHERE type IN ('created_by','produced_by','directed_by','composed_by','lyricist_of','developed_by','performed_by','voiced_by')
+		  AND source_id = ANY($1::uuid[])
 		ORDER BY id`, pq.Array(entityIDs))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	appendOnce := func(list []string, id string) []string {
+		for _, existing := range list {
+			if existing == id {
+				return list
+			}
+		}
+		return append(list, id)
+	}
 	for rows.Next() {
 		var sourceID, targetID, typ string
 		if err = rows.Scan(&sourceID, &targetID, &typ); err != nil {
@@ -213,10 +268,10 @@ func loadCreditPeers(ctx context.Context, q queryer, entityIDs []string) (map[st
 		}
 		p := out[sourceID]
 		switch typ {
-		case "created_by":
-			p.Creators = append(p.Creators, targetID)
-		case "performed_by":
-			p.Performers = append(p.Performers, targetID)
+		case "created_by", "produced_by", "directed_by", "composed_by", "lyricist_of", "developed_by":
+			p.Creators = appendOnce(p.Creators, targetID)
+		case "performed_by", "voiced_by":
+			p.Performers = appendOnce(p.Performers, targetID)
 		}
 		out[sourceID] = p
 	}
@@ -259,6 +314,71 @@ func aliasTitleNorms(e IdentityCandidateEntity) map[string]bool {
 		}
 	}
 	return out
+}
+
+func coreTitleNorms(e IdentityCandidateEntity) map[string]bool {
+	out := map[string]bool{}
+	add := func(raw string) {
+		if c := identityCoreTitle(raw); utf8.RuneCountInString(c) >= 2 {
+			out[c] = true
+		}
+	}
+	add(e.Title)
+	for _, t := range e.Translations {
+		add(t.Title)
+		for _, a := range t.Aliases {
+			add(a)
+		}
+		for _, a := range t.NonofficialAliases {
+			add(a)
+		}
+	}
+	return out
+}
+
+func hasSimilarCoreTitle(queryCore string, candidates map[string]bool) bool {
+	if utf8.RuneCountInString(queryCore) < 2 {
+		return false
+	}
+	for cand := range candidates {
+		if cand == queryCore {
+			return true
+		}
+		if utf8.RuneCountInString(cand) >= 2 && (strings.Contains(cand, queryCore) || strings.Contains(queryCore, cand)) {
+			return true
+		}
+		if utf8.RuneCountInString(queryCore) >= 4 && utf8.RuneCountInString(cand) >= 4 && coreTrigramSimilarity(queryCore, cand) >= 0.45 {
+			return true
+		}
+	}
+	return false
+}
+
+func coreTrigramSet(s string) map[string]struct{} {
+	runes := []rune("  " + s + " ")
+	out := make(map[string]struct{}, len(runes))
+	for i := 0; i+3 <= len(runes); i++ {
+		out[string(runes[i:i+3])] = struct{}{}
+	}
+	return out
+}
+
+func coreTrigramSimilarity(a, b string) float64 {
+	ta, tb := coreTrigramSet(a), coreTrigramSet(b)
+	if len(ta) == 0 || len(tb) == 0 {
+		return 0
+	}
+	shared := 0
+	for k := range ta {
+		if _, ok := tb[k]; ok {
+			shared++
+		}
+	}
+	union := len(ta) + len(tb) - shared
+	if union <= 0 {
+		return 0
+	}
+	return float64(shared) / float64(union)
 }
 
 func attributeValues(attrs map[string]any, key string) []string {
@@ -348,7 +468,8 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 
 	formal := formalTitleNorms(e)
 	aliases := aliasTitleNorms(e)
-	titleExact, aliasHit := false, false
+	cores := coreTitleNorms(e)
+	titleExact, aliasHit, coreHit, similarHit := false, false, false, false
 	for _, q := range in.Titles {
 		n := identityTitle(q)
 		if n == "" {
@@ -358,12 +479,22 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 			titleExact = true
 		} else if aliases[n] {
 			aliasHit = true
+		} else if c := identityCoreTitle(q); utf8.RuneCountInString(c) >= 2 && cores[c] {
+			coreHit = true
+		} else if in.IncludeApproximate {
+			if c := identityCoreTitle(q); hasSimilarCoreTitle(c, cores) {
+				similarHit = true
+			}
 		}
 	}
 	if titleExact {
 		add("title_exact")
 	} else if aliasHit {
 		add("alias")
+	} else if coreHit {
+		add("title_core")
+	} else if similarHit {
+		add("title_similar")
 	}
 
 	extHit := false
@@ -386,6 +517,9 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 			break
 		}
 	}
+	if len(reasons) == 0 && in.IncludeApproximate && len(in.Titles) > 0 {
+		add("title_similar")
+	}
 
 	summary := map[string]any{}
 	if len(peers.Creators) > 0 {
@@ -404,12 +538,14 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 			summary["catalog_number"] = nums
 		}
 	}
-	if agentTypes := attributeValues(e.Attributes, "agent_type"); len(agentTypes) > 0 {
-		summary["agent_type"] = agentTypes[0]
-		for _, attr := range in.Attributes {
-			if attr.Key == "agent_type" && strings.TrimSpace(attr.Value) != "" && !containsFold(agentTypes, attr.Value) {
-				conflicts = append(conflicts, "agent_type_mismatch")
-				break
+	for _, classKey := range []string{"agent_type", "creation_form", "collection_type"} {
+		if vals := attributeValues(e.Attributes, classKey); len(vals) > 0 {
+			summary[classKey] = vals[0]
+			for _, attr := range in.Attributes {
+				if attr.Key == classKey && strings.TrimSpace(attr.Value) != "" && !containsFold(vals, attr.Value) {
+					conflicts = append(conflicts, classKey+"_mismatch")
+					break
+				}
 			}
 		}
 	}
@@ -465,8 +601,12 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 	}
 	if seen["title_exact"] {
 		conf += 0.3
+	} else if seen["title_core"] {
+		conf += 0.22
 	} else if seen["alias"] {
 		conf += 0.15
+	} else if seen["title_similar"] {
+		conf += 0.12
 	}
 	if seen["attribute"] {
 		conf += 0.2

@@ -575,13 +575,76 @@ export function getTagNames(
   return (tags || []).map((tag) => getTagName(defs, tag, locale)).filter((name) => !!name);
 }
 
-const PRIMARY_CLASSIFICATION_FIELD: Record<string, string> = {
+export const PRIMARY_CLASSIFICATION_FIELD: Record<string, string> = {
   work: "creation_form",
   agent: "agent_type",
+  collection: "collection_type",
   release: "edition_type",
   medium: "format",
   content_unit: "entry_role",
 };
+
+export interface EntityHeaderBadge {
+  kind: "subtype" | "date" | "field";
+  text: string;
+}
+
+function formatBadgeFieldValue(
+  defs: DynamicDefinitions | null | undefined,
+  code: string,
+  rawValue: unknown,
+  locale: string,
+): string {
+  const def = defs?.fields?.[code];
+  if (def?.type === "enum" && def.vocabulary) {
+    return getTermName(defs, def.vocabulary, String(rawValue), locale);
+  }
+  return String(rawValue);
+}
+
+/**
+ * entityBadges：详情页标题栏紧随实体 kind 徽章之后展示的主分类徽章、主日期与模板 badge_fields。
+ * 主分类字段（如作品的 creation_form、主体的 agent_type、集合的 collection_type）始终排在首位，且不在 badge_fields 中重复输出。
+ */
+export function entityBadges(
+  entity: { kind?: string; attributes?: Record<string, any> | null } | null,
+  defs: DynamicDefinitions | null | undefined,
+  locale: string,
+): EntityHeaderBadge[] {
+  const attrs: Record<string, any> = entity?.attributes || {};
+  const templates = templatesForEntity(defs, entity?.kind || "", attrs);
+  const out: EntityHeaderBadge[] = [];
+
+  const primaryField = PRIMARY_CLASSIFICATION_FIELD[entity?.kind || ""];
+  if (
+    primaryField &&
+    attrs[primaryField] !== undefined &&
+    attrs[primaryField] !== null &&
+    attrs[primaryField] !== "" &&
+    !defs?.fields?.[primaryField]?.hidden
+  ) {
+    out.push({
+      kind: "subtype",
+      text: formatBadgeFieldValue(defs, primaryField, attrs[primaryField], locale),
+    });
+  }
+
+  const dateField = templates.map((tp) => tp.primary_date_field).find(Boolean) as string | undefined;
+  if (dateField && attrs[dateField] && !defs?.fields?.[dateField]?.hidden) {
+    out.push({ kind: "date", text: String(attrs[dateField]) });
+  }
+
+  const badgeFields: string[] = Array.from(new Set(templates.flatMap((tp) => tp.badge_fields || [])));
+  for (const code of badgeFields) {
+    if (code === primaryField) continue;
+    if (!attrs[code] || defs?.fields?.[code]?.hidden) continue;
+    out.push({
+      kind: "field",
+      text: formatBadgeFieldValue(defs, code, attrs[code], locale),
+    });
+  }
+  return out;
+}
 
 /**
  * getEntityTagLabels：卡片/列表副行与封面比例推断使用的展示标签列表。

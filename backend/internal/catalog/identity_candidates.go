@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type IdentityExternalCriterion struct {
@@ -19,14 +21,15 @@ type IdentityAttributeCriterion struct {
 	Value string `json:"value"`
 }
 type IdentityCandidateQuery struct {
-	Kind          string                       `json:"kind"`
-	Titles        []string                     `json:"titles,omitempty"`
-	ExternalLinks []IdentityExternalCriterion  `json:"external_links,omitempty"`
-	Attributes    []IdentityAttributeCriterion `json:"attributes,omitempty"`
-	WorkID        string                       `json:"work_id,omitempty"`
-	ReleaseID     string                       `json:"release_id,omitempty"`
-	MediumID      string                       `json:"medium_id,omitempty"`
-	Limit         *int                         `json:"limit,omitempty"`
+	Kind               string                       `json:"kind"`
+	Titles             []string                     `json:"titles,omitempty"`
+	ExternalLinks      []IdentityExternalCriterion  `json:"external_links,omitempty"`
+	Attributes         []IdentityAttributeCriterion `json:"attributes,omitempty"`
+	WorkID             string                       `json:"work_id,omitempty"`
+	ReleaseID          string                       `json:"release_id,omitempty"`
+	MediumID           string                       `json:"medium_id,omitempty"`
+	Limit              *int                         `json:"limit,omitempty"`
+	IncludeApproximate bool                         `json:"include_approximate,omitempty"`
 	// Context only adjusts ranking/confidence; it never shrinks the candidate set.
 	Context *IdentityContext `json:"context,omitempty"`
 }
@@ -185,22 +188,166 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 	if len(excludeIDs) > 0 {
 		excludeID = excludeIDs[0]
 	}
-	rows, err := q.QueryContext(ctx, `WITH RECURSIVE excluded(id) AS (
+	likeEscape := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	approxCores := []string{}
+	approxLikes := []string{}
+	approxSubCores := []string{}
+	approxRevLikes := []string{}
+	approxTrgms := []string{}
+	if in.IncludeApproximate {
+		seenCore := map[string]bool{}
+		seenSubCore := map[string]bool{}
+		seenRevLike := map[string]bool{}
+		for _, rawTitle := range in.Titles {
+			core := identityCoreTitle(rawTitle)
+			runes := []rune(core)
+			n := len(runes)
+			if n < 2 || seenCore[core] {
+				continue
+			}
+			seenCore[core] = true
+			approxCores = append(approxCores, core)
+			approxLikes = append(approxLikes, "%"+likeEscape.Replace(core)+"%")
+			for _, subLen := range []int{2, 3} {
+				if subLen >= n {
+					continue
+				}
+				for i := 0; i+subLen <= n; i++ {
+					sub := string(runes[i : i+subLen])
+					if !seenSubCore[sub] {
+						seenSubCore[sub] = true
+						approxSubCores = append(approxSubCores, sub)
+					}
+				}
+			}
+			if n >= 5 {
+				for i := 0; i+4 <= n; i++ {
+					pat := "%" + likeEscape.Replace(string(runes[i:i+4])) + "%"
+					if !seenRevLike[pat] {
+						seenRevLike[pat] = true
+						approxRevLikes = append(approxRevLikes, pat)
+					}
+				}
+			}
+			if n >= 4 {
+				approxTrgms = append(approxTrgms, core)
+			}
+		}
+	}
+	_ = utf8.RuneError
+	var rows *sql.Rows
+	if len(approxCores) == 0 {
+		rows, err = q.QueryContext(ctx, `WITH RECURSIVE excluded(id) AS (
             SELECT id FROM catalog.entities WHERE id=NULLIF($9::text,'')::uuid
             UNION
             SELECT e.id FROM catalog.entities e JOIN excluded x ON e.document->>'redirect_id'=x.id::text
                 WHERE e.state='merged'
+        ),
+        query_terms AS (
+            SELECT
+                COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_exact_terms(value)) FROM jsonb_array_elements($2::jsonb)), ARRAY[]::text[]) AS strong_terms,
+                COALESCE(ARRAY(SELECT DISTINCT md5(jsonb_build_array('core_title', c)::text) FROM jsonb_array_elements($2::jsonb) elem, LATERAL unnest(catalog.identity_core_titles(elem)) c), ARRAY[]::text[]) AS core_terms,
+                COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_candidate_terms(elem)) FROM jsonb_array_elements($2::jsonb) elem WHERE elem ? 'attributes'), ARRAY[]::text[]) AS attr_terms,
+                COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($2::jsonb)), ARRAY[]::text[]) AS all_terms
         )
-        SELECT id::text,count(*) OVER () FROM catalog.entities
-        WHERE kind=$1 AND state <> 'deleted'
-        AND ($3::boolean OR state='active' OR created_by=$4::uuid)
-        AND ($5::text='' OR EXISTS(SELECT 1 FROM catalog.expressions x WHERE x.id=entities.id AND x.work_id::text=$5) OR EXISTS(SELECT 1 FROM catalog.content_units x WHERE x.id=entities.id AND x.work_id::text=$5))
-        AND ($7::text='' OR EXISTS(SELECT 1 FROM catalog.mediums m WHERE m.id=entities.id AND m.release_id::text=$7))
-        AND ($8::text='' OR EXISTS(SELECT 1 FROM catalog.tracks t WHERE t.id=entities.id AND t.medium_id::text=$8))
-        AND NOT EXISTS(SELECT 1 FROM excluded WHERE excluded.id=entities.id)
-        AND catalog.identity_candidate_terms(document) && ARRAY(
-            SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($2::jsonb))
-        ORDER BY id LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID, excludeID)
+        SELECT e.id::text,count(*) OVER () FROM catalog.entities e, query_terms qt, LATERAL (SELECT catalog.identity_candidate_terms(e.document) AS terms) ct
+        WHERE e.kind=$1 AND e.state <> 'deleted'
+        AND ($3::boolean OR e.state='active' OR e.created_by=$4::uuid)
+        AND ($5::text='' OR EXISTS(SELECT 1 FROM catalog.expressions x WHERE x.id=e.id AND x.work_id::text=$5) OR EXISTS(SELECT 1 FROM catalog.content_units x WHERE x.id=e.id AND x.work_id::text=$5))
+        AND ($7::text='' OR EXISTS(SELECT 1 FROM catalog.mediums m WHERE m.id=e.id AND m.release_id::text=$7))
+        AND ($8::text='' OR EXISTS(SELECT 1 FROM catalog.tracks t WHERE t.id=e.id AND t.medium_id::text=$8))
+        AND NOT EXISTS(SELECT 1 FROM excluded WHERE excluded.id=e.id)
+        AND catalog.identity_candidate_terms(e.document) && qt.all_terms
+        ORDER BY (
+            CASE
+                WHEN cardinality(qt.strong_terms) > 0 AND ct.terms && qt.strong_terms THEN
+                    CASE WHEN cardinality(qt.attr_terms) > 0 AND ct.terms && qt.attr_terms THEN 0 ELSE 1 END
+                WHEN cardinality(qt.core_terms) > 0 AND ct.terms && qt.core_terms THEN
+                    CASE WHEN cardinality(qt.attr_terms) > 0 AND ct.terms && qt.attr_terms THEN 2 ELSE 3 END
+                ELSE 4
+            END
+        ) ASC, e.id ASC
+        LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID, excludeID)
+	} else {
+		rows, err = q.QueryContext(ctx, `WITH RECURSIVE excluded(id) AS (
+            SELECT id FROM catalog.entities WHERE id=NULLIF($9::text,'')::uuid
+            UNION
+            SELECT e.id FROM catalog.entities e JOIN excluded x ON e.document->>'redirect_id'=x.id::text
+                WHERE e.state='merged'
+        ),
+        query_terms AS (
+            SELECT
+                COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_exact_terms(value)) FROM jsonb_array_elements($2::jsonb)), ARRAY[]::text[]) AS strong_terms,
+                COALESCE(ARRAY(SELECT DISTINCT md5(jsonb_build_array('core_title', c)::text) FROM jsonb_array_elements($2::jsonb) elem, LATERAL unnest(catalog.identity_core_titles(elem)) c), ARRAY[]::text[]) AS core_terms,
+                COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_candidate_terms(elem)) FROM jsonb_array_elements($2::jsonb) elem WHERE elem ? 'attributes'), ARRAY[]::text[]) AS attr_terms,
+                COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($2::jsonb)), ARRAY[]::text[]) AS all_terms,
+                COALESCE(ARRAY(SELECT DISTINCT md5(jsonb_build_array('core_title', s)::text) FROM unnest($12::text[]) s), ARRAY[]::text[]) AS sub_core_terms
+        ),
+        matched_ids(id, tier) AS (
+            SELECT e.id,
+                CASE
+                    WHEN cardinality(qt.strong_terms) > 0 AND ct.terms && qt.strong_terms THEN
+                        CASE WHEN cardinality(qt.attr_terms) > 0 AND ct.terms && qt.attr_terms THEN 0 ELSE 1 END
+                    WHEN cardinality(qt.core_terms) > 0 AND ct.terms && qt.core_terms THEN
+                        CASE WHEN cardinality(qt.attr_terms) > 0 AND ct.terms && qt.attr_terms THEN 2 ELSE 3 END
+                    ELSE 6
+                END
+            FROM catalog.entities e, query_terms qt, LATERAL (SELECT catalog.identity_candidate_terms(e.document) AS terms) ct
+            WHERE e.kind=$1 AND e.state <> 'deleted'
+              AND catalog.identity_candidate_terms(e.document) && qt.all_terms
+            UNION ALL
+            SELECT e.id, 4
+            FROM catalog.entities e
+            WHERE cardinality($10::text[]) > 0
+              AND e.kind=$1 AND e.state <> 'deleted'
+              AND catalog.identity_search_text(e.document) LIKE ANY($10::text[])
+              AND EXISTS (
+                  SELECT 1 FROM unnest($11::text[]) qc
+                  CROSS JOIN unnest(catalog.identity_core_titles(e.document)) ct
+                  WHERE strpos(ct, qc) > 0
+              )
+            UNION ALL
+            SELECT e.id, 4
+            FROM catalog.entities e, query_terms qt
+            WHERE cardinality(qt.sub_core_terms) > 0
+              AND e.kind=$1 AND e.state <> 'deleted'
+              AND catalog.identity_candidate_terms(e.document) && qt.sub_core_terms
+            UNION ALL
+            SELECT e.id, 4
+            FROM catalog.entities e
+            WHERE cardinality($13::text[]) > 0
+              AND e.kind=$1 AND e.state <> 'deleted'
+              AND catalog.identity_search_text(e.document) LIKE ANY($13::text[])
+              AND EXISTS (
+                  SELECT 1 FROM unnest($11::text[]) qc
+                  CROSS JOIN unnest(catalog.identity_core_titles(e.document)) ct
+                  WHERE strpos(qc, ct) > 0
+              )
+            UNION ALL
+            SELECT e.id, 5
+            FROM unnest($14::text[]) q
+            JOIN catalog.entities e
+              ON e.kind=$1 AND e.state <> 'deleted'
+             AND catalog.identity_search_text(e.document) %> q
+            WHERE word_similarity(q, catalog.identity_search_text(e.document)) >= 0.6
+        ),
+        ranked AS (
+            SELECT e.id, MIN(m.tier) AS best_tier
+            FROM matched_ids m
+            JOIN catalog.entities e ON e.id=m.id
+            WHERE e.kind=$1 AND e.state <> 'deleted'
+            AND ($3::boolean OR e.state='active' OR e.created_by=$4::uuid)
+            AND ($5::text='' OR EXISTS(SELECT 1 FROM catalog.expressions x WHERE x.id=e.id AND x.work_id::text=$5) OR EXISTS(SELECT 1 FROM catalog.content_units x WHERE x.id=e.id AND x.work_id::text=$5))
+            AND ($7::text='' OR EXISTS(SELECT 1 FROM catalog.mediums md WHERE md.id=e.id AND md.release_id::text=$7))
+            AND ($8::text='' OR EXISTS(SELECT 1 FROM catalog.tracks t WHERE t.id=e.id AND t.medium_id::text=$8))
+            AND NOT EXISTS(SELECT 1 FROM excluded WHERE excluded.id=e.id)
+            GROUP BY e.id
+        )
+        SELECT id::text,count(*) OVER ()
+        FROM ranked
+        ORDER BY best_tier ASC, id ASC
+        LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID, excludeID, pq.Array(approxLikes), pq.Array(approxCores), pq.Array(approxSubCores), pq.Array(approxRevLikes), pq.Array(approxTrgms))
+	}
 	if err != nil {
 		return out, err
 	}

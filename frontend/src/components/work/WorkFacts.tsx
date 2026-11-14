@@ -2,8 +2,9 @@
 
 import React, { useMemo } from "react";
 import { useI18n } from "@/i18n/I18nProvider";
-import { DynamicDefinitions, resolveLocalizedName, getFieldName, getTermName, templatesForEntity } from "@/lib/definitions";
+import { DynamicDefinitions, resolveLocalizedName, getFieldName, templatesForEntity } from "@/lib/definitions";
 import { FieldValue } from "@/components/catalog/TemplateAttributeSections";
+export { entityBadges, type EntityHeaderBadge } from "@/lib/definitions";
 
 const NO_EXCLUDED_FIELDS: string[] = [];
 
@@ -134,30 +135,3 @@ function Row({ label, stacked = false, children }: { label: string; stacked?: bo
 }
 
 export default WorkFacts;
-
-// entityBadges 按模板声明计算标题旁的徽章：主日期字段 + badge_fields。
-// 字段码来自服务端模板，两个详情页共用，避免各自写死 edition_date/format。
-export function entityBadges(
-  entity: { kind?: string; attributes?: Record<string, any> | null } | null,
-  defs: DynamicDefinitions | null | undefined,
-  locale: string,
-): { kind: "date" | "field"; text: string }[] {
-  const attrs: Record<string, any> = entity?.attributes || {};
-  const templates = templatesForEntity(defs, entity?.kind || "", attrs);
-  const out: { kind: "date" | "field"; text: string }[] = [];
-  const dateField = templates.map((tp) => tp.primary_date_field).find(Boolean) as string | undefined;
-  if (dateField && attrs[dateField] && !defs?.fields?.[dateField]?.hidden) {
-    out.push({ kind: "date", text: String(attrs[dateField]) });
-  }
-  const badgeFields: string[] = Array.from(new Set(templates.flatMap((tp) => tp.badge_fields || [])));
-  for (const code of badgeFields) {
-    if (!attrs[code] || defs?.fields?.[code]?.hidden) continue;
-    const def: any = defs?.fields?.[code];
-    const text =
-      def?.type === "enum" && def?.vocabulary
-        ? getTermName(defs, def.vocabulary, String(attrs[code]), locale)
-        : String(attrs[code]);
-    out.push({ kind: "field", text });
-  }
-  return out;
-}
