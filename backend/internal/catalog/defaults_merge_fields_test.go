@@ -62,6 +62,7 @@ func TestPostgresSeedMergeBackfillsAirDateIntoExistingDocument(t *testing.T) {
 	}
 	old := v.Document
 	delete(old.Fields, "air_date")
+	delete(old.Templates, "content_unit_default")
 	f.publish(old, v.ETag)
 
 	work := f.save(Entity{Kind: "work", Title: "动画作品"})

@@ -29,6 +29,7 @@ func TestPostgresStartupSeedMergeToleratesDanglingReferences(t *testing.T) {
 	}
 	old := v.Document
 	delete(old.Fields, "air_date")
+	delete(old.Templates, "content_unit_default")
 	f.publish(old, v.ETag)
 
 	// 事故形态的脏数据：attributes.publisher 指向的那一行已经不存在。
@@ -121,6 +122,7 @@ func TestPostgresStartupSeedMergeBlocksWithoutDraftPileUp(t *testing.T) {
 	}
 	old := v.Document
 	delete(old.Fields, "air_date")
+	delete(old.Templates, "content_unit_default")
 	f.publish(old, v.ETag)
 	// f.publish 换了一版：判定基准是**当前**已发布版本。
 	cur, err := f.s.Definitions(ctx)

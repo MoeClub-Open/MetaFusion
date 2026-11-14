@@ -8,57 +8,55 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- Locale-independent core title normalization kept identical across Go, PostgreSQL, and TypeScript.
 CREATE OR REPLACE FUNCTION catalog.identity_core_title(value text) RETURNS text
-LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT AS $fn$
-    WITH s0 AS (
-        SELECT catalog.identity_title(translate(
-            value,
-            U&'\3000' || '！＂＃＄％＆＇（）＊＋，－．／０１２３４５６７８９：；＜＝＞？＠ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ［＼］＾＿｀ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ｛｜｝～',
-            ' ' || '!"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
-        )) AS cur
-    ), s1 AS (
-        SELECT CASE
-            WHEN cur = '' THEN ''
-            ELSE COALESCE(NULLIF(btrim(regexp_replace(
-                cur,
-                '^(?:株式会社|有限会社|合同会社|合資会社|一般社団法人|公益財団法人|\(株\)|\(有\)|㈱|㈲)\s*|\s*(?:株式会社|有限会社|合同会社|合資会社|一般社団法人|公益財団法人|\(株\)|\(有\)|㈱|㈲)$',
-                '',
-                'g'
-            )), ''), cur)
-        END AS cur
-        FROM s0
-    ), s2 AS (
-        SELECT CASE
-            WHEN cur = '' THEN ''
-            ELSE COALESCE(NULLIF(btrim(regexp_replace(
-                cur,
-                '(?:\s*,\s*|\s+)(?:co\.?,?\s*ltd\.?|inc\.?|corp\.?|corporation|ltd\.?|llc|gmbh)$',
-                '',
-                'i'
-            )), ''), cur)
-        END AS cur
-        FROM s1
-    ), s3 AS (
-        SELECT CASE
-            WHEN cur = '' THEN ''
-            ELSE COALESCE(NULLIF(btrim(regexp_replace(
-                cur,
-                '\s*(?:[(]|\[|【)\s*(?:tv\s*anime|tvアニメ|テレビアニメ|アニメ|anime|劇場版|劇場|映画|movie|film|ova|ona|漫画|マンガ|manga|コミック|comic|小説|ライトノベル|novel|light\s*novel|ゲーム|game|シングル|single|アルバム|album|ep|ost|サウンドトラック|soundtrack|cd|bd|dvd|blu-?ray|lp|mv|pv|バンド|band|ユニット|unit|グループ|group|キャラクター|character)\s*(?:[)]|\]|】)$',
-                '',
-                'i'
-            )), ''), cur)
-        END AS cur
-        FROM s2
-    )
-    SELECT CASE
-        WHEN cur = '' THEN ''
-        ELSE COALESCE(NULLIF(regexp_replace(
+LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE STRICT AS $fn$
+DECLARE
+    cur text;
+    cleaned text;
+BEGIN
+    cur := catalog.identity_title(translate(
+        value,
+        U&'\3000' || '！＂＃＄％＆＇（）＊＋，－．／０１２３４５６７８９：；＜＝＞？＠ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ［＼］＾＿｀ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ｛｜｝～',
+        ' ' || '!"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
+    ));
+    IF cur = '' THEN
+        RETURN '';
+    END IF;
+    IF strpos(cur, '株') > 0 OR strpos(cur, '有') > 0 OR strpos(cur, '社') > 0 OR strpos(cur, '㈱') > 0 OR strpos(cur, '㈲') > 0 THEN
+        cleaned := btrim(regexp_replace(
             cur,
-            '[\x01-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\u00A0-\u00BF\u2000-\u206F\u2E00-\u2E7F\u3000-\u3004\u3008-\u303A\u303D-\u303F\u30FB\uFE30-\uFE6F\uFF61-\uFF65]+',
+            '^(?:株式会社|有限会社|合同会社|合資会社|一般社団法人|公益財団法人|\(株\)|\(有\)|㈱|㈲)\s*|\s*(?:株式会社|有限会社|合同会社|合資会社|一般社団法人|公益財団法人|\(株\)|\(有\)|㈱|㈲)$',
             '',
             'g'
-        ), ''), cur)
-    END
-    FROM s3
+        ));
+        IF cleaned <> '' THEN cur := cleaned; END IF;
+    END IF;
+    IF strpos(cur, 'ltd') > 0 OR strpos(cur, 'inc') > 0 OR strpos(cur, 'corp') > 0 OR strpos(cur, 'llc') > 0 OR strpos(cur, 'gmbh') > 0 THEN
+        cleaned := btrim(regexp_replace(
+            cur,
+            '(?:\s*,\s*|\s+)(?:co\.?,?\s*ltd\.?|inc\.?|corp\.?|corporation|ltd\.?|llc|gmbh)$',
+            '',
+            'i'
+        ));
+        IF cleaned <> '' THEN cur := cleaned; END IF;
+    END IF;
+    IF right(cur, 1) IN (')', ']', '】') THEN
+        cleaned := btrim(regexp_replace(
+            cur,
+            '\s*(?:[(]|\[|【)\s*(?:tv\s*anime|tvアニメ|テレビアニメ|アニメ|anime|劇場版|劇場|映画|movie|film|ova|ona|漫画|マンガ|manga|コミック|comic|小説|ライトノベル|novel|light\s*novel|ゲーム|game|シングル|single|アルバム|album|ep|ost|サウンドトラック|soundtrack|cd|bd|dvd|blu-?ray|lp|mv|pv|バンド|band|ユニット|unit|グループ|group|キャラクター|character)\s*(?:[)]|\]|】)$',
+            '',
+            'i'
+        ));
+        IF cleaned <> '' THEN cur := cleaned; END IF;
+    END IF;
+    cleaned := regexp_replace(
+        cur,
+        '[\x01-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\u00A0-\u00BF\u2000-\u206F\u2E00-\u2E7F\u3000-\u3004\u3008-\u303A\u303D-\u303F\u30FB\uFE30-\uFE6F\uFF61-\uFF65]+',
+        '',
+        'g'
+    );
+    IF cleaned <> '' THEN RETURN cleaned; END IF;
+    RETURN cur;
+END
 $fn$;
 
 CREATE OR REPLACE FUNCTION catalog.identity_core_titles(doc jsonb) RETURNS text[]
