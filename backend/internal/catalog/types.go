@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-var Kinds = []string{"agent", "collection", "work", "content_unit", "expression", "release", "medium", "track"}
+var Kinds = []string{"agent", "collection", "work", "content_unit", "expression", "release", "medium", "track", "event"}
 
 type Names map[string]string
 
@@ -51,7 +51,7 @@ const SourceScopeCommit = "commit"
 type PicturesJSON []Picture
 
 // TimeSpan 采用 IFLA LRM E11 的区间语义：允许只知一端和部分日期。
-// 这是内嵌值结构，不凭时间跨度制造第九种目录实体；需要跨事实共享身份时另立规则。
+// 这是内嵌值结构，不为裸时间区间制造独立实体；具有独立身份的活动使用 event 实体。
 type TimeSpan struct {
 	Begin string `json:"begin,omitempty"`
 	End   string `json:"end,omitempty"`

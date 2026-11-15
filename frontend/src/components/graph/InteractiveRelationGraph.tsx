@@ -34,6 +34,7 @@ import {
   Disc,
   User,
   Film,
+  Calendar,
   X,
   Scan,
   RotateCcw,
@@ -93,6 +94,16 @@ const getEntityTypeTheme = (
         stroke: isDark ? "#4f46e5" : "#818cf8",
         badgeBgClass: "bg-indigo-500/15 text-indigo-700 dark:text-alt-soft border-indigo-500/30",
         icon: Layers,
+      };
+    case "event":
+      return {
+        label: labelOf(type),
+        primaryColor: isDark ? "#38bdf8" : "#0284c7",
+        bgFill: isDark ? "#0c4a6e" : "#e0f2fe",
+        textFill: isDark ? "#7dd3fc" : "#0369a1",
+        stroke: isDark ? "#0284c7" : "#38bdf8",
+        badgeBgClass: "bg-info/15 text-info dark:text-info-soft border-info/30",
+        icon: Calendar,
       };
     case "content_unit":
       return {

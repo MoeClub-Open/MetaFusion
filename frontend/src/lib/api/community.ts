@@ -6,16 +6,10 @@ import type { Entity } from "@/components/catalog/api";
 import { copyText } from "@/lib/clipboard";
 
 // ── 收藏 ──
-// target_type 直接就是实体 kind（固定八种骨架），不再使用旧词表别名。
-export type FavoriteTargetType =
-  | "agent"
-  | "collection"
-  | "work"
-  | "content_unit"
-  | "expression"
-  | "release"
-  | "medium"
-  | "track";
+import type { EntityKind } from "@/lib/kinds.generated";
+
+// target_type 直接对应实体 kind（与 kinds.generated.ts 同源），不再使用旧词表别名。
+export type FavoriteTargetType = EntityKind;
 
 export interface FavoriteItem {
   id: string;

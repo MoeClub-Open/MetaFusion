@@ -113,6 +113,15 @@ export function EntityRelationOverview({
         const rankLabel = getTermName(defs, "character_rank", rank, locale);
         if (rankLabel && rankLabel !== rank && !parts.includes(rankLabel)) parts.push(rankLabel);
       }
+      const transition = attrText(attrs.transition_type);
+      if (transition) {
+        const transitionLabel = getTermName(defs, "transition_type", transition, locale);
+        if (transitionLabel && !parts.includes(transitionLabel)) parts.push(transitionLabel);
+      }
+      const begin = attrText(attrs.begin_date);
+      const end = attrText(attrs.end_date);
+      const span = begin && end ? `${begin}–${end}` : end ? `–${end}` : begin ? (attrs.ended === true ? `${begin}–?` : `${begin}–`) : attrs.ended === true ? t("relations.temporal.ended") : "";
+      if (span && !parts.includes(span)) parts.push(span);
     }
     return parts.slice(0, 2).join(" · ");
   };

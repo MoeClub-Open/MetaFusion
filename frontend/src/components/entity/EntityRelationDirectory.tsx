@@ -12,7 +12,14 @@ import { getFieldName, getKindName, getRelationName, useDefinitions } from "@/li
 import { coverUrl } from "@/lib/cover";
 import { isDistinctOriginalTitle } from "@/lib/titles";
 import { ENTITY_KINDS } from "@/lib/kinds.generated";
-import { relationDirectoryRows, relationDirectorySearch, type RelationDirectoryRow } from "@/lib/relationDirectory";
+import {
+  filterRelationDirectoryTemporal,
+  hasTemporalQualifiers,
+  relationDirectoryRows,
+  relationDirectorySearch,
+  validPartialISODate,
+  type RelationDirectoryRow,
+} from "@/lib/relationDirectory";
 import { RelationFilterBar, useRelationFilter } from "./RelationFilterBar";
 
 const BUCKET_COLLAPSED_LIMIT = 20;
@@ -24,14 +31,25 @@ export function EntityRelationDirectory({ subjectId, relations, entities, groupO
   const { definitions: defs, kinds, relationshipRules } = useDefinitions();
   const titleOrder = useTitleDisplayOrder();
   const searchId = useId();
+  const asOfId = useId();
   const [search, setSearch] = useState("");
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [asOfInput, setAsOfInput] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const rows = useMemo(() => relationDirectoryRows(subjectId, relations, entities), [subjectId, relations, entities]);
-  const filterRows = useMemo(() => rows.filter((row) => relationDirectorySearch(row, search)).map((row) => ({
+  const showTemporalControls = useMemo(() => hasTemporalQualifiers(rows) || activeOnly || Boolean(asOfInput.trim()), [rows, activeOnly, asOfInput]);
+  const trimmedAsOf = asOfInput.trim();
+  const asOfInvalid = Boolean(trimmedAsOf) && !validPartialISODate(trimmedAsOf);
+  const effectiveAsOf = trimmedAsOf && !asOfInvalid ? trimmedAsOf : "";
+  const temporalRows = useMemo(
+    () => filterRelationDirectoryTemporal(rows, { activeOnly, asOf: effectiveAsOf }),
+    [rows, activeOnly, effectiveAsOf],
+  );
+  const filterRows = useMemo(() => temporalRows.filter((row) => relationDirectorySearch(row, search)).map((row) => ({
     ...row, label: row.direction === "incoming" && row.type.startsWith("attribute:")
       ? t("relations.directory.referencedAs", { field: getRelationName(defs, row.type, true, locale, relationshipRules) })
       : getRelationName(defs, row.type, row.direction !== "incoming", locale, relationshipRules),
-  })), [rows, search, defs, locale, relationshipRules, t]);
+  })), [temporalRows, search, defs, locale, relationshipRules, t]);
   const filter = useRelationFilter(filterRows, groupOrder);
   const name = (entity: Entity | undefined, id: string) => entity ? title(entity, locale, titleOrder) || entity.title || id : id;
   const count = filter.visible.reduce((sum, row) => sum + row.records.length, 0);
@@ -58,6 +76,18 @@ export function EntityRelationDirectory({ subjectId, relations, entities, groupO
         <input id={searchId} type="search" value={search} onChange={(event) => setSearch(event.target.value)}
           placeholder={t("relations.directory.search")} className="w-full min-w-0 !border-0 !bg-transparent !p-0 text-xs sm:text-sm outline-none" />
       </label>
+      {showTemporalControls && <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setActiveOnly((prev) => !prev)} aria-pressed={activeOnly}
+          className={`rounded-control border px-2.5 py-1 text-xs transition-colors cursor-pointer ${activeOnly ? "border-primary bg-primary text-primary-foreground font-medium" : "border-line bg-surfaceSubtle text-text-body hover:border-primary/40"}`}>
+          {t("relations.temporal.activeOnly")}
+        </button>
+        <label htmlFor={asOfId} className={`inline-flex items-center gap-1.5 rounded-control border bg-surfaceSubtle px-2.5 py-1 text-xs ${asOfInvalid ? "border-danger text-danger" : "border-line text-text-muted"}`}>
+          <span>{t("relations.temporal.asOf")}</span>
+          <input id={asOfId} type="text" inputMode="numeric" value={asOfInput} onChange={(event) => setAsOfInput(event.target.value)}
+            aria-invalid={asOfInvalid || undefined} placeholder={t("relations.temporal.asOfPlaceholder")}
+            className={`w-36 !border-0 !bg-transparent !p-0 font-mono text-xs outline-none ${asOfInvalid ? "text-danger" : "text-text-strong"}`} />
+        </label>
+      </div>}
       <RelationFilterBar facets={filter.facets} selection={filter.selection} onToggle={filter.toggle} />
       <p className="text-xs text-text-muted" role="status">{t("relations.directory.count", { count: filter.visible.length, records: count })}</p>
     </div>}

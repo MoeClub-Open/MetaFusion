@@ -156,7 +156,7 @@ func validateGroupRanges(f Field) error {
 		if child.RangeStart == "" {
 			continue
 		}
-		if child.Type != "number" {
+		if child.Type != "number" && (child.Type != "date" || child.AllowYearless) {
 			return fmt.Errorf("range_start_not_number: %s", key)
 		}
 		if child.RangeStart == key {
@@ -166,7 +166,7 @@ func validateGroupRanges(f Field) error {
 		if !ok {
 			return fmt.Errorf("range_start_unknown: %s", child.RangeStart)
 		}
-		if start.Type != "number" {
+		if start.Type != child.Type || (start.Type == "date" && start.AllowYearless) {
 			return fmt.Errorf("range_start_not_number: %s", child.RangeStart)
 		}
 		if start.RangeStart != "" {
@@ -185,6 +185,16 @@ func validateGroupOrder(m map[string]any, f Field) error {
 	for _, key := range sortedFieldKeys(f) {
 		child := f.Fields[key]
 		if child.RangeStart == "" {
+			continue
+		}
+		if child.Type == "date" {
+			sv, sok := m[child.RangeStart].(string)
+			ev, eok := m[key].(string)
+			sv, ev = strings.TrimSpace(sv), strings.TrimSpace(ev)
+			if sok && eok && sv != "" && ev != "" && !strings.HasPrefix(sv, "--") && !strings.HasPrefix(ev, "--") &&
+				pictureTimeStart(sv).After(pictureTimeEnd(ev)) {
+				return fmt.Errorf("invalid_date_range: %s", child.RangeStart)
+			}
 			continue
 		}
 		sv, sok := toFloat(m[child.RangeStart])
@@ -924,6 +934,23 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 		}
 		if e := d.value(f, values[k], reference, historical); e != nil {
 			return fmt.Errorf("%s: %w", k, e)
+		}
+	}
+	if !historical && len(values) > 0 {
+		for _, pair := range [][2]string{
+			{"begin_date", "end_date"},
+			{"earliest_date", "latest_date"},
+			{"birth_date", "death_date"},
+			{"formation_date", "dissolution_date"},
+			{"broadcast_start", "broadcast_end"},
+		} {
+			sv, sok := values[pair[0]].(string)
+			ev, eok := values[pair[1]].(string)
+			sv, ev = strings.TrimSpace(sv), strings.TrimSpace(ev)
+			if sok && eok && sv != "" && ev != "" && !strings.HasPrefix(sv, "--") && !strings.HasPrefix(ev, "--") &&
+				pictureTimeStart(sv).After(pictureTimeEnd(ev)) {
+				return fmt.Errorf("%s: invalid_date_range", pair[1])
+			}
 		}
 	}
 	return nil

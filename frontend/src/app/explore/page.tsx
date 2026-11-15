@@ -48,8 +48,8 @@ import { languageLabel, searchLanguages } from "@/lib/languages";
 
 // 固定骨架的浏览顺序；可选项和多语言名称仍由 definitions 提供。
 // 关键词搜索的「全部」只返回独立条目；同一作品的表达与收录位置在详情页展开。
-const SEARCH_DEFAULT_KINDS = "work,release,agent,collection";
-const EXPLORE_KIND_ORDER = ["work", "content_unit", "expression", "release", "medium", "track", "agent", "collection"];
+const SEARCH_DEFAULT_KINDS = "work,release,agent,collection,event";
+const EXPLORE_KIND_ORDER = ["work", "content_unit", "expression", "release", "medium", "track", "agent", "collection", "event"];
 /** FRBR 内部层级标签（内容单元/内容表达/载体/曲目）：仅编辑者侧栏可见。 */
 const FRBR_INTERNAL_KINDS = new Set(["content_unit", "expression", "medium", "track"]);
 

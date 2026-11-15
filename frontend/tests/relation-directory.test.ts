@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { relationDirectoryRows, relationDirectorySearch } from "../src/lib/relationDirectory";
+import {
+  filterRelationDirectoryTemporal,
+  hasTemporalQualifiers,
+  relationDirectoryRows,
+  relationDirectorySearch,
+  validPartialISODate,
+} from "../src/lib/relationDirectory";
+import { ENTITY_KINDS } from "../src/lib/kinds.generated";
 import type { Entity, Relation } from "../src/components/catalog/api";
 
 const entities = { work: { id: "work", kind: "work", title: "Song", translations: { "zh-CN": { title: "曲目", aliases: ["别名"] } } },
@@ -34,4 +41,33 @@ test("missing related summaries do not remove relationships or invent a title", 
   assert.equal(rows[0].entityId, "missing");
   assert.equal(rows[0].entity, undefined);
   assert.equal(rows[0].records[0].id, "missing");
+});
+
+test("temporal filtering handles active_only, ended flag, partial ISO as_of, and uncertainty bounds", () => {
+  assert.ok((ENTITY_KINDS as readonly string[]).includes("event"));
+  assert.equal(validPartialISODate("2020"), true);
+  assert.equal(validPartialISODate("2020-02-29"), true);
+  assert.equal(validPartialISODate("2019-02-29"), false);
+
+  const nowMs = Date.UTC(2026, 5, 1);
+  const records = [
+    relation("active", "person", "band", { begin_date: "2022-04" }),
+    relation("endedFlag", "work", "band", { begin_date: "2018", ended: true }),
+    relation("pastTenure", "recording", "band", { begin_date: "2015-04", end_date: "2019-03" }),
+    relation("rejoined", "recording", "band", { begin_date: "2023-01" }),
+    relation("uncertain", "live", "band", { earliest_date: "2016", latest_date: "2017" }),
+  ];
+  const rows = relationDirectoryRows("band", records, entities);
+  assert.equal(hasTemporalQualifiers(rows), true);
+
+  const active = filterRelationDirectoryTemporal(rows, { activeOnly: true }, nowMs);
+  assert.deepEqual(active.map((r) => r.entityId), ["person", "recording"]);
+  assert.deepEqual(active.find((r) => r.entityId === "recording")?.records.map((rec) => rec.id), ["rejoined"]);
+
+  const asOf2018 = filterRelationDirectoryTemporal(rows, { asOf: "2018" }, nowMs);
+  assert.deepEqual(asOf2018.map((r) => r.entityId), ["work", "recording"]);
+  assert.deepEqual(asOf2018.find((r) => r.entityId === "recording")?.records.map((rec) => rec.id), ["pastTenure"]);
+
+  const asOf2016 = filterRelationDirectoryTemporal(rows, { asOf: "2016-06" }, nowMs);
+  assert.ok(asOf2016.some((r) => r.entityId === "live"));
 });

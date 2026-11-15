@@ -30,7 +30,7 @@ type ExternalDatabase struct {
 // externalDatabaseCategories 允许的适用 kind：all 表示所有实体，其余为固定八实体 kind。
 var externalDatabaseCategories = map[string]bool{
 	"all": true, "agent": true, "collection": true, "work": true, "content_unit": true,
-	"expression": true, "release": true, "medium": true, "track": true,
+	"expression": true, "release": true, "medium": true, "track": true, "event": true,
 }
 
 // 外链地址由**前端**按 url_pattern 拼（{id} 替换，见 ExternalAuthorityLinks.tsx）：
@@ -390,6 +390,7 @@ func externalDatabaseSeeds() []ExternalDatabase {
 		// 故不采用任务初拟的 ^fst?\d+$（它要求 fs 前缀、会误拒裸数字这个最常用形态），改 ^(?:fst)?0*\d+$ 两者都收。
 		// 本机 403/000；浏览器可达，仅引用目标，无适配器。
 		{Code: "oclc_fast", Names: map[string]string{"zh-CN": "OCLC FAST 主题规范", "zh-TW": "OCLC FAST 主題權威", "ja": "OCLC FAST（分面適用主題詞表）", "ja-JP": "OCLC FAST（分面適用主題詞表）", "en-US": "OCLC FAST"}, Category: "work", URLPattern: "https://id.worldcat.org/fast/{id}", Icon: "Database", ValidationRegex: `^(?:fst)?0*\d+$`, Description: "OCLC 分面应用主题词表 FAST，主题规范 ID（fst 号或裸数字）", SortOrder: 460, IsEnabled: true, IsSystem: true},
+		{Code: "musicbrainz_event", Names: names4("MusicBrainz 活动", "MusicBrainz 活動", "MusicBrainz イベント", "MusicBrainz Event"), Category: "event", URLPattern: "https://musicbrainz.org/event/{id}", Icon: "Calendar", ValidationRegex: `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`, Description: "MusicBrainz 演出与活动条目标识符 (UUID)", SortOrder: 470, IsEnabled: true, IsSystem: true},
 	}
 }
 

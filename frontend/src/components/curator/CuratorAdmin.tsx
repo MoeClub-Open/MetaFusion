@@ -19,6 +19,7 @@ import { CuratorWorkspace } from "./CuratorWorkspace";
 import { AssistantSearchPicker } from "@/components/assistant/AssistantSearchPicker";
 import { Select } from "@/components/ui/Select";
 import { assistantAllPages } from "@/lib/assistantUser";
+import { ENTITY_KINDS } from "@/lib/kinds.generated";
 
 type Tab = "chat" | "overview" | "findings" | "runs";
 const PAGE_SIZE = 25;
@@ -282,7 +283,7 @@ export function CuratorAdmin() {
       <div className="flex flex-wrap items-center gap-2">
         <Select fullWidth={false} aria-label={t("curator.filter.allStatus")} value={statusFilter} onChange={(val) => { setStatusFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allStatus") }, ...STATUSES.map((value) => ({ value, label: t("curator.status." + value) }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
         <Select fullWidth={false} aria-label={t("curator.filter.allCode")} value={codeFilter} onChange={(val) => { setCodeFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allCode") }, ...CODES.map((value) => ({ value, label: value }))]} className="!h-8 min-w-[9rem] !px-2.5 !text-xs !bg-surface" />
-        <Select fullWidth={false} aria-label={t("curator.filter.allKind")} value={kindFilter} onChange={(val) => { setKindFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allKind") }, ...["agent", "collection", "work", "content_unit", "expression", "release", "medium", "track"].map((value) => ({ value, label: value }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
+        <Select fullWidth={false} aria-label={t("curator.filter.allKind")} value={kindFilter} onChange={(val) => { setKindFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allKind") }, ...ENTITY_KINDS.map((value) => ({ value, label: value }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
         <span className="text-[11px] text-text-faint">{t("curator.filter.pending")} {pending}</span>
       </div>
       <div className="overflow-x-auto rounded-panel border border-line bg-surface">

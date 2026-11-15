@@ -14,13 +14,15 @@ import (
 // RelationshipQueryRequest reads only direct neighbors; it never recursively
 // expands a graph or stores duplicate structural relationships.
 type RelationshipQueryRequest struct {
-	IDs       []string `json:"ids"`
-	Direction string   `json:"direction,omitempty"`
-	Classes   []string `json:"classes,omitempty"`
-	RuleCodes []string `json:"rule_codes,omitempty"`
-	PeerKinds []string `json:"peer_kinds,omitempty"`
-	Limit     *int     `json:"limit,omitempty"`
-	Offset    *int     `json:"offset,omitempty"`
+	IDs        []string `json:"ids"`
+	Direction  string   `json:"direction,omitempty"`
+	Classes    []string `json:"classes,omitempty"`
+	RuleCodes  []string `json:"rule_codes,omitempty"`
+	PeerKinds  []string `json:"peer_kinds,omitempty"`
+	ActiveOnly *bool    `json:"active_only,omitempty"`
+	AsOf       string   `json:"as_of,omitempty"`
+	Limit      *int     `json:"limit,omitempty"`
+	Offset     *int     `json:"offset,omitempty"`
 }
 
 // RelationshipEntity is deliberately a summary, not an editable Entity: full
@@ -66,11 +68,14 @@ func normalizeRelationshipQuery(in RelationshipQueryRequest) (RelationshipQueryR
 		}
 	}
 	in.IDs = ids
+	activeOnly := in.ActiveOnly != nil && *in.ActiveOnly
 	normalized, err := normalizeRelationshipLinkFilters(relationshipFilters{
-		Direction: in.Direction,
-		Classes:   in.Classes,
-		RuleCodes: in.RuleCodes,
-		PeerKinds: in.PeerKinds,
+		Direction:  in.Direction,
+		Classes:    in.Classes,
+		RuleCodes:  in.RuleCodes,
+		PeerKinds:  in.PeerKinds,
+		ActiveOnly: activeOnly,
+		AsOf:       in.AsOf,
 	})
 	if err != nil {
 		return in, 0, 0, err
@@ -79,6 +84,7 @@ func normalizeRelationshipQuery(in RelationshipQueryRequest) (RelationshipQueryR
 	in.Classes = normalized.Classes
 	in.RuleCodes = normalized.RuleCodes
 	in.PeerKinds = normalized.PeerKinds
+	in.AsOf = normalized.AsOf
 	limit, offset := 25, 0
 	if in.Limit != nil {
 		limit = *in.Limit
@@ -127,6 +133,10 @@ func normalizeRelationshipLinkFilters(in relationshipFilters) (relationshipFilte
 	in.Classes = uniqueRelationshipFilters(in.Classes)
 	in.RuleCodes = uniqueRelationshipFilters(in.RuleCodes)
 	in.PeerKinds = uniqueRelationshipFilters(in.PeerKinds)
+	in.AsOf = strings.TrimSpace(in.AsOf)
+	if in.AsOf != "" && !validPartialISODate(in.AsOf) {
+		return in, fmt.Errorf("invalid_date")
+	}
 	return in, nil
 }
 
@@ -226,7 +236,14 @@ func queryRelationshipsFrom(ctx context.Context, q queryer, in RelationshipQuery
 	if err != nil {
 		return out, err
 	}
-	filters := relationshipFilters{Direction: in.Direction, Classes: in.Classes, RuleCodes: in.RuleCodes, PeerKinds: in.PeerKinds}
+	filters := relationshipFilters{
+		Direction:  in.Direction,
+		Classes:    in.Classes,
+		RuleCodes:  in.RuleCodes,
+		PeerKinds:  in.PeerKinds,
+		ActiveOnly: in.ActiveOnly != nil && *in.ActiveOnly,
+		AsOf:       in.AsOf,
+	}
 	// Empty lists mean no filter, including explicitly supplied [] arrays.
 	if len(filters.Classes) == 0 {
 		filters.Classes = nil

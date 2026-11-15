@@ -20,6 +20,7 @@ export const GRAPH_HUB_HEIGHT = 46;
 const SKELETON_TIER: Record<string, number> = {
   collection: 1,
   work: 2,
+  event: 2,
   content_unit: 3,
   release: 4,
   medium: 5,

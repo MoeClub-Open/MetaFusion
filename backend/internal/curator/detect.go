@@ -192,7 +192,7 @@ func notDecided(code string) string {
 func (s *Service) detectDuplicateTitles(ctx context.Context) ([]candidate, error) {
 	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.kind,btrim(e.title),array_agg(e.id::text ORDER BY e.id)
 		FROM catalog.entities e
-		WHERE e.state='active' AND e.kind IN ('agent','work','release','collection')
+		WHERE e.state='active' AND e.kind IN ('agent','work','release','collection','event')
 		  AND btrim(e.title)<>''`+notDecided(CodeDuplicateTitle)+`
 		GROUP BY 1,2 HAVING count(*)>1
 		ORDER BY count(*) DESC,1,2 LIMIT $1`, duplicateGroupLimit)
@@ -407,7 +407,7 @@ func (s *Service) detectDuplicatePictureValues(ctx context.Context) ([]candidate
 func (s *Service) detectMissingPicture(ctx context.Context) ([]candidate, error) {
 	rows, err := s.Catalog.DB.QueryContext(ctx, `SELECT e.id::text,e.kind,btrim(e.title)
 		FROM catalog.entities e
-		WHERE e.state='active' AND e.kind IN ('agent','work','release','collection')
+		WHERE e.state='active' AND e.kind IN ('agent','work','release','collection','event')
 		  AND CASE WHEN jsonb_typeof(e.document->'pictures')='array' THEN jsonb_array_length(e.document->'pictures')=0 ELSE true END
 		  AND CASE WHEN jsonb_typeof(e.document->'external_links')='array' THEN jsonb_array_length(e.document->'external_links')>0 ELSE false END`+notDecided(CodeMissingPicture)+`
 		ORDER BY e.updated_at DESC,e.id LIMIT $1`, detectorLimit)

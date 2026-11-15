@@ -313,6 +313,11 @@ func aliasTitleNorms(e IdentityCandidateEntity) map[string]bool {
 			}
 		}
 	}
+	for _, fn := range searchFormerNames(e.Attributes["former_names"]) {
+		if n := identityTitle(fn); n != "" {
+			out[n] = true
+		}
+	}
 	return out
 }
 
@@ -332,6 +337,9 @@ func coreTitleNorms(e IdentityCandidateEntity) map[string]bool {
 		for _, a := range t.NonofficialAliases {
 			add(a)
 		}
+	}
+	for _, fn := range searchFormerNames(e.Attributes["former_names"]) {
+		add(fn)
 	}
 	return out
 }
@@ -538,7 +546,7 @@ func assessMatch(in IdentityCandidateQuery, item IdentityCandidateMatch, peers c
 			summary["catalog_number"] = nums
 		}
 	}
-	for _, classKey := range []string{"agent_type", "creation_form", "collection_type"} {
+	for _, classKey := range []string{"agent_type", "creation_form", "collection_type", "event_type"} {
 		if vals := attributeValues(e.Attributes, classKey); len(vals) > 0 {
 			summary[classKey] = vals[0]
 			for _, attr := range in.Attributes {

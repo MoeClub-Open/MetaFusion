@@ -58,6 +58,38 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 				added = append(added, "fields."+code+".applicable_kinds."+kind)
 			}
 		}
+		if newFields["event_type"] && seeded.Type == "entity" && contains(seeded.Kinds, "event") && !contains(currentField.Kinds, "event") {
+			currentField.Kinds = append(append([]string{}, currentField.Kinds...), "event")
+			added = append(added, "fields."+code+".kinds.event")
+		}
+		if seeded.Type == "list" && seeded.Items != nil && seeded.Items.Type == "group" &&
+			currentField.Type == "list" && currentField.Items != nil && currentField.Items.Type == "group" {
+			clonedItems := *currentField.Items
+			clonedMap := make(map[string]Field, len(clonedItems.Fields))
+			for sk, sv := range clonedItems.Fields {
+				clonedMap[sk] = sv
+			}
+			subChanged := false
+			for sk, seedSub := range seeded.Items.Fields {
+				curSub, exists := clonedMap[sk]
+				if !exists {
+					clonedMap[sk] = seedSub
+					added = append(added, "fields."+code+".items.fields."+sk)
+					subChanged = true
+					continue
+				}
+				if curSub.RangeStart == "" && seedSub.RangeStart != "" && (newFields["ended"] || newFields["former_names"]) {
+					curSub.RangeStart = seedSub.RangeStart
+					clonedMap[sk] = curSub
+					added = append(added, "fields."+code+".items.fields."+sk+".range_start")
+					subChanged = true
+				}
+			}
+			if subChanged {
+				clonedItems.Fields = clonedMap
+				currentField.Items = &clonedItems
+			}
+		}
 		out.Fields[code] = currentField
 	}
 	for k, v := range seed.Vocabularies {
@@ -101,6 +133,37 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 		if _, ok := out.Relations[k]; !ok {
 			out.Relations[k] = v
 			added = append(added, "relations."+k)
+		}
+	}
+	if len(newFields) > 0 {
+		for code, seedRel := range seed.Relations {
+			if _, existed := current.Relations[code]; !existed {
+				continue
+			}
+			curRel := out.Relations[code]
+			changed := false
+			for _, f := range seedRel.Fields {
+				if newFields[f] && !contains(curRel.Fields, f) {
+					curRel.Fields = append(append([]string{}, curRel.Fields...), f)
+					added = append(added, "relations."+code+".fields."+f)
+					changed = true
+				}
+			}
+			if newFields["event_type"] {
+				if contains(seedRel.SourceKinds, "event") && !contains(curRel.SourceKinds, "event") {
+					curRel.SourceKinds = append(append([]string{}, curRel.SourceKinds...), "event")
+					added = append(added, "relations."+code+".source_kinds.event")
+					changed = true
+				}
+				if contains(seedRel.TargetKinds, "event") && !contains(curRel.TargetKinds, "event") {
+					curRel.TargetKinds = append(append([]string{}, curRel.TargetKinds...), "event")
+					added = append(added, "relations."+code+".target_kinds.event")
+					changed = true
+				}
+			}
+			if changed {
+				out.Relations[code] = curRel
+			}
 		}
 	}
 	for k, v := range seed.Templates {

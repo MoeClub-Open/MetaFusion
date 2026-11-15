@@ -630,7 +630,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		respond(c, v, err)
 	})
 	cat.GET("/entities/:id/links", func(c *gin.Context) {
-		if err := validateTextQuery(c, "direction", "classes", "rule_codes", "peer_kinds"); err != nil {
+		if err := validateTextQuery(c, "direction", "classes", "rule_codes", "peer_kinds", "active_only", "as_of"); err != nil {
 			respond(c, nil, err)
 			return
 		}
@@ -639,11 +639,22 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
+		activeOnly := false
+		switch strings.TrimSpace(c.Query("active_only")) {
+		case "", "false", "0":
+		case "true", "1":
+			activeOnly = true
+		default:
+			respond(c, nil, fmt.Errorf("invalid_query_param"))
+			return
+		}
 		filters := relationshipFilters{
-			Direction: strings.TrimSpace(c.Query("direction")),
-			Classes:   queryList(c, "classes"),
-			RuleCodes: queryList(c, "rule_codes"),
-			PeerKinds: queryList(c, "peer_kinds"),
+			Direction:  strings.TrimSpace(c.Query("direction")),
+			Classes:    queryList(c, "classes"),
+			RuleCodes:  queryList(c, "rule_codes"),
+			PeerKinds:  queryList(c, "peer_kinds"),
+			ActiveOnly: activeOnly,
+			AsOf:       strings.TrimSpace(c.Query("as_of")),
 		}
 		page, err := s.EntityLinksFiltered(c.Request.Context(), c.Param("id"), limit, offset, filters, user(c))
 		respond(c, page, err)

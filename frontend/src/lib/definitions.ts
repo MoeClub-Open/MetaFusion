@@ -579,6 +579,7 @@ export const PRIMARY_CLASSIFICATION_FIELD: Record<string, string> = {
   work: "creation_form",
   agent: "agent_type",
   collection: "collection_type",
+  event: "event_type",
   release: "edition_type",
   medium: "format",
   content_unit: "entry_role",

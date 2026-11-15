@@ -218,7 +218,7 @@ const collaborationCommitPublicPredicate = `c.merged_at IS NOT NULL AND COALESCE
 	FROM (
 		SELECT target,target_id::text,base_document,before_document,after_document FROM catalog.commit_objects WHERE commit_id=c.id
 		UNION ALL
-		SELECT CASE WHEN r.snapshot->>'kind' IN ('agent','collection','work','content_unit','expression','release','medium','track') THEN 'entity'
+		SELECT CASE WHEN r.snapshot->>'kind' IN ('agent','collection','work','content_unit','expression','release','medium','track','event') THEN 'entity'
 			WHEN r.snapshot ? 'source_id' AND r.snapshot ? 'target_id' AND r.snapshot ? 'type' THEN 'relation' ELSE '' END,
 			r.target_id,NULL::jsonb,r.snapshot,NULL::jsonb
 		FROM catalog.revision_commits rc JOIN catalog.revisions r ON r.id=rc.revision_id

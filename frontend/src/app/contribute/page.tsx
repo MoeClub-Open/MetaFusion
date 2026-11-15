@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { useI18n } from "@/i18n/I18nProvider";
-import { Layers, Users, Disc, Network, ArrowRight } from "lucide-react";
+import { Layers, Users, Disc, Network, Calendar, ArrowRight } from "lucide-react";
 import { PageShell } from "@/components/ui/PageShell";
 
 export default function ContributeHubPage() {
@@ -44,6 +44,15 @@ export default function ContributeHubPage() {
       accent: "text-alt",
       border: "hover:border-indigo-500/30",
       bg: "bg-indigo-500/10",
+    },
+    {
+      href: "/new?kind=event",
+      icon: Calendar,
+      title: t("create.hub.cardEventTitle"),
+      desc: t("create.hub.cardEventDesc"),
+      accent: "text-danger",
+      border: "hover:border-primary/40",
+      bg: "bg-danger/10",
     },
   ] as const;
 

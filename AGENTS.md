@@ -26,7 +26,7 @@
 
 规范见 [架构基准](docs/architecture/spec-driven-requirements.md)：元数据主系统共用数据库一体化运行，类型/关系/字段走服务端 definitions 动态加载与多语言解析，外围论坛与存储独立解耦。不硬编码文案，不写夸张 Slogan。
 
-统一入口 `/api`（实现 `backend/internal/catalog`），八种实体的规范前端详情路由均为 `/catalog/[id]`；实体 kind 只选择内容布局，不参与 URL 命名。固定实体骨架（Agent、Collection、Work、ContentUnit、Expression、Release、Medium、Track）+ Release.subjects + 跨 Work TrackContent；见 [元数据目录教程](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/catalog.md)。
+统一入口 `/api`（实现 `backend/internal/catalog`），九种实体的规范前端详情路由均为 `/catalog/[id]`；实体 kind 只选择内容布局，不参与 URL 命名。固定实体骨架（Agent、Collection、Work、ContentUnit、Expression、Release、Medium、Track、Event）+ Release.subjects + 跨 Work TrackContent；见 [元数据目录教程](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/catalog.md)。
 
 ## 3. 项目导航与事实来源
 

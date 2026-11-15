@@ -104,7 +104,9 @@ func assistantToolDefinitions() []map[string]any {
 		tool("catalog_relationships", "Query unified structural, attribute and semantic relationships, including referenced context. Each subject has its own has_more and offset.", object(map[string]any{
 			"ids": list(uuid("Visible subject ID."), 10), "direction": map[string]any{"type": "string", "enum": []string{"both", "outgoing", "incoming"}},
 			"classes": list(map[string]any{"type": "string", "enum": []string{"ownership", "placement", "inclusion", "semantic", "reference"}}, 5),
-			"rule_codes": stringsList("Published relationship rule code."), "peer_kinds": list(kind, 8), "limit": limit, "offset": integer(0, 1000000),
+			"rule_codes": stringsList("Published relationship rule code."), "peer_kinds": list(kind, len(catalog.Kinds)), "limit": limit, "offset": integer(0, 1000000),
+			"active_only":      boolProp("Only include currently active relationships (excludes ended=true or past end_date/latest_date)."),
+			"as_of":            str("Point-in-time filter YYYY, YYYY-MM, or YYYY-MM-DD; returns relationships overlapping that date."),
 			"include_entities": boolProp("Include top-level entities dictionary with extra translations/covers (default false; peer_id/peer_kind/peer_title are already inline on each edge)."),
 		}, "ids")),
 		tool("catalog_candidates", "Find identity candidates (exact, alias, core-normalized, and approximate title matches) before creating records. Required before creating a new entity; inspect assessment (reuse|review|distinct, matched_fields, conflicts) and read catalog_get before deciding whether to reuse an existing identity or create a distinct one.", object(map[string]any{

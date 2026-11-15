@@ -60,6 +60,7 @@ func KindNames() map[string]Names {
 		{"release", "发行版本", "發行版本", "リリース", "Releases"},
 		{"medium", "载体", "載體", "キャリア", "Media (carrier)"},
 		{"track", "收录位置", "收錄位置", "収録位置", "Tracks"},
+		{"event", "活动", "活動", "イベント", "Events"},
 	} {
 		out[x[0]] = names4(x[1], x[2], x[3], x[4])
 	}
@@ -153,6 +154,12 @@ func Defaults() Definitions {
 		{"context", "entity", names4("适用作品或篇目", "適用作品或篇目", "対象作品・篇目", "Context")},
 		{"begin_date", "date", names4("开始日期", "開始日期", "開始日", "Begin date")},
 		{"end_date", "date", names4("结束日期", "結束日期", "終了日", "End date")},
+		{"ended", "boolean", names4("已结束", "已結束", "終了済み", "Ended")},
+		{"date_precision", "enum", names4("时间精度", "時間精度", "日付精度", "Date precision")},
+		{"earliest_date", "date", names4("不早于", "不早於", "最早日", "Earliest date")},
+		{"latest_date", "date", names4("不晚于", "不晚於", "最遅日", "Latest date")},
+		{"time_zone", "text", names4("时区", "時區", "タイムゾーン", "Time zone")},
+		{"transition_type", "enum", names4("变更方式", "變更方式", "変更種別", "Transition type")},
 		{"scope", "text", names4("适用范围说明", "適用範圍說明", "適用範囲の説明", "Scope description")},
 		{"publisher", "entity", names4("发行主体", "發行主體", "発売元", "Publisher")},
 		{"attachments", "list", names4("包装附件", "包裝附件", "同梱物", "Package attachments")},
@@ -304,13 +311,50 @@ func Defaults() Definitions {
 			"cameo":      {Names: names4("彩蛋登场", "彩蛋登場", "カメオ", "Cameo"), Enabled: true},
 		},
 	}
+	d.Vocabularies["date_precision"] = Vocabulary{
+		Names: names4("时间精度", "時間精度", "日付精度", "Date precision"),
+		Terms: map[string]Term{
+			"exact":    {Names: names4("精确日期", "精確日期", "正確な日付", "Exact date"), Enabled: true},
+			"circa":    {Names: names4("约略时间", "約略時間", "頃・おおよそ", "Approximate (circa)"), Enabled: true},
+			"inferred": {Names: names4("考证推定", "考證推定", "考証・推定", "Inferred"), Enabled: true},
+			"disputed": {Names: names4("存在争议", "存在爭議", "諸説あり", "Disputed"), Enabled: true},
+		},
+	}
+	d.Vocabularies["transition_type"] = Vocabulary{
+		Names: names4("变更方式", "變更方式", "変更種別", "Transition type"),
+		Terms: map[string]Term{
+			"rename":      {Names: names4("更名改组", "更名改組", "改称・改組", "Rename / reorganization"), Enabled: true},
+			"merger":      {Names: names4("合并", "合併", "合併・統合", "Merger"), Enabled: true},
+			"acquisition": {Names: names4("收购并入", "收購併入", "買収・吸収", "Acquisition"), Enabled: true},
+			"split":       {Names: names4("拆分独立", "拆分獨立", "分割・独立", "Split / spin-out"), Enabled: true},
+			"transfer":    {Names: names4("业务 / 权利移交", "業務 / 權利移交", "事業・権利移管", "Business / rights transfer"), Enabled: true},
+		},
+	}
+	d.Vocabularies["embedded_event_kind"] = Vocabulary{
+		Names: names4("内嵌事件类型", "內嵌事件類型", "埋め込みイベント種別", "Embedded event kind"),
+		Terms: map[string]Term{
+			"release":      {Names: names4("发售 / 上线", "發售 / 上線", "発売・配信開始", "Release / launch"), Enabled: true},
+			"broadcast":    {Names: names4("放送 / 上映", "放送 / 上映", "放送・上映", "Broadcast / screening"), Enabled: true},
+			"reprint":      {Names: names4("再版 / 重印", "再版 / 重印", "重版・再販", "Reprint / reissue"), Enabled: true},
+			"preorder":     {Names: names4("预约 / 预售", "預約 / 預售", "予約受付", "Pre-order"), Enabled: true},
+			"update":       {Names: names4("重大更新 / 改版", "重大更新 / 改版", "大型アップデート・改訂", "Major update / revision"), Enabled: true},
+			"milestone":    {Names: names4("重要节点", "重要節點", "節目・マイルストーン", "Milestone"), Enabled: true},
+			"discontinued": {Names: names4("停售 / 停服 / 完结", "停售 / 停服 / 完結", "販売終了・サービス終了・完結", "Discontinued / ended"), Enabled: true},
+			"other":        {Names: names4("其他事件", "其他事件", "その他の出来事", "Other event"), Enabled: true},
+		},
+	}
+	for _, k := range []string{"date_precision", "transition_type"} {
+		f := d.Fields[k]
+		f.Vocabulary = k
+		d.Fields[k] = f
+	}
 	for _, k := range []string{"character", "publisher"} {
 		f := d.Fields[k]
 		f.Kinds = []string{"agent"}
 		d.Fields[k] = f
 	}
 	f := d.Fields["context"]
-	f.Kinds = []string{"work", "content_unit", "expression", "release"}
+	f.Kinds = []string{"work", "content_unit", "expression", "release", "event"}
 	d.Fields["context"] = f
 	// duration_source：该时长来自哪份录音（实体引用，仅 expression 可写）。
 	// 含义=同一 expression 在不同版本中的时长差异由引用来源解释，
@@ -339,6 +383,13 @@ func Defaults() Definitions {
 		}}
 		d.Fields[k] = f
 	}
+	eventsField := d.Fields["events"]
+	eventsField.Items.Fields["event_kind"] = Field{Names: names4("事件类型", "事件類型", "イベント種別", "Event kind"), Type: "enum", Vocabulary: "embedded_event_kind", Enabled: true}
+	eventsField.Items.Fields["end_date"] = Field{Names: names4("结束日期", "結束日期", "終了日", "End date"), Type: "date", RangeStart: "date", Enabled: true}
+	eventsField.Items.Fields["ended"] = Field{Names: names4("已结束", "已結束", "終了済み", "Ended"), Type: "boolean", Enabled: true}
+	eventsField.Items.Fields["date_precision"] = Field{Names: names4("时间精度", "時間精度", "日付精度", "Date precision"), Type: "enum", Vocabulary: "date_precision", Enabled: true}
+	eventsField.Items.Fields["event"] = Field{Names: names4("关联活动条目", "關聯活動條目", "関連イベント項目", "Linked event entity"), Type: "entity", Kinds: []string{"event"}, Enabled: true}
+	d.Fields["events"] = eventsField
 	// 记录级动态模式：收录位置（locator）与收录/发行对象的附加属性。
 	// 这些是**媒体差异最集中**的地方（书籍按页、音视频按时间码、文件按路径），
 	// 因此不定义专用 Go 字段/数据库列，而是与其他字段同机制走 definitions，
@@ -505,11 +556,12 @@ func Defaults() Definitions {
 	// 字段直接声明适用的结构层级。不同出版物通过实际字段组合表达，
 	// 不写“小说/音乐”等业务分类，也不需要预先选择字段方案。
 	applicableByKind := map[string][]string{
-		"agent":      {},
-		"collection": {"language", "begin_date", "end_date"},
+		"agent":      {"date_precision", "earliest_date", "latest_date"},
+		"collection": {"language", "begin_date", "end_date", "ended", "date_precision", "earliest_date", "latest_date"},
 		"work": {"language", "edition_date", "copyright", "imdb", "infobox", "events",
 			"duration", "duration_source", "author", "volume_count", "magazine", "begin_date",
-			"end_date", "episodes", "platform", "broadcast_start", "broadcast_weekday",
+			"end_date", "ended", "date_precision", "earliest_date", "latest_date",
+			"episodes", "platform", "broadcast_start", "broadcast_weekday",
 			"broadcast_end", "air_network"},
 		"content_unit": {"language", "entry_role", "air_date"},
 		"expression":   {"language", "duration", "version_label", "isrc", "events"},
@@ -518,6 +570,7 @@ func Defaults() Definitions {
 			"platform", "attachments", "store_bonuses", "events"},
 		"medium": {"catalog_number", "format", "role"},
 		"track":  {"duration", "role"},
+		"event":  {"language", "begin_date", "end_date", "ended", "date_precision", "earliest_date", "latest_date", "time_zone", "country", "copyright"},
 	}
 	for kind, keys := range applicableByKind {
 		for _, code := range keys {
@@ -588,23 +641,32 @@ func Defaults() Definitions {
 		"includes":          "peer",
 		"bonus_included_in": "peer",
 		"member_of":         "peer",
+		"subsidiary_of":     "peer",
+		"succeeded_by":      "peer",
+		"recorded_at":       "peer",
+		"released_at":       "peer",
 	}
 	// credits 组的关系同时声明 CountsAsCredit：署名聚合看的是这条声明，不是分组码。
 	// 因此后台把某条关系挪出 credits 组只改变展示归类，不会静默改变 Release 详情的署名聚合。
+	relFields := []string{"role", "credit_role", "character_rank", "context", "character", "language", "begin_date", "end_date", "ended", "date_precision", "earliest_date", "latest_date", "scope"}
 	addRel := func(code string, n, rev Names, src, tgt []string, group string, acyclic bool) {
-		d.Relations[code] = RelationDefinition{Names: n, ReverseNames: rev, SourceKinds: src, TargetKinds: tgt, Fields: []string{"role", "credit_role", "character_rank", "context", "character", "language", "begin_date", "end_date", "scope"}, ParticipantSlot: relSlot[code], CountsAsCredit: group == "credits", Group: group, GroupNames: groupNames[group], Acyclic: acyclic, Enabled: true}
+		d.Relations[code] = RelationDefinition{Names: n, ReverseNames: rev, SourceKinds: src, TargetKinds: tgt, Fields: append([]string{}, relFields...), ParticipantSlot: relSlot[code], CountsAsCredit: group == "credits", Group: group, GroupNames: groupNames[group], Acyclic: acyclic, Enabled: true}
 	}
 	for _, x := range []relSeed{
 		{"created_by", names4("原作 / 作者", "原作 / 作者", "原作・著者", "Created by"), names4("原作 / 著作", "原作 / 著作", "原作・著作", "Creator of")},
-		{"produced_by", names4("制作 / 出品", "製作 / 出品", "制作・プロデュース", "Produced by"), names4("制作了", "製作了", "制作・プロデュースした", "Producer of")},
-		{"performed_by", names4("表演者", "表演者", "歌唱・演奏", "Performed by"), names4("表演了", "表演了", "歌唱・演奏した", "Performer of")},
-		{"photographed_by", names4("摄影者", "攝影者", "撮影", "Photographed by"), names4("拍摄了", "拍攝了", "撮影した", "Photographer of")},
-		{"modeled_by", names4("出镜者", "出鏡者", "モデル", "Modeled by"), names4("出镜于", "出鏡於", "出演した", "Model in")},
 		{"developed_by", names4("开发者", "開發者", "開発", "Developed by"), names4("开发了", "開發了", "開発した", "Developer of")},
 	} {
 		addRel(x.code, x.names, x.rev, []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
 	}
-	addRel("voiced_by", names4("配音者", "配音者", "声優", "Voiced by"), names4("配音于", "配音於", "声を担当した", "Voice actor in"), []string{"work", "content_unit", "expression", "release", "agent"}, []string{"agent"}, "credits", false)
+	for _, x := range []relSeed{
+		{"produced_by", names4("制作 / 出品", "製作 / 出品", "制作・プロデュース", "Produced by"), names4("制作了", "製作了", "制作・プロデュースした", "Producer of")},
+		{"performed_by", names4("表演者", "表演者", "歌唱・演奏", "Performed by"), names4("表演了", "表演了", "歌唱・演奏した", "Performer of")},
+		{"photographed_by", names4("摄影者", "攝影者", "撮影", "Photographed by"), names4("拍摄了", "拍攝了", "撮影した", "Photographer of")},
+		{"modeled_by", names4("出镜者", "出鏡者", "モデル", "Modeled by"), names4("出镜于", "出鏡於", "出演した", "Model in")},
+	} {
+		addRel(x.code, x.names, x.rev, []string{"work", "content_unit", "expression", "release", "event"}, []string{"agent"}, "credits", false)
+	}
+	addRel("voiced_by", names4("配音者", "配音者", "声優", "Voiced by"), names4("配音于", "配音於", "声を担当した", "Voice actor in"), []string{"work", "content_unit", "expression", "release", "agent", "event"}, []string{"agent"}, "credits", false)
 	// 分媒介署名关系：音乐（作曲/作词/编曲）、影视与动画（导演/编剧）、书籍（插画/朗读）。
 	// 均为 agent 目标、group=credits，后台 DefinitionsEditor 可继续增删改。
 	for _, x := range []struct {
@@ -616,10 +678,10 @@ func Defaults() Definitions {
 		{"composed_by", names4("作曲者", "作曲者", "作曲", "Composed by"), names4("作曲了", "作曲了", "作曲した", "Composer of"), []string{"work", "content_unit", "expression"}},
 		{"lyricist_of", names4("作词者", "作詞者", "作詞", "Lyricist of"), names4("作词了", "作詞了", "作詞した", "Lyricist for"), []string{"work", "content_unit", "expression"}},
 		{"arranged_by", names4("编曲者", "編曲者", "編曲", "Arranged by"), names4("编曲了", "編曲了", "編曲した", "Arranger of"), []string{"work", "content_unit", "expression"}},
-		{"directed_by", names4("导演", "導演", "監督", "Directed by"), names4("执导了", "執導了", "監督した", "Director of"), []string{"work", "content_unit", "expression"}},
-		{"written_by", names4("编剧", "編劇", "脚本", "Written by"), names4("编写了", "編寫了", "脚本を書いた", "Writer of"), []string{"work", "content_unit", "expression"}},
-		{"illustrated_by", names4("插画者", "插畫者", "イラスト", "Illustrated by"), names4("绘制了", "繪製了", "イラストを描いた", "Illustrator of"), []string{"work", "content_unit", "expression", "release"}},
-		{"narrated_by", names4("朗读 / 旁白", "朗讀 / 旁白", "ナレーション", "Narrated by"), names4("朗读了", "朗讀了", "ナレーションを担当した", "Narrator of"), []string{"work", "content_unit", "expression", "release"}},
+		{"directed_by", names4("导演", "導演", "監督", "Directed by"), names4("执导了", "執導了", "監督した", "Director of"), []string{"work", "content_unit", "expression", "event"}},
+		{"written_by", names4("编剧", "編劇", "脚本", "Written by"), names4("编写了", "編寫了", "脚本を書いた", "Writer of"), []string{"work", "content_unit", "expression", "event"}},
+		{"illustrated_by", names4("插画者", "插畫者", "イラスト", "Illustrated by"), names4("绘制了", "繪製了", "イラストを描いた", "Illustrator of"), []string{"work", "content_unit", "expression", "release", "event"}},
+		{"narrated_by", names4("朗读 / 旁白", "朗讀 / 旁白", "ナレーション", "Narrated by"), names4("朗读了", "朗讀了", "ナレーションを担当した", "Narrator of"), []string{"work", "content_unit", "expression", "release", "event"}},
 	} {
 		addRel(x.code, x.names, x.rev, x.src, []string{"agent"}, "credits", false)
 	}
@@ -642,7 +704,7 @@ func Defaults() Definitions {
 	addRel("pressing_of", names4("再版自", "再版自", "復刻", "Pressing of"), names4("被再版为", "被再版為", "復刻された", "Repressed as"), []string{"release"}, []string{"release"}, "creative", true)
 	addRel("bonus_included_in", names4("特典收录于", "特典收錄於", "特典として収録", "Bonus included in"), names4("收录特典", "收錄特典", "特典を収録", "Includes bonus"), []string{"expression"}, []string{"release", "medium"}, "membership", true)
 	addRel("store_bonus_for", names4("渠道特典归属", "通路特典歸屬", "店舗特典", "Store bonus for"), names4("拥有渠道特典", "擁有通路特典", "店舗特典を保有", "Has store bonus"), []string{"expression", "release"}, []string{"agent"}, "membership", true)
-	addRel("includes", names4("组成包含", "組成包含", "収録", "Includes"), names4("组成属于", "組成屬於", "収録先", "Included in"), []string{"collection", "work"}, []string{"work", "collection"}, "membership", true)
+	addRel("includes", names4("组成包含", "組成包含", "収録", "Includes"), names4("组成属于", "組成屬於", "収録先", "Included in"), []string{"collection", "work", "event"}, []string{"work", "collection", "event"}, "membership", true)
 	// 组成/聚合关系：声明 Aggregate，页面据此把它算作"组成作品"而不写死关系码。
 	// 必须写在 addRel("includes", …) **之后**——写在前面时该关系还没进 map，永远设不上。
 	if r, ok := d.Relations["includes"]; ok {
@@ -652,15 +714,28 @@ func Defaults() Definitions {
 	// 成员关系：个人 ↔ 团体（乐队、组合、社团）。声优乐队这类现实团体需要
 	// "谁是这个团体的成员"，职位原文（Vo./Gt./Ba. 等）落在 credit_role，不另造字段。
 	addRel("member_of", names4("所属团体", "所屬團體", "所属グループ", "Member of"), names4("成员", "成員", "メンバー", "Members"), []string{"agent"}, []string{"agent"}, "membership", true)
+	addRel("subsidiary_of", names4("上级机构", "上級機構", "上部組織・親会社", "Parent organization"), names4("下属机构", "下屬機構", "下部組織・子会社", "Subsidiaries"), []string{"agent"}, []string{"agent"}, "membership", true)
+	if r, ok := d.Relations["subsidiary_of"]; ok {
+		r.CycleGroup = "org_hierarchy"
+		d.Relations["subsidiary_of"] = r
+	}
+	addRel("succeeded_by", names4("后继主体", "後繼主體", "後継主体", "Succeeded by"), names4("前身主体", "前身主體", "前身主体", "Predecessor"), []string{"agent"}, []string{"agent"}, "membership", true)
+	if r, ok := d.Relations["succeeded_by"]; ok {
+		r.CycleGroup = "agent_succession"
+		r.Fields = append([]string{"transition_type"}, r.Fields...)
+		d.Relations["succeeded_by"] = r
+	}
+	addRel("recorded_at", names4("录制 / 演出于", "錄製 / 演出於", "収録・公演イベント", "Recorded / performed at"), names4("现场收录作品", "現場收錄作品", "収録作品・表現", "Works / expressions recorded"), []string{"work", "content_unit", "expression"}, []string{"event"}, "creative", true)
+	addRel("released_at", names4("首发 / 颁布于活动", "首發 / 頒布於活動", "頒布・初出イベント", "Released at event"), names4("首发 / 颁布发行版", "首發 / 頒布發行版", "頒布・初出リリース", "Releases debuted"), []string{"release"}, []string{"event"}, "membership", true)
 	// 角色登场：虚构角色/团体 → 作品或集合。方向为 agent → work，
 	// 同一角色跨作品算多条边（AGENTS.md 语义）。
 	// 番位走 character_rank 词表（main/supporting/guest/ensemble/narrator/cameo）：可检索、可多语言。
 	// 不再借 credit_role —— 那是"来源里的职位原文"，混用会导致番位既不可查也不能翻译。
-	addRel("character_in", names4("角色登场", "角色登場", "登場", "Character in"), names4("登场角色", "登場角色", "登場キャラクター", "Characters in"), []string{"agent"}, []string{"work", "collection"}, "credits", false)
+	addRel("character_in", names4("角色登场", "角色登場", "登場", "Character in"), names4("登场角色", "登場角色", "登場キャラクター", "Characters in"), []string{"agent"}, []string{"work", "collection", "event"}, "credits", false)
 	// 通用署名兜底：外部来源的职位文本没有贴切既有关系码时（音响监督、美术监督、
 	// 色彩设计、剪辑、分镜、单集演出、录音/混音等），用它承载"谁参与了这部作品"，职位原文落在 credit_role。
 	// 有精确关系码时不使用，避免同一署名重复两条边。
-	addRel("credit_for", names4("参与主体", "參與主體", "参加主体", "Contributors"), names4("参与记录", "參與記錄", "参加記録", "Contributions"), []string{"work", "content_unit", "expression", "release"}, []string{"agent"}, "credits", false)
+	addRel("credit_for", names4("参与主体", "參與主體", "参加主体", "Contributors"), names4("参与记录", "參與記錄", "参加記録", "Contributions"), []string{"work", "content_unit", "expression", "release", "event"}, []string{"agent"}, "credits", false)
 	// 译者关系：若默认信用关系里缺译者（translated_by 或等价）则补一个，
 	// group=credits，翻译作品的译者署名不再挤进通用兜底。
 	if _, ok := d.Relations["translated_by"]; !ok {
@@ -739,6 +814,7 @@ func Defaults() Definitions {
 	d.Templates["release"] = releaseTemplate
 	addAgentDefinitions(&d)
 	addCollectionAndStructuralDefinitions(&d)
+	addEventDefinitions(&d)
 	addMusicTagDefinitions(&d)
 	return d
 }

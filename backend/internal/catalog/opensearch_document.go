@@ -204,6 +204,10 @@ func makeSearchDocument(e Entity) searchDocument {
 			addText(alias)
 		}
 	}
+	for _, name := range searchFormerNames(e.Attributes["former_names"]) {
+		add(&titles, seenTitles, name)
+		addText(name)
+	}
 
 	tags := searchTags(e.Attributes["tags"])
 	for _, tag := range tags {
@@ -284,4 +288,20 @@ func searchTags(value any) []string {
 	default:
 		return nil
 	}
+}
+
+func searchFormerNames(value any) []string {
+	rows, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if m, ok := row.(map[string]any); ok {
+			if name, ok := m["name"].(string); ok && strings.TrimSpace(name) != "" {
+				out = append(out, strings.TrimSpace(name))
+			}
+		}
+	}
+	return out
 }

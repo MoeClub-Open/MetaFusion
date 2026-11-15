@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -252,6 +253,8 @@ type relationshipFilters struct {
 	RuleCodes   []string
 	PeerKinds   []string
 	SubjectKind string
+	ActiveOnly  bool
+	AsOf        string
 }
 
 // entityLinksFrom is shared by single-subject links and the bounded Agent query.
@@ -394,6 +397,9 @@ func entityLinksFrom(ctx context.Context, q queryer, id string, limit, offset in
 				link.Direction = "outgoing"
 			} else {
 				link.Direction = "incoming"
+			}
+			if !matchesTemporalFilter(link.Attributes, filters) {
+				continue
 			}
 			if seen >= offset {
 				page.Items = append(page.Items, link)
@@ -542,6 +548,9 @@ func relationshipReferencePatterns(f Field, id string) []any {
 }
 
 func sqlPaginatedRelationshipFilters(filters relationshipFilters) bool {
+	if filters.ActiveOnly || filters.AsOf != "" {
+		return false
+	}
 	if len(filters.Classes) > 0 {
 		direct := true
 		for _, class := range filters.Classes {
@@ -637,4 +646,79 @@ func fixedLinkKey(link EntityLink) string {
 	default:
 		return key // moving a sibling does not change the edge's identity
 	}
+}
+
+func validPartialISODate(raw string) bool {
+	s := strings.TrimSpace(raw)
+	var layout string
+	switch len(s) {
+	case 4:
+		layout = "2006"
+	case 7:
+		layout = "2006-01"
+	case 10:
+		layout = "2006-01-02"
+	default:
+		return false
+	}
+	_, err := time.Parse(layout, s)
+	return err == nil
+}
+
+func validFilterDateAttr(attrs map[string]any, key string) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+	s, ok := attrs[key].(string)
+	if !ok {
+		return ""
+	}
+	s = strings.TrimSpace(s)
+	if !validPartialISODate(s) {
+		return ""
+	}
+	return s
+}
+
+func matchesTemporalFilter(attrs map[string]any, filters relationshipFilters) bool {
+	if !filters.ActiveOnly && filters.AsOf == "" {
+		return true
+	}
+	ended, _ := attrs["ended"].(bool)
+	beginDate := validFilterDateAttr(attrs, "begin_date")
+	endDate := validFilterDateAttr(attrs, "end_date")
+	earliestDate := validFilterDateAttr(attrs, "earliest_date")
+	latestDate := validFilterDateAttr(attrs, "latest_date")
+
+	if filters.AsOf != "" {
+		qStart := pictureTimeStart(filters.AsOf)
+		qEnd := pictureTimeEnd(filters.AsOf)
+		if beginDate != "" && pictureTimeStart(beginDate).After(qEnd) {
+			return false
+		}
+		if earliestDate != "" && pictureTimeStart(earliestDate).After(qEnd) {
+			return false
+		}
+		if endDate != "" && pictureTimeEnd(endDate).Before(qStart) {
+			return false
+		}
+		if latestDate != "" && pictureTimeEnd(latestDate).Before(qStart) {
+			return false
+		}
+		if filters.ActiveOnly && ended && endDate == "" && latestDate == "" {
+			return false
+		}
+		return true
+	}
+	if ended {
+		return false
+	}
+	now := time.Now().UTC()
+	if endDate != "" && pictureTimeEnd(endDate).Before(now) {
+		return false
+	}
+	if latestDate != "" && pictureTimeEnd(latestDate).Before(now) {
+		return false
+	}
+	return true
 }

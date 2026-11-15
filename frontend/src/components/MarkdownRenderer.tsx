@@ -30,7 +30,7 @@ interface MarkdownRendererProps {
   assetContext?: CatalogAssetContext;
 }
 
-const ENTITY_PATH_RE = /^(?:https?:\/\/(?:www\.)?(?:findverse\.cc|metafusion\.cc))?\/(?:catalog|agent|collection|work|content_unit|content-unit|expression|release|medium|track)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#].*)?$/i;
+const ENTITY_PATH_RE = /^(?:https?:\/\/(?:www\.)?(?:findverse\.cc|metafusion\.cc))?\/(?:catalog|agent|collection|work|content_unit|content-unit|expression|release|medium|track|event)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#].*)?$/i;
 
 function buildInteractiveSrcDoc(code: string, isSvg: boolean): string {
   const body = isSvg ? `<div style="display:flex;justify-content:center;align-items:center;min-height:160px;">${code}</div>` : code;
@@ -216,7 +216,7 @@ export default function MarkdownRenderer({
                 ? children[0]
                 : typeof children === "string" ? children : null;
               const displayChildren = childText && ENTITY_PATH_RE.test(childText.trim())
-                ? childText.replace(/\/(?:agent|collection|work|content_unit|content-unit|expression|release|medium|track)\//i, "/catalog/")
+                ? childText.replace(/\/(?:agent|collection|work|content_unit|content-unit|expression|release|medium|track|event)\//i, "/catalog/")
                 : children;
               return (
                 <Link

@@ -276,7 +276,7 @@ def main():
     rel_types = _c.Counter()
     rel_cache = {}
     for e in entities:
-        if e.get("kind") not in ("agent", "work", "release", "collection", "content_unit", "expression", "medium", "track"):
+        if e.get("kind") not in ("agent", "work", "release", "collection", "content_unit", "expression", "medium", "track", "event"):
             continue
         rel = get("/api/catalog/entities/%s/relations" % e["id"]) or {}
         rel_cache[e["id"]] = rel

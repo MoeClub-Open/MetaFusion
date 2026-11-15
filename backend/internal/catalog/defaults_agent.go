@@ -31,13 +31,25 @@ func addAgentDefinitions(d *Definitions) {
 		ApplicableKinds: []string{"agent"}, Items: &Field{Names: names4("活动时期", "活動時期", "活動期間", "Activity period"), Type: "group", Enabled: true,
 			Fields: map[string]Field{
 				"begin": {Names: names4("开始日期", "開始日期", "開始日", "Begin date"), Type: "date", Enabled: true},
-				"end":   {Names: names4("结束日期", "結束日期", "終了日", "End date"), Type: "date", Enabled: true},
+				"end":   {Names: names4("结束日期", "結束日期", "終了日", "End date"), Type: "date", RangeStart: "begin", Enabled: true},
+				"ended": {Names: names4("已结束", "已結束", "終了済み", "Ended"), Type: "boolean", Enabled: true},
+				"note":  {Names: names4("备注", "備註", "備考", "Note"), Type: "text", Enabled: true},
+			}}}
+	d.Fields["former_names"] = Field{Names: names4("曾用名 / 历史名义", "曾用名 / 歷史名義", "旧名義・改称履歴", "Former names"), Type: "list", Enabled: true, Searchable: true, Comparable: true,
+		ApplicableKinds: []string{"agent"}, Items: &Field{Names: names4("曾用名", "曾用名", "旧名義", "Former name"), Type: "group", Enabled: true,
+			Fields: map[string]Field{
+				"name":       {Names: names4("名称", "名稱", "名称", "Name"), Type: "text", Required: true, Enabled: true},
+				"language":   {Names: names4("语种", "語種", "言語", "Language"), Type: "text", Enabled: true},
+				"begin_date": {Names: names4("启用日期", "啟用日期", "使用開始日", "Begin date"), Type: "date", Enabled: true},
+				"end_date":   {Names: names4("停用日期", "停用日期", "使用終了日", "End date"), Type: "date", RangeStart: "begin_date", Enabled: true},
+				"ended":      {Names: names4("已停用", "已停用", "使用終了", "Ended"), Type: "boolean", Enabled: true},
+				"note":       {Names: names4("备注", "備註", "備考", "Note"), Type: "text", Enabled: true},
 			}}}
 	match := []TemplateCondition{}
 	d.Templates["agent_profile"] = Template{Names: names4("主体资料", "主體資料", "主体情報", "Agent profile"), Directory: "tree", Kinds: []string{"agent"}, Match: &match, Priority: 10,
 		BadgeFields: []string{"agent_type"}, FacetFields: []string{"agent_type"},
 		Sections: []Section{
-			{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "occupations"}},
+			{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "occupations", "former_names"}},
 			{Names: names4("日期", "日期", "日付", "Dates"), Fields: []string{"birth_date", "death_date", "formation_date", "dissolution_date"}},
 			{Names: names4("活动", "活動", "活動", "Activity"), Fields: []string{"activity_periods"}},
 		}, RelationGroups: []string{"credits", "creative", "membership"}}
@@ -51,7 +63,7 @@ func addAgentDefinitions(d *Definitions) {
 		{
 			code: "agent_person", term: "person", names: agentTypes.Terms["person"].Names, primary: "birth_date",
 			sections: []Section{
-				{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "occupations"}},
+				{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "occupations", "former_names"}},
 				{Names: names4("日期", "日期", "日付", "Dates"), Fields: []string{"birth_date", "death_date"}},
 				{Names: names4("活动", "活動", "活動", "Activity"), Fields: []string{"activity_periods"}},
 			},
@@ -59,7 +71,7 @@ func addAgentDefinitions(d *Definitions) {
 		{
 			code: "agent_group", term: "group", names: agentTypes.Terms["group"].Names, primary: "formation_date",
 			sections: []Section{
-				{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "occupations"}},
+				{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "occupations", "former_names"}},
 				{Names: names4("日期", "日期", "日付", "Dates"), Fields: []string{"formation_date", "dissolution_date"}},
 				{Names: names4("活动", "活動", "活動", "Activity"), Fields: []string{"activity_periods"}},
 			},
@@ -67,7 +79,7 @@ func addAgentDefinitions(d *Definitions) {
 		{
 			code: "agent_organization", term: "organization", names: agentTypes.Terms["organization"].Names, primary: "formation_date",
 			sections: []Section{
-				{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type"}},
+				{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"agent_type", "former_names"}},
 				{Names: names4("日期", "日期", "日付", "Dates"), Fields: []string{"formation_date", "dissolution_date"}},
 				{Names: names4("活动", "活動", "活動", "Activity"), Fields: []string{"activity_periods"}},
 			},

@@ -84,20 +84,43 @@ function codesFromGenerated(prefix) {
   return [...found].sort();
 }
 
-/** 实体骨架来自当前安装基线的命名 CHECK 约束，不从历史夹具生成。 */
+/** 实体骨架来自安装基线及其后续增量迁移中最新的 entities_kind_check 约束，并与 Go Kinds 交叉核对。 */
 const migrationDir = path.join(ROOT, "backend/migrations");
 const baselineManifest = JSON.parse(fs.readFileSync(path.join(migrationDir, "baseline.json"), "utf8"));
 const baselinePrefix = String(baselineManifest.version).padStart(6, "0") + "_";
 const baselineFiles = fs.readdirSync(migrationDir).filter((file) => file.startsWith(baselinePrefix) && file.endsWith(".up.sql"));
 if (baselineFiles.length !== 1) throw new Error("安装基线文件必须唯一且与 baseline.json 一致");
-const baselineSource = "backend/migrations/" + baselineFiles[0];
+const activeMigrationFiles = fs
+  .readdirSync(migrationDir)
+  .filter((file) => /^\d{6}_.+\.up\.sql$/.test(file) && Number(file.slice(0, 6)) >= Number(baselineManifest.version))
+  .sort();
+let kindsMigrationSource = "backend/migrations/" + baselineFiles[0];
 function kindsFromMigration() {
-  const text = fs.readFileSync(path.join(ROOT, baselineSource), "utf8");
-  const constraint = text.match(/CONSTRAINT\s+entities_kind_check\s+CHECK\s*\(([^\n]+)\)/);
-  if (!constraint) throw new Error("未在安装基线找到 entities_kind_check 约束");
-  const names = [...constraint[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
-  if (names.length < 2 || new Set(names).size !== names.length) throw new Error("实体种类约束无法解析或有重复");
-  return names;
+  let latestNames = null;
+  for (const file of activeMigrationFiles) {
+    const text = fs.readFileSync(path.join(migrationDir, file), "utf8");
+    const matches = [...text.matchAll(/CONSTRAINT\s+entities_kind_check\s+CHECK\s*\(([\s\S]*?)\)\s*(?:,|;)/gi)];
+    if (!matches.length) continue;
+    const clause = matches[matches.length - 1][1];
+    const names = [...clause.matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
+    if (names.length < 2 || new Set(names).size !== names.length) throw new Error("实体种类约束无法解析或有重复：" + file);
+    latestNames = names;
+    kindsMigrationSource = "backend/migrations/" + file;
+  }
+  if (!latestNames) throw new Error("未在迁移中找到 entities_kind_check 约束");
+  const typesGoPath = path.join(ROOT, "backend/internal/catalog/types.go");
+  if (fs.existsSync(typesGoPath)) {
+    const typesGo = fs.readFileSync(typesGoPath, "utf8");
+    const m = typesGo.match(/var\s+Kinds\s*=\s*\[\]string\{([^}]+)\}/);
+    if (!m) problems.push("backend/internal/catalog/types.go 未找到 Kinds 声明");
+    else {
+      const goKinds = [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]);
+      if (goKinds.join(",") !== latestNames.join(",")) {
+        problems.push("backend/internal/catalog/types.go 的 Kinds (" + goKinds.join(",") + ") 与 " + kindsMigrationSource + " (" + latestNames.join(",") + ") 不一致");
+      }
+    }
+  }
+  return latestNames;
 }
 
 const codeNames = (code) => code.toUpperCase().replace(/[.]/g, "_");
@@ -217,7 +240,7 @@ const permissionsOut =
   ].join("\n");
 
 const kindsOut =
-  header("实体骨架八元组（目录库基线的 catalog.entities.kind 约束）。", [baselineSource]) +
+  header("实体骨架（目录库迁移的 catalog.entities.kind 约束与 Go Kinds）。", [kindsMigrationSource, "backend/internal/catalog/types.go"]) +
   [
     "export const ENTITY_KINDS = [",
     ...kinds.map((k) => '  "' + k + '",'),
