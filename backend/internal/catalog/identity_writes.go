@@ -15,7 +15,11 @@ func identityWriteDocument(e Entity) map[string]any {
 		}
 		translations[locale] = row
 	}
-	return map[string]any{"title": e.Title, "translations": translations, "external_links": e.ExternalLinks}
+	doc := map[string]any{"title": e.Title, "translations": translations, "external_links": e.ExternalLinks}
+	if fn, ok := e.Attributes["former_names"]; ok && fn != nil {
+		doc["attributes"] = map[string]any{"former_names": fn}
+	}
+	return doc
 }
 
 // Use the same indexed terms as candidate lookup, including translated aliases

@@ -215,4 +215,36 @@ func TestPostgresEventEntityAndTemporalLinks(t *testing.T) {
 	if len(resAsOf.Pages[0].Items) != 2 {
 		t.Fatalf("as_of=2016-04-24 should include both edges, got %+v", resAsOf.Pages[0].Items)
 	}
+
+	ras := f.save(Entity{
+		Kind: "agent", Title: "RAISE A SUILEN", State: "active",
+		Attributes: map[string]any{
+			"agent_type": "group",
+			"former_names": []any{
+				map[string]any{"name": "THE THIRD(仮)", "end_date": "2018-07-17", "ended": true},
+			},
+		},
+	})
+	bm := f.save(Entity{
+		Kind: "agent", Title: "株式会社ブシロードミュージック", State: "active",
+		Attributes: map[string]any{
+			"agent_type": "organization",
+			"former_names": []any{
+				map[string]any{"name": "株式会社響ミュージック", "begin_date": "2012-10-01", "end_date": "2014-08-01", "ended": true},
+			},
+		},
+	})
+
+	exactFormer, err := f.s.FindIdentityCandidates(ctx, IdentityCandidateQuery{Kind: "agent", Titles: []string{"THE THIRD(仮)"}}, &f.u)
+	if err != nil || len(exactFormer.Items) != 1 || exactFormer.Items[0].Matched.ID != ras.ID || !contains(exactFormer.Items[0].Assessment.MatchedFields, "alias") {
+		t.Fatalf("expected exact former_names recall for RAISE A SUILEN, got err=%v items=%+v", err, exactFormer.Items)
+	}
+	coreFormer, err := f.s.FindIdentityCandidates(ctx, IdentityCandidateQuery{Kind: "agent", Titles: []string{"響ミュージック"}}, &f.u)
+	if err != nil || len(coreFormer.Items) != 1 || coreFormer.Items[0].Matched.ID != bm.ID || !contains(coreFormer.Items[0].Assessment.MatchedFields, "title_core") {
+		t.Fatalf("expected core former_names recall for Bushiroad Music, got err=%v items=%+v", err, coreFormer.Items)
+	}
+	approxFormer, err := f.s.FindIdentityCandidates(ctx, IdentityCandidateQuery{Kind: "agent", Titles: []string{"THE THIRD"}, IncludeApproximate: true}, &f.u)
+	if err != nil || len(approxFormer.Items) == 0 || approxFormer.Items[0].Matched.ID != ras.ID {
+		t.Fatalf("expected approximate former_names recall for RAISE A SUILEN, got err=%v items=%+v", err, approxFormer.Items)
+	}
 }
