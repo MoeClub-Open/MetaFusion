@@ -40,7 +40,38 @@ func catalogMigrationsBefore(t *testing.T, version string) fs.FS {
 func seedMigrationFixture(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
-	if err := s.write(ctx, func(tx *sql.Tx) error { return seedContentTx(ctx, tx) }); err != nil {
+	if err := s.write(ctx, func(tx *sql.Tx) error {
+		var seeded bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM catalog.definition_config)").Scan(&seeded); err != nil {
+			return err
+		}
+		if !seeded {
+			d := Defaults()
+			if err := d.Validate(); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO catalog.definition_config(singleton,document,etag) VALUES(true,$1,$2)", encode(d), newID()); err != nil {
+				return err
+			}
+		}
+		var categoryConstraint string
+		_ = tx.QueryRowContext(ctx, "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='catalog.external_databases'::regclass AND conname='external_databases_category_check'").Scan(&categoryConstraint)
+		allowEventCategory := strings.Contains(categoryConstraint, "'event'")
+		for _, d := range externalDatabaseSeeds() {
+			if d.Category == "event" && !allowEventCategory {
+				continue
+			}
+			names, _ := json.Marshal(d.Names)
+			if _, err := tx.ExecContext(ctx, "INSERT INTO catalog.external_databases(code,names,category,url_pattern,icon,icon_url,validation_regex,description,sort_order,is_enabled,is_system) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (code) DO NOTHING",
+				d.Code, string(names), d.Category, d.URLPattern, d.Icon, d.IconURL, d.ValidationRegex, d.Description, d.SortOrder, d.IsEnabled, d.IsSystem); err != nil {
+				return err
+			}
+		}
+		if err := backfillExternalDatabaseNames(ctx, tx); err != nil {
+			return err
+		}
+		return seedShelves(ctx, tx)
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
