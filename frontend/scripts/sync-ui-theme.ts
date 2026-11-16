@@ -22,6 +22,13 @@ function emit(target: string, relative: string, content: string) {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.writeFileSync(destination, content);
 }
+function emitBytes(target: string, relative: string, content: Buffer) {
+  const destination = path.join(target, relative);
+  if (fs.existsSync(destination) && fs.readFileSync(destination).equals(content)) return;
+  if (check) { stale.push(path.relative(path.resolve(root, "../.."), destination)); return; }
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.writeFileSync(destination, content);
+}
 const boot = source("public/theme-boot.js");
 for (const app of apps) {
   const target = path.resolve(root, "../..", app.dir);
@@ -54,5 +61,57 @@ for (const name of ["theme.tokens.css", "theme.generated.css"]) emit(docs, `docs
 // 兼容 VitePress 自带外观按钮使用的 auto 值，不改变站点共享的 system 设置。
 const docsBoot = 'try { var mode = localStorage.getItem("metafusion_theme_mode") || "dark"; localStorage.setItem("vitepress-theme-appearance", mode === "system" ? "auto" : mode); } catch (_) {}\n' + boot;
 emit(docs, "docs/.vitepress/theme/shared/boot.generated.ts", `// ${header}\nexport const themeBootScript = ${JSON.stringify(docsBoot)};\n`);
+
+const mcpWeb = path.resolve(root, "../../metafusion-mcp/internal/server/web");
+if (fs.existsSync(mcpWeb)) {
+  const mcpTokens = source("src/app/theme.tokens.css").replaceAll('url("/patterns/', 'url("/mcp/assets/');
+  const mcpGenerated = source("src/app/theme.generated.css");
+  emit(mcpWeb, "theme.css", `/* ${header} */\n${mcpTokens}\n${mcpGenerated}`);
+  // MCP 授权页启用严格 style-src 'self'，不在脚本中写内联 style 属性；color-scheme 由 theme.css 的 html.dark/html.light 控制。
+  const mcpBoot = `// ${header}\n` + boot.replace(/^\s*r\.style\.colorScheme\s*=\s*e;\n/m, "");
+  emit(mcpWeb, "theme-boot.js", mcpBoot);
+  for (const name of ["catalog", "dots"]) {
+    emit(mcpWeb, `${name}.svg`, source(`public/patterns/${name}.svg`));
+  }
+  for (const fontFile of [
+    "instrument-serif-latin-400-normal.woff2",
+    "inter-latin-wght-normal.woff2",
+    "jetbrains-mono-latin-wght-normal.woff2",
+  ]) {
+    emitBytes(mcpWeb, fontFile, fs.readFileSync(path.join(root, "src/app/fonts", fontFile)));
+  }
+  const mcpLocalesPath = path.join(mcpWeb, "locales.json");
+  if (fs.existsSync(mcpLocalesPath)) {
+    const mcpLocales = JSON.parse(read(mcpLocalesPath));
+    const accentIds = ["everforest", "blue", "sky", "cyan", "teal", "emerald", "lime", "amber", "orange", "red", "rose", "fuchsia", "purple", "violet", "indigo", "slate", "monochrome"];
+    const toneIds = ["neutral", "cool", "warm", "deep"];
+    const patternIds = ["catalog", "dots", "none"];
+    for (const locale of ["zh-CN", "en-US", "zh-TW", "ja-JP"]) {
+      const messages = JSON.parse(source(`src/messages/${locale}.json`));
+      const entry = mcpLocales[locale];
+      if (!entry) continue;
+      entry.themeMode = {
+        dark: messages["theme.dark"],
+        light: messages["theme.light"],
+        system: messages["theme.system"],
+      };
+      entry.themeMeta = {
+        displayMode: messages["theme.displayMode"],
+        modeControl: messages["theme.modeControl"],
+        palette: messages["theme.palette"],
+        accentLabel: messages["theme.accentLabel"],
+        toneLabel: messages["theme.toneLabel"],
+        patternLabel: messages["theme.patternLabel"],
+        close: messages["revisions.close"],
+        localeSwitch: messages["locale.switchTitle"],
+        localeChoice: messages["locale.languageChoice"],
+      };
+      entry.accents = Object.fromEntries(accentIds.map((id) => [id, messages[`theme.accent.${id}`]]));
+      entry.tones = Object.fromEntries(toneIds.map((id) => [id, messages[`theme.tone.${id}`]]));
+      entry.patterns = Object.fromEntries(patternIds.map((id) => [id, messages[`theme.pattern.${id}`]]));
+    }
+    emit(mcpWeb, "locales.json", JSON.stringify(mcpLocales, null, 2) + "\n");
+  }
+}
 if (stale.length) { console.error("主题资产未同步：\n" + stale.join("\n")); process.exit(1); }
 console.log(check ? "全部应用的共享主题一致" : "已同步全部应用的主题");
