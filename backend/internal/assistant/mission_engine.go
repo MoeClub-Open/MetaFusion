@@ -1562,8 +1562,8 @@ func missionChatTools() []Tool {
 	return []Tool{
 		NewTool(
 			"assistant_mission",
-			"Manage caller-owned autonomous background missions (create, list, get, steer, pause, resume, stop).",
-			`{"type":"object","properties":{"op":{"type":"string","enum":["list","get","create","steer","pause","resume","stop"]},"mission_id":{"type":"string","format":"uuid"},"goal":{"type":"string"},"title":{"type":"string"},"budget_credits":{"type":"integer","minimum":0},"message":{"type":"string"},"max_workers":{"type":"integer","minimum":1,"maximum":4},"max_tasks":{"type":"integer","minimum":1,"maximum":50},"worker_model_id":{"type":"string","format":"uuid"},"reasoning_effort":{"type":"string"},"worker_reasoning_effort":{"type":"string"}},"required":["op"],"additionalProperties":false}`,
+			"Manage autonomous background missions (list, get, create, steer, pause, resume, stop).",
+			`{"type":"object","properties":{"op":{"type":"string","enum":["list","get","create","steer","pause","resume","stop"]},"mission_id":{"type":"string"},"goal":{"type":"string"},"title":{"type":"string"},"budget_credits":{"type":"integer","minimum":0},"message":{"type":"string"},"max_workers":{"type":"integer","minimum":1,"maximum":4},"max_tasks":{"type":"integer","minimum":1,"maximum":50},"worker_model_id":{"type":"string"},"reasoning_effort":{"type":"string"},"worker_reasoning_effort":{"type":"string"}},"required":["op"],"additionalProperties":false}`,
 		),
 	}
 }

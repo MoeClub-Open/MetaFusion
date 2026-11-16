@@ -63,11 +63,11 @@ func (h HTTP) previewContext(c *gin.Context) {
 		}
 		history = conv.Messages
 	}
-	tools, err := completionTools()
+	messages := chatMessages(history, in.Message)
+	tools, err := chatCompletionTools(messages)
 	if err != nil {
 		writeResponse(c, nil, err)
 		return
 	}
-	messages := chatMessages(history, in.Message)
 	writeResponse(c, ContextPreview{InputTokensBound: completionInputBound(messages, tools), ContextWindow: model.ContextWindow, MaxOutputTokens: model.MaxOutputTokens, MessageCount: len(messages), ToolCount: len(tools), Estimated: true}, nil)
 }

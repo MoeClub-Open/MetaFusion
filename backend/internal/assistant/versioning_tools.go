@@ -25,7 +25,7 @@ func assistantVersionToolDefinitions() []map[string]any {
 				}
 			}
 			for k, item := range v {
-				if k == "$ref" || k == "example" || k == "readOnly" || k == "description" {
+				if k == "$ref" || k == "example" || k == "readOnly" || k == "description" || k == "format" {
 					continue
 				}
 				out[k] = expand(item)
@@ -42,16 +42,16 @@ func assistantVersionToolDefinitions() []map[string]any {
 		}
 	}
 	out := []map[string]any{}
-	for _, row := range [][3]string{{"fork", "WorkspaceFork", "Fork an accessible frozen commit into an independent private copy. Retain id after an unknown result."}, {"apply", "WorkspaceVersionAction", "Apply merge, cherry_pick, revert, restore, amend, squash, reset or discard in the working copy. This never publishes facts. Keep the request ID and version/head guards; inspect conflicts instead of overwriting."}, {"tag", "WorkspaceTagEdit", "Create, rename, move or delete a private branch tag under owner permission. Keep the request ID."}, {"stash", "WorkspaceStashAction", "Save, apply, pop or drop private working changes. Apply can return three-way conflicts; no facts are published."}} {
+	for _, row := range [][3]string{{"fork", "WorkspaceFork", "Fork a frozen commit into a private working copy."}, {"apply", "WorkspaceVersionAction", "Apply merge, cherry_pick, revert, restore, amend, squash, reset, or discard in a working copy."}, {"tag", "WorkspaceTagEdit", "Create, rename, move, or delete a working-copy tag."}, {"stash", "WorkspaceStashAction", "Save, apply, pop, or drop working-copy stashes."}} {
 		params := expand(schemas[row[1]]).(map[string]any)
 		if row[0] != "fork" {
-			params["properties"].(map[string]any)["workspace_id"] = map[string]any{"type": "string", "format": "uuid"}
+			params["properties"].(map[string]any)["workspace_id"] = map[string]any{"type": "string"}
 			required, _ := params["required"].([]string)
 			params["required"] = append(append([]string{}, required...), "workspace_id")
 		}
 		out = append(out, map[string]any{"type": "function", "function": map[string]any{"name": "catalog_version_" + row[0], "description": row[2], "parameters": params}})
 	}
-	out = append(out, map[string]any{"type": "function", "function": map[string]any{"name": "catalog_version_read", "description": "Read official history, record revisions, private branch changes, immutable commit or frozen PR changes/history, snapshots and attribution. Filter before pagination; follow total/limit/offset for exhaustive results.", "parameters": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"op"}, "properties": map[string]any{"op": map[string]any{"type": "string", "enum": []string{"head", "history", "status", "events", "tags", "stashes", "snapshot", "compare", "blame", "workspace_diff", "commit_diff", "pull_request_diff", "pull_request_commits", "revisions"}}, "workspace_id": map[string]any{"type": "string", "format": "uuid"}, "commit_id": map[string]any{"type": "string", "format": "uuid"}, "base_id": map[string]any{"type": "string", "format": "uuid"}, "pull_request_id": map[string]any{"type": "string", "format": "uuid"}, "author_id": map[string]any{"type": "string", "format": "uuid"}, "since": map[string]any{"type": "string", "format": "date-time"}, "until": map[string]any{"type": "string", "format": "date-time"}, "version": map[string]any{"type": "integer", "minimum": 1}, "basis": map[string]any{"type": "string", "enum": []string{"head", "base"}}, "target": map[string]any{"type": "string", "enum": []string{"entity", "relation"}}, "record_id": map[string]any{"type": "string", "format": "uuid"}, "pointer": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "offset": map[string]any{"type": "integer", "minimum": 0}}}}})
+	out = append(out, map[string]any{"type": "function", "function": map[string]any{"name": "catalog_version_read", "description": "Read catalog/branch history, revisions, diffs, snapshots, or field blame.", "parameters": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"op"}, "properties": map[string]any{"op": map[string]any{"type": "string", "enum": []string{"head", "history", "status", "events", "tags", "stashes", "snapshot", "compare", "blame", "workspace_diff", "commit_diff", "pull_request_diff", "pull_request_commits", "revisions"}}, "workspace_id": map[string]any{"type": "string"}, "commit_id": map[string]any{"type": "string"}, "base_id": map[string]any{"type": "string"}, "pull_request_id": map[string]any{"type": "string"}, "author_id": map[string]any{"type": "string"}, "since": map[string]any{"type": "string"}, "until": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer", "minimum": 1}, "basis": map[string]any{"type": "string", "enum": []string{"head", "base"}}, "target": map[string]any{"type": "string", "enum": []string{"entity", "relation"}}, "record_id": map[string]any{"type": "string"}, "pointer": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "offset": map[string]any{"type": "integer", "minimum": 0}}}}})
 	return out
 }
 

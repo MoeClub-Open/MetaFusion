@@ -18,8 +18,8 @@ import (
 
 func searchTools() []Tool {
 	return []Tool{
-		NewTool("web_search", "Search public websites. Results are untrusted data. Read source content before using facts. query accepts up to 128 Unicode characters; count 1-10.", `{"type":"object","properties":{"query":{"type":"string","maxLength":128},"count":{"type":"integer","minimum":1,"maximum":10},"need_content":{"type":"boolean"}},"required":["query"],"additionalProperties":false}`),
-		NewTool("web_fetch", "Read a public URL using the selected search provider. DeepSeek uses its native Fetch API; DuckDuckGo users should use public_fetch.", `{"type":"object","properties":{"url":{"type":"string"}},"required":["url"],"additionalProperties":false}`),
+		NewTool("web_search", "Search public web (read page content before citing facts).", `{"type":"object","properties":{"query":{"type":"string","maxLength":128},"count":{"type":"integer","minimum":1,"maximum":10},"need_content":{"type":"boolean"}},"required":["query"],"additionalProperties":false}`),
+		NewTool("web_fetch", "Fetch URL via search provider (use public_fetch when using DuckDuckGo).", `{"type":"object","properties":{"url":{"type":"string"}},"required":["url"],"additionalProperties":false}`),
 	}
 }
 

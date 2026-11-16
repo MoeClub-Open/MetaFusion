@@ -367,7 +367,8 @@ func isCatalogReadOnlyTool(name string) bool {
 	case "catalog_search", "catalog_get", "catalog_relationships", "catalog_candidates", "catalog_definitions",
 		"catalog_workspace_list", "catalog_workspace_get", "catalog_workspace_commits",
 		"catalog_pull_request_list", "catalog_pull_request_get", "catalog_commit_get", "catalog_version_read",
-		"external_sources", "external_source_query", "public_fetch", "public_wiki", "web_search", "web_fetch":
+		"external_sources", "external_source_query", "public_fetch", "public_wiki", "web_search", "web_fetch",
+		"assistant_load_tools":
 		return true
 	default:
 		return false
