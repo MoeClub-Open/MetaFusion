@@ -7,13 +7,13 @@ import { Navbar } from "@/components/Navbar";
 import { PageShell } from "@/components/ui/PageShell";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LoadingFallback } from "@/components/common/LoadingFallback";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import MessageThread, { MessageThreadPeer } from "@/components/community/MessageThread";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { getAuthLoginUrl } from "@/lib/services";
 import { fetchConversations, markConversationRead, ConversationItem } from "@/lib/api";
 import { fetchUserProfile } from "@/lib/api/users";
-import { AlertCircle, ArrowLeft, Loader2, LogIn, Mail, RotateCw } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2, Mail, RotateCw } from "lucide-react";
 
 // 与后端缺省页宽一致；翻页只往后追加。
 const CONVERSATION_PAGE_SIZE = 20;
@@ -222,24 +222,6 @@ function MessagesContent() {
         </span>
       );
     }
-    if (!user) {
-      return centered(
-        <>
-          <div className="w-12 h-12 rounded-full bg-emphasis/5 border border-line flex items-center justify-center text-text-muted">
-            <LogIn className="w-6 h-6" />
-          </div>
-          <p className="text-sm text-text-body">{t("messages.loginRequired")}</p>
-          <p className="text-xs">{t("messages.loginRequiredHint")}</p>
-          <a
-            href={getAuthLoginUrl("/messages")}
-            className="mt-1 inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>{t("nav.login")}</span>
-          </a>
-        </>
-      );
-    }
     // 列表失败时只渲染失败态：不同屏出现"还没有私信"，那种"把取不到讲成没有"的写法已经踩过。
     if (listFailed) {
       return centered(
@@ -401,9 +383,18 @@ function MessagesContent() {
         title={t("messages.title")}
         icon={<Mail className="w-5 h-5 text-primary" />}
       >
-        <div className="flex h-[calc(100dvh-var(--mf-header-h)-8rem)] min-h-[22rem] border border-line rounded-xl overflow-hidden bg-surface shadow-sm">
-          {renderPanel()}
-        </div>
+        {!authLoading && !user ? (
+          <LoginPrompt
+            icon={<Mail className="size-4" />}
+            title={t("messages.loginRequired")}
+            description={t("messages.loginRequiredHint")}
+            returnTo="/messages"
+          />
+        ) : (
+          <div className="flex h-[calc(100dvh-var(--mf-header-h)-8rem)] min-h-[22rem] border border-line rounded-xl overflow-hidden bg-surface shadow-sm">
+            {renderPanel()}
+          </div>
+        )}
       </PageShell>
     </div>
   );

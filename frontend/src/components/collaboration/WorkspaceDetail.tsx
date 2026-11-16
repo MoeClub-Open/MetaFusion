@@ -18,6 +18,7 @@ import { workspaceConflictResolution, type WorkspaceResolutionChoice } from "@/l
 import { RevisionDiffInspector, type DiffSnapshot } from "@/components/catalog/RevisionDiffInspector";
 import { Modal } from "@/components/ui/Modal";
 import { PageHeader } from "@/components/ui/PageShell";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 
 import { ConflictValue } from "./ConflictValue";
 import { WorkspaceVersionTools } from "./WorkspaceVersionTools";
@@ -230,7 +231,16 @@ export function WorkspaceDetail({ id }: { id: string }) {
   const hasUnmerged = (workspace?.pending_commits ?? 0)>0;
 
   if (authLoading || loading) return <p role="status" className="py-8 text-sm text-text-muted">{t("common.loading")}</p>;
-  if (!user) return <section className={panel}><p>{t("collaboration.signInRequired")}</p><Link href="/login" className="mt-3 inline-block text-primary underline">{t("collaboration.signIn")}</Link></section>;
+  if (!user) {
+    return (
+      <div className="min-w-0 space-y-4">
+        <Link href="/workspaces" className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-primary">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />{t("collaboration.myWorkspaces")}
+        </Link>
+        <LoginPrompt icon={<GitBranch className="size-4" />} title={t("collaboration.signInRequired")} actionLabel={t("collaboration.signIn")} />
+      </div>
+    );
+  }
   if (loadedEpoch !== epoch) return <p role="status" className="py-8 text-sm text-text-muted">{t("common.loading")}</p>;
 
   return <div className="min-w-0 space-y-5">

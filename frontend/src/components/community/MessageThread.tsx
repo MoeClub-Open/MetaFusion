@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { fetchDirectMessages, sendDirectMessage, DirectMessage } from "@/lib/api";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { MessageCircle, Send, Loader2, AlertCircle, LogIn } from "lucide-react";
+import { MessageCircle, Send, Loader2, AlertCircle } from "lucide-react";
 
 /**
  * 会话双方的最小资料。展示名来自账号服务的公开投影（/users/:id）：账号服务只保证
@@ -285,15 +285,8 @@ export default function MessageThread({ peerUser, onRead, className = "" }: Mess
 
       {/* Input area */}
       {!isLoggedIn ? (
-        <div className="p-3.5 bg-surface border-t border-line flex items-center justify-between gap-2.5 shrink-0 text-xs text-text-body">
-          <span>{t("users.profile.dmError.unauthorized")}</span>
-          <Link
-            href="/login"
-            className="px-2.5 h-7 rounded-md bg-primary text-primary-foreground font-semibold inline-flex items-center gap-1 shrink-0"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>{t("nav.login")}</span>
-          </Link>
+        <div className="border-t border-line bg-surface p-3 shrink-0">
+          <LoginPrompt compact title={t("users.profile.dmError.unauthorized")} />
         </div>
       ) : isSelf ? (
         <div className="p-3.5 bg-surface border-t border-line text-xs text-text-muted shrink-0">

@@ -31,7 +31,9 @@ function RootLandingInner() {
         <div className="mb-6">
           <BrandMark size={116} withGlow idSuffix="landing-hero" />
         </div>
-        <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-text-strong mb-7">MetaFusion</h1>
+        <h1 className="font-display text-5xl sm:text-6xl font-normal leading-none tracking-[-0.03em] text-emphasis mb-8">
+          MetaFusion
+        </h1>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link href="/home" className="inline-flex items-center justify-center gap-2 px-6 h-11 rounded-control bg-primary text-primary-foreground hover:bg-primary/90 font-medium text-sm shadow-xs transition-colors duration-fast ease-soft">
             <Compass className="w-4 h-4" aria-hidden /><span>{t("landing.enter")}</span>

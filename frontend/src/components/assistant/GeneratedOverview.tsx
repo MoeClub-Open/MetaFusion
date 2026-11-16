@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { ApiError } from "@/lib/api";
@@ -123,14 +124,21 @@ export function GeneratedOverview({ entityID, version }: { entityID: string; ver
     {reading && <p role="status" className="text-xs text-text-muted">{t("assistant.generated.loading")}</p>}
     {error && <div role="alert" className="flex items-center gap-2 text-xs text-danger"><span>{error}</span>{!generating && <button type="button" onClick={() => setRefresh((previous) => previous + 1)} aria-label={t("assistant.user.refresh")} className="p-1"><RefreshCw className="w-3.5 h-3.5" /></button>}</div>}
     {failedUsage && <p className="text-[11px] text-text-muted">{t("assistant.user.consumed", { input: number.format(failedUsage.usage.input_tokens), output: number.format(failedUsage.usage.output_tokens), credits: number.format(failedUsage.credits_spent) })}</p>}
-    {expanded && <div className="rounded-card border border-line-subtle bg-surfaceSubtle p-3 space-y-3">
-      {!user ? <Link href={`/login?redirect=${encodeURIComponent(`/catalog/${entityID}#overview`)}`} className="text-xs text-primary hover:underline">{t("assistant.generated.login")}</Link> : <>
+    {expanded && (!user ? (
+      <LoginPrompt
+        compact
+        icon={<Sparkles className="size-3.5" />}
+        title={t("assistant.generated.login")}
+        returnTo={`/catalog/${entityID}#overview`}
+      />
+    ) : (
+      <div className="rounded-card border border-line-subtle bg-surfaceSubtle p-3 space-y-3">
         {optionsLoading ? <p role="status" className="text-xs text-text-muted">{t("common.loading")}</p> : <AssistantModelPicker models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={(id) => { setModelID(id); requestID.current = null; }} disabled={generating} />}
         <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[11px] text-text-muted">{account ? t("assistant.user.balance", { credits: number.format(account.balance.available_credits) }) : t("assistant.generated.paidHint")}</p>
           <button type="button" onClick={() => void generate()} disabled={generating || optionsLoading || !modelID} className="inline-flex items-center gap-1.5 rounded-control bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40">{generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}{t(generating ? "assistant.generated.generating" : "assistant.generated.generate")}</button></div>
         <p className="text-[10px] text-text-muted">{t("assistant.generated.paidHint")}</p>
-      </>}
-    </div>}
+      </div>
+    ))}
     {!!blocks.length && <GeneratedBlocks blocks={blocks} chartLabel={t("assistant.generated.chart")} tableLabel={t("assistant.generated.table")} timelineLabel={t("assistant.generated.timeline")} />}
     {item?.partial && <p className="text-xs text-warn">{t("assistant.generated.partial")}</p>}
     {item && !blocks.length && <p className="text-xs text-text-muted">{t("assistant.generated.invalid")}</p>}

@@ -50,6 +50,7 @@ import { EntityRelationOverview } from "@/components/entity/EntityRelationOvervi
 import { PageShell, PageContainer } from "@/components/ui/PageShell";
 import { TabPanel } from "@/components/ui/TabPanel";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { StaffCharacterSection } from "@/components/entity/StaffCharacterSection";
 import { buildStaffCredits, isCreditRelation, unrenderedCreditRelations } from "@/components/entity/staffCredits";
@@ -1869,61 +1870,51 @@ export function EntityDetailView({ id }: { id: string }) {
               </SectionTitle>
 
               {/* Quick Comment Composer */}
-              <Card tone="subtle" padding="card" className="space-y-3">
-              <form onSubmit={handlePostComment} className="space-y-3">
-                <div className="flex items-center justify-between text-xs text-text-faint">
-                  <span className="font-medium text-text-body font-mono">
-                    {t("entity.page.quickReview")}
-                  </span>
-                  {user ? (
-                    <span className="font-mono text-[11px] text-emerald-600 dark:text-success font-semibold">
-                      @{user.username}
-                    </span>
-                  ) : (
-                    <a href={getAuthLoginUrl()} className="text-primary hover:underline font-medium">
-                      {t("entity.page.signInToComment")}
-                    </a>
-                  )}
-                </div>
-                <textarea
-                  value={newCommentBody}
-                  onChange={(e) => setNewCommentBody(e.target.value)}
-                  placeholder={
-                    user
-                      ? (t("entity.page.commentPlaceholderAuthed"))
-                      : (t("entity.page.commentPlaceholderGuest"))
-                  }
-                  disabled={!user || submittingComment}
-                  rows={3}
-                  className="w-full p-3 rounded-lg bg-surface border border-line text-xs sm:text-sm text-text-strong placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60 resize-y"
+              {user ? (
+                <Card tone="subtle" padding="card" className="space-y-3">
+                  <form onSubmit={handlePostComment} className="space-y-3">
+                    <div className="flex items-center justify-between text-xs text-text-faint">
+                      <span className="font-medium text-text-body font-mono">
+                        {t("entity.page.quickReview")}
+                      </span>
+                      <span className="font-mono text-[11px] text-emerald-600 dark:text-success font-semibold">
+                        @{user.username}
+                      </span>
+                    </div>
+                    <textarea
+                      value={newCommentBody}
+                      onChange={(e) => setNewCommentBody(e.target.value)}
+                      placeholder={t("entity.page.commentPlaceholderAuthed")}
+                      disabled={submittingComment}
+                      rows={3}
+                      className="w-full p-3 rounded-lg bg-surface border border-line text-xs sm:text-sm text-text-strong placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60 resize-y"
+                    />
+                    {commentError && (
+                      <div className="text-xs text-rose-500 font-mono">{commentError}</div>
+                    )}
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <span className="min-w-0 flex-1 text-[11px] text-text-muted">
+                        {t("entity.page.syncNotice")}
+                      </span>
+                      <button
+                        type="submit"
+                        disabled={submittingComment || !newCommentBody.trim()}
+                        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                      >
+                        <Send className="w-3.5 h-3.5 shrink-0" />
+                        <span>{submittingComment ? t("entity.page.posting") : t("entity.page.postComment")}</span>
+                      </button>
+                    </div>
+                  </form>
+                </Card>
+              ) : (
+                <LoginPrompt
+                  compact
+                  icon={<MessageSquare className="size-3.5" />}
+                  title={t("entity.page.signInToComment")}
+                  description={t("entity.page.syncNotice")}
                 />
-                {commentError && (
-                  <div className="text-xs text-rose-500 font-mono">{commentError}</div>
-                )}
-                <div className="flex items-center justify-between gap-3 pt-1">
-                  <span className="min-w-0 flex-1 text-[11px] text-text-muted">
-                    {t("entity.page.syncNotice")}
-                  </span>
-                  {user ? (
-                    <button
-                      type="submit"
-                      disabled={submittingComment || !newCommentBody.trim()}
-                      className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-                    >
-                      <Send className="w-3.5 h-3.5 shrink-0" />
-                      <span>{submittingComment ? t("entity.page.posting") : t("entity.page.postComment")}</span>
-                    </button>
-                  ) : (
-                    <a
-                      href={getAuthLoginUrl()}
-                      className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-all duration-base ease-soft"
-                    >
-                      <span>{t("entity.page.sendAfterLogin")}</span>
-                    </a>
-                  )}
-                </div>
-              </form>
-              </Card>
+              )}
 
               {/* Embedded Comments Stream */}
               <div className="space-y-3">

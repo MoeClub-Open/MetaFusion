@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { AlertCircle, Check, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Flag, RefreshCw } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { PageShell } from "@/components/ui/PageShell";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import { fetchMyReports, submitAppeal, type MyReportItem } from "@/lib/api/reports";
@@ -116,16 +116,7 @@ export default function MyReportsPage() {
         ) : !user ? (
           // 未登录不跳转（/reports 不在 AuthGate 的受保护前缀里）：就地给登录入口，
           // 登录后回到本页。
-          <div className="p-8 rounded-card border border-line bg-surface text-center space-y-3">
-            <AlertCircle className="w-5 h-5 text-amber-500 mx-auto" strokeWidth={1.6} />
-            <p className="text-sm text-text-body">{t("report.loginRequired")}</p>
-            <Link
-              href={`/login?redirect=${encodeURIComponent("/reports")}`}
-              className="inline-flex items-center px-3.5 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
-            >
-              {t("nav.login")}
-            </Link>
-          </div>
+          <LoginPrompt icon={<Flag className="size-4" />} title={t("report.loginRequired")} returnTo="/reports" />
         ) : loading ? (
           <div className="p-8 text-center text-xs font-mono text-text-faint">{t("common.loading")}</div>
         ) : loadFailure ? (

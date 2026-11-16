@@ -10,7 +10,7 @@ import { ensureEditingWorkspace, stageEditingWorkspace, entityOperation, normali
 import { checkoutWorkspace, getWorkspace, type Workspace, type WorkspaceOperation } from "@/lib/api/collaboration";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { useAuth } from "@/lib/authContext";
-import { getAuthLoginUrl } from "@/lib/services";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { EntityPicker, FieldInput, ErrorMessage, GroupFieldInput, NamesEditor, WorkspaceEntityPickerProvider } from "./Fields";
 import { EntityCover } from "@/components/common/EntityCover";
 import { catalogPicturePreviewUrl, extractDocumentAssetIds, type CatalogAssetContext } from "@/lib/catalogAssetPreview";
@@ -240,19 +240,7 @@ export function EntityEditor({
     // ?edit=1 已由 AuthGate 纳入登录闸门（未登录先跳 /login 并带回完整目标）。这里只兜底
     // 闸门判定生效前的一帧与编辑中途掉登录态：所以必须留登录出口——原来只回一句没有链接、
     // 没有跳转的文本，分享出去的编辑链接就是个死胡同。
-    // getAuthLoginUrl() 不带参即用 window.location.href 做回跳目标，深链逐字保留；
-    // 本分支只可能在客户端渲染（上面 definitions 未就绪时已经 return）。
-    return (
-      <div className="space-y-3 py-6">
-        <p className="text-sm text-text-muted">{t("catalog.loginToEdit")}</p>
-        <a
-          href={getAuthLoginUrl()}
-          className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg bg-primary text-primary-foreground text-sm font-semibold mf-focus"
-        >
-          {t("nav.login")}
-        </a>
-      </div>
-    );
+    return <LoginPrompt title={t("catalog.loginToEdit")} className="my-4" />;
   }
   if (workspaceLoading || workspaceUser !== user.id || !workspace) {
     return <section className="cv-form space-y-3" aria-live="polite">

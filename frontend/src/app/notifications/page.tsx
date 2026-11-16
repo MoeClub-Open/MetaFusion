@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { PageShell } from "@/components/ui/PageShell";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
@@ -16,7 +17,6 @@ import {
 } from "@/lib/api";
 import type { Notification, NotificationListResponse } from "@/lib/api";
 import { isoTimestamp, localDateTime } from "@/lib/datetime";
-import { getAuthLoginUrl } from "@/lib/services";
 import {
   AlertCircle,
   Bell,
@@ -155,7 +155,13 @@ export default function NotificationsPage() {
   const {user,loading} = useAuth();
   const {t} = useI18n();
   return <><Navbar /><PageShell title={t("notifications.title")} icon={<Bell className="size-5 text-primary" />} spacing="compact">
-    {loading ? <p role="status">{t("common.loading")}</p> : user ? <NotificationInbox key={user.id} /> : <a href={getAuthLoginUrl("/notifications")} className="text-sm text-primary">{t("notifications.goLogin")}</a>}
+    {loading ? (
+      <p role="status" className="py-6 text-xs text-text-muted">{t("common.loading")}</p>
+    ) : user ? (
+      <NotificationInbox key={user.id} />
+    ) : (
+      <LoginPrompt icon={<Bell className="size-4" />} title={t("notifications.loginRequired")} actionLabel={t("notifications.goLogin")} returnTo="/notifications" />
+    )}
   </PageShell></>;
 }
 

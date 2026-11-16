@@ -26,6 +26,7 @@ export function Select({
   name,
   required,
   fullWidth = true,
+  prefix,
   "aria-label": ariaLabel,
 }: {
   value: string;
@@ -39,6 +40,7 @@ export function Select({
   name?: string;
   required?: boolean;
   fullWidth?: boolean;
+  prefix?: React.ReactNode;
   "aria-label"?: string;
 }) {
   const uid = useId();
@@ -68,12 +70,16 @@ export function Select({
       const pad = 8;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const width = Math.min(Math.max(r.width, 140), vw - pad * 2);
+      const maxMenuW = Math.min(320, vw - pad * 2);
+      const minMenuW = Math.min(Math.max(r.width, 148), maxMenuW);
+      const renderedW = fullWidth
+        ? Math.min(Math.max(r.width, 140), vw - pad * 2)
+        : Math.min(Math.max(menuRef.current?.offsetWidth ?? minMenuW, minMenuW), maxMenuW);
       let left = r.left;
-      if (width > r.width && r.left > vw / 2) {
-        left = r.right - width;
+      if (renderedW > r.width && r.left > vw / 2) {
+        left = r.right - renderedW;
       }
-      left = Math.min(Math.max(pad, left), vw - width - pad);
+      left = Math.min(Math.max(pad, left), vw - renderedW - pad);
 
       const menuH = Math.min(menuRef.current?.scrollHeight ?? maxH, maxH);
       const spaceBelow = vh - r.bottom - gap;
@@ -83,7 +89,9 @@ export function Select({
       setMenuStyle({
         position: "fixed",
         left,
-        width,
+        ...(fullWidth
+          ? { width: renderedW }
+          : { minWidth: minMenuW, maxWidth: maxMenuW, width: "max-content" }),
         maxHeight: maxH,
         zIndex: 100,
         margin: 0,
@@ -99,7 +107,7 @@ export function Select({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, options.length]);
+  }, [open, options.length, fullWidth]);
 
   useEffect(() => {
     if (!open) return;
@@ -254,8 +262,11 @@ export function Select({
           className
         )}
       >
-        <span className={cx("min-w-0 truncate", !selected && "text-text-muted")}>
-          {selected ? selected.label : placeholder || "\u00a0"}
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          {prefix ? <span className="shrink-0 flex items-center" aria-hidden>{prefix}</span> : null}
+          <span className={cx("min-w-0 truncate", !selected && "text-text-muted")}>
+            {selected ? selected.label : placeholder || "\u00a0"}
+          </span>
         </span>
         <ChevronDown
           className={cx("w-3.5 h-3.5 shrink-0 text-text-muted transition-transform duration-base ease-soft", open && "rotate-180")}

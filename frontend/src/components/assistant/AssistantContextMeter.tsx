@@ -24,16 +24,16 @@ export function AssistantContextMeter({ conversationID, modelID, message, revisi
   }, [conversationID, modelID, message, revision, disabled, key]);
   if (!modelID) return null;
   const current = state?.key === key ? state : undefined;
-  if (!current?.value) return <span className="text-xs text-text-faint">{t(current?.failed ? "assistantUI.contextUnavailable" : "assistantUI.contextLoading")}</span>;
+  if (!current?.value) return <span className="text-[11px] text-text-faint">{t(current?.failed ? "assistantUI.contextUnavailable" : "assistantUI.contextLoading")}</span>;
   const value = current.value;
   const number = new Intl.NumberFormat(locale);
   const percent = Math.min(100, Math.round(value.input_tokens_bound / value.context_window * 100));
   const nearLimit = value.input_tokens_bound + value.max_output_tokens >= value.context_window;
-  return <details className="group min-w-0 text-xs text-text-muted">
-    <summary className={`flex cursor-pointer list-none flex-wrap items-center gap-2 ${nearLimit ? "text-warn" : ""}`}>
+  return <details className="group min-w-0 text-[11px] text-text-muted">
+    <summary className={`inline-flex cursor-pointer list-none flex-wrap items-center gap-2 tabular-nums hover:text-text-body [&::-webkit-details-marker]:hidden ${nearLimit ? "text-warn" : ""}`}>
       <span>{t("assistantUI.context", { used: number.format(value.input_tokens_bound), limit: number.format(value.context_window) })}</span>
-      <span aria-hidden className="h-1 w-12 overflow-hidden rounded-control bg-surfaceSubtle"><span className={`block h-full ${nearLimit ? "bg-warn" : "bg-primary"}`} style={{ width: `${percent}%` }} /></span>
+      <span aria-hidden className="h-1.5 w-12 overflow-hidden rounded-full bg-emphasis/10"><span className={`block h-full rounded-full ${nearLimit ? "bg-warn" : "bg-primary"}`} style={{ width: `${percent}%` }} /></span>
     </summary>
-    <p className="mt-2 max-w-xl text-[11px] leading-relaxed">{t("assistantUI.contextHint", { messages: number.format(value.message_count), tools: number.format(value.tool_count), output: number.format(value.max_output_tokens) })}</p>
+    <p className="mt-1.5 max-w-xl text-[11px] leading-relaxed text-text-faint">{t("assistantUI.contextHint", { messages: number.format(value.message_count), tools: number.format(value.tool_count), output: number.format(value.max_output_tokens) })}</p>
   </details>;
 }

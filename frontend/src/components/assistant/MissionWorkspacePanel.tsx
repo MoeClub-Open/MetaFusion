@@ -392,7 +392,7 @@ export function MissionWorkspacePanel({
           <form onSubmit={(e) => { e.preventDefault(); void createMission(); }} className="space-y-4 p-4 sm:p-5">
             <div>
               <label htmlFor={`mission-goal-${scope}`} className="mb-1.5 block text-xs font-medium text-text-muted">{t("assistant.mission.goal")}</label>
-              <textarea id={`mission-goal-${scope}`} rows={4} maxLength={16000} value={goal} disabled={busy || !mayWrite} onChange={(e) => setGoal(e.target.value)} placeholder={t("assistant.mission.goalPlaceholder")} className="w-full resize-y rounded-control border border-line bg-background px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              <textarea id={`mission-goal-${scope}`} rows={4} maxLength={16000} value={goal} disabled={busy || !mayWrite} onChange={(e) => setGoal(e.target.value)} placeholder={t("assistant.mission.goalPlaceholder")} className="w-full resize-none rounded-control border border-line bg-background px-3 py-2.5 text-sm leading-relaxed text-text-strong placeholder:text-text-faint outline-none transition-colors duration-fast focus:border-primary/60" />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="block text-xs text-text-muted">
@@ -430,12 +430,11 @@ export function MissionWorkspacePanel({
                 </div>
               </div>
             </div>}
-            {scope === "user" && <details className="rounded-control border border-line-subtle p-2.5 text-xs text-text-muted">
-              <summary className="cursor-pointer">{t("assistant.search.settings")}</summary>
-              <div className="pt-2"><AssistantSearchPicker providers={safeSearchProviders} byoProviders={safeBYOProviders} providerID={searchProviderID} byoProviderID={searchBYOProviderID} onProvider={setSearchProviderID} onBYOProvider={setSearchBYOProviderID} disabled={busy} /></div>
-            </details>}
-            {scope === "user" && canBypassReview && <label className="flex items-center gap-2 text-xs text-text-body">
-              <input type="checkbox" checked={preferPR} onChange={(e) => setPreferPR(e.target.checked)} className="rounded border-line" />
+            {scope === "user" && safeSearchProviders.length > 0 && (
+              <AssistantSearchPicker providers={safeSearchProviders} byoProviders={safeBYOProviders} providerID={searchProviderID} byoProviderID={searchBYOProviderID} onProvider={setSearchProviderID} onBYOProvider={setSearchBYOProviderID} disabled={busy} />
+            )}
+            {scope === "user" && canBypassReview && <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text-body">
+              <input type="checkbox" checked={preferPR} onChange={(e) => setPreferPR(e.target.checked)} className="size-3.5 rounded border-line accent-primary" />
               <span>{t("assistant.mission.preferPR")}</span>
             </label>}
             <div className="flex justify-end">

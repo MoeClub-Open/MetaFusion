@@ -13,6 +13,8 @@ import PostComposer from "@/components/community/PostComposer";
 import ReportButton from "@/components/report/ReportButton";
 import { TabPanel } from "@/components/ui/TabPanel";
 import { PageShell } from "@/components/ui/PageShell";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
+import { getAuthLoginUrl } from "@/lib/services";
 import { classifyLoadFailure, DetailNotFound, DetailUnavailable, type LoadFailureKind } from "@/components/common/DetailLoadStates";
 const MarkdownRenderer = dynamic(() => import("@/components/MarkdownRenderer"), {
   loading: () => <div className="h-4 my-1.5 rounded bg-black/[0.04] dark:bg-white/[0.04] animate-pulse" />,
@@ -123,6 +125,10 @@ export default function TopicDetailPage() {
  };
 
  const openReply = (post: ForumPost) => {
+ if (!user) {
+ window.location.href = getAuthLoginUrl(`/community/${topicId}#post-${post.post_number}`);
+ return;
+ }
  setReplyTo({ post_number: post.post_number, username: post.user?.username, content: post.content });
  setIsComposerOpen(true);
  };
@@ -537,9 +543,12 @@ export default function TopicDetailPage() {
  </button>
  </div>
  ) : (
- <div className="p-4 text-center text-text-faint bg-background rounded-md border border-line text-sm">
- {t("community.loginToReply")}
- </div>
+ <LoginPrompt
+ compact
+ icon={<Reply className="size-3.5" />}
+ title={t("community.loginToReply")}
+ returnTo={`/community/${topicId}#reply-box`}
+ />
  )}
  </div>
  </div>

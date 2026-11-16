@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Activity, ArrowUpRight, GitBranch, KeyRound, Loader2, MessageSquare, PanelLeft, Plus, Search, Send, Sparkles, Trash2 } from "lucide-react";
+import { Activity, ArrowUpRight, Brain, ChevronRight, GitBranch, KeyRound, Loader2, MessageSquare, PanelLeft, Plus, Search, Send, Sparkles, Trash2 } from "lucide-react";
 import { useI18n, type TranslateFn } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
 import {
@@ -16,9 +16,9 @@ import {
   type AssistantAccountResponse, type AssistantPushReceipt,
 } from "@/lib/assistantUser";
 import { PageShell } from "@/components/ui/PageShell";
-import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { ConfirmDialog } from "@/components/oauth/ConfirmDialog";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { GeneratedBlocksView } from "./GeneratedBlocks";
@@ -85,6 +85,7 @@ function AssistantWorkspace() {
   const readSequence = useRef(0);
   const pendingRequest = useRef<{ fingerprint: string; id: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const activeBYOModels = useMemo(() => {
     const activeProviderIDs = new Set(byoProviders.filter((item) => item.enabled && item.has_key).map((item) => item.id));
@@ -155,6 +156,12 @@ function AssistantWorkspace() {
   }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [messages, currentRunning]);
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+  }, [message]);
 
   useEffect(() => {
     if (!user || !conversationID || !activeRequestID) return;
@@ -335,75 +342,88 @@ function AssistantWorkspace() {
   }, []);
 
   const conversationList = <div className="flex h-full min-h-0 flex-col gap-3">
-    <button type="button" disabled={submitting} onClick={startNewChat} className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-sm font-medium disabled:opacity-40"><Plus className="size-4" /><span>{t("assistant.user.newChat")}</span></button>
-    <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5"><Search className="size-3.5 shrink-0 text-text-muted" /><input type="search" aria-label={t("assistantUI.searchChats")} placeholder={t("assistantUI.searchChats")} value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} className="h-8 min-w-0 w-full bg-transparent text-xs outline-none" /></label>
-    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto lg:max-h-[62vh]">
+    <button type="button" disabled={submitting} onClick={startNewChat} className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-control border border-line bg-surface px-3 text-xs font-medium text-text-strong transition-colors duration-fast hover:bg-surfaceHover disabled:opacity-40"><Plus className="size-3.5" /><span>{t("assistant.user.newChat")}</span></button>
+    <label className="flex items-center gap-2 rounded-control border border-line bg-background px-2.5 transition-colors duration-fast focus-within:border-primary/50"><Search className="size-3.5 shrink-0 text-text-muted" /><input type="search" aria-label={t("assistantUI.searchChats")} placeholder={t("assistantUI.searchChats")} value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} className="h-8 min-w-0 w-full bg-transparent text-xs text-text-strong placeholder:text-text-faint outline-none" /></label>
+    <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto lg:max-h-[62vh]">
       {conversations.filter((item) => (item.title || "").toLocaleLowerCase().includes(conversationSearch.toLocaleLowerCase())).map((item) => {
         const itemRunning = !!item.active_request_id || (item.id === conversationID && !!activeRequestID);
-        return <div key={item.id} className={"group flex rounded-control " + (conversationID === item.id ? "bg-primary/10" : "hover:bg-surfaceHover")}>
-          <button type="button" disabled={submitting} onClick={() => { void openConversation(item.id); setShowConversations(false); }} className="min-w-0 flex-1 p-2.5 text-left">
-            <span className="flex items-center gap-1.5 text-sm">
-              <span className="line-clamp-2 min-w-0 flex-1">{item.title || t("assistant.user.newChat")}</span>
+        const selected = conversationID === item.id;
+        return <div key={item.id} className={"group flex items-center rounded-control transition-colors duration-fast " + (selected ? "bg-primary/10 text-text-strong" : "text-text-body hover:bg-surfaceHover")}>
+          <button type="button" disabled={submitting} onClick={() => { void openConversation(item.id); setShowConversations(false); }} className="min-w-0 flex-1 px-2.5 py-2 text-left">
+            <span className="flex items-center gap-1.5 text-xs font-medium">
+              <span className="truncate min-w-0 flex-1">{item.title || t("assistant.user.newChat")}</span>
               {itemRunning && <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />}
             </span>
-            <time className="mt-1 block text-xs text-text-faint">{new Date(item.updated_at).toLocaleDateString(locale)}</time>
+            <time className="mt-0.5 block text-[11px] text-text-faint tabular-nums">{new Date(item.updated_at).toLocaleDateString(locale)}</time>
           </button>
-          <button type="button" disabled={deletingBusy || itemRunning} onClick={() => setDeleting(item)} aria-label={t("assistant.user.deleteChat")} className="self-start rounded-control p-2.5 text-text-faint hover:text-danger disabled:opacity-30 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"><Trash2 className="size-3.5" /></button>
+          <button type="button" disabled={deletingBusy || itemRunning} onClick={() => setDeleting(item)} aria-label={t("assistant.user.deleteChat")} className="rounded-control p-2 text-text-faint transition-opacity duration-fast hover:text-danger disabled:opacity-30 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"><Trash2 className="size-3.5" /></button>
         </div>;
       })}
       {!conversations.length && !loading && <p className="px-2 py-5 text-center text-xs text-text-muted">{t("assistant.user.noConversations")}</p>}
     </div>
   </div>;
 
-  if (authLoading) return <PageShell title={t("assistant.user.title")}><p role="status" className="text-sm text-text-muted">{t("common.loading")}</p></PageShell>;
-  if (!user) return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")}><Card><p className="text-sm text-text-muted">{t("assistant.user.loginRequired")}</p><Link href="/login?redirect=%2Fassistant" className="mt-3 inline-block text-sm text-primary hover:underline">{t("navbar.signIn")}</Link></Card></PageShell>;
-  const number = new Intl.NumberFormat(locale);
-  const receipts = [...new Map([...conversationReceipts(messages), ...(result?.push_receipts || [])].map((receipt) => [pushReceiptKey(receipt), receipt])).values()];
-  const tabs = [{ id: "chat", icon: MessageSquare }, { id: "missions", icon: GitBranch }, { id: "credentials", icon: KeyRound }, { id: "usage", icon: Activity }] as const;
-  const canBypassReview = Boolean(user.permissions?.includes("*") || user.permissions?.includes("catalog.review.bypass"));
-  const activeModelName = models.find((item) => item.id === modelID)?.name || byoModels.find((item) => item.id === modelID)?.name || t("assistant.user.noModels");
-  const activeModelEffort = reasoningEffort || models.find((item) => item.id === modelID)?.reasoning_effort || byoModels.find((item) => item.id === modelID)?.reasoning_effort || "";
-  const lastMessage = messages[messages.length - 1];
-  const activeToolName = lastMessage?.role === "assistant" && lastMessage.tool_calls?.length ? lastMessage.tool_calls[lastMessage.tool_calls.length - 1]?.function.name : "";
   const chatTurns = useMemo(() => buildChatTurns(messages), [messages]);
   const reasoningOptions = useMemo(() => ASSISTANT_REASONING_EFFORTS.map((value) => ({
     value,
     label: t("assistant.reasoning." + (value || "default")),
   })), [t]);
 
+  if (authLoading) return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact"><p role="status" className="flex items-center gap-2 py-6 text-xs text-text-muted"><Loader2 className="size-4 animate-spin text-primary" /><span>{t("common.loading")}</span></p></PageShell>;
+  if (!user) return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact"><LoginPrompt icon={<Sparkles className="size-4" />} title={t("assistant.user.loginRequired")} returnTo="/assistant" /></PageShell>;
+  const number = new Intl.NumberFormat(locale);
+  const receipts = [...new Map([...conversationReceipts(messages), ...(result?.push_receipts || [])].map((receipt) => [pushReceiptKey(receipt), receipt])).values()];
+  const tabs = [{ id: "chat", icon: MessageSquare }, { id: "missions", icon: GitBranch }, { id: "credentials", icon: KeyRound }, { id: "usage", icon: Activity }] as const;
+  const canBypassReview = Boolean(user.permissions?.includes("*") || user.permissions?.includes("catalog.review.bypass"));
+  const lastMessage = messages[messages.length - 1];
+  const activeToolName = lastMessage?.role === "assistant" && lastMessage.tool_calls?.length ? lastMessage.tool_calls[lastMessage.tool_calls.length - 1]?.function.name : "";
+
   return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle pb-2">
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={"assistant-panel-" + id} id={"assistant-tab-" + id} onClick={() => setTab(id)} className={"inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-control px-3 py-2 text-sm " + (tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle")}><Icon className="size-4 shrink-0" /><span>{t("assistant.user." + id)}</span></button>)}</div>
-      {account && tab !== "chat" && <span className="text-xs text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={"assistant-panel-" + id} id={"assistant-tab-" + id} onClick={() => setTab(id)} className={"inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control px-3 py-1.5 text-xs font-medium transition-colors duration-fast " + (tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle hover:text-text-strong")}><Icon className="size-3.5 shrink-0" /><span>{t("assistant.user." + id)}</span></button>)}</div>
+      {account && tab !== "chat" && <span className="text-xs tabular-nums text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}
     </div>
-    {error && <p role="alert" className="rounded-control border border-danger/20 bg-danger/5 p-3 text-sm text-danger">{error}</p>}
-    {tab === "chat" && <section id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="overflow-hidden rounded-panel border border-line bg-surface">
-      <button type="button" onClick={() => setShowConversations((value) => !value)} aria-expanded={showConversations} className="flex w-full items-center gap-2 border-b border-line-subtle px-4 py-3 text-sm text-text-muted lg:hidden"><PanelLeft className="size-4" /><span>{t("assistantUI.conversations")}</span></button>
+    {error && <p role="alert" className="rounded-control border border-danger/20 bg-danger/5 px-3.5 py-2.5 text-xs text-danger">{error}</p>}
+    {tab === "chat" && <section id="assistant-panel-chat" role="tabpanel" aria-labelledby="assistant-tab-chat" className="overflow-hidden rounded-panel border border-line bg-surface shadow-2xs">
       <div className="grid lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="hidden min-w-0 flex-col border-r border-line-subtle bg-surfaceSubtle p-3 lg:flex">{conversationList}</aside>
-        <div className="flex min-w-0 flex-col lg:h-[calc(100dvh-16rem)] lg:min-h-[34rem]">
-          <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle px-4 py-3">
-            <span className="truncate text-sm font-medium text-text-strong">{conversations.find((item) => item.id === conversationID)?.title || t("assistant.user.newChat")}</span>
-            <span className="text-xs text-text-muted">{activeModelName}{activeModelEffort ? " · " + t("assistant.reasoning." + activeModelEffort) : ""}</span>
+        <div className="flex min-w-0 flex-col lg:h-[calc(100dvh-16.5rem)] lg:min-h-[31rem]">
+          <header className="flex items-center justify-between gap-2 border-b border-line-subtle px-3.5 py-2.5 sm:px-5">
+            <div className="flex min-w-0 items-center gap-2">
+              <button type="button" onClick={() => setShowConversations((value) => !value)} aria-expanded={showConversations} aria-label={t("assistantUI.conversations")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-line bg-background text-text-muted hover:bg-surfaceHover hover:text-text-strong lg:hidden"><PanelLeft className="size-4" /></button>
+              <span className="truncate text-xs sm:text-sm font-medium text-text-strong">{conversations.find((item) => item.id === conversationID)?.title || t("assistant.user.newChat")}</span>
+            </div>
+            {conversationID && (
+              <button type="button" disabled={submitting} onClick={startNewChat} className="inline-flex h-7 shrink-0 items-center gap-1 rounded-control border border-line bg-background px-2.5 text-xs text-text-body hover:bg-surfaceHover disabled:opacity-40 lg:hidden">
+                <Plus className="size-3.5" /><span>{t("assistant.user.newChat")}</span>
+              </button>
+            )}
           </header>
-          <div role="log" aria-live="polite" aria-busy={currentRunning || loading} className="min-h-[22rem] flex-1 space-y-6 overflow-y-auto px-4 py-6 sm:px-6">
-            {loading && <p role="status" className="flex items-center gap-2 text-sm text-text-muted"><Loader2 className="size-4 animate-spin" /><span>{t("common.loading")}</span></p>}
-            {!messages.length && !currentRunning && !loading && <div className="flex h-full flex-col justify-center px-4 py-8 text-center">
-              <span className="mx-auto mb-4 grid size-10 place-items-center rounded-control border border-primary/20 bg-primary/10 text-primary"><Sparkles className="size-5" /></span>
-              <h2 className="text-xl font-semibold text-text-strong">{t("assistantUI.welcome")}</h2><p className="mt-2 text-sm leading-relaxed text-text-muted">{t("assistant.user.startHint")}</p>
-              <div className="mt-6 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t("assistantUI.prompt." + key)); document.getElementById("assistant-message")?.focus(); }} className="rounded-control border border-line px-3 py-3 text-left text-xs leading-relaxed text-text-body hover:border-primary/40 hover:bg-primary/5"><ArrowUpRight className="mb-2 size-4 text-primary" /><span>{t("assistantUI.example." + key)}</span></button>)}</div>
-              {!models.length && !activeBYOModels.length && <p className="mt-5 text-xs text-text-muted">{t("assistantUI.modelsUnavailable")}</p>}
+          <div role="log" aria-live="polite" aria-busy={currentRunning || loading} className="min-h-[20rem] flex-1 space-y-5 overflow-y-auto px-4 py-5 sm:px-6">
+            {loading && <p role="status" className="flex items-center gap-2 text-xs text-text-muted"><Loader2 className="size-4 animate-spin text-primary" /><span>{t("common.loading")}</span></p>}
+            {!messages.length && !currentRunning && !loading && <div className="flex h-full flex-col items-center justify-center py-6 text-center">
+              <div className="w-full max-w-xl">
+                <span className="mx-auto mb-3 grid size-9 place-items-center rounded-control border border-primary/20 bg-primary/10 text-primary"><Sparkles className="size-4" /></span>
+                <h2 className="text-base font-semibold text-text-strong">{t("assistantUI.welcome")}</h2>
+                <p className="mt-1 text-xs leading-relaxed text-text-muted">{t("assistant.user.startHint")}</p>
+                <div className="mt-5 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t("assistantUI.prompt." + key)); textareaRef.current?.focus(); }} className="group flex items-start justify-between gap-2 rounded-control border border-line bg-surfaceSubtle/60 px-3 py-2.5 text-left text-xs leading-snug text-text-body transition-colors duration-fast hover:border-primary/40 hover:bg-surfaceHover hover:text-text-strong"><span>{t("assistantUI.example." + key)}</span><ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-text-faint transition-colors group-hover:text-primary" /></button>)}</div>
+                {!models.length && !activeBYOModels.length && <p className="mt-4 text-xs text-text-muted">{t("assistantUI.modelsUnavailable")}</p>}
+              </div>
             </div>}
-            {chatTurns.map((item, index) => <article key={index} className={item.role === "user" ? "ml-auto max-w-[90%] rounded-control border border-line-subtle bg-surfaceSubtle px-4 py-3" : "min-w-0 space-y-2.5"}>
-              <p className="mb-1.5 text-xs font-medium text-text-muted">{t(item.role === "user" ? "assistant.user.you" : "assistant.user.assistant")}</p>
+            {chatTurns.map((item, index) => <article key={index} className={item.role === "user" ? "ml-auto w-fit max-w-[85%] sm:max-w-[75%] rounded-card border border-primary/20 bg-primary/10 px-3.5 py-2.5 text-text-strong" : "min-w-0 space-y-2.5"}>
               {item.role === "user" ? (
-                <p className="whitespace-pre-wrap break-words text-sm">{item.content}</p>
+                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content}</p>
               ) : (
                 <>
+                  <div className="flex items-center gap-1.5">
+                    <span aria-hidden className="grid size-5 place-items-center rounded-chip bg-primary/12 text-primary"><Sparkles className="size-3" /></span>
+                    <span className="text-xs font-medium text-text-muted">{t("assistant.user.assistant")}</span>
+                  </div>
                   {item.steps.length > 0 && (
-                    <details open={currentRunning && index === chatTurns.length - 1} className="rounded-control border border-line-subtle bg-surfaceSubtle/70 px-3 py-2 text-xs">
-                      <summary className="cursor-pointer select-none font-medium text-text-muted hover:text-text-strong">
-                        {t("assistantUI.toolSteps", { count: item.steps.length })} · {item.steps.map((s) => s.name).filter((v, i, a) => a.indexOf(v) === i).join(", ")}
+                    <details open={currentRunning && index === chatTurns.length - 1} className="group rounded-control border border-line-subtle bg-surfaceSubtle/70 px-3 py-2 text-xs">
+                      <summary className="flex cursor-pointer list-none select-none items-center gap-1.5 font-medium text-text-muted hover:text-text-strong [&::-webkit-details-marker]:hidden">
+                        <ChevronRight className="size-3.5 shrink-0 transition-transform duration-fast group-open:rotate-90" />
+                        <span className="truncate">{t("assistantUI.toolSteps", { count: item.steps.length })} · {item.steps.map((s) => s.name).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</span>
                       </summary>
                       <div className="mt-2 space-y-1.5 border-t border-line-subtle pt-2">
                         {item.steps.map((step, sIdx) => (
@@ -431,14 +451,38 @@ function AssistantWorkspace() {
             {receipts.length > 0 && <details className="rounded-control border border-line-subtle p-3 text-xs"><summary className="cursor-pointer text-primary">{t("assistantUI.changes")}</summary><div className="mt-3 space-y-2">{receipts.map((receipt) => <div key={pushReceiptKey(receipt)} className="flex flex-wrap items-center justify-between gap-2"><span className={receipt.applied ? "text-success" : "text-warn"}>{t(receipt.applied ? "assistant.user.editApplied" : "assistant.user.editPending")}</span><Link className="text-primary hover:underline" href={receipt.pull_request ? "/pull-requests/" + receipt.pull_request.id : receipt.workspace ? "/workspaces/" + receipt.workspace.id : "/commits/" + (receipt.commits[0]?.id || "")}>{t("assistantUI.viewChanges")}</Link></div>)}</div></details>}
             <div ref={endRef} />
           </div>
-          <footer className="shrink-0 border-t border-line-subtle bg-surface px-4 pb-3 pt-2 sm:px-6">
-            <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="rounded-control border border-line bg-background p-2 focus-within:border-primary/50">
-              <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label><textarea id="assistant-message" rows={2} maxLength={16000} value={message} disabled={currentRunning || loading} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); } }} placeholder={t("assistant.user.placeholder")} className="max-h-48 min-h-16 w-full resize-y bg-transparent px-1 py-1 text-sm outline-none disabled:opacity-50" />
-              <div className="flex flex-wrap items-start gap-2 border-t border-line-subtle pt-2"><AssistantModelPicker compact models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={currentRunning || loading} /><div className="flex items-center" title={t("assistant.user.reasoningEffort")}><Select fullWidth={false} aria-label={t("assistant.user.reasoningEffort")} value={reasoningEffort} disabled={currentRunning || loading} onChange={(val) => setReasoningEffort(val as AssistantReasoningEffort)} options={reasoningOptions} className="!h-8 min-w-[5.25rem] !px-2.5 !text-xs !bg-surface" /></div><button type="submit" disabled={currentRunning || loading || !modelID || !message.trim()} title="Ctrl / ⌘ + Enter" className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"><Send className="size-3.5 shrink-0" />{t("assistant.user.send")}</button></div>
-              <details className="mt-2 border-t border-line-subtle pt-2 text-xs text-text-muted"><summary className="cursor-pointer">{t("assistant.search.settings")}</summary><div className="pt-2"><AssistantSearchPicker providers={searchProviders} byoProviders={byoProviders} providerID={searchProviderID} byoProviderID={searchBYOProviderID} onProvider={setSearchProviderID} onBYOProvider={setSearchBYOProviderID} disabled={currentRunning || loading} /></div></details>
+          <footer className="shrink-0 border-t border-line-subtle bg-surface px-3.5 pb-3 pt-2.5 sm:px-5">
+            <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="rounded-card border border-line bg-background shadow-2xs transition-colors duration-fast focus-within:border-primary/60">
+              <label htmlFor="assistant-message" className="sr-only">{t("assistant.user.message")}</label>
+              <textarea ref={textareaRef} id="assistant-message" rows={2} maxLength={16000} value={message} disabled={currentRunning || loading} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); } }} placeholder={t("assistant.user.placeholder")} className="max-h-44 min-h-[3.25rem] w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm leading-relaxed text-text-strong placeholder:text-text-faint outline-none disabled:opacity-50" />
+              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 pb-2.5 pt-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <AssistantModelPicker inline models={models} byoProviders={byoProviders} byoModels={byoModels} modelID={modelID} onModel={setModelID} disabled={currentRunning || loading} />
+                  <div className="flex items-center" title={t("assistant.user.reasoningEffort")}>
+                    <Select fullWidth={false} prefix={<Brain className="size-3.5 text-text-muted" />} aria-label={t("assistant.user.reasoningEffort")} value={reasoningEffort} disabled={currentRunning || loading} onChange={(val) => setReasoningEffort(val as AssistantReasoningEffort)} options={reasoningOptions} className="!h-8 !bg-surface hover:!bg-surfaceHover !px-2.5 !text-xs" />
+                  </div>
+                  {searchProviders.length > 0 && (
+                    <AssistantSearchPicker inline providers={searchProviders} byoProviders={byoProviders} providerID={searchProviderID} byoProviderID={searchBYOProviderID} onProvider={setSearchProviderID} onBYOProvider={setSearchBYOProviderID} disabled={currentRunning || loading} />
+                  )}
+                </div>
+                <button type="submit" disabled={currentRunning || loading || !modelID || !message.trim()} title="Ctrl / ⌘ + Enter" className="ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-2xs transition-colors duration-fast ease-soft hover:bg-primary/90 disabled:opacity-40">
+                  {currentRunning ? <Loader2 className="size-3.5 shrink-0 animate-spin" /> : <Send className="size-3.5 shrink-0" />}
+                  <span>{t("assistant.user.send")}</span>
+                </button>
+              </div>
             </form>
-            <div className="mt-2 flex flex-wrap items-start justify-between gap-2"><AssistantContextMeter conversationID={conversationID} modelID={modelID} message={message} revision={messages.length} disabled={currentRunning || loading} />{account && <span className="shrink-0 text-xs text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}</div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-faint"><details><summary className="cursor-pointer">{t("assistantUI.editBehavior")}</summary><p className="mt-1 max-w-lg leading-relaxed">{t("assistant.user.editHint")}</p></details>{result && <span>{t("assistant.user.consumed", { input: number.format(result.usage.input_tokens), output: number.format(result.usage.output_tokens), credits: number.format(result.credits_spent) })}{result.usage_estimated && " · " + t("assistant.user.estimated")}</span>}</div>
+            <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-0.5 text-[11px] text-text-faint">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <AssistantContextMeter conversationID={conversationID} modelID={modelID} message={message} revision={messages.length} disabled={currentRunning || loading} />
+                {result && (
+                  <span className="tabular-nums">
+                    {t("assistant.user.consumed", { input: number.format(result.usage.input_tokens), output: number.format(result.usage.output_tokens), credits: number.format(result.credits_spent) })}
+                    {result.usage_estimated ? " · " + t("assistant.user.estimated") : ""}
+                  </span>
+                )}
+              </div>
+              {account && <span className="shrink-0 tabular-nums text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}
+            </div>
           </footer>
         </div>
       </div>

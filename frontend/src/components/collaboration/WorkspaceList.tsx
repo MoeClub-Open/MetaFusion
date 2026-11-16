@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GitBranch, GitPullRequest, Plus, RefreshCw } from "lucide-react";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { useAuth } from "@/lib/authContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { createWorkspace, listWorkspaces, type Workspace } from "@/lib/api/collaboration";
@@ -51,14 +52,17 @@ export function WorkspaceList() {
       router.push(`/workspaces/${workspace.id}`);
     } catch (e) { if (activeActor.current === actor && !signal?.aborted) { setError(localizeCatalogError((e as Error).message, t)); setBusy(false); } }
   };
-  if (loading) return <p>{t("common.loading")}</p>;
-  if (!user) return <p><Link href="/login" className="text-primary underline">{t("collaboration.signIn")}</Link></p>;
-  return <section className="catalog-v2 cv-form space-y-5">
+  const header = (
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div className="space-y-2"><h1 className="flex items-center gap-2 text-2xl font-semibold"><GitBranch aria-hidden="true" className="h-5 w-5"/>{t("collaboration.workspaces")}</h1>
         <p className="max-w-3xl text-sm text-text-muted">{t("collaboration.workspaceIntro")}</p></div>
       <div className="flex flex-wrap gap-4 text-sm"><Link href="/history" className="text-primary underline">{t("versioning.catalogHistory")}</Link><Link href="/pull-requests" className="inline-flex items-center gap-2 text-primary underline"><GitPullRequest className="h-4 w-4" aria-hidden="true"/>{t("collaboration.pullRequests")}</Link></div>
     </header>
+  );
+  if (loading) return <section className="space-y-4">{header}<p role="status" className="text-xs text-text-muted">{t("common.loading")}</p></section>;
+  if (!user) return <section className="space-y-4">{header}<LoginPrompt icon={<GitBranch className="size-4" />} title={t("collaboration.signInRequired")} actionLabel={t("collaboration.signIn")} returnTo="/workspaces" /></section>;
+  return <section className="catalog-v2 cv-form space-y-5">
+    {header}
     <form className="flex flex-wrap items-end gap-3 rounded-panel border border-line bg-surface p-4" onSubmit={e => { e.preventDefault(); void create(); }}>
       <label className="min-w-48 flex-1 space-y-1 text-sm"><span>{t("collaboration.workspaceName")}</span><input maxLength={200} value={name} onChange={e => setName(e.target.value)} placeholder={t("collaboration.optionalName")} disabled={busy}/></label>
       <button className="cv-primary shrink-0 whitespace-nowrap inline-flex items-center gap-2" disabled={busy}><Plus aria-hidden="true" className="h-4 w-4 shrink-0"/>{t("collaboration.createWorkspace")}</button>

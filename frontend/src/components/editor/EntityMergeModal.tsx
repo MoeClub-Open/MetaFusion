@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, GitMerge, AlertTriangle, CheckCircle2, Lock, LogIn } from "lucide-react";
+import { X, GitMerge, AlertTriangle, CheckCircle2, Lock } from "lucide-react";
 import Link from "next/link";
+import { LoginPrompt } from "@/components/common/LoginPrompt";
 import { catalogEntityHref, mergeEntities } from "@/lib/api";
 import { localizeCatalogError } from "@/lib/catalogErrors";
 import { useAuth } from "@/lib/authContext";
@@ -152,19 +153,13 @@ export function EntityMergeModal({ isOpen, onClose, targetType, sourceEntity, on
 
         {/* Auth warning if not logged in */}
         {!user && (
-          <div className="mx-5 mt-2.5 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 flex items-center justify-between gap-2.5 text-xs text-danger-soft">
-            <div className="flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5 text-danger shrink-0" />
-              <span>{t("editor.universal.unauthWarning")}</span>
-            </div>
-            <Link
-              href="/login"
-              className="px-2.5 py-1 rounded-md bg-rose-400 text-black font-semibold text-xs inline-flex items-center gap-1 shrink-0"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>{t("editor.universal.loginNow")}</span>
-            </Link>
-          </div>
+          <LoginPrompt
+            compact
+            icon={<Lock className="size-3.5" />}
+            title={t("editor.universal.unauthWarning")}
+            actionLabel={t("editor.universal.loginNow")}
+            className="mx-5 mt-2.5"
+          />
         )}
 
         {/* Form Body */}
