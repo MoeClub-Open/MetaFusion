@@ -39,6 +39,7 @@ func AuditActions() map[string]string {
 		"POST /api/catalog/pull-requests/:id/merge":  "pull_request.merged",
 		"POST /api/catalog/entities/:id/lifecycle":   "entity.lifecycle_changed",
 		"PUT /api/catalog/me/home-preferences":       "preference.home_updated",
+		"PUT /api/catalog/me/content-preferences":    "preference.content_updated",
 		"PUT /api/admin/catalog-definitions":         "definition.updated",
 		"PUT /api/admin/rate-limits":                 "rate_limit.updated",
 		"PUT /api/admin/public-sources":              "public_source.updated",
@@ -218,6 +219,16 @@ func relationChangeDetail(before, after *Relation) map[string]any {
 	}
 	if len(attrs) > 0 {
 		changes["attributes"] = attrs
+	}
+	return changes
+}
+
+func contentPreferencesDetail(before, after *ContentPreferences) map[string]any {
+	changes := map[string]any{}
+	if before != nil && after != nil && before.AdultContentMode != after.AdultContentMode {
+		changes["adult_content_mode"] = map[string]any{"before": before.AdultContentMode, "after": after.AdultContentMode}
+	} else if before == nil && after != nil {
+		changes["adult_content_mode"] = map[string]any{"after": after.AdultContentMode}
 	}
 	return changes
 }

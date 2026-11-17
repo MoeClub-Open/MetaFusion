@@ -1044,6 +1044,13 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 			parts = append(parts, "("+strings.Join(ors, join)+")")
 		}
 	}
+	hideAdult, err := s.shouldHideAdultContent(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if hideAdult {
+		parts = append(parts, adultExclusionSQL(""))
+	}
 	return parts, nil
 }
 

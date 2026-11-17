@@ -107,6 +107,7 @@ func TestAuditActionCodesAreStable(t *testing.T) {
 		"POST /api/catalog/pull-requests/:id/merge":  "pull_request.merged",
 		"POST /api/catalog/entities/:id/lifecycle":   "entity.lifecycle_changed",
 		"PUT /api/catalog/me/home-preferences":       "preference.home_updated",
+		"PUT /api/catalog/me/content-preferences":    "preference.content_updated",
 		"PUT /api/admin/catalog-definitions":         "definition.updated",
 		"PUT /api/admin/rate-limits":                 "rate_limit.updated",
 		"PUT /api/admin/public-sources":              "public_source.updated",

@@ -655,3 +655,55 @@ func TestListFilterSupportsMultiValueKind(t *testing.T) {
 		t.Fatalf("empty kinds must add no predicate, got %s", joined)
 	}
 }
+
+func TestNormalizeAdultContentMode(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want string
+		ok   bool
+	}{
+		{"hide", "hide", true},
+		{" BLUR ", "blur", true},
+		{"Show", "show", true},
+		{"", "", false},
+		{"unknown", "", false},
+	} {
+		got, err := normalizeAdultContentMode(tc.raw)
+		if tc.ok && (err != nil || got != tc.want) {
+			t.Fatalf("normalizeAdultContentMode(%q) = %q, %v; want %q", tc.raw, got, err, tc.want)
+		}
+		if !tc.ok && err == nil {
+			t.Fatalf("normalizeAdultContentMode(%q) succeeded, want error", tc.raw)
+		}
+	}
+	sql := adultExclusionSQL("e")
+	if !strings.Contains(sql, "content_rating") || !strings.Contains(sql, "eroge") {
+		t.Fatalf("unexpected adultExclusionSQL: %s", sql)
+	}
+}
+
+func TestPostgresContentPreferencesRoundTrip(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	const userID = "22222222-2222-2222-2222-222222222222"
+	got, err := f.s.GetContentPreferences(ctx, userID)
+	if err != nil || got.AdultContentMode != AdultContentBlur {
+		t.Fatalf("default adult content mode = %+v, err=%v; want blur", got, err)
+	}
+	if _, err := f.s.SaveContentPreferences(ctx, userID, ContentPreferences{AdultContentMode: "hide"}); err != nil {
+		t.Fatalf("SaveContentPreferences(hide): %v", err)
+	}
+	// 保存成人内容偏好后，未设置过首页偏好的账号仍应能正常读取空首页偏好。
+	home, err := f.s.GetHomePreferences(ctx, userID)
+	if err != nil || home.Order == nil || home.Hidden == nil || home.Sections == nil {
+		t.Fatalf("GetHomePreferences after SaveContentPreferences failed: %+v err=%v", home, err)
+	}
+	got, err = f.s.GetContentPreferences(ctx, userID)
+	if err != nil || got.AdultContentMode != AdultContentHide {
+		t.Fatalf("GetContentPreferences after save = %+v, err=%v; want hide", got, err)
+	}
+	hide, err := f.s.shouldHideAdultContent(ctx, &User{ID: userID})
+	if err != nil || !hide {
+		t.Fatalf("shouldHideAdultContent = %v, %v; want true", hide, err)
+	}
+}

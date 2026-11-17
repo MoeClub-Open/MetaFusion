@@ -33,6 +33,9 @@ interface AdaptiveCoverProps {
    * 见 EntityCover 的 backdrop。显式传值可覆盖自动判断。
    */
   backdrop?: boolean;
+  blurred?: boolean;
+  blurLabel?: string;
+  onToggleBlur?: () => void;
 }
 
 /**
@@ -64,6 +67,9 @@ export function AdaptiveCover({
   minHeight,
   compact = false,
   backdrop,
+  blurred = false,
+  blurLabel,
+  onToggleBlur,
 }: AdaptiveCoverProps) {
   const manual = typeof aspect === "string" ? parseManualRatio(aspect) : null;
   const inferred = inferCoverRatio(tags);
@@ -75,6 +81,7 @@ export function AdaptiveCover({
     (manual !== null ? clampCoverRatio(manual) : null) ??
     (naturalRatio !== null ? clampCoverRatio(naturalRatio) : clampCoverRatio(inferred));
   const resolvedImgClassName = imgClassName ?? "w-full h-full object-contain";
+  const effectiveImgClassName = blurred ? `${resolvedImgClassName} blur-xl scale-110 transition-[filter,transform] duration-200` : `${resolvedImgClassName} transition-[filter,transform] duration-200`;
   const showBackdrop =
     backdrop ??
     (resolvedImgClassName.includes("object-contain") &&
@@ -101,11 +108,25 @@ export function AdaptiveCover({
         originalTitle={originalTitle}
         id={id}
         loading={loading}
-        imgClassName={resolvedImgClassName}
+        imgClassName={effectiveImgClassName}
         onDimensions={handleDimensions}
         compact={compact}
         backdrop={showBackdrop}
       />
+      {blurred && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-black/30 p-3 text-center">
+          <span className="px-2 py-0.5 rounded-chip bg-rose-600/90 text-white font-mono text-[11px] font-bold">18+</span>
+          {onToggleBlur && blurLabel && (
+            <button
+              type="button"
+              onClick={onToggleBlur}
+              className="px-2.5 py-1 rounded-control bg-black/70 hover:bg-black/85 text-white text-[11px] font-medium border border-white/20 cursor-pointer transition-colors"
+            >
+              {blurLabel}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

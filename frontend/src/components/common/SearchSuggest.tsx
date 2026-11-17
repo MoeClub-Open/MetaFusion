@@ -11,6 +11,7 @@ import { displayCover, withDisplayCovers, type CoverBearing } from "@/lib/cover"
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { searchKeyAction } from "@/lib/searchKeyboard";
 import { kindIcon } from "@/lib/kindIcons";
+import { isAdultEntity, useAdultContentMode } from "@/lib/adultContent";
 
 /** 实体检索的联想项，图片结构复用 lib/cover 的 CoverBearing。 */
 interface SuggestItem extends CoverBearing {
@@ -19,6 +20,7 @@ interface SuggestItem extends CoverBearing {
   title: string;
   original_language?: string;
   translations?: Record<string, { title?: string; summary?: string; aliases?: string[] }>;
+  attributes?: Record<string, any>;
 }
 
 interface SearchSuggestProps {
@@ -53,6 +55,7 @@ export function SearchSuggest({
   const { kinds } = useDefinitions();
   const titleOrder = useTitleDisplayOrder();
   const router = useRouter();
+  const { mode: adultMode } = useAdultContentMode();
 
   const [items, setItems] = useState<SuggestItem[]>([]);
   const [focused, setFocused] = useState(false);
@@ -92,7 +95,8 @@ export function SearchSuggest({
     };
   }, [q, focused]);
 
-  const open = focused && q.length > 0 && items.length > 0;
+  const visibleItems = items.filter((item) => adultMode !== "hide" || !isAdultEntity(item));
+  const open = focused && q.length > 0 && visibleItems.length > 0;
 
   const displayTitle = (item: SuggestItem) =>
     pickRecordTitle(locale, item.translations, item.title, {
@@ -118,7 +122,7 @@ export function SearchSuggest({
   const limit = searchInputLimitProps(onValueChange);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const action = searchKeyAction({ key: e.key, isComposing: composingRef.current || e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode }, open, active, items.length);
+    const action = searchKeyAction({ key: e.key, isComposing: composingRef.current || e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode }, open, active, visibleItems.length);
     if (action === "ignore") {
       if (e.key === "Enter") {
         compositionSubmitRef.current = true;
@@ -128,9 +132,9 @@ export function SearchSuggest({
     }
     if (action === "none") return;
     e.preventDefault();
-    if (action === "next") setActive((i) => (i + 1) % items.length);
-    else if (action === "previous") setActive((i) => (i <= 0 ? items.length - 1 : i - 1));
-    else if (action === "select") go(items[active]);
+    if (action === "next") setActive((i) => (i + 1) % visibleItems.length);
+    else if (action === "previous") setActive((i) => (i <= 0 ? visibleItems.length - 1 : i - 1));
+    else if (action === "select") go(visibleItems[active]);
     else if (action === "submit") submit();
     else if (action === "dismiss") { setFocused(false); setActive(-1); }
   };
@@ -193,10 +197,12 @@ export function SearchSuggest({
           aria-label={t("search.suggestions")}
           className="absolute left-0 right-0 top-full mt-2 z-50 max-h-[45dvh] overflow-y-auto rounded-panel border border-line bg-surface shadow-elevated"
         >
-          {items.map((item, i) => {
+          {visibleItems.map((item, i) => {
             const KindIcon = kindIcon(item.kind);
             // 缩略图即该条目的封面：取值走 lib/cover（首张图=封面只有一处定义）。
             const cover = displayCover(item);
+            const adult = isAdultEntity(item);
+            const blurred = adult && adultMode === "blur";
             return (
               <li key={item.id} id={`${listId}-${i}`} role="option" aria-selected={i === active}>
                 <button
@@ -216,7 +222,7 @@ export function SearchSuggest({
                       <img
                         src={cover.url}
                         alt=""
-                        className="w-full h-full object-contain"
+                        className={"w-full h-full object-contain" + (blurred ? " blur-md scale-110" : "")}
                         loading="lazy"
                       />
                     ) : (
@@ -226,6 +232,11 @@ export function SearchSuggest({
                   <div className="min-w-0 flex-1 text-sm text-text-strong truncate">
                     {displayTitle(item)}
                   </div>
+                  {adult && (
+                    <span className="shrink-0 px-1 py-0.5 rounded bg-rose-600/90 text-white text-[9px] font-mono font-bold leading-none">
+                      18+
+                    </span>
+                  )}
                   <span className="shrink-0 text-[10px] font-mono text-text-faint">
                     {getKindName(kinds, item.kind, locale, tr("catalog.kind." + item.kind, item.kind))}
                   </span>

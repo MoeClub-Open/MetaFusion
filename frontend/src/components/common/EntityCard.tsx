@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AdaptiveCardCover } from "./AdaptiveCardCover";
 import { NeutralCover } from "./NeutralCover";
 import { GRID_COVER_ASPECT, inferCoverRatio } from "@/lib/cover";
+import { useAdultContentMode } from "@/lib/adultContent";
 
 export interface EntityCardProps {
   id: string;
@@ -23,6 +24,8 @@ export interface EntityCardProps {
   pictureUrl?: string;
   /** 探索页质量提示：仅 partial 显示小圆点。 */
   qualityStatus?: string;
+  /** 是否 18+ 成人向内容 */
+  isAdult?: boolean;
 }
 
 /**
@@ -38,7 +41,11 @@ export function EntityCard({
   fallbackSubtitle,
   pictureUrl,
   qualityStatus,
+  isAdult = false,
 }: EntityCardProps) {
+  const { mode } = useAdultContentMode();
+  if (isAdult && mode === "hide") return null;
+  const blurred = isAdult && mode === "blur";
   // 题名下第二行只放有区分度的事实：原文题名优先，否则退到标签。
   // 与展示题名同文的原题名不渲染——复读一遍只添噪音。
   const showBaseTitle = !!baseTitle && baseTitle !== title;
@@ -55,6 +62,7 @@ export function EntityCard({
         src={pictureUrl}
         alt={title}
         naturalAspect
+        blurred={blurred}
         aspectRatio={pictureUrl ? inferCoverRatio(tags) : GRID_COVER_ASPECT}
         badge={
           <span className="px-2 py-0.5 rounded-chip bg-black/65 dark:bg-black/75 text-emphasis keep-white backdrop-blur-md border border-emphasis/20 text-[10px] font-medium shadow-2xs flex items-center gap-1.5 leading-none">
@@ -62,6 +70,11 @@ export function EntityCard({
             <span className="truncate max-w-[85px]">{badgeLabel}</span>
           </span>
         }
+        statusBadge={isAdult ? (
+          <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-white text-[10px] font-mono font-bold shadow-2xs leading-none">
+            18+
+          </span>
+        ) : undefined}
         fallbackContent={
           <div className="w-full h-full relative" aria-hidden>
             <NeutralCover label={title} />

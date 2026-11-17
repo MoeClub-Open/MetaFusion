@@ -2937,5 +2937,20 @@
   "assistantUI.filterTable": "項目を絞り込み…",
   "assistantUI.relatedEntities": "関連カタログ項目",
   "curator.settings.reasoningEffort": "主エージェントの思考強度",
-  "curator.settings.childReasoningEffort": "子エージェントの思考強度"
+  "curator.settings.childReasoningEffort": "子エージェントの思考強度",
+  "settings.adultContentLabel": "18+ 成人向けコンテンツ表示",
+  "settings.adultContentDesc": "18+ 成人向けエントリと画像の表示方法を切り替えます。未ログインおよび初期設定ではぼかし表示されます。",
+  "settings.adultContentHide": "非表示",
+  "settings.adultContentBlur": "ぼかし（初期値）",
+  "settings.adultContentShow": "そのまま表示",
+  "catalog.adultHiddenTitle": "この 18+ エントリはアカウント設定により非表示です",
+  "catalog.adultHiddenDesc": "18+ コンテンツの非表示・ぼかし・表示設定を変更するには、アカウント設定ページへ移動してください。",
+  "catalog.adultHiddenSettings": "設定を開く",
+  "catalog.adultRevealImage": "画像を表示",
+  "catalog.adultHideImage": "ぼかしに戻す",
+  "settings.activity.action.preference.content_updated": "更新：18+ コンテンツ表示設定",
+  "settings.activity.field.adult_content_mode": "18+ 表示設定",
+  "settings.activity.value.hide": "非表示",
+  "settings.activity.value.blur": "ぼかし",
+  "settings.activity.value.show": "そのまま表示"
 }

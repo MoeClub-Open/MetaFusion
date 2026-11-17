@@ -22,6 +22,7 @@ interface AdaptiveCardCoverProps {
   aspectRatio?: number;
   /** 图片加载后让容器贴合原图比例；不裁切、不添加模糊衬底。 */
   naturalAspect?: boolean;
+  blurred?: boolean;
   className?: string;
   imgClassName?: string;
 }
@@ -42,6 +43,7 @@ export function AdaptiveCardCover({
   aspectClassName = "aspect-square",
   aspectRatio,
   naturalAspect = false,
+  blurred = false,
   className = "",
   imgClassName = "",
 }: AdaptiveCardCoverProps) {
@@ -81,7 +83,7 @@ export function AdaptiveCardCover({
               height={32}
               loading="lazy"
               decoding="async"
-              className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-45 dark:opacity-40 saturate-125 select-none"
+              className={`absolute inset-0 w-full h-full object-cover ${blurred ? "scale-125 blur-3xl opacity-70" : "scale-110 blur-2xl opacity-45 dark:opacity-40"} saturate-125 select-none`}
             />
           )}
           {!loaded && (
@@ -101,8 +103,11 @@ export function AdaptiveCardCover({
               // 命中缓存的图可能不触发 onLoad：挂载时已 complete 就直接算加载完成。
               if (el) recordLoaded(el);
             }}
-            className={`absolute inset-0 w-full h-full object-contain select-none transition-[opacity,transform] duration-300 ${naturalAspect ? "" : "group-hover:scale-[1.03]"} ${loaded ? "opacity-100" : "opacity-0"} ${imgClassName}`}
+            className={`absolute inset-0 w-full h-full object-contain select-none transition-[opacity,transform,filter] duration-300 ${blurred ? "blur-xl scale-110" : naturalAspect ? "" : "group-hover:scale-[1.03]"} ${loaded ? "opacity-100" : "opacity-0"} ${imgClassName}`}
           />
+          {blurred && (
+            <div className="absolute inset-0 z-10 bg-black/25 pointer-events-none" aria-hidden />
+          )}
         </>
       ) : (
         /* 兜底：无图或取图失败用中性占位，不再画深色调试网格 / 技术线稿 */

@@ -11,6 +11,7 @@ import { PageContainer, PageShell } from "@/components/ui/PageShell";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { useAuth } from "@/lib/authContext";
+import { isAdultEntity, useAdultContentMode } from "@/lib/adultContent";
 import { EntityCard } from "@/components/common/EntityCard";
 import { EntityCardGrid } from "@/components/common/EntityCardGrid";
 import { fetchApi } from "@/lib/api";
@@ -48,6 +49,7 @@ export default function HomePage() {
   const { definitions, kinds } = useDefinitions();
   const titleOrder = useTitleDisplayOrder();
   const { user, loading: authLoading } = useAuth();
+  const { mode: adultMode } = useAdultContentMode();
 
   const [sections, setSections] = useState<FeedSection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,7 +231,7 @@ export default function HomePage() {
                 </SectionTitle>
 
                 <EntityCardGrid className="grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
-                  {items.map((item) => {
+                  {items.filter((item) => adultMode !== "hide" || !isAdultEntity(item)).map((item) => {
                     const displayTitle = pickRecordTitle(locale, item.translations, item.title, {
                       order: titleOrder,
                       originalLanguage: item.original_language,
@@ -249,6 +251,7 @@ export default function HomePage() {
                         baseTitle={item.title}
                         tags={getEntityTagLabels(definitions, item.kind, item.attributes, locale)}
                         pictureUrl={cover.url}
+                        isAdult={isAdultEntity(item)}
                       />
                     );
                   })}

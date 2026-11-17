@@ -24,6 +24,7 @@ import {
 import { loadCatalogSection } from "@/lib/catalogSection";
 import { fetchEntityRelationshipPreview, fetchEntityRelationships, type EntityRelationships, type RelationshipRecord } from "@/lib/catalogRelationships";
 import { useAuth } from "@/lib/authContext";
+import { isAdultEntity, useAdultContentMode } from "@/lib/adultContent";
 import { canEditEntity } from "@/lib/permissions";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isNotFoundError, localizeCatalogError } from "@/lib/catalogErrors";
@@ -126,6 +127,7 @@ export function EntityDetailView({ id }: { id: string }) {
   // 两处会不同步——定义发布、会话刷新后，只有恰好挂在 Provider 下的路由才看得到变化。
   const { modules } = useCatalog();
   const { user } = useAuth();
+  const { mode: adultMode } = useAdultContentMode();
   const { definitions: dynamicDefs, kinds, relationshipRules } = useDefinitions();
   const defs = dynamicDefs;
   // kind 展示名统一走服务端 definitions.kinds，字典只作兜底（缺键退原始码，不显示裸 key）。
@@ -207,6 +209,10 @@ export function EntityDetailView({ id }: { id: string }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   // Modal 的副作用依赖 onClose 的身份：给它稳定引用，否则每次翻图都会重挂副作用并抢焦点。
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+  const [revealedAdultImages, setRevealedAdultImages] = useState(false);
+  useEffect(() => {
+    setRevealedAdultImages(false);
+  }, [id, adultMode]);
 
   const loadOlderRevisions = async () => {
     if (!entity?.id || revisionsBusyRef.current || revisionOffset >= revisionTotal) return;
@@ -1061,6 +1067,29 @@ export function EntityDetailView({ id }: { id: string }) {
   }
 
   const localizedTitle = title(entity, locale, titleOrder);
+  const isAdult = isAdultEntity(entity) || isAdultEntity(motherWork) || subjectWorks.some(isAdultEntity);
+  const blurAdultImages = isAdult && adultMode === "blur" && !revealedAdultImages;
+  if (isAdult && adultMode === "hide") {
+    return (
+      <div className="min-h-screen relative flex flex-col overflow-clip">
+        <PageShell width="narrow" center>
+          <Card padding="section" className="text-center space-y-3">
+            <span className="inline-flex px-2 py-0.5 rounded-chip bg-rose-600/90 text-white font-mono text-xs font-bold">18+</span>
+            <h1 className="text-base font-semibold text-text-strong">{t("catalog.adultHiddenTitle")}</h1>
+            <p className="text-sm text-text-muted">{t("catalog.adultHiddenDesc")}</p>
+            <div className="pt-1 flex justify-center gap-3">
+              <Link href="/settings" className="px-4 py-2 rounded-control bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity">
+                {t("catalog.adultHiddenSettings")}
+              </Link>
+              <Link href="/explore" className="px-4 py-2 rounded-control border border-line text-xs font-medium text-text-body hover:bg-surfaceHover transition-colors">
+                {t("nav.catalog")}
+              </Link>
+            </div>
+          </Card>
+        </PageShell>
+      </div>
+    );
+  }
   const structureFields = (defs?.structure?.[entity.kind]?.fields || []).filter((field) => {
     const reference = (entity as Record<string, unknown>)[field.code];
     return typeof reference === "string" && reference.length > 0;
@@ -1283,6 +1312,9 @@ export function EntityDetailView({ id }: { id: string }) {
                 minHeight={96}
                 maxHeight={380}
                 className="w-full h-auto"
+                blurred={blurAdultImages}
+                blurLabel={t("catalog.adultRevealImage")}
+                onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
               />
             </Card>
 
@@ -1426,7 +1458,7 @@ export function EntityDetailView({ id }: { id: string }) {
                               alt={pic.caption}
                               title={pic.caption}
                               id={entity.id}
-                              imgClassName="w-full h-auto max-h-48 object-contain"
+                              imgClassName={"w-full h-auto max-h-48 object-contain" + (blurAdultImages ? " blur-xl scale-110" : "")}
                             />
                             {/* 首张=封面是顺序事实，其余图用 picture_role 词表的用途标签；
                                 没有 role 就不显示（存量 800+ 张全是未声明，必须照常展示）。 */}
@@ -1458,6 +1490,9 @@ export function EntityDetailView({ id }: { id: string }) {
                     pictures={galleryPictures}
                     index={lightboxIndex}
                     entityId={entity.id}
+                    blurred={blurAdultImages}
+                    blurLabel={blurAdultImages ? t("catalog.adultRevealImage") : t("catalog.adultHideImage")}
+                    onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
                     onIndexChange={setLightboxIndex}
                     onClose={closeLightbox}
                   />

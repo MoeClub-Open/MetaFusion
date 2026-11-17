@@ -16,6 +16,7 @@ import { TitleDisplayOrderSetting } from "@/components/settings/TitleDisplayOrde
 import { OAuthGrantsPanel } from "@/components/settings/OAuthGrantsPanel";
 import { DirectMessagePrivacyCard } from "@/components/settings/DirectMessagePrivacyCard";
 import { ProfilePrivacyCards } from "@/components/settings/ProfilePrivacyCards";
+import { AdultContentSetting } from "@/components/settings/AdultContentSetting";
 import { MyActivityPanel } from "@/components/settings/MyActivityPanel";
 import { ThemeControls } from "@/components/ThemeControls";
 import { ThemeModeControls } from "@/components/ThemeModeControls";
@@ -306,6 +307,7 @@ export default function SettingsPage() {
 
                 <ProfilePrivacyCards key={`profile:${user.id}`} />
                 <DirectMessagePrivacyCard key={`messages:${user.id}`} />
+                <AdultContentSetting key={`adult:${user.id}`} />
               </div>
             </div>
           )}

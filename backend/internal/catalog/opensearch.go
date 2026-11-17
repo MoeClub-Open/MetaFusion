@@ -99,6 +99,10 @@ func (c *OpenSearchClient) logIssue(message string, err error) {
 // reported by OpenSearch. The caller still applies PostgreSQL visibility and
 // list filters before returning any entity data.
 func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *User, cursor searchCursor) (searchHitPage, error) {
+	return c.searchPageWithAdultFilter(ctx, o, u, false, cursor)
+}
+
+func (c *OpenSearchClient) searchPageWithAdultFilter(ctx context.Context, o ListOptions, u *User, hideAdult bool, cursor searchCursor) (searchHitPage, error) {
 	if !c.ready.Load() {
 		return searchHitPage{}, errSearchUnavailable
 	}
@@ -173,6 +177,23 @@ func (c *OpenSearchClient) searchPage(ctx context.Context, o ListOptions, u *Use
 				map[string]any{"term": map[string]any{"created_by": u.ID}},
 			}, "minimum_should_match": 1,
 		}})
+	}
+	if hideAdult {
+		mustNot = append(mustNot,
+			map[string]any{"nested": map[string]any{
+				"path": "fields", "query": map[string]any{"bool": map[string]any{"filter": []any{
+					map[string]any{"term": map[string]any{"fields.path": "content_rating"}},
+					map[string]any{"term": map[string]any{"fields.value": "r18"}},
+				}}},
+			}},
+			map[string]any{"nested": map[string]any{
+				"path": "fields", "query": map[string]any{"bool": map[string]any{"filter": []any{
+					map[string]any{"term": map[string]any{"fields.path": "creation_form"}},
+					map[string]any{"term": map[string]any{"fields.value": "eroge"}},
+				}}},
+			}},
+			map[string]any{"terms": map[string]any{"tags": []string{"r18", "18+", "adult"}}},
+		)
 	}
 
 	sort := []any{map[string]any{"_score": "desc"}, map[string]any{"entity_id": "asc"}}
@@ -311,12 +332,17 @@ func (s *Store) Search(ctx context.Context, o ListOptions, u *User, rawCursor st
 	if u != nil {
 		identity = u.ID + fmt.Sprint(u.Can(PermissionLifecycleManage))
 	}
+	hideAdult, err := s.shouldHideAdultContent(ctx, u)
+	if err != nil {
+		return out, err
+	}
 	bound := o
 	bound.Offset = 0
 	b, _ := json.Marshal(struct {
-		Options  ListOptions
-		Identity string
-	}{bound, identity})
+		Options   ListOptions
+		Identity  string
+		HideAdult bool
+	}{bound, identity, hideAdult})
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(b))
 	cursor := searchCursor{Fingerprint: fingerprint, Position: o.Offset}
 	if rawCursor != "" {
@@ -340,7 +366,7 @@ func (s *Store) Search(ctx context.Context, o ListOptions, u *User, rawCursor st
 		}
 		cursor.PIT = pit.ID
 	}
-	page, err := s.OpenSearch.searchPage(ctx, o, u, cursor)
+	page, err := s.OpenSearch.searchPageWithAdultFilter(ctx, o, u, hideAdult, cursor)
 	if err != nil {
 		if err.Error() == "search_cursor_expired" {
 			return out, err

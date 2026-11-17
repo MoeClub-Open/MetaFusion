@@ -2937,5 +2937,20 @@
   "assistantUI.filterTable": "筛选条目…",
   "assistantUI.relatedEntities": "涉及目录条目",
   "curator.settings.reasoningEffort": "主 Agent 思考强度",
-  "curator.settings.childReasoningEffort": "子 Agent 思考强度"
+  "curator.settings.childReasoningEffort": "子 Agent 思考强度",
+  "settings.adultContentLabel": "18+ 成人内容显示",
+  "settings.adultContentDesc": "控制 18+ 成人向条目与封面的展示方式；未登录或默认状态会模糊显示。",
+  "settings.adultContentHide": "隐藏",
+  "settings.adultContentBlur": "模糊（默认）",
+  "settings.adultContentShow": "直接显示",
+  "catalog.adultHiddenTitle": "该 18+ 条目已按你的账号设置隐藏",
+  "catalog.adultHiddenDesc": "如需查看或调整 18+ 内容的隐藏、模糊或直接显示偏好，请前往账号设置。",
+  "catalog.adultHiddenSettings": "前往设置调整",
+  "catalog.adultRevealImage": "显示图片",
+  "catalog.adultHideImage": "重新模糊",
+  "settings.activity.action.preference.content_updated": "更新 18+ 内容显示偏好",
+  "settings.activity.field.adult_content_mode": "18+ 内容显示",
+  "settings.activity.value.hide": "隐藏",
+  "settings.activity.value.blur": "模糊（默认）",
+  "settings.activity.value.show": "直接显示"
 }

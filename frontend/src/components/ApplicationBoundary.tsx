@@ -2,6 +2,7 @@
 
 import React from "react";
 import { AuthProvider } from "@/lib/authContext";
+import { ContentPreferenceProvider } from "@/lib/adultContent";
 import { AuthGate } from "./AuthGate";
 
 export function ApplicationBoundary({
@@ -11,9 +12,11 @@ export function ApplicationBoundary({
 }) {
   return (
     <AuthProvider>
-      <AuthGate>
-        {children}
-      </AuthGate>
+      <ContentPreferenceProvider>
+        <AuthGate>
+          {children}
+        </AuthGate>
+      </ContentPreferenceProvider>
     </AuthProvider>
   );
 }

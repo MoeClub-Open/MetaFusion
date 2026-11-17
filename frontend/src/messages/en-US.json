@@ -2937,5 +2937,20 @@
   "assistantUI.filterTable": "Filter items…",
   "assistantUI.relatedEntities": "Referenced Catalog Entries",
   "curator.settings.reasoningEffort": "Main agent reasoning effort",
-  "curator.settings.childReasoningEffort": "Child agent reasoning effort"
+  "curator.settings.childReasoningEffort": "Child agent reasoning effort",
+  "settings.adultContentLabel": "18+ adult content display",
+  "settings.adultContentDesc": "Choose how 18+ adult entries and covers appear. Blurred by default for guests and new accounts.",
+  "settings.adultContentHide": "Hide",
+  "settings.adultContentBlur": "Blur (default)",
+  "settings.adultContentShow": "Show directly",
+  "catalog.adultHiddenTitle": "This 18+ entry is hidden by your account settings",
+  "catalog.adultHiddenDesc": "Visit Settings to switch your 18+ content preference between Hide, Blur, and Show directly.",
+  "catalog.adultHiddenSettings": "Open Settings",
+  "catalog.adultRevealImage": "Reveal image",
+  "catalog.adultHideImage": "Blur again",
+  "settings.activity.action.preference.content_updated": "Update 18+ content preference",
+  "settings.activity.field.adult_content_mode": "18+ content display",
+  "settings.activity.value.hide": "Hide",
+  "settings.activity.value.blur": "Blur (default)",
+  "settings.activity.value.show": "Show directly"
 }

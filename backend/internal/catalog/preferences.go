@@ -268,3 +268,88 @@ func (sec HomeSection) applyTo(s Shelf) Shelf {
 	s.Source = ShelfSourceSystem
 	return s
 }
+
+const (
+	AdultContentHide = "hide"
+	AdultContentBlur = "blur"
+	AdultContentShow = "show"
+)
+
+// ContentPreferences controls per-account visibility for 18+ content (defaults to blur).
+type ContentPreferences struct {
+	AdultContentMode string `json:"adult_content_mode"`
+}
+
+func normalizeAdultContentMode(raw string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	switch mode {
+	case AdultContentHide, AdultContentBlur, AdultContentShow:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid_adult_content_mode")
+	}
+}
+
+func (s *Store) GetContentPreferences(ctx context.Context, userID string) (ContentPreferences, error) {
+	def := ContentPreferences{AdultContentMode: AdultContentBlur}
+	if strings.TrimSpace(userID) == "" || s == nil || s.DB == nil {
+		return def, nil
+	}
+	var mode string
+	err := s.DB.QueryRowContext(ctx, `SELECT adult_content_mode FROM catalog.user_preferences WHERE user_id=$1`, userID).Scan(&mode)
+	if err == sql.ErrNoRows {
+		return def, nil
+	}
+	if err != nil {
+		return def, err
+	}
+	if norm, err := normalizeAdultContentMode(mode); err == nil {
+		return ContentPreferences{AdultContentMode: norm}, nil
+	}
+	return def, nil
+}
+
+func (s *Store) SaveContentPreferences(ctx context.Context, userID string, in ContentPreferences) (ContentPreferences, error) {
+	mode, err := normalizeAdultContentMode(in.AdultContentMode)
+	if err != nil {
+		return ContentPreferences{}, err
+	}
+	err = s.write(ctx, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, `
+			INSERT INTO catalog.user_preferences(user_id, home_shelves, adult_content_mode)
+			VALUES($1, '{"order":[],"hidden":[],"sections":[]}'::jsonb, $2)
+			ON CONFLICT(user_id) DO UPDATE SET adult_content_mode=EXCLUDED.adult_content_mode`,
+			userID, mode)
+		return e
+	})
+	if err != nil {
+		return ContentPreferences{}, err
+	}
+	return ContentPreferences{AdultContentMode: mode}, nil
+}
+
+func (s *Store) shouldHideAdultContent(ctx context.Context, u *User) (bool, error) {
+	if u == nil || strings.TrimSpace(u.ID) == "" || s == nil || s.DB == nil {
+		return false, nil
+	}
+	prefs, err := s.GetContentPreferences(ctx, u.ID)
+	if err != nil {
+		return false, err
+	}
+	return prefs.AdultContentMode == AdultContentHide, nil
+}
+
+// adultExclusionSQL returns a SQL predicate excluding 18+ entities from lists/shelves/search.
+func adultExclusionSQL(alias string) string {
+	doc := "document"
+	if alias != "" {
+		doc = alias + ".document"
+	}
+	return "NOT (" +
+		"COALESCE(" + doc + "->'attributes'->>'content_rating','')='r18' " +
+		"OR COALESCE(" + doc + "->'attributes'->>'creation_form','')='eroge' " +
+		"OR " + doc + "->'attributes'->'tags' @> '[\"r18\"]'::jsonb " +
+		"OR " + doc + "->'attributes'->'tags' @> '[\"18+\"]'::jsonb " +
+		"OR " + doc + "->'attributes'->'tags' @> '[\"adult\"]'::jsonb" +
+		")"
+}

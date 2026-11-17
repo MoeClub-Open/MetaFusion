@@ -13,6 +13,7 @@ import { Pagination } from "@/components/common/Pagination";
 import { kindIcon } from "@/lib/kindIcons";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
+import { isAdultEntity, useAdultContentMode } from "@/lib/adultContent";
 import { can, CATALOG_ENTITY_EDIT } from "@/lib/permissions";
 import {
   useDefinitions,
@@ -86,6 +87,7 @@ function getLocalizedTitle(
 function ExploreInner() {
   const { t, tr, locale } = useI18n();
   const { user } = useAuth();
+  const { mode: adultMode } = useAdultContentMode();
   const isEditor = can(user, CATALOG_ENTITY_EDIT);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1170,7 +1172,7 @@ function ExploreInner() {
             ) : viewMode === "grid" ? (
               <TabPanel activeKey={listKey} spacing="none">
                 <EntityCardGrid className="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                  {items.map((item) => {
+                  {items.filter((item) => adultMode !== "hide" || !isAdultEntity(item)).map((item) => {
                     const displayTitle = getLocalizedTitle(item, locale, titleOrder);
                     // 角标 = 实体类型（kind）；业务类型留在正文的类型标签里，不做成"分类"角标。
                     const badgeLabel = kindLabel(item.kind);
@@ -1188,6 +1190,7 @@ function ExploreInner() {
                         tags={getEntityTagLabels(definitions, item.kind, item.attributes, locale)}
                         pictureUrl={cover.url}
                         qualityStatus={qualityById[item.id]}
+                        isAdult={isAdultEntity(item)}
                       />
                     );
                   })}
@@ -1195,13 +1198,15 @@ function ExploreInner() {
               </TabPanel>
             ) : (
               <TabPanel activeKey={listKey} spacing="none" className="rounded-xl border border-line bg-surface overflow-hidden divide-y dark:divide-white/[0.04] shadow-soft">
-                {items.map((item) => {
+                {items.filter((item) => adultMode !== "hide" || !isAdultEntity(item)).map((item) => {
                   const KindIcon = kindIcon(item.kind);
                   const displayTitle = getLocalizedTitle(item, locale, titleOrder);
                   // 角标 = 实体类型（kind）；业务类型留在正文的类型标签里，不做成"分类"角标。
                   const badgeLabel = kindLabel(item.kind);
                   // 列表视图同样是"只看封面"：取值走 lib/cover，多图只在详情页成廊展示。
                   const cover = displayCover(item);
+                  const adult = isAdultEntity(item);
+                  const blurred = adult && adultMode === "blur";
 
                   return (
                     <Link
@@ -1212,7 +1217,7 @@ function ExploreInner() {
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-11 h-11 rounded-lg bg-black/[0.03] dark:bg-black/40 border border-line shrink-0 overflow-hidden flex items-center justify-center">
                           {cover.url ? (
-                            <img src={cover.url} alt={displayTitle} width={44} height={44} loading="lazy" decoding="async" className="w-full h-full object-contain" />
+                            <img src={cover.url} alt={displayTitle} width={44} height={44} loading="lazy" decoding="async" className={"w-full h-full object-contain" + (blurred ? " blur-md scale-110" : "")} />
                           ) : (
                             <KindIcon className="w-5 h-5 text-text-muted" />
                           )}
@@ -1222,6 +1227,11 @@ function ExploreInner() {
                             <span className="shrink-0 px-2 py-0.5 rounded bg-emphasis/[0.04] text-[10px] text-text-body font-medium">
                               {badgeLabel}
                             </span>
+                            {adult && (
+                              <span className="shrink-0 px-1.5 py-0.5 rounded bg-rose-600/90 text-white text-[10px] font-mono font-bold leading-none">
+                                18+
+                              </span>
+                            )}
                             <h3 className="w-full sm:w-auto min-w-0 font-semibold text-text-strong group-hover:text-primary transition-colors duration-fast ease-soft text-sm line-clamp-2 break-words">
                               {displayTitle}
                               {qualityById[item.id] === "partial" && (

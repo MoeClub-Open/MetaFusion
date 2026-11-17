@@ -583,6 +583,24 @@ func Defaults() Definitions {
 	tags := d.Fields["tags"]
 	tags.ApplicableKinds = append([]string{}, Kinds...)
 	d.Fields["tags"] = tags
+	// 年龄分级：用于 18+ 内容默认模糊及账号级隐藏/模糊/直接显示过滤。
+	d.Vocabularies["content_rating"] = Vocabulary{
+		Names: names4("年龄分级", "年齡分級", "年齢制限", "Content rating"),
+		Terms: map[string]Term{
+			"general": {Names: names4("全年龄", "全年齡", "全年齢", "All ages"), Enabled: true},
+			"r15":     {Names: names4("R15 / 轻度限制", "R15 / 輕度限制", "R15（15歳以上推奨）", "R15 (Teen 15+)"), Enabled: true},
+			"r18":     {Names: names4("18+ / 成人向", "18+ / 成人向", "18禁 / R18", "18+ (Adult)"), Enabled: true},
+		},
+	}
+	d.Fields["content_rating"] = Field{
+		Names:           names4("年龄分级", "年齡分級", "年齢制限", "Content rating"),
+		Type:            "enum",
+		Vocabulary:      "content_rating",
+		ApplicableKinds: []string{"work", "collection", "content_unit", "expression", "release", "medium", "track", "event"},
+		Enabled:         true,
+		Searchable:      true,
+		Comparable:      true,
+	}
 	d.Templates["release"] = Template{
 		Names: names4("发行版", "發行版", "リリース", "Release"), Directory: "tree", Kinds: []string{"release"},
 		Sections: []Section{

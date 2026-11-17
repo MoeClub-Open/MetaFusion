@@ -799,6 +799,27 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		}
 		respond(c, v, err)
 	})
+	cat.GET("/me/content-preferences", required(""), func(c *gin.Context) {
+		v, err := s.GetContentPreferences(c.Request.Context(), user(c).ID)
+		respond(c, v, err)
+	})
+	cat.PUT("/me/content-preferences", required(""), func(c *gin.Context) {
+		uid := user(c).ID
+		auditlog.Describe(c, auditlog.Detail{TargetType: "preference", TargetID: uid})
+		var in ContentPreferences
+		if !body(c, &in) {
+			return
+		}
+		var before *ContentPreferences
+		if prev, err := s.GetContentPreferences(c.Request.Context(), uid); err == nil {
+			before = &prev
+		}
+		v, err := s.SaveContentPreferences(c.Request.Context(), uid, in)
+		if err == nil {
+			auditlog.Describe(c, auditlog.Detail{TargetType: "preference", TargetID: uid, Changes: contentPreferencesDetail(before, &v)})
+		}
+		respond(c, v, err)
+	})
 	// Public contribution activity contains only changes merged into visible catalog facts.
 	// The year is interpreted in UTC; private workspace activity is never returned.
 	api.GET("/users/:id/contributions", func(c *gin.Context) {

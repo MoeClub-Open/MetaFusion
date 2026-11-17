@@ -359,7 +359,10 @@ func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User
 		limit = 12
 	}
 	args := []any{}
-	where := shelfVisibilityWhere(u, &args)
+	where, err := s.shelfVisibilityWhere(ctx, u, &args)
+	if err != nil {
+		return nil, err
+	}
 	where = append(where, shelfFilter(sh, &args, "e")...)
 
 	order := shelfOrderClause(sh.Sort)
@@ -399,7 +402,7 @@ func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User
 
 // shelfVisibilityWhere 构建货架求值共用的可见性条件，排除 deleted / merged。
 // 计数与列表使用同一份条件。
-func shelfVisibilityWhere(u *User, args *[]any) []string {
+func (s *Store) shelfVisibilityWhere(ctx context.Context, u *User, args *[]any) ([]string, error) {
 	where := []string{}
 	if u == nil {
 		where = append(where, "e.state='active'")
@@ -408,14 +411,24 @@ func shelfVisibilityWhere(u *User, args *[]any) []string {
 		where = append(where, fmt.Sprintf("(e.state='active' OR e.created_by=$%d)", len(*args)))
 	}
 	where = append(where, "e.state NOT IN ('deleted','merged')")
-	return where
+	hideAdult, err := s.shouldHideAdultContent(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if hideAdult {
+		where = append(where, adultExclusionSQL("e"))
+	}
+	return where, nil
 }
 
 // CountShelfItems 返回货架规则在当前调用者可见范围内命中的实体总数（不带 LIMIT），
 // 供首页显示真实筛选数量，而不是受限后的 items 条数。
 func (s *Store) CountShelfItems(ctx context.Context, sh Shelf, u *User) (int, error) {
 	args := []any{}
-	where := shelfVisibilityWhere(u, &args)
+	where, err := s.shelfVisibilityWhere(ctx, u, &args)
+	if err != nil {
+		return 0, err
+	}
 	where = append(where, shelfFilter(sh, &args, "e")...)
 	q := "SELECT count(*) FROM catalog.entities e WHERE " + strings.Join(where, " AND ")
 	var n int

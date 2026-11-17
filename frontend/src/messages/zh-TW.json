@@ -2937,5 +2937,20 @@
   "assistantUI.filterTable": "篩選項目…",
   "assistantUI.relatedEntities": "涉及目錄項目",
   "curator.settings.reasoningEffort": "主 Agent 思考強度",
-  "curator.settings.childReasoningEffort": "子 Agent 思考強度"
+  "curator.settings.childReasoningEffort": "子 Agent 思考強度",
+  "settings.adultContentLabel": "18+ 成人內容顯示",
+  "settings.adultContentDesc": "控制 18+ 成人向條目與封面的顯示方式；未登入或預設狀態會模糊顯示。",
+  "settings.adultContentHide": "隱藏",
+  "settings.adultContentBlur": "模糊（預設）",
+  "settings.adultContentShow": "直接顯示",
+  "catalog.adultHiddenTitle": "此 18+ 條目已依你的帳號設定隱藏",
+  "catalog.adultHiddenDesc": "如需查看或調整 18+ 內容的隱藏、模糊或直接顯示偏好，請前往帳號設定。",
+  "catalog.adultHiddenSettings": "前往設定調整",
+  "catalog.adultRevealImage": "顯示圖片",
+  "catalog.adultHideImage": "重新模糊",
+  "settings.activity.action.preference.content_updated": "更新 18+ 內容顯示偏好",
+  "settings.activity.field.adult_content_mode": "18+ 內容顯示",
+  "settings.activity.value.hide": "隱藏",
+  "settings.activity.value.blur": "模糊（預設）",
+  "settings.activity.value.show": "直接顯示"
 }

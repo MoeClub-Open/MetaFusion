@@ -37,6 +37,9 @@ export function PictureLightbox({
   pictures,
   index,
   entityId,
+  blurred = false,
+  blurLabel,
+  onToggleBlur,
   onIndexChange,
   onClose,
 }: {
@@ -44,6 +47,9 @@ export function PictureLightbox({
   /** null = 关闭；越界按关闭处理（画廊数据在编辑后可能整体变短）。 */
   index: number | null;
   entityId?: string;
+  blurred?: boolean;
+  blurLabel?: string;
+  onToggleBlur?: () => void;
   onIndexChange: (next: number) => void;
   /** 必须传稳定引用：Modal 的副作用依赖它，换了身份就会在每次翻图时重挂并抢焦点。 */
   onClose: () => void;
@@ -113,6 +119,9 @@ export function PictureLightbox({
           id={entityId}
           maxHeight="60vh"
           loading="eager"
+          blurred={blurred}
+          blurLabel={blurLabel}
+          onToggleBlur={onToggleBlur}
         />
 
         {current.caption && (

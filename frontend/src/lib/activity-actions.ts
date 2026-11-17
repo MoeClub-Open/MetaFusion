@@ -111,6 +111,7 @@ export const ACTIVITY_ACTIONS: ReadonlyArray<{ code: string; service: string }> 
   { code: "post.created", service: "community" },
   { code: "post.deleted", service: "community" },
   { code: "preference.home_updated", service: "catalog" },
+  { code: "preference.content_updated", service: "catalog" },
   { code: "public_source.updated", service: "catalog" },
   { code: "pull_request.created", service: "catalog" },
   { code: "pull_request.merged", service: "catalog" },

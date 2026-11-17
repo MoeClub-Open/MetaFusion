@@ -7,6 +7,7 @@ import Link from "next/link";
 import { api, Entity, type Relation, mapLimit, title as entityTitle } from "@/components/catalog/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/lib/authContext";
+import { isAdultEntity, useAdultContentMode } from "@/lib/adultContent";
 import { canEditEntity } from "@/lib/permissions";
 import {
   useDefinitions,
@@ -164,6 +165,7 @@ export default function ReleaseDetailLayout() {
   const releaseId = params.id as string;
   const { t, tr, locale } = useI18n();
   const { user } = useAuth();
+  const { mode: adultMode } = useAdultContentMode();
   const titleOrder = useTitleDisplayOrder();
   // 定义一律走 lib/definitions.ts 的缓存（与 /catalog 路由同源）——定义从来不住在 CatalogProvider 里
   // （Provider 只留模块状态与实例初始化状态），以前这里读 Provider 的 definition 恒为 undefined，字段名只能显示裸码。
@@ -190,6 +192,10 @@ export default function ReleaseDetailLayout() {
   const [kindMismatch, setKindMismatch] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [showBonus, setShowBonus] = useState(false);
+  const [revealedAdultImages, setRevealedAdultImages] = useState(false);
+  useEffect(() => {
+    setRevealedAdultImages(false);
+  }, [releaseId, adultMode]);
   const [releaseStaffCount, setReleaseStaffCount] = useState(0);
   // 署名计数未回告前视为"加载中"：计数初始 0 不能直接决定挂载，否则
   // EntityStaffSection 永远没有机会加载，含署名的发行首次进入也看不到人员。
@@ -740,6 +746,29 @@ export default function ReleaseDetailLayout() {
 
   const primaryWorkId = release.subjects?.find((s) => s.role === "primary")?.work_id || release.subjects?.[0]?.work_id;
   const primaryWork = (primaryWorkId && works[primaryWorkId]) || null;
+  const isAdult = isAdultEntity(release) || Object.values(works).some(isAdultEntity);
+  const blurAdultImages = isAdult && adultMode === "blur" && !revealedAdultImages;
+  if (isAdult && adultMode === "hide") {
+    return (
+      <div className="min-h-screen relative flex flex-col overflow-clip">
+        <PageShell width="narrow" center>
+          <Card padding="section" className="text-center space-y-3">
+            <span className="inline-flex px-2 py-0.5 rounded-chip bg-rose-600/90 text-white font-mono text-xs font-bold">18+</span>
+            <h1 className="text-base font-semibold text-text-strong">{t("catalog.adultHiddenTitle")}</h1>
+            <p className="text-sm text-text-muted">{t("catalog.adultHiddenDesc")}</p>
+            <div className="pt-1 flex justify-center gap-3">
+              <Link href="/settings" className="px-4 py-2 rounded-control bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity">
+                {t("catalog.adultHiddenSettings")}
+              </Link>
+              <Link href="/explore" className="px-4 py-2 rounded-control border border-line text-xs font-medium text-text-body hover:bg-surfaceHover transition-colors">
+                {t("nav.catalog")}
+              </Link>
+            </div>
+          </Card>
+        </PageShell>
+      </div>
+    );
+  }
   // 发行版自己没有图时借用主要收录作品的封面，仅用于展示。
   const cover = resolveCover(release, [{ origin: "subject_work", entity: primaryWork }]);
   // 载体与篇目的用词一律取自服务端 definitions 的骨架名称：
@@ -1065,11 +1094,11 @@ export default function ReleaseDetailLayout() {
                     onClick={() => setLightboxIndex(0)}
                     className="w-24 sm:w-28 shrink-0 rounded-md mf-focus cursor-pointer"
                   >
-                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
+                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect blurred={blurAdultImages} statusBadge={isAdult ? <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-white text-[9px] font-mono font-bold leading-none">18+</span> : undefined} aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
                   </button>
                 ) : (
                   <div className="w-24 sm:w-28 shrink-0">
-                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
+                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect blurred={blurAdultImages} statusBadge={isAdult ? <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-white text-[9px] font-mono font-bold leading-none">18+</span> : undefined} aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
                   </div>
                 )
               )}
@@ -1117,7 +1146,7 @@ export default function ReleaseDetailLayout() {
                             alt={pic.caption}
                             title={pic.caption}
                             id={release.id}
-                            imgClassName="w-full h-auto max-h-48 object-contain"
+                            imgClassName={"w-full h-auto max-h-48 object-contain" + (blurAdultImages ? " blur-xl scale-110" : "")}
                           />
                           <span className="absolute left-1.5 top-1.5 flex flex-wrap items-center gap-1">
                             {pic.isCover && (
@@ -1657,6 +1686,9 @@ export default function ReleaseDetailLayout() {
         pictures={galleryPictures}
         index={lightboxIndex}
         entityId={release.id}
+        blurred={blurAdultImages}
+        blurLabel={blurAdultImages ? t("catalog.adultRevealImage") : t("catalog.adultHideImage")}
+        onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
         onIndexChange={setLightboxIndex}
         onClose={closeLightbox}
       />

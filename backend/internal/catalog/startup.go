@@ -102,8 +102,15 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 47 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 47 required (run mf-migrate up)")
+	if contractVersion != 48 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 48 required (run mf-migrate up)")
+	}
+	var adultPrefReady bool
+	if err := s.DB.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='user_preferences' AND column_name='adult_content_mode')").Scan(&adultPrefReady); err != nil {
+		return err
+	}
+	if !adultPrefReady {
+		return fmt.Errorf("incompatible_schema: user_preferences.adult_content_mode column required (run mf-migrate up)")
 	}
 	var executorSplitReady bool
 	if err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='assistant' AND table_name='chat_requests' AND column_name='execution_payload')

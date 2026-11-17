@@ -146,6 +146,8 @@ func TestOpenAPIReverseCoverage(t *testing.T) {
 		{"/catalog/entities/stats", "get", true},
 		{"/catalog/me/home-preferences", "get", true},
 		{"/catalog/me/home-preferences", "put", true},
+		{"/catalog/me/content-preferences", "get", true},
+		{"/catalog/me/content-preferences", "put", true},
 		{"/catalog/pull-requests/{id}/merge", "post", true},
 		{"/catalog/pull-requests", "get", false},
 		{"/catalog/pull-requests/{id}", "get", false},
