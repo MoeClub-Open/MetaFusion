@@ -18,18 +18,18 @@
     "test": "bun test tests"
   },
   "dependencies": {
-    "@tiptap/core": "3.32.0",
-    "@tiptap/extension-image": "3.32.0",
-    "@tiptap/extension-mathematics": "3.32.0",
-    "@tiptap/extension-table": "3.32.0",
-    "@tiptap/markdown": "3.32.0",
-    "@tiptap/react": "3.32.0",
-    "@tiptap/starter-kit": "3.32.0",
+    "@tiptap/core": "3.34.0",
+    "@tiptap/extension-image": "3.34.0",
+    "@tiptap/extension-mathematics": "3.34.0",
+    "@tiptap/extension-table": "3.34.0",
+    "@tiptap/markdown": "3.34.0",
+    "@tiptap/react": "3.34.0",
+    "@tiptap/starter-kit": "3.34.0",
     "diff": "^9.0.0",
-    "katex": "^0.19.0",
-    "lucide-react": "^1.61.0",
+    "katex": "^0.19.1",
+    "lucide-react": "^1.74.0",
     "mdast-util-to-string": "^4.0.0",
-    "next": "^16.4.2",
+    "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
@@ -41,20 +41,20 @@
     "unified": "^11.0.5"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/mdast": "^4.0.4",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "postcss": "^8.5.31",
-    "postcss-selector-parser": "^7.1.6",
-    "tailwindcss": "^4.3.3",
+    "postcss": "^8.5.33",
+    "postcss-selector-parser": "^7.2.1",
+    "tailwindcss": "^4.3.5",
     "typescript": "~7.0.2",
     "typescript-api": "npm:typescript@^6.0.3"
   },
   "overrides": {
-    "postcss-selector-parser": "^7.1.6",
-    "katex": "^0.19.0"
+    "postcss-selector-parser": "^7.2.1",
+    "katex": "^0.19.1"
   },
   "postcss": {
     "plugins": {
