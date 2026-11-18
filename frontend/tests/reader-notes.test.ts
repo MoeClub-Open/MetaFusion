@@ -26,8 +26,8 @@ test("机器码 token：attributes.* / AUX-* / snake_case", () => {
   assert.equal(isMachineToken("official"), false); // 无下划线，不算 snake_case
 });
 
-test("isOpsNote：#73 运维散文关键词与机器码并存", () => {
-  // #73 运维散文（Claude 点名会漏回来的那种）
+test("isOpsNote：运维散文关键词与机器码并存", () => {
+  // 运维散文
   assert.equal(isOpsNote("批处理：补齐 iTunes 词表说明"), true);
   assert.equal(isOpsNote("migration: external_ids → links"), true);
   assert.equal(isOpsNote("批处理导入 iTunes 词表说明"), true);
@@ -39,7 +39,7 @@ test("isOpsNote：#73 运维散文关键词与机器码并存", () => {
   assert.equal(isOpsNote("attributes.publisher / AUX-P2"), true);
   assert.equal(isOpsNote("补 attributes.publisher"), true);
   assert.equal(isOpsNote("批 AUX-P2 对齐"), true);
-  // Kimi：散文夹带任一 snake_case 机器码也藏（不能 every）
+  // 散文夹带任一 snake_case 机器码也隐藏
   assert.equal(isOpsNote("同步自 netease_music_artist"), true);
   assert.equal(isOpsNote("对齐 bangumi_subject_id 后发布"), true);
   // 普通散文放行
@@ -150,7 +150,7 @@ test("差异面板运维取值：机器码与 migration", () => {
   assert.equal(isOpsDiffValue("migration"), true);
   assert.equal(isOpsDiffValue("origin"), true);
   assert.equal(isOpsDiffValue("https://music.163.com/#/artist?id=1"), false);
-  assert.equal(isOpsDiffValue("isni"), true); // P1：权威短码对读者面也藏
+  assert.equal(isOpsDiffValue("isni"), true); // 权威短码对读者面也隐藏
   assert.equal(isOpsDiffValue("wikidata"), true);
   assert.equal(isOpsDiffValue("Q42"), true);
   assert.equal(isOpsDiffValue(339594), false);
@@ -200,7 +200,7 @@ test("读者面差异树藏掉 Mili 式外链机器码；编辑者仍见原文",
   assert.equal(editor.external_links[0].external_id, "339594");
 });
 
-test("P1 运维散文：Agent / 不虚构该ID / 版权 unknown / batch", () => {
+test("运维散文：Agent / 不虚构该ID / 版权 unknown / batch", () => {
   assert.equal(isOpsNote("Agent 批量核对 artist_id"), true);
   assert.equal(isOpsNote("不虚构该ID，留空待查"), true);
   assert.equal(isOpsNote("版权 unknown，Spotify 核对"), true);

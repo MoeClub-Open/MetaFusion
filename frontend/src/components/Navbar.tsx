@@ -56,7 +56,8 @@ function isNavLinkActive(
 export const Navbar: React.FC<{
   searchQuery?: string;
   onSearch?: (query: string) => void;
-}> = ({ searchQuery = "", onSearch }) => {
+  hideSearch?: boolean;
+}> = ({ searchQuery = "", onSearch, hideSearch = false }) => {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const pathname = usePathname();
@@ -259,20 +260,24 @@ export const Navbar: React.FC<{
           </nav>
         </div>
 
-        <SearchSuggest
-          className="hidden min-w-0 md:flex md:flex-1 md:min-w-[10rem] md:max-w-sm"
-          value={query}
-          onValueChange={setQuery}
-          onSubmit={onSearch || ((q) => router.push(q ? "/explore?q=" + encodeURIComponent(q) : "/explore"))}
-          placeholder={t("search.placeholder")}
-          submitLabel={t("search.submit")}
-        />
+        {!hideSearch && (
+          <SearchSuggest
+            className="hidden min-w-0 md:flex md:flex-1 md:min-w-[10rem] md:max-w-sm"
+            value={query}
+            onValueChange={setQuery}
+            onSubmit={onSearch || ((q) => router.push(q ? "/explore?q=" + encodeURIComponent(q) : "/explore"))}
+            placeholder={t("search.placeholder")}
+            submitLabel={t("search.submit")}
+          />
+        )}
 
         {/* Right Controls */}
         <div className="flex items-center gap-1 lg:gap-2.5 shrink-0">
-          <button type="button" aria-label={t("search.open")} aria-haspopup="dialog" aria-expanded={mobilePanel === "search"} onClick={() => { setIsUserMenuOpen(false); setMobilePanel("search"); }} className="md:hidden grid h-11 w-11 place-items-center rounded-control text-text-body hover:bg-surfaceHover">
-            <Search className="h-5 w-5" aria-hidden="true" />
-          </button>
+          {!hideSearch && (
+            <button type="button" aria-label={t("search.open")} aria-haspopup="dialog" aria-expanded={mobilePanel === "search"} onClick={() => { setIsUserMenuOpen(false); setMobilePanel("search"); }} className="md:hidden grid h-11 w-11 place-items-center rounded-control text-text-body hover:bg-surfaceHover">
+              <Search className="h-5 w-5" aria-hidden="true" />
+            </button>
+          )}
           {/* 新建：指向统一新建页 /new（层级在编辑器内切换，?kind= 只做预选）。
               标签 span 带 hidden sm:inline，窄屏只剩加号图标，因此必须显式给可访问名。 */}
           {/* 站内通知：桌面右侧入口，手机收进导航弹窗；未读 >99 显示 99+。 */}
@@ -499,12 +504,14 @@ export const Navbar: React.FC<{
       </nav>
       </PageContainer>
     </header>
-    <Modal open={mobilePanel === "search"} onClose={closeMobilePanel} title={t("search.submit")} icon={<Search className="h-4 w-4" />} initialFocus="input" maxWidth="max-w-lg">
-      {/* 给联想结果预留空间，弹窗内的滚动不会遮住输入与关闭操作。 */}
-      <div className="min-h-[min(22rem,55dvh)]">
-        <SearchSuggest value={query} onValueChange={setQuery} onSubmit={(q) => { closeMobilePanel(); if (onSearch) onSearch(q); else router.push(q ? "/explore?q=" + encodeURIComponent(q) : "/explore"); }} onNavigate={closeMobilePanel} placeholder={t("search.placeholder")} submitLabel={t("search.submit")} />
-      </div>
-    </Modal>
+    {!hideSearch && (
+      <Modal open={mobilePanel === "search"} onClose={closeMobilePanel} title={t("search.submit")} icon={<Search className="h-4 w-4" />} initialFocus="input" maxWidth="max-w-lg">
+        {/* 给联想结果预留空间，弹窗内的滚动不会遮住输入与关闭操作。 */}
+        <div className="min-h-[min(22rem,55dvh)]">
+          <SearchSuggest value={query} onValueChange={setQuery} onSubmit={(q) => { closeMobilePanel(); if (onSearch) onSearch(q); else router.push(q ? "/explore?q=" + encodeURIComponent(q) : "/explore"); }} onNavigate={closeMobilePanel} placeholder={t("search.placeholder")} submitLabel={t("search.submit")} />
+        </div>
+      </Modal>
+    )}
     <Modal open={mobilePanel === "navigation"} onClose={closeMobilePanel} title={t("navigation.label")} icon={<Menu className="h-4 w-4" />} maxWidth="max-w-lg">
       <nav aria-label={t("navigation.label")} className="grid grid-cols-2 gap-2">
         {navLinks.map((tab) => {

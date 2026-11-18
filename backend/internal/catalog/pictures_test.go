@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -11,7 +10,7 @@ import (
 
 // 多图契约的服务端一侧：pictures 是数组，**数组顺序就是展示顺序、pictures[0] 就是封面**，
 // 服务端不重排；role 是"这张图充当什么"的用途码（picture_role 词表），asset_id 指向
-// 存储服务里的自托管对象。本文件守住用途码、适用区间、URL 去重与数量封顶，
+// 存储服务里的自托管对象。本文件守住用途码、适用区间与同范围重复检测，
 // 并且确认存量形态（没有新增可选键）照常放行。
 
 func pictureOnlyEntity(pics ...Picture) Entity {
@@ -200,21 +199,6 @@ func TestPictureURLsMustNotRepeatWithinEntity(t *testing.T) {
 	// 服务端按实体校验，没有"全局唯一"可言。
 	if err := d.validateEntityContent(pictureOnlyEntity(dup, testPicture("https://example.test/other.jpg")), allowAllRef, true); err != nil {
 		t.Fatalf("不同 URL 必须放行：%v", err)
-	}
-}
-
-func TestPictureCountIsCapped(t *testing.T) {
-	d := Defaults()
-	pics := make([]Picture, 0, maxPictures+1)
-	for i := 0; i < maxPictures; i++ {
-		pics = append(pics, testPicture(fmt.Sprintf("https://example.test/%02d.jpg", i)))
-	}
-	if err := d.validateEntityContent(pictureOnlyEntity(pics...), allowAllRef, true); err != nil {
-		t.Fatalf("恰好到上限必须放行（上限是写放大护栏，不是数量口径）：%v", err)
-	}
-	pics = append(pics, testPicture("https://example.test/overflow.jpg"))
-	if err := d.validateEntityContent(pictureOnlyEntity(pics...), allowAllRef, true); err == nil || err.Error() != "too_many_pictures" {
-		t.Fatalf("超过 maxPictures 必须报 too_many_pictures，实际 %v", err)
 	}
 }
 

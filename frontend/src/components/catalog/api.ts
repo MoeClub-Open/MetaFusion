@@ -122,6 +122,17 @@ export type ExternalLink = {
   external_id?: string;
   role?: "official" | "primary" | "secondary" | "operator" | "";
   origin?: "migration" | "commit" | "";
+  region?: string;
+  platform?: string;
+  channel?: string;
+  release_id?: string;
+  valid_from?: string;
+  valid_to?: string;
+  ended?: boolean;
+  date_precision?: string;
+  earliest_date?: string;
+  latest_date?: string;
+  recorded_at?: string;
   source_refs?: { source: string; pointers?: string[] }[];
 };
 
@@ -154,6 +165,17 @@ export type Entity = {
     usage_period?: { begin?: string; end?: string };
     role?: string;
     asset_id?: string;
+    region?: string;
+    platform?: string;
+    channel?: string;
+    release_id?: string;
+    valid_from?: string;
+    valid_to?: string;
+    date_precision?: string;
+    earliest_date?: string;
+    latest_date?: string;
+    pinned?: boolean;
+    recorded_at?: string;
     source: Source;
   }[];
   work_id?: string;

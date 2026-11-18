@@ -54,12 +54,3 @@ test("confirmation is required for structural data, non-tag attributes or queued
   assert.equal(hasKindSpecificDraftData({ ...common, attributes: { blank: "", empty: [], group: {} } }, 0), false);
   assert.equal(changeDraftKind(common, emptyEntity("work")), common);
 });
-
-test("kind selector defers destructive reset until confirmation and clears queued relations", () => {
-  const source = readFileSync(new URL("../src/components/catalog/EntityEditor.tsx", import.meta.url), "utf8");
-  assert.ok(source.includes("if (hasKindSpecificDraftData(e, pendingRelations.length)) setRequestedKind(value)"));
-  assert.ok(source.includes('onClose={() => setRequestedKind("")}'));
-  const apply = source.slice(source.indexOf("const applyKindChange"), source.indexOf("const d = definitions"));
-  assert.ok(apply.includes("setPendingRelations([])"));
-  assert.ok(apply.includes("changeDraftKind(current, emptyEntity(kind))"));
-});

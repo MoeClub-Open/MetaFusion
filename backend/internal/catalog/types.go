@@ -78,6 +78,18 @@ type Picture struct {
 	// 目录侧**不跨服务校验它是否存在或是否已被 block**（无跨服务事务，见 store.go），
 	// 所以写入方要先完成上传与绑定；取不到对象时前端会退化成程序封面而不是破图。
 	AssetID string `json:"asset_id,omitempty"`
+	// 适用范围与时间有效性（[valid_from, valid_to) 左闭右开；与 recorded_at 录入时间严格区分）
+	Region        string     `json:"region,omitempty"`
+	Platform      string     `json:"platform,omitempty"`
+	Channel       string     `json:"channel,omitempty"`
+	ReleaseID     string     `json:"release_id,omitempty"`
+	ValidFrom     string     `json:"valid_from,omitempty"`
+	ValidTo       string     `json:"valid_to,omitempty"`
+	DatePrecision string     `json:"date_precision,omitempty"`
+	EarliestDate  string     `json:"earliest_date,omitempty"`
+	LatestDate    string     `json:"latest_date,omitempty"`
+	Pinned        bool       `json:"pinned,omitempty"`
+	RecordedAt    *time.Time `json:"recorded_at,omitempty"`
 	Source  Source `json:"source"`
 }
 
@@ -106,12 +118,23 @@ type Subject struct {
 // Role empty/omit = no badge; 「官方」only when role=official (never inferred on migration).
 // Origin=migration marks converted external_ids rows pending real evidence.
 type ExternalLink struct {
-	Kind       string      `json:"kind"`
-	URL        string      `json:"url"`
-	ExternalID string      `json:"external_id,omitempty"`
-	Role       string      `json:"role,omitempty"`   // official|primary|secondary|operator|""
-	Origin     string      `json:"origin,omitempty"` // migration|commit|""
-	SourceRefs []SourceRef `json:"source_refs,omitempty"`
+	Kind          string      `json:"kind"`
+	URL           string      `json:"url"`
+	ExternalID    string      `json:"external_id,omitempty"`
+	Role          string      `json:"role,omitempty"`   // official|primary|secondary|operator|""
+	Origin        string      `json:"origin,omitempty"` // migration|commit|""
+	Region        string      `json:"region,omitempty"`
+	Platform      string      `json:"platform,omitempty"`
+	Channel       string      `json:"channel,omitempty"`
+	ReleaseID     string      `json:"release_id,omitempty"`
+	ValidFrom     string      `json:"valid_from,omitempty"`
+	ValidTo       string      `json:"valid_to,omitempty"`
+	Ended         bool        `json:"ended,omitempty"`
+	DatePrecision string      `json:"date_precision,omitempty"`
+	EarliestDate  string      `json:"earliest_date,omitempty"`
+	LatestDate    string      `json:"latest_date,omitempty"`
+	RecordedAt    *time.Time  `json:"recorded_at,omitempty"`
+	SourceRefs    []SourceRef `json:"source_refs,omitempty"`
 }
 
 type Entity struct {
@@ -430,6 +453,190 @@ type Event struct {
 	Version   int64           `json:"version"`
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt time.Time       `json:"created_at"`
+}
+
+// TimelineScope 描述事件或历史事实的适用范围（地区 / 平台 / 渠道 / 关联发行版）。
+type TimelineScope struct {
+	Region    string `json:"region,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	Channel   string `json:"channel,omitempty"`
+	ReleaseID string `json:"release_id,omitempty"`
+}
+
+// TimelineEvent 是统一事件时间线单条记录（合并独立 Event 实体与内嵌 attributes.events[]）。
+type TimelineEvent struct {
+	ID            string        `json:"id"`
+	Origin        string        `json:"origin"`
+	OwnerEntityID string        `json:"owner_entity_id"`
+	OwnerKind     string        `json:"owner_kind"`
+	EventEntityID string        `json:"event_entity_id,omitempty"`
+	EventType     string        `json:"event_type"`
+	Title         string        `json:"title"`
+	TitleNames    Names         `json:"title_names,omitempty"`
+	OccurredAt    string        `json:"occurred_at,omitempty"`
+	BeginDate     string        `json:"begin_date,omitempty"`
+	EndDate       string        `json:"end_date,omitempty"`
+	Ended         bool          `json:"ended,omitempty"`
+	EffectiveAt   string        `json:"effective_at,omitempty"`
+	DatePrecision string        `json:"date_precision,omitempty"`
+	EarliestDate  string        `json:"earliest_date,omitempty"`
+	LatestDate    string        `json:"latest_date,omitempty"`
+	Scope         TimelineScope `json:"scope"`
+	TargetIDs     []string      `json:"target_ids"`
+	SourceRefs    []Source      `json:"source_refs"`
+	RelatedAssets []string      `json:"related_assets"`
+	RecordedAt    time.Time     `json:"recorded_at"`
+}
+
+// TimelineResponse 是 GET /api/catalog/entities/{id}/timeline 的统一响应。
+type TimelineResponse struct {
+	EntityID       string                        `json:"entity_id"`
+	DefinitionETag string                        `json:"definition_etag"`
+	Items          []TimelineEvent               `json:"items"`
+	Entities       map[string]RelationshipEntity `json:"entities"`
+}
+
+// TemporalAgentFact 描述指定时点生效的发行商或运营商事实。
+type TemporalAgentFact struct {
+	AgentID       string     `json:"agent_id"`
+	Title         string     `json:"title"`
+	RelationID    string     `json:"relation_id,omitempty"`
+	SourceOrigin  string     `json:"source_origin"`
+	Role          string     `json:"role,omitempty"`
+	CreditRole    string     `json:"credit_role,omitempty"`
+	Region        string     `json:"region,omitempty"`
+	Platform      string     `json:"platform,omitempty"`
+	Channel       string     `json:"channel,omitempty"`
+	ValidFrom     string     `json:"valid_from,omitempty"`
+	ValidTo       string     `json:"valid_to,omitempty"`
+	DatePrecision string     `json:"date_precision,omitempty"`
+	RecordedAt    *time.Time `json:"recorded_at,omitempty"`
+}
+
+// TemporalPictureSelection 描述指定时点与范围下的主封面或应用图标选择结果。
+type TemporalPictureSelection struct {
+	Status     string     `json:"status"`
+	Picture    *Picture   `json:"picture,omitempty"`
+	OwnerID    string     `json:"owner_id,omitempty"`
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+}
+
+// TemporalReleaseView 描述指定时点下某个独立发行版的历史状态投影。
+type TemporalReleaseView struct {
+	ReleaseID       string                   `json:"release_id"`
+	Title           string                   `json:"title,omitempty"`
+	TitleStatus     string                   `json:"title_status"`
+	DisputedTitles  []string                 `json:"disputed_titles,omitempty"`
+	Translations    map[string]Translation   `json:"translations,omitempty"`
+	Attributes      map[string]any           `json:"attributes,omitempty"`
+	AttributeStates map[string]string        `json:"attribute_states,omitempty"`
+	ExternalLinks   []ExternalLink           `json:"external_links,omitempty"`
+	EditionDate     string                   `json:"edition_date,omitempty"`
+	Region          string                   `json:"region,omitempty"`
+	Platform        string                   `json:"platform,omitempty"`
+	Distribution    string                   `json:"distribution_channel,omitempty"`
+	Channel         string                   `json:"channel,omitempty"`
+	ReleaseStatus   string                   `json:"release_status,omitempty"`
+	StatusState     string                   `json:"status_state"`
+	Publishers      []TemporalAgentFact      `json:"publishers"`
+	PublisherState  string                   `json:"publisher_state"`
+	Operators       []TemporalAgentFact      `json:"operators"`
+	OperatorState   string                   `json:"operator_state"`
+	Cover           TemporalPictureSelection `json:"cover"`
+	AppIcon         TemporalPictureSelection `json:"app_icon"`
+	UnknownFields   []string                 `json:"unknown_fields"`
+	DisputedFields  []string                 `json:"disputed_fields,omitempty"`
+	RecordedAt      *time.Time               `json:"recorded_at,omitempty"`
+}
+
+// EntityAsOfResponse 是 GET /api/catalog/entities/{id}/as-of 的历史状态重建响应。
+type EntityAsOfResponse struct {
+	EntityID        string                        `json:"entity_id"`
+	Kind            string                        `json:"kind"`
+	At              string                        `json:"at"`
+	Scope           TimelineScope                 `json:"scope"`
+	DefinitionETag  string                        `json:"definition_etag"`
+	Title           string                        `json:"title,omitempty"`
+	TitleStatus     string                        `json:"title_status"`
+	DisputedTitles  []string                      `json:"disputed_titles,omitempty"`
+	Translations    map[string]Translation        `json:"translations,omitempty"`
+	Attributes      map[string]any                `json:"attributes"`
+	AttributeStates map[string]string             `json:"attribute_states,omitempty"`
+	ExternalLinks   []ExternalLink                `json:"external_links"`
+	Publishers      []TemporalAgentFact           `json:"publishers"`
+	PublisherState  string                        `json:"publisher_state"`
+	Operators       []TemporalAgentFact           `json:"operators"`
+	OperatorState   string                        `json:"operator_state"`
+	ReleaseStatus   string                        `json:"release_status,omitempty"`
+	StatusState     string                        `json:"status_state"`
+	Cover           TemporalPictureSelection      `json:"cover"`
+	AppIcon         TemporalPictureSelection      `json:"app_icon"`
+	Pictures        []Picture                     `json:"pictures"`
+	Releases        []TemporalReleaseView         `json:"releases,omitempty"`
+	ActiveRelations []EntityLink                  `json:"active_relations"`
+	UnknownFields   []string                      `json:"unknown_fields"`
+	DisputedFields  []string                      `json:"disputed_fields,omitempty"`
+	RecordedAt      time.Time                     `json:"recorded_at"`
+	Entities        map[string]RelationshipEntity `json:"entities"`
+}
+
+// TemporalFieldDiff 描述两个时点之间的字段变化。
+type TemporalFieldDiff struct {
+	Field      string `json:"field"`
+	ReleaseID  string `json:"release_id,omitempty"`
+	ScopeLabel string `json:"scope_label,omitempty"`
+	FromValue  any    `json:"from_value,omitempty"`
+	ToValue    any    `json:"to_value,omitempty"`
+	FromStatus string `json:"from_status"`
+	ToStatus   string `json:"to_status"`
+}
+
+// TemporalRelationDiff 描述两个时点之间的关联变化。
+type TemporalRelationDiff struct {
+	Change   string      `json:"change"`
+	RuleCode string      `json:"rule_code"`
+	SourceID string      `json:"source_id"`
+	TargetID string      `json:"target_id"`
+	FromLink *EntityLink `json:"from_link,omitempty"`
+	ToLink   *EntityLink `json:"to_link,omitempty"`
+}
+
+// EntityTemporalCompareResponse 是 GET /api/catalog/entities/{id}/compare 的两时点差异响应。
+type EntityTemporalCompareResponse struct {
+	EntityID        string                        `json:"entity_id"`
+	From            string                        `json:"from"`
+	To              string                        `json:"to"`
+	Scope           TimelineScope                 `json:"scope"`
+	DefinitionETag  string                        `json:"definition_etag"`
+	FromSnapshot    EntityAsOfResponse            `json:"from_snapshot"`
+	ToSnapshot      EntityAsOfResponse            `json:"to_snapshot"`
+	FieldChanges    []TemporalFieldDiff           `json:"field_changes"`
+	RelationChanges []TemporalRelationDiff        `json:"relation_changes"`
+	EventsBetween   []TimelineEvent               `json:"events_between"`
+	Entities        map[string]RelationshipEntity `json:"entities"`
+}
+
+// ScopedPictureItem 是历史与多范围画廊单张图像项。
+type ScopedPictureItem struct {
+	OwnerID      string     `json:"owner_id"`
+	OwnerKind    string     `json:"owner_kind"`
+	OwnerTitle   string     `json:"owner_title"`
+	Index        int        `json:"index"`
+	IsCurrent    bool       `json:"is_current"`
+	IsHistorical bool       `json:"is_historical"`
+	Picture      Picture    `json:"picture"`
+	RecordedAt   *time.Time `json:"recorded_at,omitempty"`
+}
+
+// EntityPicturesResponse 是 GET /api/catalog/entities/{id}/pictures 的响应。
+type EntityPicturesResponse struct {
+	EntityID        string                    `json:"entity_id"`
+	DefinitionETag  string                    `json:"definition_etag"`
+	At              string                    `json:"at,omitempty"`
+	Scope           TimelineScope             `json:"scope"`
+	SelectedCover   *TemporalPictureSelection `json:"selected_cover,omitempty"`
+	SelectedAppIcon *TemporalPictureSelection `json:"selected_app_icon,omitempty"`
+	Items           []ScopedPictureItem       `json:"items"`
 }
 
 func contains(values []string, v string) bool {

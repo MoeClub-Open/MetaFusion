@@ -76,7 +76,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
               <span className="truncate">{item.name}</span>
               <span className={"rounded-control px-1.5 py-0.5 text-[10px] " + (item.enabled ? "bg-primary/10 text-primary" : "bg-surfaceSubtle text-text-muted")}>{t(item.enabled ? "assistant.user.enabled" : "assistant.user.disabled")}</span>
             </div>
-            <p className="text-xs text-text-muted break-all">{t("assistant.protocol." + item.protocol)} · {item.base_url}{item.key_hint ? " · " + item.key_hint : ""}</p>
+            <p className="text-xs text-text-muted break-all">{t(`assistant.protocol.${item.protocol}`)} · {item.base_url}{item.key_hint ? " · " + item.key_hint : ""}</p>
           </div>
           <div className="flex items-center gap-1.5">
             <button type="button" disabled={busy} className={buttonClass} onClick={() => openProvider(item)} aria-label={t("common.edit")}><Pencil className="size-3.5" /></button>
@@ -103,7 +103,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
                 <span className={"rounded-control px-1.5 py-0.5 text-[10px] " + (item.enabled ? "bg-primary/10 text-primary" : "bg-surfaceSubtle text-text-muted")}>{t(item.enabled ? "assistant.user.enabled" : "assistant.user.disabled")}</span>
               </div>
               <p className="text-xs text-text-muted break-all">{providerName} · <span className="font-mono">{item.upstream_model}</span> · {number.format(item.context_window)} / {number.format(item.max_output_tokens)}</p>
-              <p className="text-[11px] text-text-faint">{t("assistant.user.reasoningEffort")}: {t("assistant.reasoning." + (item.reasoning_effort || "default"))}</p>
+              <p className="text-[11px] text-text-faint">{t("assistant.user.reasoningEffort")}: {t(`assistant.reasoning.${item.reasoning_effort || "default"}`)}</p>
             </div>
             <div className="flex items-center gap-1.5">
               <button type="button" disabled={busy} className={buttonClass} onClick={() => openModel(item)} aria-label={t("common.edit")}><Pencil className="size-3.5" /></button>
@@ -131,7 +131,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
         );
       }}>
         <label className="block space-y-1 text-xs"><span>{t("assistant.user.providerName")}</span><input required maxLength={120} value={providerForm.name} className={inputClass} onChange={(event) => setProviderForm({ ...providerForm, name: event.target.value })} /></label>
-        <label className="block space-y-1 text-xs"><span>{t("assistant.user.protocol")}</span><Select aria-label={t("assistant.user.protocol")} value={providerForm.protocol} onChange={(value) => setProviderForm({ ...providerForm, protocol: value as AssistantProtocol })} options={ASSISTANT_PROTOCOLS.map((value) => ({ value, label: t("assistant.protocol." + value) }))} /></label>
+        <label className="block space-y-1 text-xs"><span>{t("assistant.user.protocol")}</span><Select aria-label={t("assistant.user.protocol")} value={providerForm.protocol} onChange={(value) => setProviderForm({ ...providerForm, protocol: value as AssistantProtocol })} options={ASSISTANT_PROTOCOLS.map((value) => ({ value, label: t(`assistant.protocol.${value}`) }))} /></label>
         <label className="block space-y-1 text-xs"><span>{t("assistant.user.baseURL")}</span><input required type="url" placeholder={providerForm.protocol === "anthropic_messages" ? "https://api.anthropic.com/v1" : providerForm.protocol === "gemini_generate_content" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1"} value={providerForm.base_url} className={inputClass} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} /></label>
         <label className="block space-y-1 text-xs"><span>{t("assistant.user.apiKey")}</span><input required={editingProvider === "new"} type="password" autoComplete="new-password" value={providerForm.api_key} className={inputClass} onChange={(event) => setProviderForm({ ...providerForm, api_key: event.target.value })} />
           <span className="block text-text-muted">{t(editingProvider === "new" ? "assistant.user.keyWriteOnly" : "assistant.user.keyKeepEmpty")}</span></label>
@@ -168,7 +168,7 @@ export function AssistantCredentials({ providers, models, onChanged }: {
           <label className="block space-y-1 text-xs"><span>{t("assistant.user.maxOutputTokens")}</span><input required type="number" min={1} max={10000000} value={modelForm.max_output_tokens} className={inputClass} onChange={(event) => setModelForm({ ...modelForm, max_output_tokens: event.target.value })} /></label>
         </div>
         <label className="block space-y-1 text-xs"><span>{t("assistant.user.maxTokensParameter")}</span><Select aria-label={t("assistant.user.maxTokensParameter")} value={modelForm.max_tokens_parameter} onChange={(value) => setModelForm({ ...modelForm, max_tokens_parameter: value as "max_tokens" | "max_completion_tokens" })} options={[{ value: "max_tokens", label: "max_tokens" }, { value: "max_completion_tokens", label: "max_completion_tokens" }]} /></label>
-        <label className="block space-y-1 text-xs"><span>{t("assistant.user.reasoningEffort")}</span><Select aria-label={t("assistant.user.reasoningEffort")} value={modelForm.reasoning_effort} onChange={(value) => setModelForm({ ...modelForm, reasoning_effort: value as AssistantReasoningEffort })} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t("assistant.reasoning." + (value || "default")) }))} /></label>
+        <label className="block space-y-1 text-xs"><span>{t("assistant.user.reasoningEffort")}</span><Select aria-label={t("assistant.user.reasoningEffort")} value={modelForm.reasoning_effort} onChange={(value) => setModelForm({ ...modelForm, reasoning_effort: value as AssistantReasoningEffort })} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t(`assistant.reasoning.${value || "default"}`) }))} /></label>
         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={modelForm.enabled} onChange={(event) => setModelForm({ ...modelForm, enabled: event.target.checked })} />{t("assistant.user.enabled")}</label>
         {error && <p role="alert" className="text-xs text-danger">{error}</p>}
         <button type="submit" disabled={busy || !modelForm.provider_id} className="inline-flex items-center gap-2 rounded-control bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">{busy && <Loader2 className="size-3.5 animate-spin" />}{t("common.save")}</button>

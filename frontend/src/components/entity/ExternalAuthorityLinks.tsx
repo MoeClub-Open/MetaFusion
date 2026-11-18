@@ -18,6 +18,8 @@ interface Props {
     external_links?: CatalogExternalLink[];
   };
   externalLinks?: CatalogExternalLink[];
+  /** 严格按传入的 externalLinks 渲染（空数组也视为明确无外链，不回落当前实体字段）。 */
+  strictOverride?: boolean;
   category?: string;
   className?: string;
   label?: string;
@@ -35,6 +37,7 @@ export interface AuthorityLinkItem {
   icon_url?: string;
   role?: string;
   isBangumi?: boolean;
+  temporalMeta?: string;
   sortOrder: number;
 }
 
@@ -48,6 +51,7 @@ const ROLE_I18N: Record<string, string> = {
 export function ExternalAuthorityLinks({
   entity,
   externalLinks: directLinks,
+  strictOverride = false,
   category,
   className = "",
   label,
@@ -74,7 +78,10 @@ export function ExternalAuthorityLinks({
 
   const resolvedLinks = useMemo(() => {
     const fromEntity = entity?.external_links || [];
-    const links = (directLinks && directLinks.length > 0 ? directLinks : fromEntity).slice();
+    const links = (directLinks !== undefined ? directLinks : fromEntity).slice();
+    if (strictOverride) {
+      return links;
+    }
     // Optional website attributes only when no official link already present.
     const hasOfficial = links.some((link) => link.role === "official" || link.kind === "official_website");
     const officialAttr =
@@ -89,7 +96,7 @@ export function ExternalAuthorityLinks({
       }
     }
     return links;
-  }, [entity, directLinks]);
+  }, [entity, directLinks, strictOverride]);
 
   const linkItems = useMemo<AuthorityLinkItem[]>(() => {
     if (!resolvedLinks.length) return [];
@@ -121,9 +128,18 @@ export function ExternalAuthorityLinks({
       const role = link.role || "";
       const isBangumi = key.startsWith("bangumi");
       const defaultOrder = role === "official" ? 5 : isBangumi ? 10 : def?.sort_order ?? 100;
+      const metaParts: string[] = [];
+      if (link.region) metaParts.push(link.region);
+      if (link.platform) metaParts.push(link.platform);
+      if (link.valid_from || link.valid_to) {
+        metaParts.push(`[${link.valid_from || "?"}..${link.valid_to || t("temporal.presentOpenEnd")})`);
+      } else if (link.ended) {
+        metaParts.push(t("relations.temporal.ended"));
+      }
+      const temporalMeta = metaParts.join(" · ");
 
       items.push({
-        code: `${key}:${url}`,
+        code: `${key}:${url}:${link.valid_from || ""}:${link.valid_to || ""}:${link.region || ""}`,
         name,
         url,
         id: link.external_id || link.url,
@@ -132,6 +148,7 @@ export function ExternalAuthorityLinks({
         icon_url: def?.icon_url || "",
         role,
         isBangumi,
+        temporalMeta: temporalMeta || undefined,
         sortOrder: def ? def.sort_order : defaultOrder,
       });
     }
@@ -212,6 +229,9 @@ export function ExternalAuthorityLinks({
                   {/* break-keep：CJK 不中字断开（官/方）；拉丁可在空格处换行，不用 truncate 回「官…」 */}
                   <span className="font-sans break-keep">{item.name}</span>
                   {roleBadge(item.role)}
+                  {item.temporalMeta && (
+                    <span className="font-mono text-[10px] text-text-faint truncate">{item.temporalMeta}</span>
+                  )}
                 </span>
                 <span className="flex min-w-0 max-w-[40%] shrink items-center gap-1 ml-2 font-mono text-[11px] opacity-75">
                   {secondary ? (
@@ -259,6 +279,9 @@ export function ExternalAuthorityLinks({
             )}
             <span>{item.name}</span>
             {roleBadge(item.role)}
+            {item.temporalMeta && (
+              <span className="font-mono text-[10px] text-text-faint">{item.temporalMeta}</span>
+            )}
             {item.url ? (
               <ExternalLink className="w-2.5 h-2.5 opacity-40 ml-0.5" />
             ) : secondary ? (

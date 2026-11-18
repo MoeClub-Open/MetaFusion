@@ -385,6 +385,36 @@ func (s *Store) currentStorageLifecycle(ctx context.Context, id string) (storage
 		return storageLifecycleSnapshot{}, err
 	}
 	rows.Close()
+	// 历史修订中的旧封面与旧图标资产同样保留，替换图片不得触发对象存储解绑删除。
+	identityIDs := make([]string, 0, len(state.Aliases)+1)
+	identityIDs = append(identityIDs, e.ID)
+	identityIDs = append(identityIDs, state.Aliases...)
+	revRows, err := tx.QueryContext(ctx, `SELECT DISTINCT btrim(pic->>'asset_id')
+		FROM catalog.revisions r,
+		     jsonb_array_elements(
+		         CASE WHEN jsonb_typeof(r.document->'pictures') = 'array'
+		              THEN r.document->'pictures' ELSE '[]'::jsonb END
+		     ) AS pic
+		WHERE r.target_id = ANY($1::text[])
+		  AND coalesce(btrim(pic->>'asset_id'), '') <> ''`, pq.Array(identityIDs))
+	if err != nil {
+		return storageLifecycleSnapshot{}, err
+	}
+	for revRows.Next() {
+		var assetID string
+		if err := revRows.Scan(&assetID); err != nil {
+			revRows.Close()
+			return storageLifecycleSnapshot{}, err
+		}
+		if assetID != "" {
+			assets[assetID] = true
+		}
+	}
+	if err := revRows.Err(); err != nil {
+		revRows.Close()
+		return storageLifecycleSnapshot{}, err
+	}
+	revRows.Close()
 	for assetID := range assets {
 		state.CoverAssetIDs = append(state.CoverAssetIDs, assetID)
 	}

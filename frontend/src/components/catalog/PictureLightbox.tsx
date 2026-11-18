@@ -29,6 +29,10 @@ export interface LightboxPicture {
   inUseUntil?: string;
   /** 首张即封面（顺序契约见 lib/cover.ts 的 coverPicture）。 */
   isCover?: boolean;
+  isHistorical?: boolean;
+  isPinned?: boolean;
+  scopeLabel?: string;
+  recordedAt?: string;
   /** 来源声明：灯箱负责把它显示出来，热链来源不再是"点图才看得到"。 */
   source?: { kind?: string | null; citation?: string | null; url?: string | null };
 }
@@ -97,9 +101,24 @@ export function PictureLightbox({
                 {t("catalog.pictureCoverBadge")}
               </span>
             )}
+            {current.isPinned && (
+              <span className="px-2 py-0.5 rounded-md bg-info/15 text-info font-mono text-[10px] font-semibold">
+                {t("temporal.picturePinnedBadge")}
+              </span>
+            )}
+            {current.isHistorical && (
+              <span className="px-2 py-0.5 rounded-md bg-warn/15 text-warn font-mono text-[10px] font-semibold">
+                {t("temporal.pictureHistoricalBadge")}
+              </span>
+            )}
             {current.roleLabel && (
               <span className="px-2 py-0.5 rounded-md bg-black/[0.05] dark:bg-white/[0.08] text-text-body font-mono text-[10px]">
                 {current.roleLabel}
+              </span>
+            )}
+            {current.scopeLabel && (
+              <span className="px-2 py-0.5 rounded-md bg-surfaceSubtle border border-line-subtle text-text-muted font-mono text-[10px]">
+                {current.scopeLabel}
               </span>
             )}
           </div>
@@ -137,6 +156,7 @@ export function PictureLightbox({
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-text-muted">
           {current.takenAt && <span>{t("catalog.pictureTakenAtValue", { date: current.takenAt })}</span>}
+          {current.recordedAt && <span>{t("temporal.recordedAtLabel", { date: current.recordedAt.slice(0, 10) })}</span>}
           {String(current.source?.citation || "").trim() && (
             <span className="min-w-0 break-words">
               {t("catalog.pictureSourceLine", {

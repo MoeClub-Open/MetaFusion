@@ -35,8 +35,13 @@ import { EntityLink } from "@/components/catalog/Fields";
 import { formatDuration as formatDurationShared } from "@/lib/duration";
 import { AdaptiveCardCover } from "@/components/common/AdaptiveCardCover";
 import { EntityCover } from "@/components/common/EntityCover";
-import { COVER_PICTURE_INDEX, coverUrl, PICTURE_ROLE_VOCABULARY, resolveCover } from "@/lib/cover";
-import { PictureLightbox, type LightboxPicture } from "@/components/catalog/PictureLightbox";
+import { coverUrl, resolveCover } from "@/lib/cover";
+import { EntityPictureGallery } from "@/components/entity/EntityPictureGallery";
+import { HistoricalModeBanner } from "@/components/entity/EntityTemporalSnapshot";
+import { EntityTemporalWorkspace } from "@/components/entity/EntityTemporalWorkspace";
+import { fetchEntityTimeline, type EntityAsOfResponse } from "@/lib/api/temporal";
+import { WorkFacts, entityHasFacts } from "@/components/work/WorkFacts";
+import { pickRecordTitle } from "@/lib/titles";
 import { fetchEntityRelationshipPreview, type RelationshipRecord } from "@/lib/catalogRelationships";
 import type { GraphLink, GraphNode } from "@/lib/api";
 import { EntityArticle } from "@/components/catalog/EntityArticle";
@@ -64,6 +69,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
   ExternalLink,
   Layers,
   Users,
@@ -446,32 +452,28 @@ export default function ReleaseDetailLayout() {
   const [releaseRelEntities, setReleaseRelEntities] = useState<Record<string, Entity>>({});
   const [releaseRelTruncated, setReleaseRelTruncated] = useState(false);
   const [releaseRelView, setReleaseRelView] = useState<"cards" | "graph">("cards");
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+  const [externalGalleryIndex, setExternalGalleryIndex] = useState<number | null>(null);
+  const [activeAsOf, setActiveAsOf] = useState<EntityAsOfResponse | null>(null);
+  const [timelineEventCount, setTimelineEventCount] = useState<number | undefined>(undefined);
 
-  const pictureRoleLabel = useCallback(
-    (role?: string | null) =>
-      String(role || "").trim()
-        ? getTermName(dynamicDefs, PICTURE_ROLE_VOCABULARY, String(role).trim(), locale)
-        : "",
-    [dynamicDefs, locale],
-  );
+  useEffect(() => {
+    setActiveAsOf(null);
+    setTimelineEventCount(undefined);
+    setExternalGalleryIndex(null);
+  }, [releaseId]);
 
-  const galleryPictures = useMemo<LightboxPicture[]>(
-    () =>
-      (release?.pictures || []).map((p, i) => ({
-        url: p.url,
-        caption: resolveLocalizedName(p.caption, locale, release?.title || ""),
-        roleLabel: pictureRoleLabel(p.role),
-        takenAt: String(p.taken_at || "").trim(),
-        versionLabel: resolveLocalizedName(p.version_label, locale, ""),
-        inUseFrom: String(p.usage_period?.begin || "").trim(),
-        inUseUntil: String(p.usage_period?.end || "").trim(),
-        isCover: i === COVER_PICTURE_INDEX,
-        source: p.source,
-      })),
-    [release, locale, pictureRoleLabel],
-  );
+  useEffect(() => {
+    if (!releaseId) return;
+    const ctrl = new AbortController();
+    fetchEntityTimeline(releaseId, {}, ctrl.signal)
+      .then((res) => {
+        if (!ctrl.signal.aborted && Array.isArray(res.items)) {
+          setTimelineEventCount(res.items.length);
+        }
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [releaseId, reloadKey]);
 
   useEffect(() => {
     if (!releaseId) return;
@@ -504,24 +506,66 @@ export default function ReleaseDetailLayout() {
     return ordered;
   }, [dynamicDefs, release?.attributes]);
 
+  const effectiveReleaseRelItems = useMemo<RelationshipRecord[]>(() => {
+    if (!activeAsOf) return releaseRelItems;
+    return (activeAsOf.active_relations || []).map((link, idx) => ({
+      id: link.relation_id || link.key || `${link.rule_code}:${link.source_id}:${link.target_id}:${idx}`,
+      type: link.rule_code.startsWith("relation:") ? link.rule_code.slice("relation:".length) : link.rule_code,
+      rule_code: link.rule_code,
+      class: (link.class === "reference" ? "reference" : "semantic") as "semantic" | "reference",
+      source_id: link.source_id,
+      target_id: link.target_id,
+      position: idx,
+      attributes: link.attributes || {},
+    }));
+  }, [activeAsOf, releaseRelItems]);
+
+  const effectiveReleaseRelEntities = useMemo<Record<string, Entity>>(() => {
+    if (!activeAsOf) return releaseRelEntities;
+    const merged: Record<string, Entity> = { ...releaseRelEntities };
+    for (const [eid, summary] of Object.entries(activeAsOf.entities || {})) {
+      merged[eid] = {
+        ...(merged[eid] || {
+          kind: summary.kind,
+          pictures: [],
+          external_links: [],
+          subjects: [],
+          contents: [],
+          position: 0,
+          number: "",
+          original_language: "",
+          translations: {},
+          attributes: {},
+        }),
+        id: summary.id,
+        kind: summary.kind,
+        title: summary.title,
+        original_language: summary.original_language || merged[eid]?.original_language || "",
+        translations: (summary.translations as any) || merged[eid]?.translations || {},
+        attributes: summary.attributes || merged[eid]?.attributes || {},
+      } as Entity;
+    }
+    return merged;
+  }, [activeAsOf, releaseRelEntities]);
+
   const overviewReleaseRelations = useMemo(
     () =>
-      releaseRelItems.filter(
+      effectiveReleaseRelItems.filter(
         (r) =>
           !(r.type === "edition_of" && siblingReleases.length > 1) &&
           dynamicDefs?.relations?.[r.type]?.aggregate !== true,
       ),
-    [releaseRelItems, siblingReleases.length, dynamicDefs],
+    [effectiveReleaseRelItems, siblingReleases.length, dynamicDefs],
   );
 
   const extraReleaseRelations = useMemo(
     () =>
-      releaseRelItems.filter(
+      effectiveReleaseRelItems.filter(
         (r) =>
           !isCreditRelation(dynamicDefs, r.type) &&
           dynamicDefs?.relations?.[r.type]?.aggregate !== true,
       ),
-    [releaseRelItems, dynamicDefs],
+    [effectiveReleaseRelItems, dynamicDefs],
   );
 
   const { releaseGraphNodes, releaseGraphLinks, releaseStructuralRelations, releaseGraphEntities } = useMemo(() => {
@@ -535,7 +579,7 @@ export default function ReleaseDetailLayout() {
     }
     const centerId = release.id || releaseId;
     const kindLabelOf = (k: string) => getKindName(kinds, k, locale, tr(`catalog.kind.${k}`, k));
-    const known: Record<string, Entity> = { ...releaseRelEntities, ...works, ...expressions };
+    const known: Record<string, Entity> = { ...effectiveReleaseRelEntities, ...works, ...expressions };
     if (release.id) known[release.id] = release;
     for (const row of media) {
       if (row.medium.id) known[row.medium.id] = row.medium;
@@ -654,7 +698,7 @@ export default function ReleaseDetailLayout() {
       }
     }
 
-    for (const r of releaseRelItems) {
+    for (const r of effectiveReleaseRelItems) {
       for (const nid of [r.source_id, r.target_id]) {
         ensureNode(nid, 1);
       }
@@ -677,7 +721,7 @@ export default function ReleaseDetailLayout() {
       releaseStructuralRelations: structRels,
       releaseGraphEntities: known,
     };
-  }, [release, releaseId, releaseRelItems, releaseRelEntities, works, media, expressions, kinds, tr, locale, titleOrder, dynamicDefs, relationshipRules]);
+  }, [release, releaseId, effectiveReleaseRelItems, effectiveReleaseRelEntities, works, media, expressions, kinds, tr, locale, titleOrder, dynamicDefs, relationshipRules]);
 
   const releaseDirectoryRelations = useMemo(
     () => [...extraReleaseRelations, ...releaseStructuralRelations],
@@ -698,6 +742,7 @@ export default function ReleaseDetailLayout() {
     { id: "mediums", label: t("release.detail.tabMediums"), badge: media.length, icon: <Disc className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "credits", label: t("release.detail.tabCredits"), badge: releaseStaffLoaded ? releaseStaffCount : undefined, icon: <Users className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "relations", label: t("entity.page.navRelations"), badge: aggregateCount === null ? undefined : aggregateCount + expressionIds.length + extraReleaseRelations.length, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "timeline", label: t("temporal.tabTitle"), badge: timelineEventCount && timelineEventCount > 0 ? timelineEventCount : undefined, icon: <Clock className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "comments", label: t("entity.page.communityTitle"), badge: commentCount ?? undefined, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("release.detail.tabRevisions"), badge: revisionsState === "ready" ? revisions.length : undefined, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ];
@@ -725,11 +770,13 @@ export default function ReleaseDetailLayout() {
     );
   }
 
-  const attrs = release.attributes || {};
+  const attrs = activeAsOf ? activeAsOf.attributes || {} : release.attributes || {};
   const editionType = attrText(attrs.edition_type);
-  const country = attrText(attrs.country);
+  const country = attrText(attrs.country || attrs.region);
+  const platform = attrText(attrs.platform);
   const language = attrText(attrs.language);
-  const channel = attrText((attrs as Record<string, any>).distribution_channel);
+  const channel = attrText((attrs as Record<string, any>).distribution_channel || (attrs as Record<string, any>).channel);
+  const releaseStatusCode = activeAsOf ? attrText(activeAsOf.release_status) : attrText(attrs.release_status);
   const packaging = attrText(attrs.packaging);
   const catalogNo = attrText(attrs.catalog_number);
   const barcode = attrText(attrs.barcode);
@@ -740,6 +787,79 @@ export default function ReleaseDetailLayout() {
   const publisherId =
     typeof publisher === "string" ? publisher : attrText((publisher as any)?.id);
   const publisherName = typeof publisher === "string" ? "" : localizedText((publisher as any)?.name, locale);
+  const operatorVal = attrs.operator;
+  const operatorId =
+    typeof operatorVal === "string" ? operatorVal : attrText((operatorVal as any)?.id);
+  const operatorName = typeof operatorVal === "string" ? "" : localizedText((operatorVal as any)?.name, locale);
+
+  const centerReleaseId = release.id || releaseId;
+  const publisherEntries = (() => {
+    if (activeAsOf) {
+      return (activeAsOf.publishers || []).map((p) => ({
+        id: p.agent_id,
+        name: p.title || "",
+        role: p.credit_role || p.role || "",
+        region: p.region || "",
+        span: p.valid_from || p.valid_to ? `[${p.valid_from || "?"}..${p.valid_to || t("temporal.presentOpenEnd")})` : "",
+      }));
+    }
+    const list: { id: string; name: string; role?: string; region?: string; span?: string }[] = [];
+    const seen = new Set<string>();
+    for (const rel of releaseRelItems) {
+      if (rel.type === "published_by" && rel.source_id === centerReleaseId && rel.target_id) {
+        seen.add(rel.target_id);
+        const peer = releaseRelEntities[rel.target_id];
+        const a = (rel.attributes || {}) as Record<string, any>;
+        const vf = attrText(a.valid_from || a.begin_date);
+        const vt = attrText(a.valid_to || a.end_date);
+        list.push({
+          id: rel.target_id,
+          name: peer ? entityTitle(peer, locale, titleOrder) : "",
+          role: attrText(a.credit_role || a.role),
+          region: attrText(a.region),
+          span: vf || vt ? `[${vf || "?"}..${vt || t("temporal.presentOpenEnd")})` : "",
+        });
+      }
+    }
+    if ((publisherId || publisherName) && (!publisherId || !seen.has(publisherId))) {
+      list.push({ id: publisherId, name: publisherName });
+    }
+    return list;
+  })();
+
+  const operatorEntries = (() => {
+    if (activeAsOf) {
+      return (activeAsOf.operators || []).map((p) => ({
+        id: p.agent_id,
+        name: p.title || "",
+        role: p.credit_role || p.role || "",
+        region: p.region || "",
+        span: p.valid_from || p.valid_to ? `[${p.valid_from || "?"}..${p.valid_to || t("temporal.presentOpenEnd")})` : "",
+      }));
+    }
+    const list: { id: string; name: string; role?: string; region?: string; span?: string }[] = [];
+    const seen = new Set<string>();
+    for (const rel of releaseRelItems) {
+      if (rel.type === "operated_by" && rel.source_id === centerReleaseId && rel.target_id) {
+        seen.add(rel.target_id);
+        const peer = releaseRelEntities[rel.target_id];
+        const a = (rel.attributes || {}) as Record<string, any>;
+        const vf = attrText(a.valid_from || a.begin_date);
+        const vt = attrText(a.valid_to || a.end_date);
+        list.push({
+          id: rel.target_id,
+          name: peer ? entityTitle(peer, locale, titleOrder) : "",
+          role: attrText(a.credit_role || a.role),
+          region: attrText(a.region),
+          span: vf || vt ? `[${vf || "?"}..${vt || t("temporal.presentOpenEnd")})` : "",
+        });
+      }
+    }
+    if ((operatorId || operatorName) && (!operatorId || !seen.has(operatorId))) {
+      list.push({ id: operatorId, name: operatorName });
+    }
+    return list;
+  })();
   const attachments = attrList(attrs.attachments);
   const storeBonuses = attrList(attrs.store_bonuses);
   const events = attrList(attrs.events);
@@ -753,7 +873,7 @@ export default function ReleaseDetailLayout() {
       <div className="min-h-screen relative flex flex-col overflow-clip">
         <PageShell width="narrow" center>
           <Card padding="section" className="text-center space-y-3">
-            <span className="inline-flex px-2 py-0.5 rounded-chip bg-rose-600/90 text-white font-mono text-xs font-bold">18+</span>
+            <span className="inline-flex px-2 py-0.5 rounded-chip bg-rose-600/90 text-emphasis keep-white font-mono text-xs font-bold">18+</span>
             <h1 className="text-base font-semibold text-text-strong">{t("catalog.adultHiddenTitle")}</h1>
             <p className="text-sm text-text-muted">{t("catalog.adultHiddenDesc")}</p>
             <div className="pt-1 flex justify-center gap-3">
@@ -771,6 +891,8 @@ export default function ReleaseDetailLayout() {
   }
   // 发行版自己没有图时借用主要收录作品的封面，仅用于展示。
   const cover = resolveCover(release, [{ origin: "subject_work", entity: primaryWork }]);
+  const effectiveCoverUrl = activeAsOf ? activeAsOf.cover?.picture?.url || "" : cover.url;
+  const historicalAppIconUrl = activeAsOf?.app_icon?.picture?.url || "";
   // 载体与篇目的用词一律取自服务端 definitions 的骨架名称：
   // 旧的 mediaLabels 按遗留媒体类型（movie/anime/novel…）硬编码一套标签，
   // 与本项目"无 media_type 传统分类"的设计相冲，且对真实 type code（album/song/film…）
@@ -784,6 +906,7 @@ export default function ReleaseDetailLayout() {
     code ? getTermName(dynamicDefs, vocab, code, locale) : "";
   const editionLabel = vocabLabel("edition_type", editionType);
   const editionBatchLabel = vocabLabel("edition_batch", editionBatch);
+  const releaseStatusLabel = vocabLabel("release_status", releaseStatusCode);
   const packagingLabel =
     packaging && dynamicDefs
       ? getTermName(dynamicDefs, "packaging", packaging, locale) !== packaging
@@ -812,7 +935,38 @@ export default function ReleaseDetailLayout() {
     primaryGroups.length === 0 &&
     supplementGroups.some(([, rows]) => rows.length > 0);
 
-  const releaseTitle = entityTitle(release, locale);
+  const currentReleaseTitle = entityTitle(release, locale, titleOrder);
+  const releaseTitle = activeAsOf
+    ? activeAsOf.title
+      ? pickRecordTitle(locale, activeAsOf.translations, activeAsOf.title, {
+          order: titleOrder,
+          originalLanguage: release.original_language,
+        }) || activeAsOf.title
+      : t("temporal.titleUnknownAt", { at: activeAsOf.at })
+    : currentReleaseTitle;
+  const displayTranslations = activeAsOf ? activeAsOf.translations || {} : release.translations;
+  const releaseSidebarFactsEntity = { kind: "release", attributes: attrs };
+  const releaseExcludedSidebarFields = [
+    "edition_type",
+    "edition_batch",
+    "country",
+    "region",
+    "platform",
+    "language",
+    "distribution_channel",
+    "channel",
+    "release_status",
+    "packaging",
+    "catalog_number",
+    "barcode",
+    "edition_date",
+    "publisher",
+    "operator",
+    "attachments",
+    "store_bonuses",
+    "events",
+    "attribute_history",
+  ];
 
   // 单个载体（盘或面）的展示块：depth=0 为顶层盘，depth≥1 为嵌套的子载体（A/B 面）。
   // 子载体在其父块的轨道表之后递归渲染；特典过滤同样作用于子载体。
@@ -1034,8 +1188,21 @@ export default function ReleaseDetailLayout() {
                     {editionBatchLabel}
                   </span>
                 )}
+                {releaseStatusLabel && (
+                  <span className="px-2 py-0.5 rounded-sm bg-success/15 text-success border border-success/25 font-semibold">
+                    {releaseStatusLabel}
+                  </span>
+                )}
+                {activeAsOf && !releaseStatusLabel && activeAsOf.status_state !== "confirmed" && (
+                  <span className="px-2 py-0.5 rounded-sm bg-emphasis/[0.06] text-text-muted border border-line-subtle">
+                    {t("temporal.fieldReleaseStatus")}: {activeAsOf.status_state === "disputed" ? t("temporal.stateDisputed") : t("temporal.stateUnknown")}
+                  </span>
+                )}
                 {country && (
                   <span className="px-2 py-0.5 rounded-sm bg-sky-500/10 text-sky-700 dark:text-info-soft border border-sky-500/20">{country}</span>
+                )}
+                {platform && (
+                  <span className="px-2 py-0.5 rounded-sm bg-emphasis/[0.06] text-text-body border border-line">{platform}</span>
                 )}
                 {packagingLabel && (
                   <span className="text-text-faint">{t("release.detail.packagingLabel")}{packagingLabel}</span>
@@ -1045,21 +1212,76 @@ export default function ReleaseDetailLayout() {
               </div>
               <EntityIdentityHeader
                 title={releaseTitle}
-                translations={release.translations}
+                translations={displayTranslations}
                 originalLanguage={release.original_language}
               />
               <dl className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-text-faint">
                 {country && <div className="flex gap-1"><dt>{t("release.detail.countryLabel")}</dt><dd className="text-text-body">{country}</dd></div>}
+                {platform && <div className="flex gap-1"><dt>{t("temporal.filterPlatform")}:</dt><dd className="text-text-body">{platform}</dd></div>}
                 {language && <div className="flex gap-1"><dt>{t("release.detail.languageLabel")}</dt><dd className="text-text-body">{language}</dd></div>}
                 {channelLabel && <div className="flex gap-1"><dt>{t("release.detail.channelLabel")}</dt><dd className="text-text-body">{channelLabel}</dd></div>}
                 {editionDate && <div className="flex gap-1"><dt>{t("release.detail.dateLabel")}</dt><dd className="text-text-body">{editionDate}</dd></div>}
-                {(publisherName || publisherId) && (
+                {(publisherEntries.length > 0 || (activeAsOf && activeAsOf.publisher_state !== "confirmed")) && (
                 <div className="flex gap-1">
                   <dt>{t("release.detail.publisherLabel")}</dt>
-                  <dd className="text-text-body">
-                    {publisherName || (
-                      <EntityLink id={publisherId} fallback={t("release.detail.publisherUnknown")} />
-                    )}
+                  <dd className="text-text-body flex flex-wrap items-center gap-1.5">
+                    {publisherEntries.length > 0
+                      ? publisherEntries.map((pub, idx) => (
+                          <span key={(pub.id || pub.name) + "-" + idx} className="inline-flex items-center gap-1">
+                            {idx > 0 && <span className="text-text-faint">/</span>}
+                            {pub.name ? (
+                              pub.id ? (
+                                <Link href={`/catalog/${pub.id}`} className="text-primary hover:underline">
+                                  {pub.name}
+                                </Link>
+                              ) : (
+                                <span>{pub.name}</span>
+                              )
+                            ) : (
+                              <EntityLink id={pub.id} fallback={t("release.detail.publisherUnknown")} />
+                            )}
+                            {pub.role && <span className="text-[10px] text-text-muted">({pub.role})</span>}
+                            {pub.region && <span className="text-[10px] text-text-muted">[{pub.region}]</span>}
+                            {pub.span && <span className="text-[10px] text-text-faint">{pub.span}</span>}
+                          </span>
+                        ))
+                      : (
+                        <span className="text-text-muted">
+                          {activeAsOf?.publisher_state === "disputed" ? t("temporal.stateDisputed") : t("temporal.stateUnknown")}
+                        </span>
+                      )}
+                  </dd>
+                </div>
+              )}
+                {(operatorEntries.length > 0 || (activeAsOf && activeAsOf.operator_state !== "confirmed")) && (
+                <div className="flex gap-1">
+                  <dt>{t("temporal.fieldOperators")}:</dt>
+                  <dd className="text-text-body flex flex-wrap items-center gap-1.5">
+                    {operatorEntries.length > 0
+                      ? operatorEntries.map((op, idx) => (
+                          <span key={(op.id || op.name) + "-" + idx} className="inline-flex items-center gap-1">
+                            {idx > 0 && <span className="text-text-faint">/</span>}
+                            {op.name ? (
+                              op.id ? (
+                                <Link href={`/catalog/${op.id}`} className="text-primary hover:underline">
+                                  {op.name}
+                                </Link>
+                              ) : (
+                                <span>{op.name}</span>
+                              )
+                            ) : (
+                              <EntityLink id={op.id} fallback={t("temporal.stateUnknown")} />
+                            )}
+                            {op.role && <span className="text-[10px] text-text-muted">({op.role})</span>}
+                            {op.region && <span className="text-[10px] text-text-muted">[{op.region}]</span>}
+                            {op.span && <span className="text-[10px] text-text-faint">{op.span}</span>}
+                          </span>
+                        ))
+                      : (
+                        <span className="text-text-muted">
+                          {activeAsOf?.operator_state === "disputed" ? t("temporal.stateDisputed") : t("temporal.stateUnknown")}
+                        </span>
+                      )}
                   </dd>
                 </div>
               )}
@@ -1087,31 +1309,76 @@ export default function ReleaseDetailLayout() {
               )}
             </div>
             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-              {cover.url && (
-                galleryPictures.length > 0 ? (
+              {activeAsOf && !effectiveCoverUrl ? (
+                <div className="w-24 sm:w-28 min-h-24 p-2 rounded-md border border-line bg-surfaceSubtle grid place-items-center text-center font-mono text-[10px] text-text-faint">
+                  {t("temporal.stateUnknown")}
+                </div>
+              ) : effectiveCoverUrl ? (
+                (release.pictures?.length || 0) > 0 ? (
                   <button
                     type="button"
-                    onClick={() => setLightboxIndex(0)}
+                    onClick={() => {
+                      if (activeSection !== "overview") selectSection("overview");
+                      setExternalGalleryIndex(0);
+                    }}
                     className="w-24 sm:w-28 shrink-0 rounded-md mf-focus cursor-pointer"
                   >
-                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect blurred={blurAdultImages} statusBadge={isAdult ? <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-white text-[9px] font-mono font-bold leading-none">18+</span> : undefined} aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
+                    <AdaptiveCardCover src={effectiveCoverUrl} alt={releaseTitle} naturalAspect blurred={blurAdultImages} statusBadge={isAdult ? <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-emphasis keep-white text-[9px] font-mono font-bold leading-none">18+</span> : undefined} aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
                   </button>
                 ) : (
                   <div className="w-24 sm:w-28 shrink-0">
-                    <AdaptiveCardCover src={cover.url} alt={releaseTitle} naturalAspect blurred={blurAdultImages} statusBadge={isAdult ? <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-white text-[9px] font-mono font-bold leading-none">18+</span> : undefined} aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
+                    <AdaptiveCardCover src={effectiveCoverUrl} alt={releaseTitle} naturalAspect blurred={blurAdultImages} statusBadge={isAdult ? <span className="px-1.5 py-0.5 rounded-chip bg-rose-600/90 text-emphasis keep-white text-[9px] font-mono font-bold leading-none">18+</span> : undefined} aspectRatio={1} fallbackIcon={<Layers className="w-6 h-6 text-text-muted" />} className="rounded-md border border-line" />
                   </div>
                 )
+              ) : null}
+              {activeAsOf && historicalAppIconUrl && (
+                <EntityCover
+                  src={historicalAppIconUrl}
+                  alt={t("temporal.fieldAppIcon")}
+                  title={t("temporal.fieldAppIcon")}
+                  id={release.id}
+                  imgClassName={"w-12 h-12 rounded-xl border border-line object-contain" + (blurAdultImages ? " blur-md" : "")}
+                />
               )}
             </div>
           </div>
         </div>
         }
       >
+        {activeAsOf && (
+          <HistoricalModeBanner
+            snapshot={activeAsOf}
+            showTimelineAction={activeSection !== "timeline"}
+            onOpenTimeline={() => selectSection("timeline")}
+            onExit={() => setActiveAsOf(null)}
+          />
+        )}
 
         {/* 与作品详情页同构：左侧外部链接卡片常驻，右侧页签。没有数据的页签照常显示并写「暂无数据」。 */}
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] items-start">
         <aside className="min-w-0 space-y-4">
-          <ExternalAuthorityLinks entity={release} category="release" variant="list" emptyText={t("entity.authority.empty")} />
+          {activeAsOf ? (
+            <ExternalAuthorityLinks
+              externalLinks={activeAsOf.external_links}
+              strictOverride
+              category="release"
+              variant="list"
+              emptyText={t("entity.authority.empty")}
+            />
+          ) : (
+            <ExternalAuthorityLinks entity={release} category="release" variant="list" emptyText={t("entity.authority.empty")} />
+          )}
+          {entityHasFacts({ kind: "release", attributes: Object.fromEntries(Object.entries(attrs).filter(([k]) => !releaseExcludedSidebarFields.includes(k))) }, dynamicDefs) && (
+            <Card padding="section" className="space-y-3 shadow-xs">
+              <WorkFacts
+                entity={releaseSidebarFactsEntity}
+                defs={dynamicDefs}
+                locale={locale}
+                excludeFields={releaseExcludedSidebarFields}
+                stacked
+              />
+            </Card>
+          )}
         </aside>
         <div className="min-w-0 space-y-4">
         <TabBar ariaLabel={t("entity.page.sections")} active={activeSection} onSelect={selectSection} items={sectionTabs} />
@@ -1121,66 +1388,24 @@ export default function ReleaseDetailLayout() {
           <Card padding="section" className="space-y-4">
             <SectionTitle icon={<BookOpen className="w-4 h-4 text-primary" strokeWidth={1.5} />}>{t("entity.page.overviewTitle")}</SectionTitle>
             <EntityArticle entity={release} titleOrder={titleOrder} />
-            {galleryPictures.length > 0 && (
-              <div id="pictures" className="pt-2 space-y-3 border-t border-line-subtle">
-                <div className="flex items-center gap-2 pt-3">
-                  <h3 className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    {t("catalog.pictureGallery")}
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                    {galleryPictures.length}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {galleryPictures.map((pic, i) => (
-                    <figure key={i} className="space-y-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setLightboxIndex(i)}
-                        className="group block w-full text-left rounded-control mf-focus"
-                        title={pic.source?.citation || pic.caption}
-                      >
-                        <Card tone="subtle" padding="none" className="relative overflow-hidden">
-                          <EntityCover
-                            src={pic.url}
-                            alt={pic.caption}
-                            title={pic.caption}
-                            id={release.id}
-                            imgClassName={"w-full h-auto max-h-48 object-contain" + (blurAdultImages ? " blur-xl scale-110" : "")}
-                          />
-                          <span className="absolute left-1.5 top-1.5 flex flex-wrap items-center gap-1">
-                            {pic.isCover && (
-                              <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] font-semibold leading-none">
-                                {t("catalog.pictureCoverBadge")}
-                              </span>
-                            )}
-                            {pic.roleLabel && (
-                              <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] leading-none max-w-[7rem] truncate">
-                                {pic.roleLabel}
-                              </span>
-                            )}
-                          </span>
-                        </Card>
-                      </button>
-                      <figcaption className="font-mono text-[10px] text-text-faint">
-                        {pic.versionLabel || (pic.inUseFrom || pic.inUseUntil
-                          ? t("catalog.picturePeriod", { from: pic.inUseFrom || "?", until: pic.inUseUntil || "?" })
-                          : pic.takenAt
-                            ? t("catalog.pictureTakenAtValue", { date: pic.takenAt })
-                            : t("catalog.imageTimeUnknown"))}
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </div>
-            )}
+            <EntityPictureGallery
+              entity={release}
+              defs={dynamicDefs}
+              blurAdultImages={blurAdultImages}
+              isAdult={isAdult}
+              adultMode={adultMode}
+              onToggleAdultReveal={() => setRevealedAdultImages((v) => !v)}
+              asOfDate={activeAsOf?.at}
+              externalOpenIndex={externalGalleryIndex}
+              onExternalOpenHandled={() => setExternalGalleryIndex(null)}
+            />
           </Card>
 
         {overviewReleaseRelations.length > 0 && (
           <EntityRelationOverview
             subjectId={release.id || releaseId}
             relations={overviewReleaseRelations}
-            entities={releaseRelEntities}
+            entities={effectiveReleaseRelEntities}
             groupOrder={releaseRelationGroupOrder}
             truncated={releaseRelTruncated}
             onOpenGraph={() => {
@@ -1663,6 +1888,19 @@ export default function ReleaseDetailLayout() {
         {aggregateCount === 0 && expressionIds.length === 0 && releaseDirectoryRelations.length === 0 && releaseGraphLinks.length === 0 && <EmptyPanel />}
         </div>
 
+        <div role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" hidden={activeSection !== "timeline"} className="space-y-4">
+          {activeSection === "timeline" && (
+            <EntityTemporalWorkspace
+              entity={release}
+              defs={dynamicDefs}
+              blurAdultImages={blurAdultImages}
+              activeAsOf={activeAsOf}
+              onAsOfChange={setActiveAsOf}
+              onEventCountChange={setTimelineEventCount}
+            />
+          )}
+        </div>
+
         <div role="tabpanel" id="panel-comments" aria-labelledby="tab-comments" hidden={activeSection !== "comments"} className="space-y-4">
           <EntityCommentsPanel entityId={releaseId} onCount={setCommentCount} />
         </div>
@@ -1682,16 +1920,6 @@ export default function ReleaseDetailLayout() {
         </div>
 
       </PageShell>
-      <PictureLightbox
-        pictures={galleryPictures}
-        index={lightboxIndex}
-        entityId={release.id}
-        blurred={blurAdultImages}
-        blurLabel={blurAdultImages ? t("catalog.adultRevealImage") : t("catalog.adultHideImage")}
-        onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
-        onIndexChange={setLightboxIndex}
-        onClose={closeLightbox}
-      />
     </div>
   );
 }

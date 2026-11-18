@@ -37,6 +37,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  seed            补齐内容种子（无 DDL：空库发布内置定义，存量定义/外部库/货架只增不改）\n")
 		fmt.Fprintf(os.Stderr, "  check-refs      悬挂引用体检：列出指向不存在行的引用（部署前置检查，有则非零退出）\n")
 		fmt.Fprintf(os.Stderr, "                  可选 -json 输出机器可读报告\n\n")
+		fmt.Fprintf(os.Stderr, "  audit-temporal  只读核查存量 Work 地区发行/运营关系与历史被覆盖图片候选（可选 -json）\n\n")
 	}
 	flag.Parse()
 	if *operationTimeout <= 0 {
@@ -145,6 +146,51 @@ func main() {
 			log.Fatalf("发现 %d 条悬挂引用：引用目标行已不存在，新定义回放时会报 invalid_reference；部署检查未通过，请处理后重验", len(report.Items))
 		}
 		log.Println("悬挂引用体检通过: 0 条")
+
+	case "audit-temporal":
+		asJSON := false
+		for _, a := range args[1:] {
+			switch a {
+			case "-json", "--json":
+				asJSON = true
+			default:
+				log.Fatalf("未知参数 %q（用法: mf-migrate audit-temporal [-json]）", a)
+			}
+		}
+		s, err := catalog.Open(ctx, dsn)
+		if err != nil {
+			log.Fatalf("打开目录库失败: %v", err)
+		}
+		defer s.DB.Close()
+		ownership, err := s.AuditWorkReleaseOwnership(ctx, nil)
+		if err != nil {
+			log.Fatalf("扫描 Work/Release 归属失败: %v", err)
+		}
+		histPics, err := s.AuditHistoricalRevisionPictures(ctx, nil)
+		if err != nil {
+			log.Fatalf("扫描历史修订图片候选失败: %v", err)
+		}
+		report := catalog.TemporalMigrationAuditReport{
+			WorkReleaseOwnershipIssues: ownership,
+			UnarchivedRevisionPictures: histPics,
+		}
+		if asJSON {
+			out, err := json.MarshalIndent(report, "", "  ")
+			if err != nil {
+				log.Fatalf("序列化核查报告失败: %v", err)
+			}
+			fmt.Println(string(out))
+			break
+		}
+		log.Printf("Work 疑似地区发行/运营关系候选: %d 条；未归档历史修订图片候选: %d 条", len(ownership), len(histPics))
+		for _, item := range ownership {
+			log.Printf("[ownership] work=%s (%s) relation=%s type=%s agent=%s (%s) role=%q region=%q scope=%q -> %s releases=%v",
+				item.WorkID, item.WorkTitle, item.RelationID, item.RelationType, item.AgentID, item.AgentTitle, item.CreditRole, item.Region, item.Scope, item.SuggestedRelation, item.CandidateReleases)
+		}
+		for _, item := range histPics {
+			log.Printf("[picture] entity=%s (%s/%s) rev=%d recorded_at=%s asset=%s url=%s valid=[%s,%s)",
+				item.EntityID, item.EntityKind, item.EntityTitle, item.RevisionVersion, item.RevisionRecordedAt.Format(time.RFC3339), item.SuggestedPicture.AssetID, item.SuggestedPicture.URL, item.SuggestedPicture.ValidFrom, item.SuggestedPicture.ValidTo)
+		}
 
 	case "up":
 		log.Println("开始执行数据库版本迁移 (Migrate Up)...")

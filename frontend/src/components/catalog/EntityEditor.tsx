@@ -19,7 +19,7 @@ import { RelationEditorField, type RelationDraft } from "@/components/editor/Rel
 import { Select } from "@/components/ui/Select";
 import { Combobox } from "@/components/ui/Combobox";
 import { effectiveSchemeFields, getKindName, getTermName, matchSchemes, resolveKindOptions, templatesForEntity, useDefinitions } from "@/lib/definitions";
-import { COVER_PICTURE_INDEX, MAX_ENTITY_PICTURES, PICTURE_ROLE_VOCABULARY } from "@/lib/cover";
+import { COVER_PICTURE_INDEX, PICTURE_ROLE_VOCABULARY } from "@/lib/cover";
 import {
   assetContentUrl,
   isAssetUuid,
@@ -437,12 +437,77 @@ export function EntityEditor({
     next.splice(to, 0, moved);
     setPictures(next);
   };
-  // 同实体内 URL 重复：服务端按 trim 后的原文拒 duplicate_picture，这里先给行内提示，
-  // 让作者在同源热链/同一自托管对象这类真实撞车里立刻看出来是哪两张。
+  const archiveFormerName = (rawName: string, lang?: string, nonofficial?: boolean) => {
+    const trimmed = rawName.trim();
+    if (!trimmed) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const existing = Array.isArray(e.attributes?.former_names) ? e.attributes.former_names : [];
+    const entry: Record<string, any> = {
+      name: trimmed,
+      valid_to: today,
+      ended: true,
+    };
+    if (lang) entry.language = lang;
+    if (nonofficial) entry.nonofficial = true;
+    patch({
+      attributes: {
+        ...e.attributes,
+        former_names: [...existing, entry],
+      },
+    });
+    setSelectedFields((cur) => (cur.includes("former_names") ? cur : [...cur, "former_names"]));
+  };
+  const archiveAndReplacePicture = (i: number) => {
+    const cur = e.pictures[i];
+    if (!cur) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const existingFrom = String(cur.valid_from || cur.usage_period?.begin || "").trim();
+    const existingTo = String(cur.valid_to || cur.usage_period?.end || "").trim();
+    const closedTo = existingTo || (!existingFrom || existingFrom <= today ? today : undefined);
+    const archived: PictureDraft = {
+      ...cur,
+      caption: cur.caption || {},
+      source: cur.source || { kind: "", citation: "" },
+      valid_from: existingFrom || undefined,
+      valid_to: closedTo,
+      usage_period: existingFrom || closedTo ? { begin: existingFrom, end: closedTo || "" } : cur.usage_period,
+      pinned: false,
+    };
+    const replacement: PictureDraft = {
+      url: "",
+      caption: {},
+      role: cur.role,
+      region: cur.region,
+      platform: cur.platform,
+      channel: cur.channel,
+      release_id: cur.release_id,
+      valid_from: today,
+      usage_period: { begin: today, end: "" },
+      source: { kind: "", citation: "" },
+    };
+    const next = e.pictures.slice();
+    next.splice(i, 1, replacement, archived);
+    setPictures(next);
+  };
+  const pictureDedupKey = (p?: PictureDraft) => {
+    const u = String(p?.url || "").trim();
+    if (!u) return "";
+    const begin = String(p?.valid_from || p?.usage_period?.begin || "").trim();
+    const end = String(p?.valid_to || p?.usage_period?.end || "").trim();
+    return [
+      u,
+      begin,
+      end,
+      String(p?.region || "").trim(),
+      String(p?.platform || "").trim(),
+      String(p?.channel || "").trim(),
+      String(p?.release_id || "").trim(),
+    ].join("|");
+  };
   const pictureUrlCounts = (() => {
     const counts = new Map<string, number>();
     for (const p of e.pictures) {
-      const key = String(p?.url || "").trim();
+      const key = pictureDedupKey(p);
       if (!key) continue;
       counts.set(key, (counts.get(key) || 0) + 1);
     }
@@ -699,6 +764,26 @@ export function EntityEditor({
               value={e.title}
               onChange={(x) => patch({ title: x.target.value })}
             />
+            {e.title.trim() && (
+              <span className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => archiveFormerName(e.title, e.original_language || undefined)}
+                  className="text-xs font-mono text-primary hover:underline cursor-pointer"
+                >
+                  {t("temporal.archiveFormerTitle")}
+                </button>
+                {Array.isArray(e.attributes?.former_names) && e.attributes.former_names.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => changeSection("attributes")}
+                    className="text-xs font-mono text-text-muted hover:text-primary cursor-pointer"
+                  >
+                    {t("temporal.archivedFormerNamesCount", { count: e.attributes.former_names.length })}
+                  </button>
+                )}
+              </span>
+            )}
           </label>
           <label>
             {t("catalog.originalLanguage")}
@@ -813,6 +898,15 @@ export function EntityEditor({
                 disabled={isOriginalLocale}
                 onChange={(x) => setTranslation({ title: x.target.value })}
               />
+              {!isOriginalLocale && (activeTr.title || "").trim() && (
+                <button
+                  type="button"
+                  onClick={() => archiveFormerName(activeTr.title || "", activeLocale, !!activeTr.nonofficial)}
+                  className="self-start pt-1 text-xs font-mono text-primary hover:underline cursor-pointer"
+                >
+                  {t("temporal.archiveFormerTitle")}
+                </button>
+              )}
             </label>
             {!isOriginalLocale && (
               <label className="inline-flex items-center gap-2 text-xs">
@@ -1160,6 +1254,7 @@ export function EntityEditor({
                       onChange={(v) =>
                         patch({ attributes: { ...e.attributes, [k]: v } })
                       }
+                      entityKind={e.kind}
                     />
                     {e.attributes[k] !== undefined && (
                       <button
@@ -1192,6 +1287,7 @@ export function EntityEditor({
                       onChange={(v) =>
                         patch({ attributes: { ...e.attributes, [k]: v } })
                       }
+                      entityKind={e.kind}
                     />
                     {e.attributes[k] !== undefined && (
                       <button
@@ -1224,6 +1320,7 @@ export function EntityEditor({
                       onChange={(v) =>
                         patch({ attributes: { ...e.attributes, [k]: v } })
                       }
+                      entityKind={e.kind}
                     />
                     {e.attributes[k] !== undefined && (
                       <button
@@ -1249,7 +1346,8 @@ export function EntityEditor({
       <fieldset>
         <legend>{t("catalog.externalLinks")}</legend>
         {(e.external_links || []).map((link, idx) => (
-          <div key={`${link.kind}-${link.url}-${idx}`} className="cv-row">
+          <div key={idx} className="cv-group">
+            <div className="cv-row">
             <label>
               {t("catalog.externalLinkKind")}
               <input
@@ -1310,6 +1408,95 @@ export function EntityEditor({
             >
               {t("catalog.remove")}
             </button>
+            </div>
+            <details>
+              <summary className="text-xs text-text-muted cursor-pointer">
+                {t("temporal.linkValidityAndScope")}
+              </summary>
+              <div className="cv-grid pt-2">
+                <label>
+                  {t("temporal.validFromLabel")}
+                  <input
+                    placeholder="YYYY-MM-DD"
+                    value={link.valid_from || ""}
+                    onChange={(x) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, valid_from: x.target.value || undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                </label>
+                <label>
+                  {t("temporal.validToLabel")}
+                  <input
+                    placeholder="YYYY-MM-DD"
+                    value={link.valid_to || ""}
+                    onChange={(x) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, valid_to: x.target.value || undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!link.ended}
+                    onChange={(x) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, ended: x.target.checked ? true : undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                  <span>{t("temporal.endedLabel")}</span>
+                </label>
+                <label>
+                  {t("temporal.filterRegion")}
+                  <input
+                    value={link.region || ""}
+                    onChange={(x) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, region: x.target.value || undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                </label>
+                <label>
+                  {t("temporal.filterPlatform")}
+                  <input
+                    value={link.platform || ""}
+                    onChange={(x) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, platform: x.target.value || undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                </label>
+                <label>
+                  {t("temporal.channelLabel")}
+                  <input
+                    value={link.channel || ""}
+                    onChange={(x) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, channel: x.target.value || undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                </label>
+                <label>
+                  {t("temporal.filterRelease")}
+                  <EntityPicker
+                    kinds={["release"]}
+                    value={link.release_id || ""}
+                    onChange={(rid) => {
+                      const external_links = [...e.external_links];
+                      external_links[idx] = { ...link, release_id: rid || undefined };
+                      patch({ external_links });
+                    }}
+                  />
+                </label>
+              </div>
+            </details>
           </div>
         ))}
         <div className="cv-row">
@@ -1339,12 +1526,13 @@ export function EntityEditor({
         <legend>{t("catalog.pictures")}</legend>
         <p className="cv-hint">{t("catalog.pictureOrderHint")}</p>
         <p className="cv-hint">
-          {t("catalog.pictureCount", { count: e.pictures.length, max: MAX_ENTITY_PICTURES })}
+          {t("catalog.pictureCount", { count: e.pictures.length })}
         </p>
         {e.pictures.map((p, i) => {
           const pictureSource = p.source || { kind: "", citation: "" };
           const urlKey = String(p.url || "").trim();
-          const isDuplicate = !!urlKey && (pictureUrlCounts.get(urlKey) || 0) > 1;
+          const picDedup = pictureDedupKey(p);
+          const isDuplicate = !!picDedup && (pictureUrlCounts.get(picDedup) || 0) > 1;
           const assetId = String(p.asset_id || "").trim();
           const previewUrl = catalogPicturePreviewUrl(p, workspaceAssetContext) || urlKey;
           const assetInvalid = !isAssetUuid(assetId);
@@ -1381,6 +1569,13 @@ export function EntityEditor({
                   onClick={() => swapPictures(i, COVER_PICTURE_INDEX)}
                 >
                   {t("catalog.pictureMakeCover")}
+                </button>
+                <button
+                  type="button"
+                  disabled={!urlKey}
+                  onClick={() => archiveAndReplacePicture(i)}
+                >
+                  {t("temporal.archiveAndReplacePicture")}
                 </button>
                 <button
                   type="button"
@@ -1474,11 +1669,14 @@ export function EntityEditor({
                   {t("catalog.pictureInUseFrom")}
                   <input
                     placeholder="2025-01"
-                    value={p.usage_period?.begin || ""}
+                    value={p.valid_from || p.usage_period?.begin || ""}
                     onChange={(x) => {
                       const begin = x.target.value;
-                      const end = p.usage_period?.end || "";
-                      patchPicture(i, { usage_period: begin || end ? { begin, end } : undefined });
+                      const end = p.valid_to || p.usage_period?.end || "";
+                      patchPicture(i, {
+                        valid_from: begin || undefined,
+                        usage_period: begin || end ? { begin, end } : undefined,
+                      });
                     }}
                   />
                 </label>
@@ -1486,16 +1684,92 @@ export function EntityEditor({
                   {t("catalog.pictureInUseUntil")}
                   <input
                     placeholder="2025-12"
-                    value={p.usage_period?.end || ""}
+                    value={p.valid_to || p.usage_period?.end || ""}
                     onChange={(x) => {
-                      const begin = p.usage_period?.begin || "";
+                      const begin = p.valid_from || p.usage_period?.begin || "";
                       const end = x.target.value;
-                      patchPicture(i, { usage_period: begin || end ? { begin, end } : undefined });
+                      patchPicture(i, {
+                        valid_to: end || undefined,
+                        usage_period: begin || end ? { begin, end } : undefined,
+                      });
                     }}
                   />
                 </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!p.pinned}
+                    onChange={(x) => patchPicture(i, { pinned: x.target.checked ? true : undefined })}
+                  />
+                  <span>{t("temporal.picturePinnedToggle")}</span>
+                </label>
               </div>
               <p className="cv-hint">{t("catalog.picturePeriodHint")}</p>
+              <details>
+                <summary className="text-xs text-text-muted cursor-pointer">
+                  {t("temporal.scopeAndPrecision")}
+                </summary>
+                <div className="cv-grid pt-2">
+                  <label>
+                    {t("temporal.filterRegion")}
+                    <input
+                      value={p.region || ""}
+                      onChange={(x) => patchPicture(i, { region: x.target.value || undefined })}
+                    />
+                  </label>
+                  <label>
+                    {t("temporal.filterPlatform")}
+                    <input
+                      value={p.platform || ""}
+                      onChange={(x) => patchPicture(i, { platform: x.target.value || undefined })}
+                    />
+                  </label>
+                  <label>
+                    {t("temporal.channelLabel")}
+                    <input
+                      value={p.channel || ""}
+                      onChange={(x) => patchPicture(i, { channel: x.target.value || undefined })}
+                    />
+                  </label>
+                  <label>
+                    {t("temporal.filterRelease")}
+                    <EntityPicker
+                      kinds={["release"]}
+                      value={p.release_id || ""}
+                      onChange={(rid) => patchPicture(i, { release_id: rid || undefined })}
+                    />
+                  </label>
+                  <label>
+                    {t("temporal.datePrecisionLabel")}
+                    <Select
+                      value={p.date_precision || ""}
+                      onChange={(val) => patchPicture(i, { date_precision: val || undefined })}
+                      options={[
+                        { value: "", label: t("catalog.none") },
+                        ...Object.entries(d.vocabularies?.date_precision?.terms || {})
+                          .filter(([k, v]) => v?.enabled || k === p.date_precision)
+                          .map(([k, v]) => ({ value: k, label: local(v.names, locale, "", k) })),
+                      ]}
+                    />
+                  </label>
+                  <label>
+                    {t("temporal.earliestDateLabel")}
+                    <input
+                      placeholder="YYYY-MM-DD"
+                      value={p.earliest_date || ""}
+                      onChange={(x) => patchPicture(i, { earliest_date: x.target.value || undefined })}
+                    />
+                  </label>
+                  <label>
+                    {t("temporal.latestDateLabel")}
+                    <input
+                      placeholder="YYYY-MM-DD"
+                      value={p.latest_date || ""}
+                      onChange={(x) => patchPicture(i, { latest_date: x.target.value || undefined })}
+                    />
+                  </label>
+                </div>
+              </details>
               <div className="cv-row">
                 <label>
                   {t("catalog.pictureAssetId")}
@@ -1555,7 +1829,6 @@ export function EntityEditor({
         })}
         <button
           type="button"
-          disabled={e.pictures.length >= MAX_ENTITY_PICTURES}
           onClick={() =>
             setPictures([
               ...e.pictures,
@@ -1570,11 +1843,6 @@ export function EntityEditor({
         >
           {t("catalog.add")}
         </button>
-        {e.pictures.length >= MAX_ENTITY_PICTURES && (
-          <p className="cv-error">
-            {t("catalog.pictureLimitReached", { max: MAX_ENTITY_PICTURES })}
-          </p>
-        )}
         {uploadError && <p className="cv-error">{uploadError}</p>}
         {/* 每张图片行的"上传"按钮共用这一个隐藏文件选择器：选完即走 storage 直传链路，
             成功后把 asset_id/url 写回对应行，缩略图随 url 回显。 */}

@@ -115,12 +115,12 @@ export function AdaptiveCover({
       />
       {blurred && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-black/30 p-3 text-center">
-          <span className="px-2 py-0.5 rounded-chip bg-rose-600/90 text-white font-mono text-[11px] font-bold">18+</span>
+          <span className="px-2 py-0.5 rounded-chip bg-rose-600/90 text-emphasis keep-white font-mono text-[11px] font-bold">18+</span>
           {onToggleBlur && blurLabel && (
             <button
               type="button"
               onClick={onToggleBlur}
-              className="px-2.5 py-1 rounded-control bg-black/70 hover:bg-black/85 text-white text-[11px] font-medium border border-white/20 cursor-pointer transition-colors"
+              className="px-2.5 py-1 rounded-control bg-black/70 hover:bg-black/85 text-emphasis keep-white text-[11px] font-medium border border-emphasis/20 cursor-pointer transition-colors"
             >
               {blurLabel}
             </button>

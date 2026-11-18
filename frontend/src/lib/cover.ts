@@ -119,6 +119,17 @@ export interface CoverPicture {
   role?: string | null;
   /** 自托管封面在存储服务里的 assets UUID；此时 url 指向 `/api/storage/assets/<uuid>/content`。 */
   asset_id?: string | null;
+  region?: string | null;
+  platform?: string | null;
+  channel?: string | null;
+  release_id?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  date_precision?: string | null;
+  earliest_date?: string | null;
+  latest_date?: string | null;
+  pinned?: boolean | null;
+  recorded_at?: string | null;
   source?: { kind?: string | null; citation?: string | null; url?: string | null } | null;
 }
 
@@ -140,13 +151,6 @@ export function displayCover(entity?: CoverBearing | null): ResolvedCover {
   const own = resolveCover(entity);
   return own.url ? own : entity?.display_cover || own;
 }
-
-/**
- * 单实体图片张数上限：与后端 `validation.go` 的 `maxPictures` 同一口径。
- * 上限来自"每张都随 document 落库、并再复制进每次保存的 revisions 快照"，
- * 超了服务端直接拒 `too_many_pictures`；编辑器据此禁用添加按钮。
- */
-export const MAX_ENTITY_PICTURES = 40;
 
 /** 图片用途码的词表码（definitions.vocabularies 的键）：用途标签只从这里解析，不硬编码语言。 */
 export const PICTURE_ROLE_VOCABULARY = "picture_role";

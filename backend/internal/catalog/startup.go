@@ -55,6 +55,7 @@ var requiredCatalogTables = []string{
 	"catalog.schema_contract",
 	"catalog.external_links",
 	"catalog.api_rate_windows",
+	"catalog.timeline_events",
 	"assistant.settings",
 	"assistant.providers",
 	"assistant.models",
@@ -102,8 +103,8 @@ func (s *Store) CheckSchemaContract(ctx context.Context) error {
 	if err := s.DB.QueryRowContext(ctx, "SELECT version FROM catalog.schema_contract WHERE singleton=true").Scan(&contractVersion); err != nil {
 		return fmt.Errorf("incompatible_schema: current schema contract required (run mf-migrate up): %w", err)
 	}
-	if contractVersion != 49 {
-		return fmt.Errorf("incompatible_schema: catalog schema contract 49 required (run mf-migrate up)")
+	if contractVersion != 50 {
+		return fmt.Errorf("incompatible_schema: catalog schema contract 50 required (run mf-migrate up)")
 	}
 	var adultPrefReady bool
 	if err := s.DB.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='user_preferences' AND column_name='adult_content_mode')").Scan(&adultPrefReady); err != nil {

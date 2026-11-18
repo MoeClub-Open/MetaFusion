@@ -2,13 +2,13 @@
  * 读者面 vs 运维备注：未登录阅读面（关系行、修订历史）不得露出迁移/批处理
  * edit_note、词表说明、字段路径与机器码。不靠 CSS 隐藏——直接过滤。
  *
- * Claude 定案：机器码规则与 #73 运维散文关键词**并存**（OR），不互相替代：
+ * 机器码规则与运维散文关键词**并存**（OR），不互相替代：
  * 1) 运维散文：迁移 / 批处理 / 词表说明 / migration / batch import 等
  * 2) 字段路径 / 机器码：attributes.* / AUX-* / snake_case（含 *_artist / *_id）
  * 只有可读散文摘要放行；有编辑权的编辑者仍看原文。
  */
 
-/** #73 运维散文关键词（与机器码规则 OR）。P1 加：Agent/batch/不虚构该ID/版权 unknown 等。 */
+/** 运维散文关键词（与机器码规则 OR）。 */
 const OPS_PROSE_RE =
   /迁移|批处理|词表说明|itunes|musicbrainz\s*import|external_ids|origin\s*=\s*migration|migration\b|batch\s*(import|migrate|process|job|run)?|imported?\s+from|\bAgent\b|不虚构(?:该)?ID|版权\s*unknown|Spotify\s*核对|artist_id|wikidata\s*Q?\d*|ISNI\b|字段路径|实体层级|entity\s*hierarchy/i;
 
@@ -48,7 +48,6 @@ export function isOpsNote(text: string | undefined | null): boolean {
   const value = (text || "").trim();
   if (!value) return false;
 
-  // #73 运维散文关键词
   if (OPS_PROSE_RE.test(value)) return true;
 
   if (isMachineToken(value)) return true;
@@ -57,7 +56,7 @@ export function isOpsNote(text: string | undefined | null): boolean {
   if (/\battributes(?:\.[A-Za-z0-9_]+)+\b/.test(value)) return true;
   if (/\bAUX-[A-Za-z0-9_-]+\b/i.test(value)) return true;
 
-  // 任一 token 是机器码（含 snake_case）→ 整条藏（Kimi：混写备注不能 every）
+  // 任一 token 是机器码（含 snake_case）→ 整条隐藏
   const tokens = value.split(/[\s,;|/]+/).map((s) => s.trim()).filter(Boolean);
   if (tokens.some(isMachineToken)) return true;
 

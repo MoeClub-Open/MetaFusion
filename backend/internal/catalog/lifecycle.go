@@ -102,6 +102,12 @@ func (s *Store) lifecycleTx(ctx context.Context, tx *sql.Tx, id string, input Li
 		if n, _ := res.RowsAffected(); n == 0 {
 			return errVersionConflict
 		}
+		if err := syncEntityTimelineTx(ctx, tx, e); err != nil {
+			return err
+		}
+		if err := refreshRelatedEventTimelinesTx(ctx, tx, e.ID, input.TargetID); err != nil {
+			return err
+		}
 		return audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity."+e.State)
 	}()
 	return e, err

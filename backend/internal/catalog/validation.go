@@ -730,9 +730,6 @@ func (d Definitions) validateField(f Field, depth int) error {
 const (
 	maxTextLen = 20000
 	maxURLLen  = 4000
-	// maxPictures 是单实体的封面张数上限。每张都随 document 落库、并再复制进每次保存的
-	// revisions 全量快照，不封顶就等于把"一次写能撑多大"交给调用方决定。
-	maxPictures = 40
 	// pictureRoleVocabulary 是 pictures[].role 用的词表码，词条在 defaults.go 播种、
 	// 后台可增删；role 为空表示未声明用途（存量数据全部为空，照常放行）。
 	pictureRoleVocabulary = "picture_role"
@@ -939,6 +936,7 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 	if !historical && len(values) > 0 {
 		for _, pair := range [][2]string{
 			{"begin_date", "end_date"},
+			{"valid_from", "valid_to"},
 			{"earliest_date", "latest_date"},
 			{"birth_date", "death_date"},
 			{"formation_date", "dissolution_date"},
@@ -959,8 +957,6 @@ func (d Definitions) attributes(keys []string, values map[string]any, reference 
 // legacyImportKeys 保留旧导入标识的格式校验；历史实体可保留或删除已有值，
 // 所有写路径均由 guardImportKey 禁止新声明或改写。
 var legacyImportKeys = map[string]bool{"metafusion_import": true}
-
-const maxExternalLinks = 50
 
 func importKeyFromLinks(links []ExternalLink) string {
 	for _, link := range links {
@@ -995,14 +991,11 @@ func validImportKey(s string) bool { return importKeyPattern.MatchString(strings
 
 // validateExternalLinks 校验 external_links：
 //   - kind 符合 codePattern；url 必填且收敛；optional external_id / role / origin；
-//   - 同一实体 (kind, url) 不重复；最多 maxExternalLinks 条；
+//   - 同一实体同范围与有效期的 (kind, url) 不重复；
 //   - metafusion_import 的 external_id 只验格式；预设存在性由 validateExternalLinksAgainstDB。
 func (d Definitions) validateExternalLinks(e Entity) error {
 	if len(e.ExternalLinks) == 0 {
 		return nil
-	}
-	if len(e.ExternalLinks) > maxExternalLinks {
-		return fmt.Errorf("too_many_external_links")
 	}
 	seen := map[string]bool{}
 	for i := range e.ExternalLinks {
@@ -1033,7 +1026,50 @@ func (d Definitions) validateExternalLinks(e Entity) error {
 		default:
 			return fmt.Errorf("invalid_external_link_origin")
 		}
-		key := link.Kind + "|" + link.URL
+		link.Region = strings.TrimSpace(link.Region)
+		link.Platform = strings.TrimSpace(link.Platform)
+		link.Channel = strings.TrimSpace(link.Channel)
+		link.ReleaseID = strings.TrimSpace(link.ReleaseID)
+		link.ValidFrom = strings.TrimSpace(link.ValidFrom)
+		link.ValidTo = strings.TrimSpace(link.ValidTo)
+		link.DatePrecision = strings.TrimSpace(link.DatePrecision)
+		link.EarliestDate = strings.TrimSpace(link.EarliestDate)
+		link.LatestDate = strings.TrimSpace(link.LatestDate)
+		if !validPictureTime(link.ValidFrom) || !validPictureTime(link.ValidTo) || !validPictureTime(link.EarliestDate) || !validPictureTime(link.LatestDate) {
+			return fmt.Errorf("invalid_external_link_period")
+		}
+		if link.ValidFrom != "" && link.ValidTo != "" {
+			if pictureTimeStart(link.ValidFrom).After(pictureTimeEnd(link.ValidTo)) {
+				return fmt.Errorf("invalid_external_link_period")
+			}
+		}
+		if link.EarliestDate != "" && link.LatestDate != "" && pictureTimeStart(link.EarliestDate).After(pictureTimeEnd(link.LatestDate)) {
+			return fmt.Errorf("invalid_external_link_period")
+		}
+		if link.DatePrecision != "" {
+			v, ok := d.Vocabularies["date_precision"]
+			if !ok {
+				return fmt.Errorf("unknown_vocabulary")
+			}
+			if _, exists := v.Terms[link.DatePrecision]; !exists {
+				return fmt.Errorf("invalid_term")
+			}
+		}
+		if link.ReleaseID != "" {
+			if _, err := uuid.Parse(link.ReleaseID); err != nil {
+				return fmt.Errorf("invalid_reference")
+			}
+		}
+		key := strings.Join([]string{
+			link.Kind,
+			link.URL,
+			link.ValidFrom,
+			link.ValidTo,
+			link.Region,
+			link.Platform,
+			link.Channel,
+			link.ReleaseID,
+		}, "|")
 		if seen[key] {
 			return fmt.Errorf("duplicate_external_link")
 		}
@@ -1110,21 +1146,62 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 	if err := d.attributes(keys, e.Attributes, reference, historical); err != nil {
 		return err
 	}
-	// 多图契约（见 types.go 的 PicturesJSON）：数组顺序即展示顺序、pictures[0] 即封面，
-	// 服务端**不重排**。校验数量、URL 唯一性、适用区间与用途词表：
-	// 数量封顶（每张都进 document 与每次保存的 revisions 快照，无上限等于让
-	// 单实体写放大不设防）、同实体内 URL 去重（同一张图挂两次只会让画廊出现重复格子）、
-	// role 必须落在 picture_role 词表里（用途码不许自由填写，否则前端无法多语言解析）。
-	if len(e.Pictures) > maxPictures {
-		return fmt.Errorf("too_many_pictures")
+	if err := d.validateAttributeHistory(e, keys, reference, historical); err != nil {
+		return err
 	}
-	seenPictureURLs := make(map[string]bool, len(e.Pictures))
+	if reference != nil {
+		for _, link := range e.ExternalLinks {
+			if rid := strings.TrimSpace(link.ReleaseID); rid != "" {
+				if err := reference(rid, []string{"release"}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	// 多图契约（见 types.go 的 PicturesJSON）：数组顺序即展示顺序、pictures[0] 即当前封面，
+	// 历史封面与图标采用追加式保留，服务端不重排；仅校验 URL、适用区间、同范围重复项与用途词表。
+	seenPictureKeys := make(map[string]bool, len(e.Pictures))
 	for _, p := range e.Pictures {
 		if !validPictureURL(p.URL) {
 			return fmt.Errorf("invalid_picture")
 		}
 		if !validPictureTime(p.TakenAt) {
 			return fmt.Errorf("invalid_picture_time")
+		}
+		validFrom := strings.TrimSpace(p.ValidFrom)
+		validTo := strings.TrimSpace(p.ValidTo)
+		earliest := strings.TrimSpace(p.EarliestDate)
+		latest := strings.TrimSpace(p.LatestDate)
+		if !validPictureTime(validFrom) || !validPictureTime(validTo) || !validPictureTime(earliest) || !validPictureTime(latest) {
+			return fmt.Errorf("invalid_picture_period")
+		}
+		if validFrom != "" && validTo != "" {
+			if pictureTimeStart(validFrom).After(pictureTimeEnd(validTo)) {
+				return fmt.Errorf("invalid_picture_period")
+			}
+		}
+		if earliest != "" && latest != "" && pictureTimeStart(earliest).After(pictureTimeEnd(latest)) {
+			return fmt.Errorf("invalid_picture_period")
+		}
+		if dp := strings.TrimSpace(p.DatePrecision); dp != "" {
+			v, ok := d.Vocabularies["date_precision"]
+			if !ok {
+				return fmt.Errorf("unknown_vocabulary")
+			}
+			t, exists := v.Terms[dp]
+			if !exists || !historical && !t.Enabled {
+				return fmt.Errorf("invalid_term")
+			}
+		}
+		if rid := strings.TrimSpace(p.ReleaseID); rid != "" {
+			if _, err := uuid.Parse(rid); err != nil {
+				return fmt.Errorf("invalid_reference")
+			}
+			if reference != nil {
+				if err := reference(rid, []string{"release"}); err != nil {
+					return err
+				}
+			}
 		}
 		if p.UsagePeriod != nil {
 			begin, end := strings.TrimSpace(p.UsagePeriod.Begin), strings.TrimSpace(p.UsagePeriod.End)
@@ -1157,11 +1234,136 @@ func (d Definitions) validateEntityContent(e Entity, reference func(string, []st
 				return fmt.Errorf("invalid_picture_asset")
 			}
 		}
-		url := strings.TrimSpace(p.URL)
-		if seenPictureURLs[url] {
+		effBegin := validFrom
+		effEnd := validTo
+		if p.UsagePeriod != nil {
+			if effBegin == "" {
+				effBegin = strings.TrimSpace(p.UsagePeriod.Begin)
+			}
+			if effEnd == "" {
+				effEnd = strings.TrimSpace(p.UsagePeriod.End)
+			}
+		}
+		picKey := strings.Join([]string{
+			strings.TrimSpace(p.URL),
+			effBegin,
+			effEnd,
+			strings.TrimSpace(p.Region),
+			strings.TrimSpace(p.Platform),
+			strings.TrimSpace(p.Channel),
+			strings.TrimSpace(p.ReleaseID),
+		}, "|")
+		if seenPictureKeys[picKey] {
 			return fmt.Errorf("duplicate_picture")
 		}
-		seenPictureURLs[url] = true
+		seenPictureKeys[picKey] = true
+	}
+	return nil
+}
+
+var nonHistoryMetaFields = map[string]bool{
+	"attribute_history": true,
+	"former_names":      true,
+	"events":            true,
+}
+
+func parseAttributeHistoryValue(targetField Field, rawVal, entityVal string) (any, error) {
+	rawVal = strings.TrimSpace(rawVal)
+	entityVal = strings.TrimSpace(entityVal)
+	if targetField.Type == "entity" {
+		id := entityVal
+		if id == "" {
+			id = rawVal
+		}
+		if id == "" {
+			return nil, fmt.Errorf("required_field")
+		}
+		return id, nil
+	}
+	if rawVal == "" {
+		return nil, fmt.Errorf("required_field")
+	}
+	switch targetField.Type {
+	case "boolean":
+		switch strings.ToLower(rawVal) {
+		case "true", "1":
+			return true, nil
+		case "false", "0":
+			return false, nil
+		default:
+			return nil, fmt.Errorf("expected_boolean")
+		}
+	case "number":
+		var n float64
+		if err := json.Unmarshal([]byte(rawVal), &n); err != nil {
+			return nil, fmt.Errorf("invalid_number")
+		}
+		return n, nil
+	case "list":
+		if strings.HasPrefix(rawVal, "[") {
+			var arr []any
+			if err := json.Unmarshal([]byte(rawVal), &arr); err != nil {
+				return nil, fmt.Errorf("invalid_list")
+			}
+			return arr, nil
+		}
+		parts := strings.FieldsFunc(rawVal, func(r rune) bool {
+			return r == ',' || r == ';' || r == '\n'
+		})
+		out := make([]any, 0, len(parts))
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("required_field")
+		}
+		return out, nil
+	case "multilingual", "group":
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(rawVal), &obj); err != nil {
+			return nil, fmt.Errorf("expected_object")
+		}
+		return obj, nil
+	default:
+		return rawVal, nil
+	}
+}
+
+func (d Definitions) validateAttributeHistory(e Entity, allowedKeys []string, reference func(string, []string) error, historical bool) error {
+	if e.Attributes == nil {
+		return nil
+	}
+	rawList, ok := e.Attributes["attribute_history"].([]any)
+	if !ok || len(rawList) == 0 {
+		return nil
+	}
+	for _, rawItem := range rawList {
+		m, ok := rawItem.(map[string]any)
+		if !ok {
+			return fmt.Errorf("attribute_history: expected_object")
+		}
+		code, _ := m["field"].(string)
+		code = strings.TrimSpace(code)
+		if code == "" || nonHistoryMetaFields[code] {
+			return fmt.Errorf("attribute_history: invalid_history_field")
+		}
+		targetField, exists := d.Fields[code]
+		if !exists || (!historical && !contains(allowedKeys, code)) {
+			return fmt.Errorf("attribute_history: unknown_field: %s", code)
+		}
+		rawVal, _ := m["value"].(string)
+		entityVal, _ := m["entity_value"].(string)
+		parsedVal, err := parseAttributeHistoryValue(targetField, rawVal, entityVal)
+		if err != nil {
+			return fmt.Errorf("attribute_history.%s: %w", code, err)
+		}
+		reqField := targetField
+		reqField.Required = true
+		if err := d.value(reqField, parsedVal, reference, historical); err != nil {
+			return fmt.Errorf("attribute_history.%s: %w", code, err)
+		}
 	}
 	return nil
 }

@@ -506,6 +506,62 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 		v, err := s.EntityQuality(c.Request.Context(), c.Param("id"), user(c))
 		respond(c, v, err)
 	})
+	cat.GET("/entities/:id/timeline", func(c *gin.Context) {
+		if err := validateTextQuery(c, "from", "to", "type", "region", "platform", "release_id"); err != nil {
+			respond(c, nil, err)
+			return
+		}
+		v, err := s.EntityTimeline(c.Request.Context(), c.Param("id"), TimelineQuery{
+			From:      c.Query("from"),
+			To:        c.Query("to"),
+			Types:     queryList(c, "type"),
+			Region:    c.Query("region"),
+			Platform:  c.Query("platform"),
+			ReleaseID: c.Query("release_id"),
+		}, user(c))
+		respond(c, v, err)
+	})
+	cat.GET("/entities/:id/as-of", func(c *gin.Context) {
+		if err := validateTextQuery(c, "at", "region", "platform", "release_id"); err != nil {
+			respond(c, nil, err)
+			return
+		}
+		v, err := s.EntityAsOf(c.Request.Context(), c.Param("id"), TemporalAsOfQuery{
+			At:        c.Query("at"),
+			Region:    c.Query("region"),
+			Platform:  c.Query("platform"),
+			ReleaseID: c.Query("release_id"),
+		}, user(c))
+		respond(c, v, err)
+	})
+	cat.GET("/entities/:id/compare", func(c *gin.Context) {
+		if err := validateTextQuery(c, "from", "to", "region", "platform", "release_id"); err != nil {
+			respond(c, nil, err)
+			return
+		}
+		v, err := s.EntityTemporalCompare(c.Request.Context(), c.Param("id"), TemporalCompareQuery{
+			From:      c.Query("from"),
+			To:        c.Query("to"),
+			Region:    c.Query("region"),
+			Platform:  c.Query("platform"),
+			ReleaseID: c.Query("release_id"),
+		}, user(c))
+		respond(c, v, err)
+	})
+	cat.GET("/entities/:id/pictures", func(c *gin.Context) {
+		if err := validateTextQuery(c, "role", "at", "release_id", "region", "platform"); err != nil {
+			respond(c, nil, err)
+			return
+		}
+		v, err := s.EntityPicturesQuery(c.Request.Context(), c.Param("id"), PicturesQuery{
+			Role:      strings.Join(queryList(c, "role"), ","),
+			At:        c.Query("at"),
+			ReleaseID: c.Query("release_id"),
+			Region:    c.Query("region"),
+			Platform:  c.Query("platform"),
+		}, user(c))
+		respond(c, v, err)
+	})
 	cat.POST("/quality/batch", func(c *gin.Context) {
 		var in QualityBatchRequest
 		if !body(c, &in) {

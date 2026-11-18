@@ -18,7 +18,7 @@ func addCollectionAndStructuralDefinitions(d *Definitions) {
 
 	empty := []TemplateCondition{}
 	collectionSections := []Section{
-		{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"collection_type", "language"}},
+		{Names: names4("基本信息", "基本資訊", "基本情報", "Basics"), Fields: []string{"collection_type", "language", "former_names", "attribute_history"}},
 		{Names: names4("时间范围", "時間範圍", "期間", "Period"), Fields: []string{"begin_date", "end_date", "ended", "date_precision"}},
 	}
 	d.Templates["collection_profile"] = Template{

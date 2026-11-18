@@ -687,12 +687,20 @@ func matchesTemporalFilter(attrs map[string]any, filters relationshipFilters) bo
 	ended, _ := attrs["ended"].(bool)
 	beginDate := validFilterDateAttr(attrs, "begin_date")
 	endDate := validFilterDateAttr(attrs, "end_date")
+	validFrom := validFilterDateAttr(attrs, "valid_from")
+	validTo := validFilterDateAttr(attrs, "valid_to")
 	earliestDate := validFilterDateAttr(attrs, "earliest_date")
 	latestDate := validFilterDateAttr(attrs, "latest_date")
 
 	if filters.AsOf != "" {
 		qStart := pictureTimeStart(filters.AsOf)
 		qEnd := pictureTimeEnd(filters.AsOf)
+		if validFrom != "" && pictureTimeStart(validFrom).After(qEnd) {
+			return false
+		}
+		if validTo != "" && !qStart.Before(pictureTimeStart(validTo)) {
+			return false
+		}
 		if beginDate != "" && pictureTimeStart(beginDate).After(qEnd) {
 			return false
 		}
@@ -705,7 +713,7 @@ func matchesTemporalFilter(attrs map[string]any, filters relationshipFilters) bo
 		if latestDate != "" && pictureTimeEnd(latestDate).Before(qStart) {
 			return false
 		}
-		if filters.ActiveOnly && ended && endDate == "" && latestDate == "" {
+		if filters.ActiveOnly && ended && endDate == "" && validTo == "" && latestDate == "" {
 			return false
 		}
 		return true
@@ -714,6 +722,9 @@ func matchesTemporalFilter(attrs map[string]any, filters relationshipFilters) bo
 		return false
 	}
 	now := time.Now().UTC()
+	if validTo != "" && !now.Before(pictureTimeStart(validTo)) {
+		return false
+	}
 	if endDate != "" && pictureTimeEnd(endDate).Before(now) {
 		return false
 	}

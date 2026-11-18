@@ -269,6 +269,32 @@ func (d Definitions) entityRefSites(e Entity) []refSite {
 		collectRefSites(d.Fields["locator"], fmt.Sprintf("contents[%d].locator", i), c.Locator, "entity", e.ID, kindAttribute, &out)
 		collectRefSites(d.Fields["inclusion_attributes"], fmt.Sprintf("contents[%d].attributes", i), c.Attributes, "entity", e.ID, kindAttribute, &out)
 	}
+	for i, p := range e.Pictures {
+		if rid := strings.TrimSpace(p.ReleaseID); rid != "" {
+			out = append(out, refSite{scope: "entity", id: e.ID, kind: kindAttribute, field: fmt.Sprintf("pictures[%d].release_id", i), value: rid})
+		}
+	}
+	for i, l := range e.ExternalLinks {
+		if rid := strings.TrimSpace(l.ReleaseID); rid != "" {
+			out = append(out, refSite{scope: "entity", id: e.ID, kind: kindAttribute, field: fmt.Sprintf("external_links[%d].release_id", i), value: rid})
+		}
+	}
+	if rawHist, ok := e.Attributes["attribute_history"].([]any); ok {
+		for i, rawItem := range rawHist {
+			m, ok := rawItem.(map[string]any)
+			if !ok {
+				continue
+			}
+			code := attrString(m, "field")
+			tf, exists := d.Fields[code]
+			if !exists || attrString(m, "entity_value") != "" {
+				continue
+			}
+			if parsed, err := parseAttributeHistoryValue(tf, attrString(m, "value"), ""); err == nil {
+				collectRefSites(tf, fmt.Sprintf("attributes.attribute_history[%d].value", i), parsed, "entity", e.ID, kindAttribute, &out)
+			}
+		}
+	}
 	return out
 }
 

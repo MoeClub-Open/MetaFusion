@@ -6,7 +6,7 @@
 
 | 运行单元 | 职责与数据 | 对外入口 | 仓库 |
 | --- | --- | --- | --- |
-| catalog | 八实体、动态定义、结构、关系、修订、搜索、货架、外部库与通知（`catalog.*`），以及 AI 助手与自动维护（`assistant.*`、`curator.*`）；经 `CATALOG_RUNTIME_ROLE` 拆分为 `backend`（`api`）与 `agent-worker`（`worker`）同镜像两类进程 | 目录/助手 API 与目录管理台（`agent-worker` 不对外暴露路由） | MetaFusion（本仓） |
+| catalog | 九实体、动态定义、结构、关系、修订、搜索、货架、外部库与通知（`catalog.*`），以及 AI 助手与自动维护（`assistant.*`、`curator.*`）；经 `CATALOG_RUNTIME_ROLE` 拆分为 `backend`（`api`）与 `agent-worker`（`worker`）同镜像两类进程 | 目录/助手 API 与目录管理台（`agent-worker` 不对外暴露路由） | MetaFusion（本仓） |
 | auth | 账号、会话、令牌、OAuth2/OIDC、权限组和开发者中心；auth.* | 账号 API、自助应用与管理台 | metafusion-auth |
 | community | 论坛、短评、合集、收藏和私信；community.* | 互动 API 与管理台 | metafusion-community |
 | storage | 文件、哈希、去重、上传、绑定和访问控制；storage.* | 存储 API 与管理台 | metafusion-storage |

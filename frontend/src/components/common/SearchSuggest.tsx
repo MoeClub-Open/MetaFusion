@@ -3,7 +3,7 @@
 import { clampSearchQuery, searchInputLimitProps } from "@/lib/searchQuery";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDefinitions, getKindName } from "@/lib/definitions";
 import { pickRecordTitle } from "@/lib/titles";
@@ -33,6 +33,9 @@ interface SearchSuggestProps {
   ariaLabel?: string;
   className?: string;
   onNavigate?: () => void;
+  suggestParams?: string;
+  autoFocus?: boolean;
+  onClear?: () => void;
 }
 
 
@@ -50,6 +53,9 @@ export function SearchSuggest({
   ariaLabel,
   className = "",
   onNavigate,
+  suggestParams,
+  autoFocus = false,
+  onClear,
 }: SearchSuggestProps) {
   const { t, tr, locale } = useI18n();
   const { kinds } = useDefinitions();
@@ -68,6 +74,10 @@ export function SearchSuggest({
   const q = value.trim();
 
   useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
+
+  useEffect(() => {
     if (!q || !focused) {
       setItems([]);
       return;
@@ -76,8 +86,15 @@ export function SearchSuggest({
     setActive(-1);
     let alive = true;
     const timer = setTimeout(() => {
+      const sp = new URLSearchParams(suggestParams || "");
+      sp.set("q", q);
+      sp.set("limit", "8");
+      sp.set("state", "active");
+      if (!sp.has("kind") && !sp.has("kinds")) {
+        sp.set("kinds", "work,release,agent,collection,event");
+      }
       fetch(
-        "/api/catalog/entities?q=" + encodeURIComponent(q) + "&limit=8&state=active&kinds=work,release,agent,collection,event",
+        "/api/catalog/entities?" + sp.toString(),
         { credentials: "same-origin" },
       )
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
@@ -93,7 +110,7 @@ export function SearchSuggest({
       alive = false;
       clearTimeout(timer);
     };
-  }, [q, focused]);
+  }, [q, focused, suggestParams]);
 
   const visibleItems = items.filter((item) => adultMode !== "hide" || !isAdultEntity(item));
   const open = focused && q.length > 0 && visibleItems.length > 0;
@@ -180,9 +197,25 @@ export function SearchSuggest({
           "w-full border border-line hover:border-emphasis/20 focus:border-primary focus:ring-1 " +
           "focus:ring-primary text-emphasis placeholder:text-text-faint outline-none " +
           "transition-all duration-base ease-soft " +
-          "pl-10 pr-20 h-10 md:h-9 rounded-lg text-base md:text-xs bg-black/[0.02] dark:bg-white/[0.04] focus:bg-surface"
+          "pl-10 " + (value.length > 0 ? "pr-24 " : "pr-20 ") + "h-10 md:h-9 rounded-lg text-base md:text-xs bg-black/[0.02] dark:bg-white/[0.04] focus:bg-surface"
         }
       />
+      {value.length > 0 && (
+        <button
+          type="button"
+          aria-label={t("search.clearInput")}
+          onClick={() => {
+            onValueChange("");
+            setItems([]);
+            setActive(-1);
+            onClear?.();
+            inputRef.current?.focus();
+          }}
+          className="absolute top-1/2 -translate-y-1/2 right-16 p-1 rounded text-text-muted hover:text-text-strong cursor-pointer"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
       <button
         type="submit"
         className="absolute top-1/2 -translate-y-1/2 transition-colors duration-fast ease-soft cursor-pointer right-1.5 px-3 py-1 rounded text-xs font-semibold bg-primary/15 hover:bg-primary/25 text-primary"
@@ -233,7 +266,7 @@ export function SearchSuggest({
                     {displayTitle(item)}
                   </div>
                   {adult && (
-                    <span className="shrink-0 px-1 py-0.5 rounded bg-rose-600/90 text-white text-[9px] font-mono font-bold leading-none">
+                    <span className="shrink-0 px-1 py-0.5 rounded bg-rose-600/90 text-emphasis keep-white text-[9px] font-mono font-bold leading-none">
                       18+
                     </span>
                   )}

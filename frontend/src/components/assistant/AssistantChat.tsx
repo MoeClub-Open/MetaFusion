@@ -44,7 +44,7 @@ function describeRuntimeError(code: string | undefined, t: TranslateFn): string 
       assistant_request_conflict: "requestConflict",
       assistant_context_limit: "contextLimit",
     } as Record<string, string>)[code];
-    if (key) return t("assistant.user.error." + key);
+    if (key) return t(`assistant.user.error.${key}`);
   }
   return t("assistant.user.error.partial");
 }
@@ -366,7 +366,7 @@ function AssistantWorkspace() {
   const chatTurns = useMemo(() => buildChatTurns(messages), [messages]);
   const reasoningOptions = useMemo(() => ASSISTANT_REASONING_EFFORTS.map((value) => ({
     value,
-    label: t("assistant.reasoning." + (value || "default")),
+    label: t(`assistant.reasoning.${value || "default"}`),
   })), [t]);
 
   if (authLoading) return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact"><p role="status" className="flex items-center gap-2 py-6 text-xs text-text-muted"><Loader2 className="size-4 animate-spin text-primary" /><span>{t("common.loading")}</span></p></PageShell>;
@@ -380,7 +380,7 @@ function AssistantWorkspace() {
 
   return <PageShell title={t("assistant.user.title")} subtitle={t("assistant.user.subtitle")} icon={<Sparkles className="size-5 text-primary" />} spacing="compact">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-subtle pb-2">
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={"assistant-panel-" + id} id={"assistant-tab-" + id} onClick={() => setTab(id)} className={"inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control px-3 py-1.5 text-xs font-medium transition-colors duration-fast " + (tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle hover:text-text-strong")}><Icon className="size-3.5 shrink-0" /><span>{t("assistant.user." + id)}</span></button>)}</div>
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("assistant.user.title")}>{tabs.map(({ id, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={"assistant-panel-" + id} id={"assistant-tab-" + id} onClick={() => setTab(id)} className={"inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control px-3 py-1.5 text-xs font-medium transition-colors duration-fast " + (tab === id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surfaceSubtle hover:text-text-strong")}><Icon className="size-3.5 shrink-0" /><span>{t(`assistant.user.${id}`)}</span></button>)}</div>
       {account && tab !== "chat" && <span className="text-xs tabular-nums text-text-muted">{t("assistant.user.balance", { credits: number.format(account.balance.available_credits) })}</span>}
     </div>
     {error && <p role="alert" className="rounded-control border border-danger/20 bg-danger/5 px-3.5 py-2.5 text-xs text-danger">{error}</p>}
@@ -406,7 +406,7 @@ function AssistantWorkspace() {
                 <span className="mx-auto mb-3 grid size-9 place-items-center rounded-control border border-primary/20 bg-primary/10 text-primary"><Sparkles className="size-4" /></span>
                 <h2 className="text-base font-semibold text-text-strong">{t("assistantUI.welcome")}</h2>
                 <p className="mt-1 text-xs leading-relaxed text-text-muted">{t("assistant.user.startHint")}</p>
-                <div className="mt-5 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t("assistantUI.prompt." + key)); textareaRef.current?.focus(); }} className="group flex items-start justify-between gap-2 rounded-control border border-line bg-surfaceSubtle/60 px-3 py-2.5 text-left text-xs leading-snug text-text-body transition-colors duration-fast hover:border-primary/40 hover:bg-surfaceHover hover:text-text-strong"><span>{t("assistantUI.example." + key)}</span><ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-text-faint transition-colors group-hover:text-primary" /></button>)}</div>
+                <div className="mt-5 grid gap-2 sm:grid-cols-3">{["find", "relations", "edit"].map((key) => <button type="button" key={key} onClick={() => { setMessage(t(`assistantUI.prompt.${key}`)); textareaRef.current?.focus(); }} className="group flex items-start justify-between gap-2 rounded-control border border-line bg-surfaceSubtle/60 px-3 py-2.5 text-left text-xs leading-snug text-text-body transition-colors duration-fast hover:border-primary/40 hover:bg-surfaceHover hover:text-text-strong"><span>{t(`assistantUI.example.${key}`)}</span><ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-text-faint transition-colors group-hover:text-primary" /></button>)}</div>
                 {!models.length && !activeBYOModels.length && <p className="mt-4 text-xs text-text-muted">{t("assistantUI.modelsUnavailable")}</p>}
               </div>
             </div>}

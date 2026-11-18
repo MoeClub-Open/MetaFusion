@@ -6,6 +6,7 @@ import { safeCount } from "@/lib/api/fields";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
+import { SearchSuggest } from "@/components/common/SearchSuggest";
 import { EntityCard } from "@/components/common/EntityCard";
 import { EntityCardGrid } from "@/components/common/EntityCardGrid";
 import { fetchQualityBatch } from "@/lib/quality";
@@ -99,6 +100,10 @@ function ExploreInner() {
 
   const currentKind = searchParams.get("kind") || "all";
   const currentQ = searchParams.get("q") || "";
+  const [searchInput, setSearchInput] = useState(currentQ);
+  useEffect(() => {
+    setSearchInput(currentQ);
+  }, [currentQ]);
   // 标签可多选；默认任一命中，all 要求同时包含全部选中标签。
   const currentTagsMode = searchParams.get("tags_mode") || "any";
   const currentTags = useMemo(
@@ -362,7 +367,8 @@ function ExploreInner() {
     });
     if (!updates.page) next.delete("page");
     if (!updates.cursor) next.delete("cursor");
-    router.push("/explore?" + next.toString());
+    if (!updates.focus) next.delete("focus");
+    router.push(next.size ? "/explore?" + next.toString() : "/explore");
   };
 
   // 标签多选：写回 URL 的 tags 参数（多个值），其余筛选保持不变。
@@ -699,10 +705,36 @@ function ExploreInner() {
     limit,
     sortKey,
   ].join("|");
+  const suggestParams = useMemo(() => {
+    const sp = new URLSearchParams();
+    if (currentKind !== "all") sp.set("kind", currentKind);
+    currentTags.forEach((tag) => sp.append("tags", tag));
+    if (currentTagsMode !== "any") sp.set("tags_mode", currentTagsMode);
+    if (currentOriginalLanguage) sp.set("original_language", currentOriginalLanguage);
+    if (currentHasPictures) sp.set("has_pictures", "1");
+    if (currentField) sp.set("field", currentField);
+    if (currentValue) sp.set("value", currentValue);
+    currentValues.forEach((v) => sp.append("values", v));
+    if (currentExcludeField) sp.set("exclude_field", currentExcludeField);
+    currentExcludeValues.forEach((v) => sp.append("exclude_values", v));
+    return sp.toString();
+  }, [
+    currentKind,
+    currentTags,
+    currentTagsMode,
+    currentOriginalLanguage,
+    currentHasPictures,
+    currentField,
+    currentValue,
+    currentValues,
+    currentExcludeField,
+    currentExcludeValues,
+  ]);
+  const hasNonQueryFilters = appliedFilters.some((f) => f.id !== "q");
 
   return (
     <div className="min-h-screen flex flex-col text-text-strong">
-      <Navbar searchQuery={currentQ} onSearch={(q) => updateFilters({ q })} />
+      <Navbar hideSearch />
 
       <PageShell
         width="page"
@@ -976,8 +1008,21 @@ function ExploreInner() {
           </div>
 
           <div className="min-w-0 space-y-5">
-            {/* 搜索统一在顶栏；本栏只保留排序与视图切换。 */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface border border-line shadow-xs">
+            <div className="space-y-3 p-3 rounded-xl bg-surface border border-line shadow-xs">
+              <SearchSuggest
+                className="w-full"
+                value={searchInput}
+                onValueChange={setSearchInput}
+                suggestParams={suggestParams}
+                autoFocus={searchParams.get("focus") === "search"}
+                onSubmit={(q) => updateFilters({ q })}
+                onClear={() => {
+                  if (currentQ) updateFilters({ q: "" });
+                }}
+                placeholder={t("search.placeholder")}
+                submitLabel={t("search.submit")}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3">
               <p role="status" className="w-full sm:w-auto sm:mr-auto text-sm font-medium text-text-body">
                 {/* 加载中不报「约 0 项」：总数未到前只显示加载文案。出错时下方 alert 已给说明。 */}
                 {loading ? t("catalog.loading") : loadError ? null : noResults ? t("catalog.noResults") : t(currentQ ? "catalog.searchTotal" : "pagination.totalItems", { total })}
@@ -1047,6 +1092,7 @@ function ExploreInner() {
                     <ListIcon className="w-4 h-4" />
                   </button>
                 </div>
+              </div>
               </div>
             </div>
 
@@ -1161,13 +1207,24 @@ function ExploreInner() {
             ) : items.length === 0 ? (
               <div className="p-5 rounded-card border border-dashed border-line text-center bg-surface/50 shadow-2xs">
                 <p className="text-text-muted text-sm mb-3">{currentQ ? t("catalog.noResultsFor", { q: currentQ }) : t("catalog.emptyTitle")}</p>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="text-xs font-mono text-primary hover:underline cursor-pointer"
-                >
-                  {t("catalog.emptyAction")}
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-4">
+                  {currentQ && hasNonQueryFilters && (
+                    <button
+                      type="button"
+                      onClick={() => updateFilters({ q: "" })}
+                      className="text-xs font-mono text-primary hover:underline cursor-pointer"
+                    >
+                      {t("catalog.clearSearchKeepFilters")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-xs font-mono text-primary hover:underline cursor-pointer"
+                  >
+                    {t("catalog.emptyAction")}
+                  </button>
+                </div>
               </div>
             ) : viewMode === "grid" ? (
               <TabPanel activeKey={listKey} spacing="none">
@@ -1228,7 +1285,7 @@ function ExploreInner() {
                               {badgeLabel}
                             </span>
                             {adult && (
-                              <span className="shrink-0 px-1.5 py-0.5 rounded bg-rose-600/90 text-white text-[10px] font-mono font-bold leading-none">
+                              <span className="shrink-0 px-1.5 py-0.5 rounded bg-rose-600/90 text-emphasis keep-white text-[10px] font-mono font-bold leading-none">
                                 18+
                               </span>
                             )}

@@ -42,6 +42,7 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 
 	var added []string
 	newFields := make(map[string]bool)
+	addedApplicable := make(map[string]map[string]bool)
 	for k, v := range seed.Fields {
 		if _, ok := out.Fields[k]; !ok {
 			out.Fields[k] = v
@@ -55,6 +56,10 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 		for _, kind := range seeded.ApplicableKinds {
 			if !contains(currentField.ApplicableKinds, kind) {
 				currentField.ApplicableKinds = append(currentField.ApplicableKinds, kind)
+				if addedApplicable[code] == nil {
+					addedApplicable[code] = make(map[string]bool)
+				}
+				addedApplicable[code][kind] = true
 				added = append(added, "fields."+code+".applicable_kinds."+kind)
 			}
 		}
@@ -143,7 +148,7 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 			curRel := out.Relations[code]
 			changed := false
 			for _, f := range seedRel.Fields {
-				if newFields[f] && !contains(curRel.Fields, f) {
+				if (newFields[f] || (newFields["channel"] && f == "platform")) && !contains(curRel.Fields, f) {
 					curRel.Fields = append(append([]string{}, curRel.Fields...), f)
 					added = append(added, "relations."+code+".fields."+f)
 					changed = true
@@ -189,22 +194,40 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 	// 存量模板引用本次新补入的种子字段时（如存量 agent_profile 获得新增字段 agent_type），
 	// 只把本次新增字段补进其徽章、分面与对应分区；第二次运行该字段已在 current.Fields 中，
 	// 不再改动任何已有或人工调整过的模板配置。
-	if len(newFields) > 0 {
+	if len(newFields) > 0 || len(addedApplicable) > 0 {
 		for code, seedTemplate := range seed.Templates {
 			if _, existed := current.Templates[code]; !existed {
 				continue
 			}
 			cur := out.Templates[code]
+			fieldNewlyApplicable := func(f string) bool {
+				if newFields[f] {
+					return true
+				}
+				for _, k := range cur.Kinds {
+					if addedApplicable[f][k] {
+						return true
+					}
+				}
+				return false
+			}
 			changed := false
 			for _, f := range seedTemplate.BadgeFields {
-				if newFields[f] && !contains(cur.BadgeFields, f) {
+				if fieldNewlyApplicable(f) && !contains(cur.BadgeFields, f) {
 					cur.BadgeFields = append(append([]string{}, cur.BadgeFields...), f)
 					added = append(added, "templates."+code+".badge_fields."+f)
 					changed = true
 				}
 			}
+			for _, f := range seedTemplate.Columns {
+				if fieldNewlyApplicable(f) && !contains(cur.Columns, f) {
+					cur.Columns = append(append([]string{}, cur.Columns...), f)
+					added = append(added, "templates."+code+".columns."+f)
+					changed = true
+				}
+			}
 			for _, f := range seedTemplate.FacetFields {
-				if newFields[f] && !contains(cur.FacetFields, f) {
+				if fieldNewlyApplicable(f) && !contains(cur.FacetFields, f) {
 					cur.FacetFields = append(append([]string{}, cur.FacetFields...), f)
 					added = append(added, "templates."+code+".facet_fields."+f)
 					changed = true
@@ -213,7 +236,7 @@ func mergeSeedDefinitions(current, seed Definitions) (Definitions, []string) {
 			for seedIdx, seedSec := range seedTemplate.Sections {
 				var missing []string
 				for _, f := range seedSec.Fields {
-					if newFields[f] && !templateHasSectionField(cur, f) {
+					if fieldNewlyApplicable(f) && !templateHasSectionField(cur, f) {
 						missing = append(missing, f)
 					}
 				}

@@ -159,7 +159,7 @@ export function CuratorAdmin() {
     setBusy(finding.id); setError(""); setNotice("");
     try {
       await curatorRequest("/findings/" + finding.id + "/" + action, { method: "POST" });
-      setNotice(t("curator.finding." + action + "Queued"));
+      setNotice(t(action === "ignore" ? "curator.finding.ignoreQueued" : "curator.finding.reopenQueued"));
       await loadFindings();
       await loadSummary();
     } catch (cause) { fail(cause); } finally { setBusy(""); }
@@ -207,7 +207,7 @@ export function CuratorAdmin() {
     <div className="flex flex-wrap gap-1 border-b border-line">
       {(["chat", "overview", "findings", "runs"] as Tab[]).map((value) => <button key={value} type="button" onClick={() => { setTab(value); setOffset(0); }}
         className={"border-b-2 px-3 py-2 text-xs transition-colors " + (tab === value ? "border-primary font-semibold text-primary" : "border-transparent text-text-muted hover:text-text-strong")}>
-        {t("curator.tab." + value)}{value === "findings" ? " (" + (summary?.counts.open ?? 0) + ")" : ""}
+        {t(`curator.tab.${value}`)}{value === "findings" ? " (" + (summary?.counts.open ?? 0) + ")" : ""}
       </button>)}
     </div>
 
@@ -216,7 +216,7 @@ export function CuratorAdmin() {
     {tab === "overview" ? <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ["curator.status", t("curator.status." + status), status === "enabled" ? "text-success" : status === "paused" ? "text-warn" : "text-text-muted"],
+          ["curator.status", t(`curator.status.${status}`), status === "enabled" ? "text-success" : status === "paused" ? "text-warn" : "text-text-muted"],
           ["curator.queue", (summary?.counts.open ?? 0) + " / " + (summary?.counts.failed ?? 0), "text-text-strong"],
           ["curator.runs24h", String(summary?.runs_24h ?? 0), "text-text-strong"],
           ["curator.budget", (summary?.spent_credits ?? 0) + " / " + (summary?.settings.monthly_credit_allowance ?? 0), "text-text-strong"],
@@ -252,10 +252,10 @@ export function CuratorAdmin() {
               ]} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.reasoningEffort")}</span>
-              <Select aria-label={t("curator.settings.reasoningEffort")} value={draft.execution.reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("reasoning_effort", val as AssistantReasoningEffort)} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t("assistant.reasoning." + (value || "default")) }))} />
+              <Select aria-label={t("curator.settings.reasoningEffort")} value={draft.execution.reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("reasoning_effort", val as AssistantReasoningEffort)} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t(`assistant.reasoning.${value || "default"}`) }))} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.childReasoningEffort")}</span>
-              <Select aria-label={t("curator.settings.childReasoningEffort")} value={draft.execution.child_reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("child_reasoning_effort", val as AssistantReasoningEffort)} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t("assistant.reasoning." + (value || "default")) }))} />
+              <Select aria-label={t("curator.settings.childReasoningEffort")} value={draft.execution.child_reasoning_effort || ""} disabled={!mayWrite || !!busy} onChange={(val) => updateExecution("child_reasoning_effort", val as AssistantReasoningEffort)} options={ASSISTANT_REASONING_EFFORTS.map((value) => ({ value, label: t(`assistant.reasoning.${value || "default"}`) }))} />
             </label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.maxChildren")}</span>{numberInput(draft.execution.max_children, 1, 8, (n) => updateExecution("max_children", n), !mayWrite || !!busy)}</label>
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.interval")}</span>{numberInput(draft.interval_seconds, 30, 86400, (n) => update("interval_seconds", n), !mayWrite || !!busy)}</label>
@@ -266,7 +266,7 @@ export function CuratorAdmin() {
             <label className="space-y-1 text-xs text-text-muted"><span>{t("curator.settings.allowance")}</span>{numberInput(draft.monthly_credit_allowance, 0, 1_000_000_000_000, (n) => update("monthly_credit_allowance", n), !mayWrite || !!busy)}</label>
             <div className="sm:col-span-2 grid gap-2 sm:grid-cols-2">
               {(["allow_structures", "allow_sources", "allow_names", "allow_dedupe"] as const).map((key) => <label key={key} className="flex items-center gap-2 text-xs text-text-body">
-                <input type="checkbox" checked={draft[key]} disabled={!mayWrite || !!busy} onChange={(event) => update(key, event.target.checked)} />{t("curator.settings." + key)}
+                <input type="checkbox" checked={draft[key]} disabled={!mayWrite || !!busy} onChange={(event) => update(key, event.target.checked)} />{t(`curator.settings.${key}`)}
               </label>)}
             </div>
           </div> : <div className="text-xs text-text-muted">{loading ? t("curator.loading") : t("curator.empty")}</div>}
@@ -281,7 +281,7 @@ export function CuratorAdmin() {
 
     {tab === "findings" ? <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Select fullWidth={false} aria-label={t("curator.filter.allStatus")} value={statusFilter} onChange={(val) => { setStatusFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allStatus") }, ...STATUSES.map((value) => ({ value, label: t("curator.status." + value) }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
+        <Select fullWidth={false} aria-label={t("curator.filter.allStatus")} value={statusFilter} onChange={(val) => { setStatusFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allStatus") }, ...STATUSES.map((value) => ({ value, label: t(`curator.status.${value}`) }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
         <Select fullWidth={false} aria-label={t("curator.filter.allCode")} value={codeFilter} onChange={(val) => { setCodeFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allCode") }, ...CODES.map((value) => ({ value, label: value }))]} className="!h-8 min-w-[9rem] !px-2.5 !text-xs !bg-surface" />
         <Select fullWidth={false} aria-label={t("curator.filter.allKind")} value={kindFilter} onChange={(val) => { setKindFilter(val); setOffset(0); }} options={[{ value: "", label: t("curator.filter.allKind") }, ...ENTITY_KINDS.map((value) => ({ value, label: value }))]} className="!h-8 min-w-[7rem] !px-2.5 !text-xs !bg-surface" />
         <span className="text-[11px] text-text-faint">{t("curator.filter.pending")} {pending}</span>
@@ -300,7 +300,7 @@ export function CuratorAdmin() {
                 <div className="mt-0.5 text-[10px] text-text-faint">{finding.entity_kind} · {finding.id.slice(0, 8)}</div>
               </td>
               <td className="px-3 py-2"><span className="font-mono text-[11px]">{finding.code}</span><div className={"mt-0.5 text-[10px] " + (finding.severity === "error" ? "text-danger" : finding.severity === "warning" ? "text-warn" : "text-text-faint")}>{finding.severity}</div></td>
-              <td className="px-3 py-2"><span className={"rounded-control px-1.5 py-0.5 text-[10px] " + (finding.status === "open" ? "bg-primary/10 text-primary" : finding.status === "failed" ? "bg-danger/10 text-danger" : finding.status === "resolved" ? "bg-success/10 text-success" : "bg-surfaceHover text-text-muted")}>{t("curator.status." + finding.status)}</span></td>
+              <td className="px-3 py-2"><span className={"rounded-control px-1.5 py-0.5 text-[10px] " + (finding.status === "open" ? "bg-primary/10 text-primary" : finding.status === "failed" ? "bg-danger/10 text-danger" : finding.status === "resolved" ? "bg-success/10 text-success" : "bg-surfaceHover text-text-muted")}>{t(`curator.status.${finding.status}`)}</span></td>
               <td className="px-3 py-2 font-mono">{finding.attempts}</td>
               <td className="max-w-[260px] px-3 py-2"><div className="truncate text-text-body" title={finding.reason}>{finding.decision || "—"}{finding.reason ? " · " + finding.reason : ""}</div>{finding.last_error ? <div className="mt-0.5 truncate font-mono text-[10px] text-danger" title={finding.last_error}>{finding.last_error}</div> : null}</td>
               <td className="px-3 py-2 font-mono text-[10px] text-text-faint">{new Date(finding.updated_at).toLocaleString()}</td>

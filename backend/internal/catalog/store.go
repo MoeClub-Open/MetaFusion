@@ -696,6 +696,9 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 				return fmt.Errorf("undeclared_release_subject")
 			}
 		}
+		if err := syncEntityTimelineTx(ctx, tx, e); err != nil {
+			return err
+		}
 		if err := audit(ctx, tx, e.ID, e.Version, u, input.EditNote, input.Sources, e, "entity.saved"); err != nil {
 			return err
 		}
@@ -728,7 +731,7 @@ func replaceExternalLinksTx(ctx context.Context, tx *sql.Tx, e Entity, deleteExi
 		}
 	}
 	for _, link := range e.ExternalLinks {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.external_links(entity_id,entity_kind,kind,url,external_id,role,origin,source_refs) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8)`,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog.external_links(entity_id,entity_kind,kind,url,external_id,role,origin,source_refs) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8) ON CONFLICT (entity_id, kind, url) DO NOTHING`,
 			e.ID, e.Kind, link.Kind, link.URL, link.ExternalID, link.Role, link.Origin, encode(link.SourceRefs)); err != nil {
 			return err
 		}

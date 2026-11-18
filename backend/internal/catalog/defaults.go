@@ -154,6 +154,8 @@ func Defaults() Definitions {
 		{"context", "entity", names4("适用作品或篇目", "適用作品或篇目", "対象作品・篇目", "Context")},
 		{"begin_date", "date", names4("开始日期", "開始日期", "開始日", "Begin date")},
 		{"end_date", "date", names4("结束日期", "結束日期", "終了日", "End date")},
+		{"valid_from", "date", names4("生效日期", "生效日期", "有効開始日", "Valid from")},
+		{"valid_to", "date", names4("失效日期", "失效日期", "有効終了日", "Valid to")},
 		{"ended", "boolean", names4("已结束", "已結束", "終了済み", "Ended")},
 		{"date_precision", "enum", names4("时间精度", "時間精度", "日付精度", "Date precision")},
 		{"earliest_date", "date", names4("不早于", "不早於", "最早日", "Earliest date")},
@@ -161,7 +163,13 @@ func Defaults() Definitions {
 		{"time_zone", "text", names4("时区", "時區", "タイムゾーン", "Time zone")},
 		{"transition_type", "enum", names4("变更方式", "變更方式", "変更種別", "Transition type")},
 		{"scope", "text", names4("适用范围说明", "適用範圍說明", "適用範囲の説明", "Scope description")},
+		{"region", "text", names4("适用地区", "適用地區", "対象地域", "Applicable region")},
+		{"channel", "text", names4("渠道明细", "通路明細", "配信・販売チャネル", "Channel detail")},
+		{"effective_at", "date", names4("生效日期", "生效日期", "発効日", "Effective date")},
 		{"publisher", "entity", names4("发行主体", "發行主體", "発売元", "Publisher")},
+		{"operator", "entity", names4("运营主体", "營運主體", "運営元", "Operator")},
+		{"release_status", "enum", names4("发行状态", "發行狀態", "リリース状態", "Release status")},
+		{"scoped_release", "entity", names4("关联发行版", "關聯發行版", "対象リリース", "Scoped release")},
 		{"attachments", "list", names4("包装附件", "包裝附件", "同梱物", "Package attachments")},
 		{"store_bonuses", "list", names4("渠道特典", "通路特典", "店舗特典", "Retailer bonuses")},
 		{"events", "list", names4("发布与放送事件", "發布與放送事件", "発売・放送イベント", "Release and broadcast events")},
@@ -274,10 +282,20 @@ func Defaults() Definitions {
 			{"character_portrait", names4("角色立绘", "角色立繪", "キャラクター立ち絵", "Character portrait")},
 			{"person_portrait", names4("人物肖像", "人物肖像", "パーソナルポートレート", "Person portrait")},
 			{"logo", names4("标识", "標識", "ロゴ", "Logo")},
+			{"app_icon", names4("应用图标", "應用圖示", "アプリアイコン", "App icon")},
 			{"scene_still", names4("剧照 / 场景图", "劇照 / 場景圖", "場面写真", "Scene still")},
 			{"event_photo", names4("活动现场", "活動現場", "会場写真", "Event photo")},
 			{"scan", names4("内页扫描", "內頁掃描", "誌面スキャン", "Scan")},
 			{"screenshot", names4("界面截图", "介面截圖", "画面キャプチャ", "Screenshot")},
+		}},
+		{"release_status", names4("发行状态", "發行狀態", "リリース状態", "Release status"), []termSeed{
+			{"announced", names4("已公布 / 待发行", "已公布 / 待發行", "発表済み・未発売", "Announced")},
+			{"testing", names4("测试中", "測試中", "テスト実施中", "In testing")},
+			{"released", names4("已发行", "已發行", "発売・配信済み", "Released")},
+			{"operating", names4("运营中", "營運中", "サービス運営中", "Active / operating")},
+			{"suspended", names4("暂停运营 / 下架", "暫停營運 / 下架", "一時停止・配信停止", "Suspended / delisted")},
+			{"service_ended", names4("已停服", "已停服", "サービス終了", "Service ended")},
+			{"discontinued", names4("绝版 / 停售", "絕版 / 停售", "絶版・販売終了", "Discontinued")},
 		}},
 	} {
 		v := Vocabulary{Names: x.names, Terms: map[string]Term{}}
@@ -291,7 +309,7 @@ func Defaults() Definitions {
 		}
 		d.Vocabularies[x.code] = v
 	}
-	for _, k := range []string{"format", "packaging", "role", "edition_type", "edition_batch", "distribution_channel", "entry_role", "character_rank"} {
+	for _, k := range []string{"format", "packaging", "role", "edition_type", "edition_batch", "distribution_channel", "entry_role", "character_rank", "release_status"} {
 		f := d.Fields[k]
 		f.Vocabulary = k
 		d.Fields[k] = f
@@ -333,14 +351,25 @@ func Defaults() Definitions {
 	d.Vocabularies["embedded_event_kind"] = Vocabulary{
 		Names: names4("内嵌事件类型", "內嵌事件類型", "埋め込みイベント種別", "Embedded event kind"),
 		Terms: map[string]Term{
-			"release":      {Names: names4("发售 / 上线", "發售 / 上線", "発売・配信開始", "Release / launch"), Enabled: true},
-			"broadcast":    {Names: names4("放送 / 上映", "放送 / 上映", "放送・上映", "Broadcast / screening"), Enabled: true},
-			"reprint":      {Names: names4("再版 / 重印", "再版 / 重印", "重版・再販", "Reprint / reissue"), Enabled: true},
-			"preorder":     {Names: names4("预约 / 预售", "預約 / 預售", "予約受付", "Pre-order"), Enabled: true},
-			"update":       {Names: names4("重大更新 / 改版", "重大更新 / 改版", "大型アップデート・改訂", "Major update / revision"), Enabled: true},
-			"milestone":    {Names: names4("重要节点", "重要節點", "節目・マイルストーン", "Milestone"), Enabled: true},
-			"discontinued": {Names: names4("停售 / 停服 / 完结", "停售 / 停服 / 完結", "販売終了・サービス終了・完結", "Discontinued / ended"), Enabled: true},
-			"other":        {Names: names4("其他事件", "其他事件", "その他の出来事", "Other event"), Enabled: true},
+			"announcement":     {Names: names4("发布 / 公布", "發布 / 公布", "発表・告知", "Announcement"), Enabled: true},
+			"testing":          {Names: names4("测试", "測試", "テスト実施", "Testing / beta"), Enabled: true},
+			"official_release": {Names: names4("正式发行", "正式發行", "正式リリース・発売", "Official release"), Enabled: true},
+			"version_update":   {Names: names4("版本更新", "版本更新", "バージョン更新", "Version update"), Enabled: true},
+			"visual_change":    {Names: names4("图标 / 封面更换", "圖示 / 封面更換", "アイコン・ジャケット変更", "Icon / cover change"), Enabled: true},
+			"rename":           {Names: names4("改名", "改名", "改称・タイトル変更", "Rename"), Enabled: true},
+			"publisher_change": {Names: names4("发行商更替", "發行商更替", "発売元変更・移管", "Publisher change"), Enabled: true},
+			"operator_change":  {Names: names4("运营商更替", "營運商更替", "運営移管・変更", "Operator change"), Enabled: true},
+			"service_end":      {Names: names4("停服", "停服", "サービス終了", "Service end"), Enabled: true},
+			"service_resume":   {Names: names4("恢复运营", "恢復營運", "サービス再開", "Service resumption"), Enabled: true},
+			"major_event":      {Names: names4("重大活动", "重大活動", "大型イベント・施策", "Major event"), Enabled: true},
+			"release":          {Names: names4("发售 / 上线", "發售 / 上線", "発売・配信開始", "Release / launch"), Enabled: true},
+			"broadcast":        {Names: names4("放送 / 上映", "放送 / 上映", "放送・上映", "Broadcast / screening"), Enabled: true},
+			"reprint":          {Names: names4("再版 / 重印", "再版 / 重印", "重版・再販", "Reprint / reissue"), Enabled: true},
+			"preorder":         {Names: names4("预约 / 预售", "預約 / 預售", "予約受付", "Pre-order"), Enabled: true},
+			"update":           {Names: names4("重大更新 / 改版", "重大更新 / 改版", "大型アップデート・改訂", "Major update / revision"), Enabled: true},
+			"milestone":        {Names: names4("重要节点", "重要節點", "節目・マイルストーン", "Milestone"), Enabled: true},
+			"discontinued":     {Names: names4("停售 / 停服 / 完结", "停售 / 停服 / 完結", "販売終了・サービス終了・完結", "Discontinued / ended"), Enabled: true},
+			"other":            {Names: names4("其他事件", "其他事件", "その他の出来事", "Other event"), Enabled: true},
 		},
 	}
 	for _, k := range []string{"date_precision", "transition_type"} {
@@ -348,10 +377,49 @@ func Defaults() Definitions {
 		f.Vocabulary = k
 		d.Fields[k] = f
 	}
-	for _, k := range []string{"character", "publisher"} {
+	for _, k := range []string{"character", "publisher", "operator"} {
 		f := d.Fields[k]
 		f.Kinds = []string{"agent"}
 		d.Fields[k] = f
+	}
+	scopedRel := d.Fields["scoped_release"]
+	scopedRel.Kinds = []string{"release"}
+	d.Fields["scoped_release"] = scopedRel
+	d.Fields["target_ids"] = Field{
+		Names: names4("关联目标实体", "關聯目標實體", "対象エンティティ一覧", "Target entities"),
+		Type: "list", Enabled: true, Searchable: true, Comparable: true, ApplicableKinds: []string{"event"},
+		Items: &Field{Names: names4("关联实体", "關聯實體", "対象エンティティ", "Target entity"), Type: "entity", Kinds: append([]string{}, Kinds...), Enabled: true},
+	}
+	d.Fields["related_assets"] = Field{
+		Names: names4("关联媒体资产", "關聯媒體資產", "関連アセット", "Related assets"),
+		Type: "list", Enabled: true, Searchable: true, Comparable: true, ApplicableKinds: []string{"event"},
+		Items: &Field{Names: names4("资产 ID", "資產 ID", "アセット ID", "Asset ID"), Type: "text", Enabled: true},
+	}
+	d.Fields["attribute_history"] = Field{
+		Names: names4("属性变更历史", "屬性變更歷史", "属性変更履歴", "Attribute history"),
+		Type: "list", Enabled: true, Searchable: false, Comparable: true, ApplicableKinds: append([]string{}, Kinds...),
+		Items: &Field{
+			Names: names4("属性历史记录", "屬性歷史記錄", "属性履歴項目", "Attribute fact"),
+			Type: "group", Enabled: true,
+			Fields: map[string]Field{
+				"field":          {Names: names4("属性字段", "屬性欄位", "対象フィールド", "Field"), Type: "text", Required: true, Enabled: true},
+				"value":          {Names: names4("属性值", "屬性值", "属性値", "Value"), Type: "text", Enabled: true},
+				"entity_value":   {Names: names4("关联实体值", "關聯實體值", "関連エンティティ値", "Entity value"), Type: "entity", Kinds: append([]string{}, Kinds...), Enabled: true},
+				"valid_from":     {Names: names4("生效日期", "生效日期", "有効開始日", "Valid from"), Type: "date", Enabled: true},
+				"valid_to":       {Names: names4("失效日期", "失效日期", "有効終了日", "Valid to"), Type: "date", RangeStart: "valid_from", Enabled: true},
+				"begin_date":     {Names: names4("开始日期", "開始日期", "開始日", "Begin date"), Type: "date", Enabled: true},
+				"end_date":       {Names: names4("结束日期", "結束日期", "終了日", "End date"), Type: "date", RangeStart: "begin_date", Enabled: true},
+				"ended":          {Names: names4("已结束", "已結束", "終了済み", "Ended"), Type: "boolean", Enabled: true},
+				"date_precision": {Names: names4("时间精度", "時間精度", "日付精度", "Date precision"), Type: "enum", Vocabulary: "date_precision", Enabled: true},
+				"earliest_date":  {Names: names4("不早于", "不早於", "最早日", "Earliest date"), Type: "date", Enabled: true},
+				"latest_date":    {Names: names4("不晚于", "不晚於", "最遅日", "Latest date"), Type: "date", Enabled: true},
+				"region":         {Names: names4("适用地区", "適用地區", "対象地域", "Applicable region"), Type: "text", Enabled: true},
+				"platform":       {Names: names4("平台", "平台", "プラットフォーム", "Platform"), Type: "text", Enabled: true},
+				"channel":        {Names: names4("渠道明细", "通路明細", "配信・販売チャネル", "Channel detail"), Type: "text", Enabled: true},
+				"scoped_release": {Names: names4("关联发行版", "關聯發行版", "対象リリース", "Scoped release"), Type: "entity", Kinds: []string{"release"}, Enabled: true},
+				"note":           {Names: names4("备注", "備註", "備考", "Note"), Type: "text", Enabled: true},
+			},
+		},
 	}
 	f := d.Fields["context"]
 	f.Kinds = []string{"work", "content_unit", "expression", "release", "event"}
@@ -388,6 +456,19 @@ func Defaults() Definitions {
 	eventsField.Items.Fields["end_date"] = Field{Names: names4("结束日期", "結束日期", "終了日", "End date"), Type: "date", RangeStart: "date", Enabled: true}
 	eventsField.Items.Fields["ended"] = Field{Names: names4("已结束", "已結束", "終了済み", "Ended"), Type: "boolean", Enabled: true}
 	eventsField.Items.Fields["date_precision"] = Field{Names: names4("时间精度", "時間精度", "日付精度", "Date precision"), Type: "enum", Vocabulary: "date_precision", Enabled: true}
+	eventsField.Items.Fields["effective_at"] = Field{Names: names4("生效日期", "生效日期", "発効日", "Effective date"), Type: "date", Enabled: true}
+	eventsField.Items.Fields["earliest_date"] = Field{Names: names4("不早于", "不早於", "最早日", "Earliest date"), Type: "date", Enabled: true}
+	eventsField.Items.Fields["latest_date"] = Field{Names: names4("不晚于", "不晚於", "最遅日", "Latest date"), Type: "date", Enabled: true}
+	eventsField.Items.Fields["platform"] = Field{Names: names4("平台", "平台", "プラットフォーム", "Platform"), Type: "text", Enabled: true}
+	eventsField.Items.Fields["scoped_release"] = Field{Names: names4("关联发行版", "關聯發行版", "対象リリース", "Scoped release"), Type: "entity", Kinds: []string{"release"}, Enabled: true}
+	eventsField.Items.Fields["target_ids"] = Field{
+		Names: names4("关联目标实体", "關聯目標實體", "対象エンティティ一覧", "Target entities"), Type: "list", Enabled: true,
+		Items: &Field{Names: names4("关联实体", "關聯實體", "対象エンティティ", "Target entity"), Type: "entity", Kinds: append([]string{}, Kinds...), Enabled: true},
+	}
+	eventsField.Items.Fields["related_assets"] = Field{
+		Names: names4("关联媒体资产", "關聯媒體資產", "関連アセット", "Related assets"), Type: "list", Enabled: true,
+		Items: &Field{Names: names4("资产 ID", "資產 ID", "アセット ID", "Asset ID"), Type: "text", Enabled: true},
+	}
 	eventsField.Items.Fields["event"] = Field{Names: names4("关联活动条目", "關聯活動條目", "関連イベント項目", "Linked event entity"), Type: "entity", Kinds: []string{"event"}, Enabled: true}
 	d.Fields["events"] = eventsField
 	// 记录级动态模式：收录位置（locator）与收录/发行对象的附加属性。
@@ -422,7 +503,7 @@ func Defaults() Definitions {
 	commonSections := func(extra ...Section) []Section {
 		return append(append([]Section{}, extra...),
 			Section{Names: names4("创作与权利", "創作與權利", "制作・権利", "Credits & rights"), Fields: []string{"author", "copyright", "imdb"}},
-			Section{Names: names4("首发与收录", "首發與收錄", "初出・収録", "Premiere & inclusion"), Fields: []string{"edition_date", "events"}},
+			Section{Names: names4("首发与收录", "首發與收錄", "初出・収録", "Premiere & inclusion"), Fields: []string{"edition_date", "former_names", "attribute_history", "events"}},
 		)
 	}
 	for _, x := range []struct {
@@ -566,11 +647,11 @@ func Defaults() Definitions {
 		"content_unit": {"language", "entry_role", "air_date"},
 		"expression":   {"language", "duration", "version_label", "isrc", "events"},
 		"release": {"catalog_number", "barcode", "isbn", "edition_date", "edition_type",
-			"edition_batch", "country", "publisher", "packaging", "distribution_channel",
-			"platform", "attachments", "store_bonuses", "events"},
+			"edition_batch", "country", "publisher", "operator", "release_status", "packaging", "distribution_channel",
+			"channel", "platform", "attachments", "store_bonuses", "events"},
 		"medium": {"catalog_number", "format", "role"},
 		"track":  {"duration", "role"},
-		"event":  {"language", "begin_date", "end_date", "ended", "date_precision", "earliest_date", "latest_date", "time_zone", "country", "copyright"},
+		"event":  {"language", "begin_date", "end_date", "ended", "effective_at", "date_precision", "earliest_date", "latest_date", "time_zone", "country", "region", "platform", "channel", "copyright"},
 	}
 	for kind, keys := range applicableByKind {
 		for _, code := range keys {
@@ -604,14 +685,14 @@ func Defaults() Definitions {
 	d.Templates["release"] = Template{
 		Names: names4("发行版", "發行版", "リリース", "Release"), Directory: "tree", Kinds: []string{"release"},
 		Sections: []Section{
-			{Names: names4("版本信息", "版本資訊", "版情報", "Edition"), Fields: []string{"edition_type", "edition_batch", "edition_date", "country", "distribution_channel", "platform"}},
-			{Names: names4("载体与包装", "載體與包裝", "メディア・パッケージ", "Carrier & packaging"), Fields: []string{"catalog_number", "barcode", "isbn", "packaging", "publisher"}},
-			{Names: names4("附加内容", "附加內容", "特典・同梱物", "Extras"), Fields: []string{"attachments", "store_bonuses", "events"}},
+			{Names: names4("版本信息", "版本資訊", "版情報", "Edition"), Fields: []string{"edition_type", "edition_batch", "edition_date", "release_status", "country", "distribution_channel", "channel", "platform"}},
+			{Names: names4("载体与包装", "載體與包裝", "メディア・パッケージ", "Carrier & packaging"), Fields: []string{"catalog_number", "barcode", "isbn", "packaging", "publisher", "operator"}},
+			{Names: names4("附加内容", "附加內容", "特典・同梱物", "Extras"), Fields: []string{"attachments", "store_bonuses", "former_names", "attribute_history", "events"}},
 		},
-		Columns:          []string{"edition_type", "edition_batch", "country", "packaging", "catalog_number", "edition_date"},
+		Columns:          []string{"country", "platform", "distribution_channel", "release_status", "publisher", "operator", "edition_type", "edition_batch", "packaging", "catalog_number", "edition_date"},
 		PrimaryDateField: "edition_date",
-		BadgeFields:      []string{"edition_type", "edition_batch", "country"},
-		FacetFields:      []string{"edition_type", "edition_batch", "format", "country"},
+		BadgeFields:      []string{"edition_type", "edition_batch", "release_status", "country"},
+		FacetFields:      []string{"country", "platform", "distribution_channel", "release_status", "edition_type", "edition_batch", "format"},
 		RelationGroups:   []string{"credits", "creative", "membership"},
 	}
 	// 关系分组名：credits/creative/membership 三组，四语齐备（前端按组折叠展示）。
@@ -631,6 +712,8 @@ func Defaults() Definitions {
 	relSlot := map[string]string{
 		"created_by":        "person",
 		"produced_by":       "person",
+		"published_by":      "person",
+		"operated_by":       "person",
 		"performed_by":      "person",
 		"photographed_by":   "person",
 		"modeled_by":        "person",
@@ -666,7 +749,7 @@ func Defaults() Definitions {
 	}
 	// credits 组的关系同时声明 CountsAsCredit：署名聚合看的是这条声明，不是分组码。
 	// 因此后台把某条关系挪出 credits 组只改变展示归类，不会静默改变 Release 详情的署名聚合。
-	relFields := []string{"role", "credit_role", "character_rank", "context", "character", "language", "begin_date", "end_date", "ended", "date_precision", "earliest_date", "latest_date", "scope"}
+	relFields := []string{"role", "credit_role", "character_rank", "context", "character", "language", "begin_date", "end_date", "valid_from", "valid_to", "ended", "date_precision", "earliest_date", "latest_date", "region", "platform", "channel", "scoped_release", "scope"}
 	addRel := func(code string, n, rev Names, src, tgt []string, group string, acyclic bool) {
 		d.Relations[code] = RelationDefinition{Names: n, ReverseNames: rev, SourceKinds: src, TargetKinds: tgt, Fields: append([]string{}, relFields...), ParticipantSlot: relSlot[code], CountsAsCredit: group == "credits", Group: group, GroupNames: groupNames[group], Acyclic: acyclic, Enabled: true}
 	}
@@ -684,6 +767,8 @@ func Defaults() Definitions {
 	} {
 		addRel(x.code, x.names, x.rev, []string{"work", "content_unit", "expression", "release", "event"}, []string{"agent"}, "credits", false)
 	}
+	addRel("published_by", names4("发行商", "發行商", "パブリッシャー・発売元", "Published by"), names4("发行了", "發行了", "パブリッシング・発売した", "Publisher of"), []string{"release"}, []string{"agent"}, "credits", false)
+	addRel("operated_by", names4("运营商", "營運商", "運営主体", "Operated by"), names4("运营了", "營運了", "運営した", "Operator of"), []string{"release"}, []string{"agent"}, "credits", false)
 	addRel("voiced_by", names4("配音者", "配音者", "声優", "Voiced by"), names4("配音于", "配音於", "声を担当した", "Voice actor in"), []string{"work", "content_unit", "expression", "release", "agent", "event"}, []string{"agent"}, "credits", false)
 	// 分媒介署名关系：音乐（作曲/作词/编曲）、影视与动画（导演/编剧）、书籍（插画/朗读）。
 	// 均为 agent 目标、group=credits，后台 DefinitionsEditor 可继续增删改。

@@ -170,9 +170,9 @@ Agent 使用只读 `POST /api/catalog/relationships/query`：
 
 ## 图片与封面
 
-pictures[] 是有序数组，数组顺序决定展示顺序，首张为当前封面，服务端不重排。taken_at 记录图本身的拍摄或发布时间；version_label 为四语图像版本名称；usage_period={begin?,end?} 表达已知使用期，允许单端、部分日期和重叠，不自动选择封面或新增目录实体。旧图保留在同一图集中，版别图片归对应 Release，跨期作品主视觉归 Work；借图应标明来源。
+pictures[] 是追加式有序数组，数组顺序决定默认展示顺序，首张为当前封面，服务端不重排；更换主封面或应用图标时关闭旧记录的 valid_to（或 usage_period.end）并前置新记录，保留全部历史图片资产。每张图支持 role（picture_role 词表，含 cover_art、key_visual、logo、app_icon 等）、version_label、taken_at、左闭右开有效区间 [valid_from, valid_to)、date_precision、region / platform / channel / release_id 适用范围与 pinned 置顶标记，供 `/timeline`、`/as-of`、`/compare` 与 `/pictures` 按时间点及范围选取主图和图标。
 
-每张图可选 role（picture_role 词表）与 asset_id（存储资产 UUID，配 cover_image 绑定）。`validation.go` 拒绝重复 URL、超过 40 张、非法用途、非 UUID 资产及非法或确定倒置的使用期。目录不跨服务校验资产存在或封禁，读取失败时前端使用程序封面。前端封面判定集中于 `src/lib/cover.ts` 的 coverPicture/coverUrl，稳定资产地址与绑定见[存储运行约定](./storage-operations.md)。
+每张图可选 asset_id（存储资产 UUID，配 cover_image 绑定）。`validation.go` 按 `(url, 生效起止, 适用范围)` 拒绝完全重复记录，并校验合法用途、UUID 资产格式及非倒置的使用区间（允许同日替换闭合）。目录不跨服务校验资产存在或封禁，读取失败时前端使用中性占位封面。前端封面判定集中于 `src/lib/cover.ts` 的 coverPicture/coverUrl，稳定资产地址与绑定见[存储运行约定](./storage-operations.md)。
 
 外部来源查询仅返回预览中的图片 URL，不补图、不写入实体；编辑者通过常规编辑或 commit 工作流追加并重排。上游 URL 原地换像素时，需将旧版保存为独立资产才能留存；日期和版本名不能代替字节保存。
 

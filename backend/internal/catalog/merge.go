@@ -60,6 +60,16 @@ func rewriteEntityRefs(d Definitions, e *Entity, source, target string) {
 		rewriteGroupRefs(d.Fields["locator"], map[string]any(e.Contents[i].Locator), source, target)
 		rewriteGroupRefs(d.Fields["inclusion_attributes"], e.Contents[i].Attributes, source, target)
 	}
+	for i := range e.Pictures {
+		if strings.TrimSpace(e.Pictures[i].ReleaseID) == source {
+			e.Pictures[i].ReleaseID = target
+		}
+	}
+	for i := range e.ExternalLinks {
+		if strings.TrimSpace(e.ExternalLinks[i].ReleaseID) == source {
+			e.ExternalLinks[i].ReleaseID = target
+		}
+	}
 }
 
 // mergeExternalLinks 把源缺的 (kind,url) 补给目标（幂等）；同 kind+url 已存在则跳过，
@@ -68,13 +78,32 @@ func mergeExternalLinks(target, source []ExternalLink) ([]ExternalLink, error) {
 	if len(source) == 0 {
 		return target, nil
 	}
+	hasScopeOrBounds := func(l ExternalLink) bool {
+		return strings.TrimSpace(l.ValidFrom) != "" ||
+			strings.TrimSpace(l.ValidTo) != "" ||
+			l.Ended ||
+			strings.TrimSpace(l.EarliestDate) != "" ||
+			strings.TrimSpace(l.LatestDate) != "" ||
+			strings.TrimSpace(l.Region) != "" ||
+			strings.TrimSpace(l.Platform) != "" ||
+			strings.TrimSpace(l.Channel) != "" ||
+			strings.TrimSpace(l.ReleaseID) != ""
+	}
+	linkIdentityKey := func(l ExternalLink) string {
+		return strings.Join([]string{
+			l.Kind, l.URL,
+			strings.TrimSpace(l.ValidFrom), strings.TrimSpace(l.ValidTo),
+			strings.TrimSpace(l.Region), strings.TrimSpace(l.Platform),
+			strings.TrimSpace(l.Channel), strings.TrimSpace(l.ReleaseID),
+		}, "|")
+	}
 	index := map[string]ExternalLink{}
 	for _, link := range target {
-		index[link.Kind+"|"+link.URL] = link
+		index[linkIdentityKey(link)] = link
 	}
 	byKind := map[string]ExternalLink{}
 	for _, link := range target {
-		if legacyImportKeys[link.Kind] {
+		if legacyImportKeys[link.Kind] || hasScopeOrBounds(link) {
 			continue
 		}
 		byKind[link.Kind] = link
@@ -84,22 +113,26 @@ func mergeExternalLinks(target, source []ExternalLink) ([]ExternalLink, error) {
 		if legacyImportKeys[link.Kind] {
 			continue
 		}
-		key := link.Kind + "|" + link.URL
+		key := linkIdentityKey(link)
 		if cur, ok := index[key]; ok {
 			if encode(cur) != encode(link) {
 				return nil, fmt.Errorf("merge_external_conflict: %s", link.Kind)
 			}
 			continue
 		}
-		if cur, ok := byKind[link.Kind]; ok {
-			if cur.URL != link.URL || cur.ExternalID != link.ExternalID {
-				return nil, fmt.Errorf("merge_external_conflict: %s", link.Kind)
+		if !hasScopeOrBounds(link) {
+			if cur, ok := byKind[link.Kind]; ok {
+				if cur.URL != link.URL || cur.ExternalID != link.ExternalID {
+					return nil, fmt.Errorf("merge_external_conflict: %s", link.Kind)
+				}
+				continue
 			}
-			continue
 		}
 		out = append(out, link)
 		index[key] = link
-		byKind[link.Kind] = link
+		if !hasScopeOrBounds(link) {
+			byKind[link.Kind] = link
+		}
 	}
 	return out, nil
 }
@@ -242,6 +275,9 @@ func mergeCandidateEntityIDs(ctx context.Context, tx *sql.Tx, d Definitions, sou
 	if len(entityClauses) > 0 {
 		entityAttrPred = strings.Join(entityClauses, " OR ")
 	}
+	args = append(args, encode([]map[string]string{{"release_id": sourceID}}))
+	picReleasePred := "document->'pictures' @> $" + strconv.Itoa(len(args)) + "::jsonb"
+	extReleasePred := "document->'external_links' @> $" + strconv.Itoa(len(args)) + "::jsonb"
 	query := fmt.Sprintf(`SELECT id::text FROM catalog.entities
 		WHERE state NOT IN ('deleted','merged') AND id <> $1::uuid AND (
 			id = $2::uuid
@@ -252,7 +288,9 @@ func mergeCandidateEntityIDs(ctx context.Context, tx *sql.Tx, d Definitions, sou
 			OR id IN (SELECT release_id FROM catalog.release_subjects WHERE work_id=$1::uuid OR (%s))
 			OR id IN (SELECT track_id FROM catalog.track_contents WHERE expression_id=$1::uuid OR (%s) OR (%s))
 			OR (%s)
-		) ORDER BY id`, subjectAttrs, contentLoc, contentAttrs, entityAttrPred)
+			OR (%s)
+			OR (%s)
+		) ORDER BY id`, subjectAttrs, contentLoc, contentAttrs, entityAttrPred, picReleasePred, extReleasePred)
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -486,6 +524,9 @@ func mergeReferences(ctx context.Context, tx *sql.Tx, source, target Entity, u U
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return errVersionConflict
+		}
+		if err = syncEntityTimelineTx(ctx, tx, e); err != nil {
+			return err
 		}
 		if err = audit(ctx, tx, e.ID, e.Version, u, in.EditNote, in.Sources, e, "entity.saved"); err != nil {
 			return err

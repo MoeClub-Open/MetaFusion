@@ -5,9 +5,12 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { AdaptiveCover } from "@/components/common/AdaptiveCover";
-import { COVER_PICTURE_INDEX, coverUrl, PICTURE_ROLE_VOCABULARY, resolveCover } from "@/lib/cover";
+import { coverUrl, resolveCover } from "@/lib/cover";
 import { EntityCover } from "@/components/common/EntityCover";
-import { PictureLightbox, type LightboxPicture } from "@/components/catalog/PictureLightbox";
+import { EntityPictureGallery } from "@/components/entity/EntityPictureGallery";
+import { HistoricalModeBanner } from "@/components/entity/EntityTemporalSnapshot";
+import { EntityTemporalWorkspace } from "@/components/entity/EntityTemporalWorkspace";
+import { fetchEntityTimeline, type EntityAsOfResponse } from "@/lib/api/temporal";
 import FavoriteButton from "@/components/FavoriteButton";
 import { WorkFacts, entityBadges, entityHasFacts } from "@/components/work/WorkFacts";
 import { EntityIdentityHeader } from "@/components/entity/EntityIdentityHeader";
@@ -33,6 +36,7 @@ import { EntityLoadError } from "@/components/catalog/EntityLoadError";
 const isInvalidIdError = (message?: string | null) => !!message && message.trim().split(":")[0].trim() === "invalid_id";
 import { localizeCommunityError } from "@/lib/communityErrors";
 import { copyText } from "@/lib/clipboard";
+import { pickRecordTitle } from "@/lib/titles";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import {
   GraphNode,
@@ -84,6 +88,7 @@ import {
   ArrowUpRight,
   Calendar,
   Check,
+  Clock,
   Copy,
   Disc,
   FolderPlus,
@@ -204,15 +209,16 @@ export function EntityDetailView({ id }: { id: string }) {
   const [copyFailed, setCopyFailed] = useState<"id" | "link" | null>(null);
   const [relationViewMode, setRelationViewMode] = useState<"cards" | "graph">("cards");
   const [staffViewMode, setStaffViewMode] = useState<"cards" | "graph">("cards");
-  // 画廊灯箱打开在第几张（null=关闭）。索引即 pictures 的数组下标：顺序就是作者定的
-  // 展示顺序，灯箱翻图也只按这个顺序走，不再二次排序。
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  // Modal 的副作用依赖 onClose 的身份：给它稳定引用，否则每次翻图都会重挂副作用并抢焦点。
-  const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+  const [activeAsOf, setActiveAsOf] = useState<EntityAsOfResponse | null>(null);
+  const [timelineEventCount, setTimelineEventCount] = useState<number | undefined>(undefined);
   const [revealedAdultImages, setRevealedAdultImages] = useState(false);
   useEffect(() => {
     setRevealedAdultImages(false);
   }, [id, adultMode]);
+  useEffect(() => {
+    setActiveAsOf(null);
+    setTimelineEventCount(undefined);
+  }, [id]);
 
   const loadOlderRevisions = async () => {
     if (!entity?.id || revisionsBusyRef.current || revisionOffset >= revisionTotal) return;
@@ -449,51 +455,78 @@ export function EntityDetailView({ id }: { id: string }) {
     [entity, motherMedium, motherRelease, motherWork, subjectWorks, occurrences, workCoverRelease],
   );
 
-  // 图片用途标签：码值来自 definitions 的 picture_role 词表，四语名由词表自己带，
-  // 这里不硬编码任何语言的说法（词表缺该码时 getTermName 退成原始码，不空白）。
-  const pictureRoleLabel = useCallback(
-    (role?: string | null) =>
-      String(role || "").trim()
-        ? getTermName(defs, PICTURE_ROLE_VOCABULARY, String(role).trim(), locale)
-        : "",
-    [defs, locale],
-  );
+  const displayEntityForFacts = useMemo<Entity | null>(() => {
+    if (!entity) return null;
+    if (!activeAsOf) return entity;
+    return {
+      ...entity,
+      title: activeAsOf.title || "",
+      translations: activeAsOf.translations || {},
+      attributes: activeAsOf.attributes || {},
+    };
+  }, [entity, activeAsOf]);
 
-  // 灯箱与网格共用这一份读数：索引一致，翻图顺序就是 pictures 自己的顺序。
-  const galleryPictures = useMemo<LightboxPicture[]>(
-    () =>
-      (entity?.pictures || []).map((p, i) => ({
-        url: p.url,
-        caption: resolveLocalizedName(p.caption, locale, entity?.title || ""),
-        roleLabel: pictureRoleLabel(p.role),
-        takenAt: String(p.taken_at || "").trim(),
-        versionLabel: resolveLocalizedName(p.version_label, locale, ""),
-        inUseFrom: String(p.usage_period?.begin || "").trim(),
-        inUseUntil: String(p.usage_period?.end || "").trim(),
-        isCover: i === COVER_PICTURE_INDEX,
-        source: p.source,
-      })),
-    [entity, locale, pictureRoleLabel],
-  );
+  const effectiveRelations = useMemo<RelationshipRecord[]>(() => {
+    if (!activeAsOf) return relations;
+    return (activeAsOf.active_relations || []).map((link, idx) => ({
+      id: link.relation_id || link.key || `${link.rule_code}:${link.source_id}:${link.target_id}:${idx}`,
+      type: link.rule_code.startsWith("relation:") ? link.rule_code.slice("relation:".length) : link.rule_code,
+      rule_code: link.rule_code,
+      class: (link.class === "reference" ? "reference" : "semantic") as "semantic" | "reference",
+      source_id: link.source_id,
+      target_id: link.target_id,
+      position: idx,
+      attributes: link.attributes || {},
+    }));
+  }, [activeAsOf, relations]);
+
+  const effectiveRelatedEntities = useMemo<Record<string, Entity>>(() => {
+    if (!activeAsOf) return relatedEntities;
+    const merged: Record<string, Entity> = { ...relatedEntities };
+    for (const [eid, summary] of Object.entries(activeAsOf.entities || {})) {
+      merged[eid] = {
+        ...(merged[eid] || {
+          kind: summary.kind,
+          pictures: [],
+          external_links: [],
+          subjects: [],
+          contents: [],
+          position: 0,
+          number: "",
+          original_language: "",
+          translations: {},
+          attributes: {},
+        }),
+        id: summary.id,
+        kind: summary.kind,
+        title: summary.title,
+        original_language: summary.original_language || merged[eid]?.original_language || "",
+        translations: (summary.translations as any) || merged[eid]?.translations || {},
+        attributes: summary.attributes || merged[eid]?.attributes || {},
+      } as Entity;
+    }
+    return merged;
+  }, [activeAsOf, relatedEntities]);
 
   // Store bonuses
   const storeBonuses = useMemo(() => {
-    if (!entity) return [];
-    const direct = entity.attributes?.store_bonuses;
+    if (!displayEntityForFacts) return [];
+    const direct = displayEntityForFacts.attributes?.store_bonuses;
     if (Array.isArray(direct) && direct.length > 0) return direct;
+    if (activeAsOf) return [];
     for (const occ of occurrences) {
       const b = occ.release?.attributes?.store_bonuses;
       if (Array.isArray(b) && b.length > 0) return b;
     }
     return [];
-  }, [entity, occurrences]);
+  }, [displayEntityForFacts, activeAsOf, occurrences]);
 
 
   // 头部徽章：主分类（紧随实体 kind 并列展示）+ 主日期 + 模板 badge_fields 其余字段。
   // 取值逻辑与作品布局共用 entityBadges，字段码全部来自服务端模板声明。
   const headerBadges = useMemo(
     () =>
-      entityBadges(entity, defs, locale).map((b) => ({
+      entityBadges(displayEntityForFacts, defs, locale).map((b) => ({
         icon:
           b.kind === "date" ? (
             <Calendar className="w-3 h-3 text-warn" strokeWidth={1.5} />
@@ -504,7 +537,7 @@ export function EntityDetailView({ id }: { id: string }) {
           ),
         text: b.text,
       })),
-    [entity, defs, locale],
+    [displayEntityForFacts, defs, locale],
   );
 
   // Graph nodes & links：节点摘要同样取自响应 entities 表，且每条关系的两端都建节点
@@ -520,7 +553,7 @@ export function EntityDetailView({ id }: { id: string }) {
       };
     }
     const centerId = entity.id || id;
-    const knownEntities: Record<string, Entity> = { ...relatedEntities, ...directoryData.relatedEntities, ...inclusionExpressions.expressions };
+    const knownEntities: Record<string, Entity> = { ...effectiveRelatedEntities, ...directoryData.relatedEntities, ...inclusionExpressions.expressions };
     const registerEntity = (e: Entity | null | undefined) => {
       if (e?.id) knownEntities[e.id] = e;
     };
@@ -557,7 +590,7 @@ export function EntityDetailView({ id }: { id: string }) {
       };
     };
     const nodes: GraphNode[] = [
-      { ...nodeOf(centerId, 0), cover_image_url: resolvedCover.url || undefined },
+      { ...nodeOf(centerId, 0), cover_image_url: (activeAsOf ? activeAsOf.cover?.picture?.url : resolvedCover.url) || undefined },
     ];
     const links: GraphLink[] = [];
     const structRels: Omit<Relation, "version">[] = [];
@@ -704,7 +737,7 @@ export function EntityDetailView({ id }: { id: string }) {
       else if (rel && entity.kind !== "release") addStructEdge(rel, entity, "occurrences", kindLabel(entity.kind));
     }
 
-    for (const r of relations) {
+    for (const r of effectiveRelations) {
       for (const nid of [r.source_id, r.target_id]) {
         ensureNode(nid, 1);
       }
@@ -756,8 +789,9 @@ export function EntityDetailView({ id }: { id: string }) {
     return { graphNodes: nodes, graphLinks: links, structuralRelations: structRels, graphEntities: knownEntities };
   }, [
     entity,
-    relations,
-    relatedEntities,
+    effectiveRelations,
+    effectiveRelatedEntities,
+    activeAsOf,
     motherWork,
     motherRelease,
     motherMedium,
@@ -841,8 +875,8 @@ export function EntityDetailView({ id }: { id: string }) {
   // 主体一侧不再依赖"页面上已知的实体"，对端也不再只认页面上猜出的那一端。
   const categorizedRelations = useMemo(
     () =>
-      relations.map((r, index) => {
-        const subjectId = relationSubjectId;
+      effectiveRelations.map((r, index) => {
+        const subjectId = relationSubjectId || entity?.id || id;
         const isOutgoing = subjectId === r.source_id;
         const isIncoming = subjectId === r.target_id;
         const isEndpoint = isOutgoing || isIncoming;
@@ -852,24 +886,24 @@ export function EntityDetailView({ id }: { id: string }) {
         // 两端都不是主体）按边自身的方向展示 source → target，不硬把主体凑成一端。
         const fromId = isEndpoint ? subjectId : r.source_id;
         const toId = isEndpoint ? otherId : r.target_id;
-        const subject = relatedEntities[subjectId];
+        const subject = effectiveRelatedEntities[subjectId];
         return {
           ...r,
           id: r.id || `${r.type}:${r.source_id}:${r.target_id}:${index}`,
           subjectId,
           subject,
           otherId,
-          target: relatedEntities[otherId],
+          target: effectiveRelatedEntities[otherId],
           isOutgoing,
           isIncoming,
           /** 两端摘要：均取自响应 entities 表，缺表时才回退已知实体。 */
-          from: relatedEntities[fromId] || (fromId === entity?.id ? entity ?? undefined : undefined),
-          to: relatedEntities[toId] || (toId === entity?.id ? entity ?? undefined : undefined),
+          from: effectiveRelatedEntities[fromId] || (fromId === entity?.id ? entity ?? undefined : undefined),
+          to: effectiveRelatedEntities[toId] || (toId === entity?.id ? entity ?? undefined : undefined),
           fromId,
           toId,
         };
       }),
-    [relations, relatedEntities, entity, relationSubjectId]
+    [effectiveRelations, effectiveRelatedEntities, entity, relationSubjectId, id]
   );
 
   // 演职区域用通用构造：标签计数与内容同源（只含署名主体，与展示行一致）。
@@ -878,20 +912,20 @@ export function EntityDetailView({ id }: { id: string }) {
       entity?.id
         ? buildStaffCredits({
             entityId: entity.id,
-            relations: relations.map((r, i) => ({
+            relations: effectiveRelations.map((r, i) => ({
               id: r.id || `${r.type}:${r.source_id}:${r.target_id}:${i}`,
               type: r.type,
               source_id: r.source_id,
               target_id: r.target_id,
               attributes: r.attributes,
             })),
-            relEntities: relatedEntities,
+            relEntities: effectiveRelatedEntities,
             defs,
             locale,
             tr,
           })
         : [],
-    [entity, relations, relatedEntities, defs, locale, tr]
+    [entity, effectiveRelations, effectiveRelatedEntities, defs, locale, tr]
   );
 
   // 署名语义由 definitions 决定；卡片只能呈现「主体 ↔ Agent」的直接关系。
@@ -966,6 +1000,19 @@ export function EntityDetailView({ id }: { id: string }) {
     };
   }, [entity?.kind, entity?.id, id]);
 
+  useEffect(() => {
+    if (!entity?.id) return;
+    const ctrl = new AbortController();
+    fetchEntityTimeline(entity.id, {}, ctrl.signal)
+      .then((res) => {
+        if (!ctrl.signal.aborted && Array.isArray(res.items)) {
+          setTimelineEventCount(res.items.length);
+        }
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [entity?.id, entity?.version]);
+
   // 分节标签：与下方的条件渲染一一对应；标签集合随后数据到达再收窄。
   const templateBlocks = blocksForEntity(defs,entity?.kind || "",entity?.attributes);
   const relationCount = (n: number) => relationsTruncated ? `${n}+` : n;
@@ -984,12 +1031,22 @@ export function EntityDetailView({ id }: { id: string }) {
     { id: "contents", label: t("entity.page.navContents"), badge: entity?.kind === "expression" || sectionFailures.children ? undefined : (directoryVisible ? directoryData.items.length : children.length + (entity?.contents?.length || 0)) + aggregate.count, visible: entity?.kind === "expression" || entity?.kind === "track" || directoryVisible || sectionFailures.children || children.length > 0 || (entity?.contents?.length || 0) > 0 || aggregate.count > 0, icon: <ListTree className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "releases", label: t("entity.page.navReleases"), badge: sectionFailures.occurrences ? undefined : (entity?.kind === "work" ? workReleaseCount : occurrences.length), visible: entity?.kind === "work" || sectionFailures.occurrences || occurrences.length > 0, icon: <Layers className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "relations", label: t("entity.page.navRelations"), badge: sectionFailures.relations ? undefined : (mediaRelations.length > 0 ? relationCount(mediaRelations.length) : relationsDirectoryItems.length), visible: sectionFailures.relations || relationsDirectoryItems.length > 0, icon: <Network className="w-3.5 h-3.5" strokeWidth={1.5} /> },
+    { id: "timeline", label: t("temporal.tabTitle"), badge: timelineEventCount && timelineEventCount > 0 ? timelineEventCount : undefined, icon: <Clock className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     // 评论与合集：以前渲染在页签面板外，切到哪个页签都会显示；现在是独立页签。
     { id: "community", label: t("entity.page.communityTitle"), badge: communityPosts.length, visible: communityEnabled, icon: <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.5} /> },
     { id: "revisions", label: t("entity.detail.revisionsTitle"), badge: sectionFailures.revisions ? undefined : revisionTotal, icon: <History className="w-3.5 h-3.5" strokeWidth={1.5} /> },
   ].map((tab) => ({...tab,visible:tab.visible !== false && (!tabBlocks[tab.id] || templateBlocks.includes(tabBlocks[tab.id]))}))
     .sort((a,b) => {
-      const rank = (id: string) => id === "overview" ? -1 : id === "revisions" ? templateBlocks.length+1 : id === "community" ? templateBlocks.length : templateBlocks.indexOf(tabBlocks[id]);
+      const rank = (tabId: string) =>
+        tabId === "overview"
+          ? -2
+          : tabId === "timeline"
+            ? templateBlocks.length
+            : tabId === "community"
+              ? templateBlocks.length + 1
+              : tabId === "revisions"
+                ? templateBlocks.length + 2
+                : templateBlocks.indexOf(tabBlocks[tabId]);
       return rank(a.id)-rank(b.id);
     });
   const { active, select } = useHashTab(tabs, ARTICLE_ANCHOR_TABS);
@@ -1066,7 +1123,18 @@ export function EntityDetailView({ id }: { id: string }) {
     );
   }
 
-  const localizedTitle = title(entity, locale, titleOrder);
+  const currentLocalizedTitle = title(entity, locale, titleOrder);
+  const localizedTitle = activeAsOf
+    ? activeAsOf.title
+      ? pickRecordTitle(locale, activeAsOf.translations, activeAsOf.title, {
+          order: titleOrder,
+          originalLanguage: entity.original_language,
+        }) || activeAsOf.title
+      : t("temporal.titleUnknownAt", { at: activeAsOf.at })
+    : currentLocalizedTitle;
+  const displayTranslations = activeAsOf ? activeAsOf.translations || {} : entity.translations;
+  const effectiveCoverUrl = activeAsOf ? activeAsOf.cover?.picture?.url || "" : resolvedCover.url;
+  const historicalAppIconUrl = activeAsOf?.app_icon?.picture?.url || "";
   const isAdult = isAdultEntity(entity) || isAdultEntity(motherWork) || subjectWorks.some(isAdultEntity);
   const blurAdultImages = isAdult && adultMode === "blur" && !revealedAdultImages;
   if (isAdult && adultMode === "hide") {
@@ -1074,7 +1142,7 @@ export function EntityDetailView({ id }: { id: string }) {
       <div className="min-h-screen relative flex flex-col overflow-clip">
         <PageShell width="narrow" center>
           <Card padding="section" className="text-center space-y-3">
-            <span className="inline-flex px-2 py-0.5 rounded-chip bg-rose-600/90 text-white font-mono text-xs font-bold">18+</span>
+            <span className="inline-flex px-2 py-0.5 rounded-chip bg-rose-600/90 text-emphasis keep-white font-mono text-xs font-bold">18+</span>
             <h1 className="text-base font-semibold text-text-strong">{t("catalog.adultHiddenTitle")}</h1>
             <p className="text-sm text-text-muted">{t("catalog.adultHiddenDesc")}</p>
             <div className="pt-1 flex justify-center gap-3">
@@ -1094,8 +1162,20 @@ export function EntityDetailView({ id }: { id: string }) {
     const reference = (entity as Record<string, unknown>)[field.code];
     return typeof reference === "string" && reference.length > 0;
   });
-  const infoTags = Array.isArray(entity.attributes?.tags) ? entity.attributes.tags : [];
-  const showBasicInfo = structureFields.length > 0 || infoTags.length > 0 || entityHasFacts(entity, defs);
+  const factsEntity = displayEntityForFacts || entity;
+  const infoTags = Array.isArray(factsEntity.attributes?.tags) ? factsEntity.attributes.tags : [];
+  const historicalUnknownAttrCount = activeAsOf
+    ? (activeAsOf.unknown_fields || []).filter((f) => f.startsWith("attributes.")).length
+    : 0;
+  const historicalDisputedAttrCount = activeAsOf
+    ? (activeAsOf.disputed_fields || []).filter((f) => f.startsWith("attributes.")).length
+    : 0;
+  const showBasicInfo =
+    structureFields.length > 0 ||
+    infoTags.length > 0 ||
+    entityHasFacts(factsEntity, defs) ||
+    historicalUnknownAttrCount > 0 ||
+    historicalDisputedAttrCount > 0;
 
   const collectionRelations = categorizedRelations.filter(
     (r) => r.target && r.target.kind === "collection"
@@ -1206,6 +1286,14 @@ export function EntityDetailView({ id }: { id: string }) {
             <button type="button" onClick={() => void load()} className="text-primary hover:underline cursor-pointer">{t("catalog.retry")}</button>
           </div>
         )}
+        {activeAsOf && (
+          <HistoricalModeBanner
+            snapshot={activeAsOf}
+            showTimelineAction={active !== "timeline"}
+            onOpenTimeline={() => select("timeline")}
+            onExit={() => setActiveAsOf(null)}
+          />
+        )}
         {/* 页面级标题区：跨两栏放在封面列之上，左边界落在外壳内容基线上
             （与 /works、/releases、/mediums 等同一条左边线）；两栏结构保留在标题之下。 */}
         <header className="space-y-3">
@@ -1240,7 +1328,7 @@ export function EntityDetailView({ id }: { id: string }) {
           {/* 标题和各语种题名 */}
           <EntityIdentityHeader
             title={localizedTitle}
-            translations={entity.translations}
+            translations={displayTranslations}
             originalLanguage={entity.original_language}
           />
 
@@ -1300,30 +1388,67 @@ export function EntityDetailView({ id }: { id: string }) {
           <aside className="contents md:block md:min-w-0 md:space-y-3">
             {/* 1. Cover Card */}
             <Card padding="none" className="overflow-hidden self-start order-1 shadow-xs">
-              {/* 详情页是单张展示：比例在允许区间内跟着图片走（见 AdaptiveCover），
-                  这里给上下限兜底——窄屏侧栏也不至于把长图压成一条、或让大图撑满整屏。 */}
-              <AdaptiveCover
-                src={resolvedCover.url}
-                alt={localizedTitle}
-                title={localizedTitle}
-                originalTitle={entity.title}
-                id={entity.id}
-                tags={getEntityTagLabels(dynamicDefs, entity.kind, entity.attributes, locale)}
-                minHeight={96}
-                maxHeight={380}
-                className="w-full h-auto"
-                blurred={blurAdultImages}
-                blurLabel={t("catalog.adultRevealImage")}
-                onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
-              />
+              {activeAsOf && !effectiveCoverUrl ? (
+                <div className="min-h-[140px] p-4 flex flex-col items-center justify-center gap-1.5 text-center bg-surfaceSubtle font-mono text-xs text-text-faint">
+                  <span>{t("temporal.coverUnknownAt", { at: activeAsOf.at })}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-emphasis/[0.06] text-[10px] text-text-muted">
+                    {activeAsOf.cover?.status === "disputed" ? t("temporal.stateDisputed") : t("temporal.stateUnknown")}
+                  </span>
+                </div>
+              ) : (
+                <AdaptiveCover
+                  src={effectiveCoverUrl}
+                  alt={localizedTitle}
+                  title={localizedTitle}
+                  originalTitle={activeAsOf?.title || entity.title}
+                  id={entity.id}
+                  tags={getEntityTagLabels(dynamicDefs, entity.kind, factsEntity.attributes, locale)}
+                  minHeight={96}
+                  maxHeight={380}
+                  className="w-full h-auto"
+                  blurred={blurAdultImages}
+                  blurLabel={t("catalog.adultRevealImage")}
+                  onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
+                />
+              )}
+              {activeAsOf && historicalAppIconUrl && (
+                <div className="px-3 py-2 border-t border-line-subtle bg-surfaceSubtle flex items-center gap-2.5">
+                  <EntityCover
+                    src={historicalAppIconUrl}
+                    alt={t("temporal.fieldAppIcon")}
+                    title={t("temporal.fieldAppIcon")}
+                    id={entity.id}
+                    imgClassName={"w-10 h-10 rounded-xl object-contain shrink-0" + (blurAdultImages ? " blur-md" : "")}
+                  />
+                  <div className="min-w-0 font-mono text-[10px] text-text-muted">
+                    <div className="text-text-strong font-semibold">{t("temporal.fieldAppIcon")}</div>
+                    {(activeAsOf.app_icon.picture?.valid_from || activeAsOf.app_icon.picture?.valid_to) && (
+                      <div className="truncate">
+                        [{activeAsOf.app_icon.picture.valid_from || "?"}..{activeAsOf.app_icon.picture.valid_to || t("temporal.presentOpenEnd")})
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* 2. External Authority & Official Links (官网与各权威数据源同级一体化呈现) */}
-            <div className="order-2 min-w-0"><ExternalAuthorityLinks
-              entity={entity}
-              category={entity.kind}
-              variant="list"
-            /></div>
+            <div className="order-2 min-w-0">
+              {activeAsOf ? (
+                <ExternalAuthorityLinks
+                  externalLinks={activeAsOf.external_links}
+                  strictOverride
+                  category={entity.kind}
+                  variant="list"
+                />
+              ) : (
+                <ExternalAuthorityLinks
+                  entity={entity}
+                  category={entity.kind}
+                  variant="list"
+                />
+              )}
+            </div>
 
             {/* 3. Basic Facts & Information Card */}
             {showBasicInfo && <Card padding="section" className="order-4 col-span-2 min-w-0 shadow-xs space-y-3">
@@ -1352,7 +1477,23 @@ export function EntityDetailView({ id }: { id: string }) {
 
               {/* 其余属性按实体自身模板分区渲染，与作品布局共用同一实现。
                   字段、分区、次序、类型均来自服务端声明，新增媒体类型无需改本文件。 */}
-              <WorkFacts entity={entity} defs={defs} locale={locale} stacked />
+              <WorkFacts
+                entity={factsEntity}
+                defs={defs}
+                locale={locale}
+                excludeFields={["attribute_history"]}
+                stacked
+              />
+              {activeAsOf && (historicalUnknownAttrCount > 0 || historicalDisputedAttrCount > 0) && (
+                <div className="pt-2 border-t border-line-subtle flex flex-wrap gap-1.5 font-mono text-[10px] text-text-muted">
+                  {historicalUnknownAttrCount > 0 && (
+                    <span>{t("temporal.unknownSummary", { count: historicalUnknownAttrCount })}</span>
+                  )}
+                  {historicalDisputedAttrCount > 0 && (
+                    <span className="text-warn">{t("temporal.disputedSummary", { count: historicalDisputedAttrCount })}</span>
+                  )}
+                </div>
+              )}
 
               {/* 标签是独立的自由检索词；业务类型只决定字段方案，不再在界面上展示。 */}
               {infoTags.length > 0 && (
@@ -1427,77 +1568,15 @@ export function EntityDetailView({ id }: { id: string }) {
 
               <EntityArticle entity={entity} titleOrder={titleOrder} />
 
-              {/* 图片画廊：**数组顺序就是作者定的展示顺序**，pictures[0] 即封面（唯一口径见 lib/cover.ts）。
-                  这里过去按 taken_at 重排过——那等于前端静默覆盖作者的排序，与服务端契约直接冲突，已删；
-                  taken_at 只是这张图自身的时间元信息，摆在图下作说明。点图开灯箱看大图、图注与来源。 */}
-              {(entity.pictures?.length || 0) > 0 && (
-                <div id="pictures" className="pt-2 space-y-3 border-t border-line-subtle">
-                  <div className="flex items-center gap-2 pt-3">
-                    <h3 className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                      {t("catalog.pictureGallery")}
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-chip bg-primary/10 text-primary font-mono text-[11px] font-semibold">
-                      {entity.pictures!.length}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {galleryPictures.map((pic, i) => (
-                      <figure key={i} className="space-y-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setLightboxIndex(i)}
-                          className="group block w-full text-left rounded-control mf-focus"
-                          title={pic.source?.citation || pic.caption}
-                        >
-                          {/* 画廊用同一套封面组件：自托管封面取不到（如 404 object_missing）时
-                              退化成程序封面，而不是让浏览器画破图图标——作品页早就这么兜底，
-                              两个页面对同一份数据给出两种观感是这里此前唯一的不一致。 */}
-                          <Card tone="subtle" padding="none" className="relative overflow-hidden">
-                            <EntityCover
-                              src={pic.url}
-                              alt={pic.caption}
-                              title={pic.caption}
-                              id={entity.id}
-                              imgClassName={"w-full h-auto max-h-48 object-contain" + (blurAdultImages ? " blur-xl scale-110" : "")}
-                            />
-                            {/* 首张=封面是顺序事实，其余图用 picture_role 词表的用途标签；
-                                没有 role 就不显示（存量 800+ 张全是未声明，必须照常展示）。 */}
-                            <span className="absolute left-1.5 top-1.5 flex flex-wrap items-center gap-1">
-                              {pic.isCover && (
-                                <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] font-semibold leading-none">
-                                  {t("catalog.pictureCoverBadge")}
-                                </span>
-                              )}
-                              {pic.roleLabel && (
-                                <span className="px-1.5 py-0.5 rounded-chip bg-black/65 text-emphasis keep-white border border-emphasis/20 font-mono text-[9px] leading-none max-w-[7rem] truncate">
-                                  {pic.roleLabel}
-                                </span>
-                              )}
-                            </span>
-                          </Card>
-                        </button>
-                        <figcaption className="font-mono text-[10px] text-text-faint">
-                          {pic.versionLabel || (pic.inUseFrom || pic.inUseUntil
-                            ? t("catalog.picturePeriod", { from: pic.inUseFrom || "?", until: pic.inUseUntil || "?" })
-                            : pic.takenAt
-                              ? t("catalog.pictureTakenAtValue", { date: pic.takenAt })
-                              : t("catalog.imageTimeUnknown"))}
-                        </figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                  <PictureLightbox
-                    pictures={galleryPictures}
-                    index={lightboxIndex}
-                    entityId={entity.id}
-                    blurred={blurAdultImages}
-                    blurLabel={blurAdultImages ? t("catalog.adultRevealImage") : t("catalog.adultHideImage")}
-                    onToggleBlur={isAdult && adultMode === "blur" ? () => setRevealedAdultImages((v) => !v) : undefined}
-                    onIndexChange={setLightboxIndex}
-                    onClose={closeLightbox}
-                  />
-                </div>
-              )}
+              <EntityPictureGallery
+                entity={entity}
+                defs={defs}
+                blurAdultImages={blurAdultImages}
+                isAdult={isAdult}
+                adultMode={adultMode}
+                onToggleAdultReveal={() => setRevealedAdultImages((v) => !v)}
+                asOfDate={activeAsOf?.at}
+              />
 
               {/* Store Bonuses Highlight */}
               {storeBonuses.length > 0 && (
@@ -1529,7 +1608,7 @@ export function EntityDetailView({ id }: { id: string }) {
               <EntityRelationOverview
                 subjectId={entity.id || id}
                 relations={categorizedRelations}
-                entities={relatedEntities}
+                entities={effectiveRelatedEntities}
                 groupOrder={relationGroupOrder}
                 truncated={relationsTruncated}
                 onOpenGraph={() => {
@@ -1613,7 +1692,7 @@ export function EntityDetailView({ id }: { id: string }) {
                   <div className="space-y-4">
                     {staffCredits.length > 0 && <StaffCharacterSection credits={staffCredits} />}
                     {staffRelations.length > 0 && (
-                      <EntityRelationDirectory subjectId={entity.id || id} relations={staffRelations} entities={relatedEntities} groupOrder={relationGroupOrder} />
+                      <EntityRelationDirectory subjectId={entity.id || id} relations={staffRelations} entities={effectiveRelatedEntities} groupOrder={relationGroupOrder} />
                     )}
                   </div>
                 )}
@@ -1707,9 +1786,70 @@ export function EntityDetailView({ id }: { id: string }) {
             {/* 作品的发行目录：列与可筛选字段由发行版模板声明（columns / facet_fields），
                 以及按实际 Medium 聚合的格式汇总——这一套此前只在作品页，合并后按 kind=work 渲染。 */}
             {active === "releases" && entity.kind === "work" && (
-              <Card id="releases" padding="none" className="overflow-hidden shadow-soft">
-                <WorkReleasesSection workId={entity.id || id} onCountChange={setWorkReleaseCount} />
-              </Card>
+              <div className="space-y-4">
+                {activeAsOf?.releases && activeAsOf.releases.length > 0 && (
+                  <Card padding="section" className="space-y-3 shadow-soft">
+                    <SectionTitle icon={<History className="w-4 h-4 text-primary" strokeWidth={1.5} />}>
+                      {t("temporal.perReleaseHeading")} ({activeAsOf.at})
+                    </SectionTitle>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {activeAsOf.releases.map((rv) => (
+                        <Card key={rv.release_id} tone="subtle" padding="card" className="space-y-2 text-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle pb-1.5">
+                            <Link href={`/catalog/${rv.release_id}`} className="font-semibold text-primary hover:underline">
+                              {rv.title || rv.release_id.slice(0, 8)}
+                            </Link>
+                            <div className="flex flex-wrap gap-1 font-mono text-[10px] text-text-muted">
+                              {rv.region && <span className="px-1.5 py-0.5 rounded bg-emphasis/[0.06]">{rv.region}</span>}
+                              {rv.platform && <span className="px-1.5 py-0.5 rounded bg-emphasis/[0.06]">{rv.platform}</span>}
+                              {rv.release_status && (
+                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold">
+                                  {getTermName(defs, "release_status", rv.release_status, locale)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <dt className="font-mono text-[10px] text-text-muted">{t("temporal.fieldPublishers")}</dt>
+                              <dd className="text-text-strong">
+                                {rv.publishers.length > 0
+                                  ? rv.publishers.map((p, pi) => (
+                                      <React.Fragment key={p.agent_id + "-" + pi}>
+                                        {pi > 0 && " / "}
+                                        <Link href={`/catalog/${p.agent_id}`} className="text-primary hover:underline">
+                                          {p.title || p.agent_id.slice(0, 8)}
+                                        </Link>
+                                      </React.Fragment>
+                                    ))
+                                  : t("temporal.stateUnknown")}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="font-mono text-[10px] text-text-muted">{t("temporal.fieldOperators")}</dt>
+                              <dd className="text-text-strong">
+                                {rv.operators.length > 0
+                                  ? rv.operators.map((p, pi) => (
+                                      <React.Fragment key={p.agent_id + "-" + pi}>
+                                        {pi > 0 && " / "}
+                                        <Link href={`/catalog/${p.agent_id}`} className="text-primary hover:underline">
+                                          {p.title || p.agent_id.slice(0, 8)}
+                                        </Link>
+                                      </React.Fragment>
+                                    ))
+                                  : t("temporal.stateUnknown")}
+                              </dd>
+                            </div>
+                          </dl>
+                        </Card>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+                <Card id="releases" padding="none" className="overflow-hidden shadow-soft">
+                  <WorkReleasesSection workId={entity.id || id} onCountChange={setWorkReleaseCount} />
+                </Card>
+              </div>
             )}
 
             {active === "releases" && entity.kind !== "work" && occurrences.length > 0 && (
@@ -1856,6 +1996,21 @@ export function EntityDetailView({ id }: { id: string }) {
               </Card>
             )}
 
+
+            {/* ============================================================ */}
+            {/* Section 6: Temporal Timeline & Reconstruction                */}
+            {/* ============================================================ */}
+            {active === "timeline" && (
+              <EntityTemporalWorkspace
+                entity={entity}
+                releases={workReleases}
+                defs={defs}
+                blurAdultImages={blurAdultImages}
+                activeAsOf={activeAsOf}
+                onAsOfChange={setActiveAsOf}
+                onEventCountChange={setTimelineEventCount}
+              />
+            )}
 
             {/* ============================================================ */}
             {/* Section 7: Revisions (修订历史)                             */}

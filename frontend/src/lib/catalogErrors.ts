@@ -37,10 +37,9 @@ const CODE_KEYS: Record<string, string> = {
   duplicate_relation: "catalog.error.duplicateRelation",
   duplicate_content: "catalog.error.duplicateContent",
   duplicate_position: "catalog.error.duplicatePosition",
-  // 多图写入的拒绝码（见 backend validation.go 的 entity 校验）：URL 撞车、张数封顶、
+  // 多图写入的拒绝码（见 backend validation.go 的 entity 校验）：URL 撞车、
   // 地址与自身时间格式、以及 asset_id 不是 UUID。编辑器已有行内提示，这里是最后一道。
   duplicate_picture: "catalog.error.duplicatePicture",
-  too_many_pictures: "catalog.error.tooManyPictures",
   invalid_picture: "catalog.error.invalidPicture",
   invalid_picture_time: "catalog.error.invalidPictureTime",
   invalid_picture_period: "catalog.error.invalidPicturePeriod",

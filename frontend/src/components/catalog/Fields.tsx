@@ -243,14 +243,182 @@ function DateInput({ value, onChange, allowYearless = false }: { value: any; onC
   );
 }
 
+const NON_HISTORY_META_FIELDS = new Set([
+  "attribute_history",
+  "former_names",
+  "events",
+]);
+
+function AttributeHistoryGroupInput({
+  field,
+  value,
+  onChange,
+  entityKind,
+}: {
+  field: Field;
+  value: any;
+  onChange: (v: any) => void;
+  entityKind?: string;
+}) {
+  const { definitions } = useDefinitions();
+  const { t, locale } = useI18n();
+  if (!definitions) return null;
+  const current = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, any>;
+  const patchItem = (updates: Record<string, any>) => {
+    const next: Record<string, any> = { ...current, ...updates };
+    for (const [k, v] of Object.entries(next)) {
+      if (v === "" || v === undefined || v === null) delete next[k];
+    }
+    onChange(next);
+  };
+  const selectedCode = typeof current.field === "string" ? current.field : "";
+  const selectableFields = Object.entries(definitions.fields || {})
+    .filter(
+      ([code, def]) =>
+        !NON_HISTORY_META_FIELDS.has(code) &&
+        def?.enabled !== false &&
+        (!entityKind || !def.applicable_kinds?.length || def.applicable_kinds.includes(entityKind)),
+    )
+    .map(([code, def]) => ({
+      value: code,
+      label: local(def.names, locale, "", code) + " (" + code + ")",
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, locale));
+  if (selectedCode && !selectableFields.some((opt) => opt.value === selectedCode)) {
+    selectableFields.unshift({
+      value: selectedCode,
+      label: local(definitions.fields?.[selectedCode]?.names, locale, "", selectedCode) + " (" + selectedCode + ")",
+    });
+  }
+  const targetField = selectedCode ? definitions.fields?.[selectedCode] : undefined;
+  const sub = field.fields || {};
+
+  return (
+    <div className="cv-group">
+      <div className="cv-grid">
+        <label>
+          {local(sub.field?.names, locale, "", "field")}
+          <Select
+            value={selectedCode}
+            aria-label={local(sub.field?.names, locale, "", "field")}
+            onChange={(nextCode) => {
+              const nextDef = nextCode ? definitions.fields?.[nextCode] : undefined;
+              if (nextDef?.type === "entity") {
+                patchItem({ field: nextCode || undefined, value: undefined });
+              } else {
+                patchItem({ field: nextCode || undefined, entity_value: undefined });
+              }
+            }}
+            options={[{ value: "", label: t("catalog.none") }, ...selectableFields]}
+          />
+        </label>
+        <label>
+          {targetField?.type === "entity"
+            ? local(sub.entity_value?.names, locale, "", "entity_value")
+            : local(sub.value?.names, locale, "", "value")}
+          {targetField?.type === "entity" ? (
+            <EntityPicker
+              kinds={targetField.kinds}
+              value={String(current.entity_value || current.value || "")}
+              onChange={(id) => patchItem({ entity_value: id || undefined, value: undefined })}
+            />
+          ) : targetField?.type === "enum" ? (
+            <Select
+              value={String(current.value || "")}
+              onChange={(val) => patchItem({ value: val || undefined, entity_value: undefined })}
+              options={[
+                { value: "", label: t("catalog.none") },
+                ...Object.entries(definitions.vocabularies[targetField.vocabulary || ""]?.terms || {})
+                  .filter(([k, v]) => v.enabled || k === current.value)
+                  .map(([k, v]) => ({ value: k, label: local(v.names, locale, "", k) })),
+              ]}
+            />
+          ) : targetField?.type === "boolean" ? (
+            <Select
+              value={String(current.value || "")}
+              onChange={(val) => patchItem({ value: val || undefined, entity_value: undefined })}
+              options={[
+                { value: "", label: t("catalog.none") },
+                { value: "true", label: "true" },
+                { value: "false", label: "false" },
+              ]}
+            />
+          ) : targetField?.type === "date" ? (
+            <DateInput
+              value={current.value || ""}
+              onChange={(val) => patchItem({ value: val || undefined, entity_value: undefined })}
+              allowYearless={targetField.allow_yearless}
+            />
+          ) : (
+            <input
+              type="text"
+              value={current.value ?? ""}
+              placeholder={targetField?.type === "list" ? t("temporal.attrHistoryListHint") : ""}
+              onChange={(ev) => patchItem({ value: ev.target.value || undefined, entity_value: undefined })}
+            />
+          )}
+        </label>
+      </div>
+      <div className="cv-grid">
+        <label>
+          {local(sub.valid_from?.names, locale, "", "valid_from")}
+          <DateInput
+            value={current.valid_from ?? ""}
+            onChange={(val) => patchItem({ valid_from: val || undefined })}
+          />
+        </label>
+        <label>
+          {local(sub.valid_to?.names, locale, "", "valid_to")}
+          <DateInput
+            value={current.valid_to ?? ""}
+            onChange={(val) => patchItem({ valid_to: val || undefined })}
+          />
+        </label>
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={!!current.ended}
+            onChange={(ev) => patchItem({ ended: ev.target.checked ? true : undefined })}
+          />
+          <span>{local(sub.ended?.names, locale, "", "ended")}</span>
+        </label>
+      </div>
+      <details>
+        <summary className="text-xs text-text-muted cursor-pointer">
+          {t("temporal.scopeAndPrecision")}
+        </summary>
+        <div className="cv-grid pt-2">
+          {(["region", "platform", "channel", "scoped_release", "date_precision", "earliest_date", "latest_date", "note"] as const).map((k) => {
+            const sf = sub[k];
+            if (!sf || sf.enabled === false) return null;
+            return (
+              <label key={k}>
+                {local(sf.names, locale, "", k)}
+                <FieldInput
+                  field={sf}
+                  value={current[k]}
+                  onChange={(v) => patchItem({ [k]: v })}
+                  entityKind={entityKind}
+                />
+              </label>
+            );
+          })}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 export function FieldInput({
   field,
   value,
   onChange,
+  entityKind,
 }: {
   field?: Field;
   value: any;
   onChange: (v: any) => void;
+  entityKind?: string;
 }) {
   const { definitions } = useDefinitions();
   const { t, locale } = useI18n();
@@ -300,6 +468,17 @@ export function FieldInput({
       />
     );
   if (field.type === "group")
+    if (field.fields?.field && field.fields?.entity_value && field.fields?.valid_from) {
+      return (
+        <AttributeHistoryGroupInput
+          field={field}
+          value={value}
+          onChange={onChange}
+          entityKind={entityKind}
+        />
+      );
+    }
+  if (field.type === "group")
     return (
       <div className="cv-group">
         {/* 同 GroupFieldInput：hidden 只影响详情面板，嵌套编辑不隐藏字段。 */}
@@ -312,6 +491,7 @@ export function FieldInput({
                 field={f}
                 value={value?.[k]}
                 onChange={(v) => onChange({ ...value, [k]: v })}
+                entityKind={entityKind}
               />
             </label>
           ))}
@@ -328,6 +508,7 @@ export function FieldInput({
               onChange={(x) =>
                 onChange(value.map((a: any, j: number) => (i === j ? x : a)))
               }
+              entityKind={entityKind}
             />
             <button
               type="button"

@@ -342,7 +342,7 @@ export function MissionWorkspacePanel({
   const seqByID = useMemo(() => new Map(safeTasks.map((item) => [item.id, item.seq])), [safeTasks]);
   const reasoningOptions = useMemo(() => ASSISTANT_REASONING_EFFORTS.map((v) => ({
     value: v,
-    label: t("assistant.reasoning." + (v || "default")),
+    label: t(`assistant.reasoning.${v || "default"}`),
   })), [t]);
   const workerModelOptions = useMemo(() => [
     { value: "", label: t("curator.settings.sameModel") },
@@ -451,7 +451,7 @@ export function MissionWorkspacePanel({
               <span className="font-medium text-text-strong truncate max-w-md">{mission.title}</span>
               <span className={`font-medium ${statusColor(mission.status)}`}>{t(`assistant.mission.status.${mission.status}`)}</span>
               <span className="text-text-muted tabular-nums">{t("assistant.mission.creditsUsed", { spent: number.format(mission.spent_credits), budget: number.format(mission.budget_credits) })}</span>
-              {(mission.reasoning_effort || mission.worker_reasoning_effort) && <span className="text-text-muted">{t("assistant.user.reasoningEffort")}: {t("assistant.reasoning." + (mission.reasoning_effort || "default"))}{mission.worker_reasoning_effort ? " / " + t("assistant.reasoning." + mission.worker_reasoning_effort) : ""}</span>}
+              {(mission.reasoning_effort || mission.worker_reasoning_effort) && <span className="text-text-muted">{t("assistant.user.reasoningEffort")}: {t(`assistant.reasoning.${mission.reasoning_effort || "default"}`)}{mission.worker_reasoning_effort ? " / " + t(`assistant.reasoning.${mission.worker_reasoning_effort}`) : ""}</span>}
               <span className="text-text-muted tabular-nums mr-auto">{t("assistant.mission.rounds", { current: mission.planner_rounds, max: mission.max_planner_rounds })}</span>
               {mayWrite && mission.status === "running" && <button type="button" disabled={busy} onClick={() => void updateStatus("pause")} className={ctlBtn}><Pause className="size-3.5" /><span>{t("curator.pause")}</span></button>}
               {mayWrite && (mission.status === "paused" || mission.status === "failed") && <button type="button" disabled={busy} onClick={() => void updateStatus("resume")} className={ctlBtn}><Play className="size-3.5" /><span>{t("curator.resume")}</span></button>}

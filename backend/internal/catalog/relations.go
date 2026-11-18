@@ -613,6 +613,9 @@ func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEd
 				return errVersionConflict
 			}
 		}
+		if err := refreshRelatedEventTimelinesTx(ctx, tx, r.SourceID, r.TargetID); err != nil {
+			return err
+		}
 		if err := audit(ctx, tx, r.ID, r.Version, u, input.EditNote, input.Sources, r, "relation.saved"); err != nil {
 			return err
 		}
@@ -672,6 +675,9 @@ func (s *Store) deleteRelationTx(ctx context.Context, tx *sql.Tx, id string, exp
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errVersionConflict
+	}
+	if err := refreshRelatedEventTimelinesTx(ctx, tx, r.SourceID, r.TargetID); err != nil {
+		return err
 	}
 	return audit(ctx, tx, id, r.Version+1, u, note, sources, r, "relation.deleted")
 }
