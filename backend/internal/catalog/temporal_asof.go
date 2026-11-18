@@ -866,7 +866,7 @@ func (s *Store) entityAsOfTx(ctx context.Context, tx *sql.Tx, entityID string, q
 	}
 	if len(relOwnerIDs) > 0 {
 		rRows, err := tx.QueryContext(ctx,
-			"SELECT document FROM catalog.relations WHERE source_id = ANY($1::uuid[]) AND type IN ('published_by', 'operated_by') ORDER BY position ASC, id ASC",
+			"SELECT document FROM catalog.relations WHERE source_id = ANY($1::uuid[]) AND type IN ('published_by', 'operated_by') ORDER BY coalesce((document->>'position')::int, 0) ASC, id ASC",
 			pq.Array(uniqueSortedUUIDs(relOwnerIDs)))
 		if err != nil {
 			return EntityAsOfResponse{}, err
