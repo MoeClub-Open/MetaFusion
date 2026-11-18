@@ -106,10 +106,12 @@ type TemporalMigrationAuditReport struct {
 
 // AuditHistoricalRevisionPictures 扫描存量修订中曾存在但当前实体 pictures[] 已缺失的图片资产/URL。
 func (s *Store) AuditHistoricalRevisionPictures(ctx context.Context, entityIDs []string) ([]HistoricalRevisionPictureCandidate, error) {
-	query := "SELECT e.id::text, e.kind, e.title, e.document, r.version, r.created_at, " +
-		"CASE WHEN jsonb_typeof(r.snapshot->'pictures') = 'array' THEN r.snapshot->'pictures' ELSE '[]'::jsonb END " +
+	curPicsExpr := "CASE WHEN jsonb_typeof(e.document->'pictures') = 'array' THEN e.document->'pictures' ELSE '[]'::jsonb END"
+	revPicsExpr := "CASE WHEN jsonb_typeof(r.snapshot->'pictures') = 'array' THEN r.snapshot->'pictures' ELSE '[]'::jsonb END"
+	query := "SELECT e.id::text, e.kind, e.title, " + curPicsExpr + ", r.version, r.created_at, " + revPicsExpr + " " +
 		"FROM catalog.entities e JOIN catalog.revisions r ON r.target_id = e.id::text " +
-		"WHERE e.state = 'active' AND jsonb_array_length(CASE WHEN jsonb_typeof(r.snapshot->'pictures') = 'array' THEN r.snapshot->'pictures' ELSE '[]'::jsonb END) > 0"
+		"WHERE e.state = 'active' AND e.version > 1 AND r.version < e.version " +
+		"AND jsonb_array_length(" + revPicsExpr + ") > 0 AND (" + curPicsExpr + ") IS DISTINCT FROM (" + revPicsExpr + ")"
 	args := []any{}
 	if len(entityIDs) > 0 {
 		query += " AND e.id = ANY($1::uuid[])"
@@ -139,17 +141,17 @@ func (s *Store) AuditHistoricalRevisionPictures(ctx context.Context, entityIDs [
 
 	for rows.Next() {
 		var eID, eKind, eTitle string
-		var curDoc, revPicsRaw []byte
+		var curPicsRaw, revPicsRaw []byte
 		var revVer int
 		var revAt time.Time
-		if err := rows.Scan(&eID, &eKind, &eTitle, &curDoc, &revVer, &revAt, &revPicsRaw); err != nil {
+		if err := rows.Scan(&eID, &eKind, &eTitle, &curPicsRaw, &revVer, &revAt, &revPicsRaw); err != nil {
 			return nil, err
 		}
 		if _, ok := currentSeen[eID]; !ok {
 			seen := map[string]bool{}
-			var curEntity Entity
-			if json.Unmarshal(curDoc, &curEntity) == nil {
-				for _, cp := range curEntity.Pictures {
+			var curPics []Picture
+			if json.Unmarshal(curPicsRaw, &curPics) == nil {
+				for _, cp := range curPics {
 					if k := picIdentity(cp); k != "" {
 						seen[k] = true
 					}
