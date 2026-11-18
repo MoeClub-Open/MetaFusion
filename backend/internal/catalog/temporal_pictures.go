@@ -280,7 +280,7 @@ func loadPictureRecordedTimesTx(ctx context.Context, q queryer, entityIDs []stri
 	rows, err := q.QueryContext(ctx,
 		"SELECT r.target_id, coalesce(pic->>'url', ''), min(r.created_at) "+
 			"FROM catalog.revisions r, "+
-			"jsonb_array_elements(CASE WHEN jsonb_typeof(r.document->'pictures')='array' THEN r.document->'pictures' ELSE '[]'::jsonb END) AS pic "+
+			"jsonb_array_elements(CASE WHEN jsonb_typeof(r.snapshot->'pictures')='array' THEN r.snapshot->'pictures' ELSE '[]'::jsonb END) AS pic "+
 			"WHERE r.target_id = ANY($1::text[]) AND coalesce(pic->>'url', '') <> '' "+
 			"GROUP BY r.target_id, pic->>'url'", pq.Array(uniq))
 	if err != nil {
@@ -307,7 +307,7 @@ func loadExternalLinkRecordedTimesTx(ctx context.Context, q queryer, entityIDs [
 	rows, err := q.QueryContext(ctx,
 		"SELECT r.target_id, coalesce(lnk->>'kind', ''), coalesce(lnk->>'url', ''), min(r.created_at) "+
 			"FROM catalog.revisions r, "+
-			"jsonb_array_elements(CASE WHEN jsonb_typeof(r.document->'external_links')='array' THEN r.document->'external_links' ELSE '[]'::jsonb END) AS lnk "+
+			"jsonb_array_elements(CASE WHEN jsonb_typeof(r.snapshot->'external_links')='array' THEN r.snapshot->'external_links' ELSE '[]'::jsonb END) AS lnk "+
 			"WHERE r.target_id = ANY($1::text[]) AND coalesce(lnk->>'url', '') <> '' "+
 			"GROUP BY r.target_id, coalesce(lnk->>'kind', ''), coalesce(lnk->>'url', '')", pq.Array(uniq))
 	if err != nil {

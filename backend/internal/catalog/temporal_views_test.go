@@ -566,4 +566,10 @@ func TestUniversalNonPictureTemporalReconstructionAndCompare(t *testing.T) {
 	if w2023.Attributes["content_rating"] != "r15" {
 		t.Fatalf("expected r15 rating after 2022-10-15 handover, got %#v", w2023.Attributes["content_rating"])
 	}
+	if _, err := f.s.AuditWorkReleaseOwnership(ctx, []string{ratedWork.ID}); err != nil {
+		t.Fatalf("AuditWorkReleaseOwnership failed: %v", err)
+	}
+	if _, err := f.s.AuditHistoricalRevisionPictures(ctx, []string{studio.ID, ratedWork.ID}); err != nil {
+		t.Fatalf("AuditHistoricalRevisionPictures failed: %v", err)
+	}
 }

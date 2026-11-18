@@ -392,8 +392,8 @@ func (s *Store) currentStorageLifecycle(ctx context.Context, id string) (storage
 	revRows, err := tx.QueryContext(ctx, `SELECT DISTINCT btrim(pic->>'asset_id')
 		FROM catalog.revisions r,
 		     jsonb_array_elements(
-		         CASE WHEN jsonb_typeof(r.document->'pictures') = 'array'
-		              THEN r.document->'pictures' ELSE '[]'::jsonb END
+		         CASE WHEN jsonb_typeof(r.snapshot->'pictures') = 'array'
+		              THEN r.snapshot->'pictures' ELSE '[]'::jsonb END
 		     ) AS pic
 		WHERE r.target_id = ANY($1::text[])
 		  AND coalesce(btrim(pic->>'asset_id'), '') <> ''`, pq.Array(identityIDs))
