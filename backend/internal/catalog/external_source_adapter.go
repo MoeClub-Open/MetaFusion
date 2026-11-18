@@ -22,7 +22,17 @@ import (
 var (
 	// bangumiAPIBase 允许单测替换为 httptest 服务；生产默认指向 Bangumi 公开 API。
 	bangumiAPIBase           = "https://api.bgm.tv"
-	externalSourceHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	externalSourceHTTPClient = &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			MaxIdleConns:          128,
+			MaxIdleConnsPerHost:   32,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+		},
+	}
 )
 
 const externalSourceUserAgent = "MetaFusion/1.0 (external-source query)"
@@ -740,6 +750,21 @@ func detectEntityLanguage(name, summary string) string {
 	return detectJapaneseScript(summary)
 }
 
+type bangumiPersonCacheKey struct {
+	base string
+	id   int
+}
+
+type cachedBangumiPerson struct {
+	person bangumiPerson
+	meta   FetchMeta
+}
+
+var (
+	bangumiPersonCache  = newTTLCache[bangumiPersonCacheKey, cachedBangumiPerson](30*time.Minute, 4096)
+	bangumiPersonFlight = newInflightGroup[bangumiPersonCacheKey, cachedBangumiPerson]()
+)
+
 // fetchBangumiPersonDetails 并发拉取 person 详情（含简介），带并发上限与失败降级。
 // 列表端点不返回简介，只有详情端点有；失败/超时的条目在返回 map 中缺失，调用方降级。
 func fetchBangumiPersonDetails(ctx context.Context, ids []int) map[int]bangumiPerson {
@@ -747,21 +772,56 @@ func fetchBangumiPersonDetails(ctx context.Context, ids []int) map[int]bangumiPe
 	if len(ids) == 0 {
 		return out
 	}
+	detailCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	rec := recorderFrom(ctx)
+	missing := make([]int, 0, len(ids))
+	for _, id := range ids {
+		key := bangumiPersonCacheKey{base: bangumiAPIBase, id: id}
+		if cached, ok := bangumiPersonCache.Get(key); ok {
+			out[id] = cached.person
+			rec.add(cached.meta, nil)
+			continue
+		}
+		missing = append(missing, id)
+	}
+	if len(missing) == 0 {
+		return out
+	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8) // 并发上限：避免打爆上游与拖长导入
-	for _, id := range ids {
+	for _, id := range missing {
 		wg.Add(1)
 		go func(pid int) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-detailCtx.Done():
+				return
+			}
 			defer func() { <-sem }()
-			var p bangumiPerson
-			if err := fetchBangumi(ctx, "/v0/persons/"+strconv.Itoa(pid), &p); err != nil {
+			key := bangumiPersonCacheKey{base: bangumiAPIBase, id: pid}
+			res, err := bangumiPersonFlight.Do(detailCtx, key, 5*time.Second, func(fctx context.Context) (cachedBangumiPerson, error) {
+				if cached, ok := bangumiPersonCache.Get(key); ok {
+					return cached, nil
+				}
+				fctx = context.WithValue(fctx, fetchRecorderKey{}, (*fetchRecorder)(nil))
+				var p bangumiPerson
+				meta, ferr := fetchBangumiWithMeta(fctx, "/v0/persons/"+strconv.Itoa(pid), &p)
+				if ferr != nil {
+					return cachedBangumiPerson{}, ferr
+				}
+				entry := cachedBangumiPerson{person: p, meta: meta}
+				bangumiPersonCache.Set(key, entry)
+				return entry, nil
+			})
+			if err != nil {
 				return // 降级：调用方用列表里的简化数据
 			}
+			rec.add(res.meta, nil)
 			mu.Lock()
-			out[pid] = p
+			out[pid] = res.person
 			mu.Unlock()
 		}(id)
 	}
@@ -777,8 +837,18 @@ func previewBangumiSubjectRelations(ctx context.Context, subjectID int) []Extern
 
 	var persons []bangumiSubjectPerson
 	var chars []bangumiSubjectCharacter
-	pErr := fetchBangumi(ctx, "/v0/subjects/"+strconv.Itoa(subjectID)+"/persons", &persons)
-	cErr := fetchBangumi(ctx, "/v0/subjects/"+strconv.Itoa(subjectID)+"/characters", &chars)
+	var pErr, cErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		pErr = fetchBangumi(ctx, "/v0/subjects/"+strconv.Itoa(subjectID)+"/persons", &persons)
+	}()
+	go func() {
+		defer wg.Done()
+		cErr = fetchBangumi(ctx, "/v0/subjects/"+strconv.Itoa(subjectID)+"/characters", &chars)
+	}()
+	wg.Wait()
 
 	// 列表端点不含简介，而简介既是展示内容、也是"企业被误标为个人"的纠正依据、
 	// 还是推断原语言的证据；因此并发拉取一次详情（失败则降级用列表数据）。
@@ -1026,75 +1096,97 @@ var bangumiEpisodeTypes = []int{0, 1, 2, 3, 4, 5, 6}
 // （同一 episode 只落一条，role 由 bangumiEpisodeRole 依 type 决定），
 // 某类抓取失败只跳过该类，不使整体失败。返回值第二项为抓取不完整时的告警。
 func previewBangumiEpisodes(ctx context.Context, subjectID int) ([]ExternalSourceCanonicalEntryPreview, []string) {
+	type epTypeResult struct {
+		episodes []bangumiEpisode
+		expected int
+		failed   bool
+	}
+	results := make([]epTypeResult, len(bangumiEpisodeTypes))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for idx, epType := range bangumiEpisodeTypes {
+		wg.Add(1)
+		go func(i, typ int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			limit, offset := 100, 0
+			expected := -1
+			failed := false
+			var eps []bangumiEpisode
+			for {
+				var resp bangumiEpisodesResponse
+				path := "/v0/episodes?subject_id=" + strconv.Itoa(subjectID) + "&type=" + strconv.Itoa(typ) + "&limit=" + strconv.Itoa(limit) + "&offset=" + strconv.Itoa(offset)
+				if err := fetchBangumi(ctx, path, &resp); err != nil {
+					failed = true
+					break
+				}
+				if expected < 0 {
+					expected = resp.Total
+				}
+				if len(resp.Data) == 0 {
+					break
+				}
+				eps = append(eps, resp.Data...)
+				if len(resp.Data) < limit {
+					break
+				}
+				offset += limit
+			}
+			results[i] = epTypeResult{episodes: eps, expected: expected, failed: failed}
+		}(idx, epType)
+	}
+	wg.Wait()
+
 	out := []ExternalSourceCanonicalEntryPreview{}
 	warnings := []string{}
 	seen := map[int]bool{}
-	for _, epType := range bangumiEpisodeTypes {
-		limit, offset := 100, 0
+	for idx, epType := range bangumiEpisodeTypes {
+		res := results[idx]
 		fetched := 0
-		expected := -1
-		failed := false
-		for {
-			var resp bangumiEpisodesResponse
-			path := "/v0/episodes?subject_id=" + strconv.Itoa(subjectID) + "&type=" + strconv.Itoa(epType) + "&limit=" + strconv.Itoa(limit) + "&offset=" + strconv.Itoa(offset)
-			if err := fetchBangumi(ctx, path, &resp); err != nil {
-				failed = true
-				break
+		for i, ep := range res.episodes {
+			if seen[ep.ID] {
+				continue
 			}
-			if expected < 0 {
-				expected = resp.Total
+			title := strings.TrimSpace(ep.NameCN)
+			if title == "" {
+				title = strings.TrimSpace(ep.Name)
 			}
-			if len(resp.Data) == 0 {
-				break
+			number := ""
+			if ep.Ep > 0 {
+				number = strconv.FormatFloat(ep.Ep, 'f', -1, 64)
+			} else if ep.Sort > 0 {
+				number = strconv.FormatFloat(ep.Sort, 'f', -1, 64)
 			}
-			for i, ep := range resp.Data {
-				if seen[ep.ID] {
+			if title == "" {
+				if number == "" {
 					continue
 				}
-				title := strings.TrimSpace(ep.NameCN)
-				if title == "" {
-					title = strings.TrimSpace(ep.Name)
-				}
-				number := ""
-				if ep.Ep > 0 {
-					number = strconv.FormatFloat(ep.Ep, 'f', -1, 64)
-				} else if ep.Sort > 0 {
-					number = strconv.FormatFloat(ep.Sort, 'f', -1, 64)
-				}
-				if title == "" {
-					if number == "" {
-						continue
-					}
-					title = "第" + number + "话"
-				}
-				pos := int(ep.Sort)
-				if pos <= 0 {
-					pos = offset + i + 1
-				}
-				entry := ExternalSourceCanonicalEntryPreview{
-					Title:           title,
-					Translations:    bangumiTranslationItems(ep.Name, ep.NameCN, ""),
-					Position:        pos,
-					Number:          number,
-					EntryRole:       bangumiEpisodeRole(ep.Type),
-					EntryKind:       "content_unit",
-					DurationSeconds: bangumiDurationSeconds(ep.Duration),
-					ExternalLinks:   previewLinks(map[string]any{"bangumi_episode": ep.ID}),
-				}
-				if strings.TrimSpace(ep.NameCN) != "" && strings.TrimSpace(ep.Name) != "" && ep.NameCN != ep.Name {
-					entry.OriginalLanguage = detectJapaneseScript(ep.Name)
-				}
-				seen[ep.ID] = true
-				fetched++
-				out = append(out, entry)
+				title = "第" + number + "话"
 			}
-			if len(resp.Data) < limit {
-				break
+			pos := int(ep.Sort)
+			if pos <= 0 {
+				pos = i + 1
 			}
-			offset += limit
+			entry := ExternalSourceCanonicalEntryPreview{
+				Title:           title,
+				Translations:    bangumiTranslationItems(ep.Name, ep.NameCN, ""),
+				Position:        pos,
+				Number:          number,
+				EntryRole:       bangumiEpisodeRole(ep.Type),
+				EntryKind:       "content_unit",
+				DurationSeconds: bangumiDurationSeconds(ep.Duration),
+				ExternalLinks:   previewLinks(map[string]any{"bangumi_episode": ep.ID}),
+			}
+			if strings.TrimSpace(ep.NameCN) != "" && strings.TrimSpace(ep.Name) != "" && ep.NameCN != ep.Name {
+				entry.OriginalLanguage = detectJapaneseScript(ep.Name)
+			}
+			seen[ep.ID] = true
+			fetched++
+			out = append(out, entry)
 		}
 		// 抓取数量与来源声明的 total 不符（含中途失败）→ 明确告警，不静默当作完整。
-		if failed || (expected >= 0 && fetched < expected) {
+		if res.failed || (res.expected >= 0 && fetched < res.expected) {
 			warnings = append(warnings, "bangumi_episodes_incomplete:type="+strconv.Itoa(epType))
 		}
 	}
@@ -1194,7 +1286,23 @@ func previewBangumiSubject(ctx context.Context, source string, id int) (External
 	aliases := sub.bangumiInfoboxAliases(title, original)
 	website := firstNonEmpty(sub.infoboxString("官方网站"), sub.infoboxString("官方網站"), sub.infoboxString("官网"))
 	catalogNo := firstNonEmpty(sub.infoboxString("商品编号"), sub.infoboxString("商品編號"), sub.infoboxString("品番"))
-	canonicalEntries, warnings := previewBangumiEpisodes(ctx, sub.ID)
+	var canonicalEntries []ExternalSourceCanonicalEntryPreview
+	var warnings []string
+	var artists []ExternalSourceArtistPreview
+	var wg sync.WaitGroup
+	if sub.Type != 1 && sub.Type != 3 && sub.Type != 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			canonicalEntries, warnings = previewBangumiEpisodes(ctx, sub.ID)
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		artists = previewBangumiSubjectRelations(ctx, sub.ID)
+	}()
+	wg.Wait()
 	return ExternalSourcePreviewResponse{
 		Source:      source,
 		EntityType:  "work",
@@ -1224,7 +1332,7 @@ func previewBangumiSubject(ctx context.Context, source string, id int) (External
 		Tags: tags,
 		// 两层以内的关联演职人员与角色：前端把 artists 转成 staff_associations 提交，
 		// 落库时建 agent 实体并把关系挂到作品上。
-		Artists: previewBangumiSubjectRelations(ctx, sub.ID),
+		Artists: artists,
 		// 分集/篇目：动画、剧集类条目有独立分集端点，落 content_unit 树；
 		// 无分集（音乐/书籍等）时为空，前端不展示内容区，不用空数组造假。
 		CanonicalEntries: canonicalEntries,

@@ -666,8 +666,21 @@ services:
     logging: *default-logging
     image: postgres:16.15-alpine
     # 并行 VACUUM/查询使用动态共享内存；Docker 默认 64m 在维护时可能耗尽。
-    shm_size: 256m
-    command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-512}"]
+    shm_size: 512m
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-512}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-512MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-16MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-2GB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+      - -c
+      - random_page_cost=${POSTGRES_RANDOM_PAGE_COST:-1.1}
     container_name: metafusion-postgres
     restart: unless-stopped
     environment:

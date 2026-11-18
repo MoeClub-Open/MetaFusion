@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -233,5 +234,45 @@ func TestPostgresIdentityCandidatesFailureDoesNotLookEmpty(t *testing.T) {
 	}
 	if err := f.s.CheckSchemaContract(context.Background()); err == nil || !strings.Contains(err.Error(), "identity candidate") {
 		t.Fatalf("missing index: %v", err)
+	}
+}
+
+func TestApproximateTitlePlan(t *testing.T) {
+	// 2-rune titles must avoid 0-trigram LIKE scans and route to pg_trgm word similarity.
+	p2 := buildApproximateTitlePlan([]string{"原神", "夜明"})
+	if len(p2.Likes) != 0 {
+		t.Fatalf("2-rune titles must not populate approxLikes: %v", p2.Likes)
+	}
+	if !slices.Contains(p2.Trgms, "原神") || !slices.Contains(p2.Trgms, "夜明") {
+		t.Fatalf("2-rune titles missing from approxTrgms: %v", p2.Trgms)
+	}
+
+	// 5..14-rune titles should resolve substrings via approxSubCores without rev LIKE scans.
+	pMid := buildApproximateTitlePlan([]string{"Blue Archive"})
+	if len(pMid.RevLikes) != 0 {
+		t.Fatalf("5..14-rune title must not populate approxRevLikes: %v", pMid.RevLikes)
+	}
+	if !slices.Contains(pMid.SubCores, "blue") || !slices.Contains(pMid.SubCores, "archive") {
+		t.Fatalf("5..14-rune title missing word substrings in approxSubCores: %v", pMid.SubCores)
+	}
+
+	// >14-rune titles use 4-rune subCores plus 5-rune rev LIKE windows.
+	pLong := buildApproximateTitlePlan([]string{"BanG Dream! 2nd Season"})
+	if !slices.Contains(pLong.SubCores, "bang") {
+		t.Fatalf(">14-rune title missing 4-rune subCore: %v", pLong.SubCores)
+	}
+	if len(pLong.RevLikes) == 0 {
+		t.Fatalf(">14-rune title missing approxRevLikes")
+	}
+	for _, pat := range pLong.RevLikes {
+		if len([]rune(pat)) != 7 { // % + 5 runes + %
+			t.Fatalf("expected 5-rune rev LIKE window, got %q", pat)
+		}
+	}
+
+	// >96-rune titles still preserve 4-rune tail matches in approxSubCores.
+	pTail := buildApproximateTitlePlan([]string{strings.Repeat("x", 100) + " Dawn"})
+	if !slices.Contains(pTail.SubCores, "dawn") {
+		t.Fatalf("long title missing tail 4-rune subCore: %v", pTail.SubCores)
 	}
 }

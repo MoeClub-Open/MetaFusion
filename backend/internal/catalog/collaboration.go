@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -33,6 +34,9 @@ func rawNull(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == 
 func equalDocument(a, b json.RawMessage) bool {
 	if rawNull(a) || rawNull(b) {
 		return rawNull(a) && rawNull(b)
+	}
+	if bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b)) {
+		return true
 	}
 	var av, bv any
 	return json.Unmarshal(a, &av) == nil && json.Unmarshal(b, &bv) == nil && encode(av) == encode(bv)

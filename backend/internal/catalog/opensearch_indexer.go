@@ -19,18 +19,37 @@ func (s *Store) RunOpenSearchIndexer(ctx context.Context) {
 	if s.OpenSearch == nil {
 		return
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	var lastSweepAt time.Time
+	var lastFullSweepAt time.Time
 	for {
-		err := s.syncOpenSearch(ctx)
+		now := time.Now().UTC()
+		since := time.Time{}
+		fullSweep := lastFullSweepAt.IsZero() || now.Sub(lastFullSweepAt) >= time.Minute
+		if !fullSweep && !lastSweepAt.IsZero() {
+			since = lastSweepAt.Add(-2 * time.Minute)
+		}
+		delivered, err := s.syncOpenSearchSince(ctx, since)
 		s.OpenSearch.indexingDelayed.Store(err != nil)
 		if err != nil && ctx.Err() == nil {
 			s.OpenSearch.logIssue("OpenSearch indexing delayed; PostgreSQL remains authoritative", err)
+		} else if err == nil {
+			if fullSweep {
+				lastFullSweepAt = now
+			}
+			if delivered < 500 {
+				lastSweepAt = now
+			}
 		}
+		delay := 2 * time.Second
+		if err != nil || delivered > 0 {
+			delay = time.Second
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
@@ -59,7 +78,7 @@ func (s *Store) RunOpenSearchMonitor(ctx context.Context) {
 		s.OpenSearch.indexingDelayed.Store(delayed)
 	}
 	check()
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -72,19 +91,24 @@ func (s *Store) RunOpenSearchMonitor(ctx context.Context) {
 }
 
 func (s *Store) syncOpenSearch(ctx context.Context) error {
+	_, err := s.syncOpenSearchSince(ctx, time.Time{})
+	return err
+}
+
+func (s *Store) syncOpenSearchSince(ctx context.Context, since time.Time) (int, error) {
 	conn, err := s.DB.Conn(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer conn.Close()
 	var locked bool
 	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", openSearchLockID).Scan(&locked); err != nil {
-		return err
+		return 0, err
 	}
 	if !locked {
 		initialized, err := s.OpenSearch.isInitialized(ctx)
 		s.OpenSearch.ready.Store(err == nil && initialized)
-		return err
+		return 0, err
 	}
 	defer func() {
 		unlockCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -95,12 +119,12 @@ func (s *Store) syncOpenSearch(ctx context.Context) error {
 	c := s.OpenSearch
 	if err := c.ensureIndex(ctx); err != nil {
 		c.ready.Store(false)
-		return err
+		return 0, err
 	}
 	initialized, err := c.isInitialized(ctx)
 	if err != nil {
 		c.ready.Store(false)
-		return err
+		return 0, err
 	}
 	// A completed index remains queryable while its durable update queue is
 	// delayed. A rebuild still stays unavailable until its alias is published.
@@ -108,54 +132,72 @@ func (s *Store) syncOpenSearch(ctx context.Context) error {
 	if !initialized {
 		c.ready.Store(false)
 		if err := c.clearEntityDocuments(ctx); err != nil {
-			return err
+			return 0, err
 		}
 		if err := s.rebuildOpenSearchIndex(ctx, c); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	if err := s.deliverOpenSearch(ctx, c); err != nil {
-		return err
+	delivered, err := s.deliverOpenSearchSince(ctx, c, since)
+	if err != nil {
+		return delivered, err
 	}
 	if !initialized {
 		if err := c.attachAlias(ctx); err != nil {
-			return err
+			return delivered, err
 		}
 		if err := c.setInitialized(ctx); err != nil {
-			return err
+			return delivered, err
 		}
 	}
 	c.ready.Store(true)
-	return nil
+	return delivered, nil
 }
 
 func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) error {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id,type,entity_id,version,
-		CASE WHEN jsonb_typeof(o.payload)='object' THEN jsonb_strip_nulls(jsonb_build_object('id', o.payload->'id', 'kind', o.payload->'kind')) ELSE o.payload END,
-		created_at
-		FROM catalog.outbox o
-		WHERE o.type LIKE 'entity.%'
-		  AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
-		ORDER BY created_at,id LIMIT 500`, openSearchConsumer)
+	_, err := s.deliverOpenSearchSince(ctx, c, time.Time{})
+	return err
+}
+
+func (s *Store) deliverOpenSearchSince(ctx context.Context, c *OpenSearchClient, since time.Time) (int, error) {
+	var rows *sql.Rows
+	var err error
+	if since.IsZero() {
+		rows, err = s.DB.QueryContext(ctx, `SELECT id,type,entity_id,version,
+			CASE WHEN jsonb_typeof(o.payload)='object' THEN jsonb_strip_nulls(jsonb_build_object('id', o.payload->'id', 'kind', o.payload->'kind')) ELSE o.payload END,
+			created_at
+			FROM catalog.outbox o
+			WHERE o.type LIKE 'entity.%'
+			  AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+			ORDER BY created_at,id LIMIT 500`, openSearchConsumer)
+	} else {
+		rows, err = s.DB.QueryContext(ctx, `SELECT id,type,entity_id,version,
+			CASE WHEN jsonb_typeof(o.payload)='object' THEN jsonb_strip_nulls(jsonb_build_object('id', o.payload->'id', 'kind', o.payload->'kind')) ELSE o.payload END,
+			created_at
+			FROM catalog.outbox o
+			WHERE o.type LIKE 'entity.%' AND o.created_at >= $2
+			  AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+			ORDER BY created_at,id LIMIT 500`, openSearchConsumer, since)
+	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var events []Event
 	for rows.Next() {
 		var event Event
 		if err := rows.Scan(&event.ID, &event.Type, &event.EntityID, &event.Version, &event.Payload, &event.CreatedAt); err != nil {
 			rows.Close()
-			return err
+			return 0, err
 		}
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return err
+		return 0, err
 	}
 	rows.Close()
 	if len(events) == 0 {
-		return nil
+		return 0, nil
 	}
 	eventIDs := make([]string, 0, len(events))
 	ids := make([]string, 0, len(events))
@@ -167,13 +209,13 @@ func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) erro
 		}
 		var entity Entity
 		if err := json.Unmarshal(event.Payload, &entity); err != nil {
-			return fmt.Errorf("decode entity outbox event %s: %w", event.ID, err)
+			return 0, fmt.Errorf("decode entity outbox event %s: %w", event.ID, err)
 		}
 		if entity.ID != "" && entity.ID != event.EntityID {
-			return fmt.Errorf("entity outbox event %s has a mismatched entity ID", event.ID)
+			return 0, fmt.Errorf("entity outbox event %s has a mismatched entity ID", event.ID)
 		}
 		if entity.Kind == "" {
-			return fmt.Errorf("entity outbox event %s has no kind", event.ID)
+			return 0, fmt.Errorf("entity outbox event %s has no kind", event.ID)
 		}
 		if !seen[event.EntityID] {
 			ids = append(ids, event.EntityID)
@@ -184,7 +226,7 @@ func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) erro
 	// pre-migration payload cannot overwrite canonicalized attributes/structures.
 	entities, err := s.searchIndexEntities(ctx, ids)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	docs := make([]searchDocument, 0, len(entities))
 	deletedIDs := make([]string, 0, len(ids)-len(entities))
@@ -198,11 +240,11 @@ func (s *Store) deliverOpenSearch(ctx context.Context, c *OpenSearchClient) erro
 	// Missing current rows are deletions, regardless of historical event payloads
 	// or versions. Both writes and deletes can be replayed if acknowledgement fails.
 	if err := c.writeDocuments(ctx, docs, deletedIDs, true); err != nil {
-		return err
+		return 0, err
 	}
 	_, err = s.DB.ExecContext(ctx, `INSERT INTO catalog.deliveries(consumer,event_id)
 		SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`, openSearchConsumer, pq.Array(eventIDs))
-	return err
+	return len(events), err
 }
 
 func (s *Store) searchIndexEntities(ctx context.Context, ids []string) (map[string]Entity, error) {

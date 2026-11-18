@@ -116,6 +116,150 @@ func (r *fetchRecorder) snapshot() (primary *FetchMeta, all []FetchMeta, primary
 	return primary, all, primaryRaw
 }
 
+type ttlCacheEntry[V any] struct {
+	val       V
+	expiresAt time.Time
+	seq       uint64
+}
+
+type ttlCache[K comparable, V any] struct {
+	ttl        time.Duration
+	maxEntries int
+	mu         sync.Mutex
+	seq        uint64
+	entries    map[K]ttlCacheEntry[V]
+}
+
+func newTTLCache[K comparable, V any](ttl time.Duration, maxEntries int) *ttlCache[K, V] {
+	return &ttlCache[K, V]{
+		ttl:        ttl,
+		maxEntries: maxEntries,
+		entries:    map[K]ttlCacheEntry[V]{},
+	}
+}
+
+func (c *ttlCache[K, V]) Get(key K) (V, bool) {
+	var zero V
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[key]
+	if !ok {
+		return zero, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(c.entries, key)
+		return zero, false
+	}
+	return entry.val, true
+}
+
+func (c *ttlCache[K, V]) Set(key K, val V) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.maxEntries > 0 && len(c.entries) >= c.maxEntries {
+		for k, entry := range c.entries {
+			if now.After(entry.expiresAt) {
+				delete(c.entries, k)
+			}
+		}
+		for len(c.entries) >= c.maxEntries {
+			var oldestK K
+			var oldestSeq uint64
+			first := true
+			for k, entry := range c.entries {
+				if first || entry.seq < oldestSeq {
+					oldestK = k
+					oldestSeq = entry.seq
+					first = false
+				}
+			}
+			if first {
+				break
+			}
+			delete(c.entries, oldestK)
+		}
+	}
+	c.seq++
+	c.entries[key] = ttlCacheEntry[V]{
+		val:       val,
+		expiresAt: now.Add(c.ttl),
+		seq:       c.seq,
+	}
+}
+
+type inflightCall[V any] struct {
+	done chan struct{}
+	val  V
+	err  error
+}
+
+type inflightGroup[K comparable, V any] struct {
+	mu    sync.Mutex
+	calls map[K]*inflightCall[V]
+}
+
+func newInflightGroup[K comparable, V any]() *inflightGroup[K, V] {
+	return &inflightGroup[K, V]{calls: map[K]*inflightCall[V]{}}
+}
+
+func (g *inflightGroup[K, V]) Do(ctx context.Context, key K, timeout time.Duration, fn func(context.Context) (V, error)) (V, error) {
+	g.mu.Lock()
+	if call, ok := g.calls[key]; ok {
+		g.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			var zero V
+			return zero, ctx.Err()
+		case <-call.done:
+			return call.val, call.err
+		}
+	}
+	call := &inflightCall[V]{done: make(chan struct{})}
+	g.calls[key] = call
+	g.mu.Unlock()
+
+	go func() {
+		callCtx := context.WithoutCancel(ctx)
+		if timeout > 0 {
+			var cancel context.CancelFunc
+			callCtx, cancel = context.WithTimeout(callCtx, timeout)
+			defer cancel()
+		}
+		call.val, call.err = fn(callCtx)
+		g.mu.Lock()
+		delete(g.calls, key)
+		g.mu.Unlock()
+		close(call.done)
+	}()
+
+	select {
+	case <-ctx.Done():
+		var zero V
+		return zero, ctx.Err()
+	case <-call.done:
+		return call.val, call.err
+	}
+}
+
+type externalQueryCacheKey struct {
+	bangumiBase string
+	dlsiteBase  string
+	dmmBase     string
+	dmmSoftBase string
+	dmmGateBase string
+	source      string
+	op          string
+	refOrQ      string
+	entityType  string
+	limit       int
+}
+
+var (
+	externalQueryCache  = newTTLCache[externalQueryCacheKey, ExternalSourceQueryResponse](5*time.Minute, 2048)
+	externalQueryFlight = newInflightGroup[externalQueryCacheKey, ExternalSourceQueryResponse]()
+)
+
 func contentHash(body []byte) string {
 	sum := sha256.Sum256(body)
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -123,40 +267,45 @@ func contentHash(body []byte) string {
 
 // fetchBangumi recorded into context recorder when present; always waits outbound throttle.
 func fetchBangumi(ctx context.Context, path string, out any) error {
+	_, err := fetchBangumiWithMeta(ctx, path, out)
+	return err
+}
+
+func fetchBangumiWithMeta(ctx context.Context, path string, out any) (FetchMeta, error) {
 	if err := waitOutbound(ctx, "bangumi"); err != nil {
-		return err
+		return FetchMeta{}, err
 	}
 	url := bangumiAPIBase + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return FetchMeta{}, err
 	}
 	req.Header.Set("User-Agent", externalSourceUserAgent)
 	req.Header.Set("Accept", "application/json")
 	resp, err := externalSourceHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("upstream_error")
+		return FetchMeta{}, fmt.Errorf("upstream_error")
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return fmt.Errorf("upstream_error")
+		return FetchMeta{}, fmt.Errorf("upstream_error")
 	}
 	meta := FetchMeta{URL: url, FetchedAt: time.Now().UTC(), ContentHash: contentHash(body)}
 	recorderFrom(ctx).add(meta, body)
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("not_found")
+		return meta, fmt.Errorf("not_found")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("upstream_error")
+		return meta, fmt.Errorf("upstream_error")
 	}
 	if out == nil {
-		return nil
+		return meta, nil
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("upstream_error")
+		return meta, fmt.Errorf("upstream_error")
 	}
-	return nil
+	return meta, nil
 }
 
 func fetchBangumiPOST(ctx context.Context, path string, payload any, out any) error {
@@ -214,13 +363,59 @@ func (s *Store) QueryExternalSource(ctx context.Context, in ExternalSourceQueryR
 	default:
 		return ExternalSourceQueryResponse{}, fmt.Errorf("invalid_op")
 	}
-	ctx, rec := withFetchRecorder(ctx)
-	switch op {
-	case "search":
-		return s.externalSearch(ctx, rec, in)
-	default:
-		return s.externalLookupOrDetail(ctx, rec, in, op)
+	src := strings.ToLower(strings.TrimSpace(in.Source))
+	if src == "" {
+		src = "auto"
 	}
+	refOrQ := ""
+	limit := 0
+	if op == "search" {
+		refOrQ = strings.TrimSpace(in.Q)
+		if refOrQ == "" {
+			return ExternalSourceQueryResponse{}, fmt.Errorf("invalid_payload")
+		}
+		limit = in.Limit
+	} else {
+		refOrQ = strings.TrimSpace(in.URLOrID)
+		if refOrQ == "" {
+			refOrQ = strings.TrimSpace(in.ID)
+		}
+		if refOrQ == "" {
+			return ExternalSourceQueryResponse{}, fmt.Errorf("invalid_payload")
+		}
+	}
+	key := externalQueryCacheKey{
+		bangumiBase: bangumiAPIBase,
+		dlsiteBase:  dlsiteWWWBase,
+		dmmBase:     dmmCoJPBase,
+		dmmSoftBase: dmmSoftBase,
+		dmmGateBase: dmmGateBase,
+		source:      src,
+		op:          op,
+		refOrQ:      refOrQ,
+		entityType:  strings.ToLower(strings.TrimSpace(in.EntityType)),
+		limit:       limit,
+	}
+	if cached, ok := externalQueryCache.Get(key); ok {
+		return cached, nil
+	}
+	return externalQueryFlight.Do(ctx, key, 30*time.Second, func(fctx context.Context) (ExternalSourceQueryResponse, error) {
+		if cached, ok := externalQueryCache.Get(key); ok {
+			return cached, nil
+		}
+		fctx, rec := withFetchRecorder(fctx)
+		var res ExternalSourceQueryResponse
+		var err error
+		if op == "search" {
+			res, err = s.externalSearch(fctx, rec, in)
+		} else {
+			res, err = s.externalLookupOrDetail(fctx, rec, in, op)
+		}
+		if err == nil {
+			externalQueryCache.Set(key, res)
+		}
+		return res, err
+	})
 }
 
 func (s *Store) externalLookupOrDetail(ctx context.Context, rec *fetchRecorder, in ExternalSourceQueryRequest, op string) (ExternalSourceQueryResponse, error) {

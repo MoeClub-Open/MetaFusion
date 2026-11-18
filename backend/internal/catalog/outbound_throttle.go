@@ -78,9 +78,9 @@ func (l *outboundLimiter) Wait(ctx context.Context) error {
 
 // 默认约 1 req/s（MusicBrainz 量级）；单测可替换 map 内条目。
 var outboundLimiters = map[string]*outboundLimiter{
-	"bangumi": newOutboundLimiter(1, 1),
-	"dlsite":  newOutboundLimiter(1, 1),
-	"dmm":     newOutboundLimiter(1, 1),
+	"bangumi": newOutboundLimiter(8, 12),
+	"dlsite":  newOutboundLimiter(4, 6),
+	"dmm":     newOutboundLimiter(4, 6),
 }
 
 func waitOutbound(ctx context.Context, source string) error {

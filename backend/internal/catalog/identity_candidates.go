@@ -188,55 +188,13 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 	if len(excludeIDs) > 0 {
 		excludeID = excludeIDs[0]
 	}
-	likeEscape := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	approxCores := []string{}
-	approxLikes := []string{}
-	approxSubCores := []string{}
-	approxRevLikes := []string{}
-	approxTrgms := []string{}
+	var plan approximateTitlePlan
 	if in.IncludeApproximate {
-		seenCore := map[string]bool{}
-		seenSubCore := map[string]bool{}
-		seenRevLike := map[string]bool{}
-		for _, rawTitle := range in.Titles {
-			core := identityCoreTitle(rawTitle)
-			runes := []rune(core)
-			n := len(runes)
-			if n < 2 || seenCore[core] {
-				continue
-			}
-			seenCore[core] = true
-			approxCores = append(approxCores, core)
-			approxLikes = append(approxLikes, "%"+likeEscape.Replace(core)+"%")
-			for _, subLen := range []int{2, 3} {
-				if subLen >= n {
-					continue
-				}
-				for i := 0; i+subLen <= n; i++ {
-					sub := string(runes[i : i+subLen])
-					if !seenSubCore[sub] {
-						seenSubCore[sub] = true
-						approxSubCores = append(approxSubCores, sub)
-					}
-				}
-			}
-			if n >= 5 {
-				for i := 0; i+4 <= n; i++ {
-					pat := "%" + likeEscape.Replace(string(runes[i:i+4])) + "%"
-					if !seenRevLike[pat] {
-						seenRevLike[pat] = true
-						approxRevLikes = append(approxRevLikes, pat)
-					}
-				}
-			}
-			if n >= 4 {
-				approxTrgms = append(approxTrgms, core)
-			}
-		}
+		plan = buildApproximateTitlePlan(in.Titles)
 	}
 	_ = utf8.RuneError
 	var rows *sql.Rows
-	if len(approxCores) == 0 {
+	if len(plan.Cores) == 0 {
 		rows, err = q.QueryContext(ctx, `WITH RECURSIVE excluded(id) AS (
             SELECT id FROM catalog.entities WHERE id=NULLIF($9::text,'')::uuid
             UNION
@@ -283,6 +241,20 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
                 COALESCE(ARRAY(SELECT DISTINCT unnest(catalog.identity_candidate_terms(value)) FROM jsonb_array_elements($2::jsonb)), ARRAY[]::text[]) AS all_terms,
                 COALESCE(ARRAY(SELECT DISTINCT md5(jsonb_build_array('core_title', s)::text) FROM unnest($12::text[]) s), ARRAY[]::text[]) AS sub_core_terms
         ),
+        like_raw AS MATERIALIZED (
+            SELECT e.id, e.document, catalog.identity_search_text(e.document) AS st
+            FROM catalog.entities e
+            WHERE cardinality($10::text[]) > 0
+              AND e.kind=$1 AND e.state <> 'deleted'
+              AND catalog.identity_search_text(e.document) LIKE ANY($10::text[])
+        ),
+        rev_raw AS MATERIALIZED (
+            SELECT e.id, e.document, catalog.identity_search_text(e.document) AS st
+            FROM catalog.entities e
+            WHERE cardinality($13::text[]) > 0
+              AND e.kind=$1 AND e.state <> 'deleted'
+              AND catalog.identity_search_text(e.document) LIKE ANY($13::text[])
+        ),
         matched_ids(id, tier) AS (
             SELECT e.id,
                 CASE
@@ -296,14 +268,16 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
             WHERE e.kind=$1 AND e.state <> 'deleted'
               AND catalog.identity_candidate_terms(e.document) && qt.all_terms
             UNION ALL
-            SELECT e.id, 4
-            FROM catalog.entities e
-            WHERE cardinality($10::text[]) > 0
-              AND e.kind=$1 AND e.state <> 'deleted'
-              AND catalog.identity_search_text(e.document) LIKE ANY($10::text[])
+            SELECT r.id, 4
+            FROM like_raw r
+            WHERE EXISTS (
+                  SELECT 1 FROM unnest($11::text[]) qc
+                  CROSS JOIN unnest(string_to_array(r.st, chr(10))) ct
+                  WHERE char_length(ct) >= 2 AND strpos(ct, qc) > 0
+              )
               AND EXISTS (
                   SELECT 1 FROM unnest($11::text[]) qc
-                  CROSS JOIN unnest(catalog.identity_core_titles(e.document)) ct
+                  CROSS JOIN unnest(catalog.identity_core_titles(r.document)) ct
                   WHERE strpos(ct, qc) > 0
               )
             UNION ALL
@@ -313,14 +287,16 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
               AND e.kind=$1 AND e.state <> 'deleted'
               AND catalog.identity_candidate_terms(e.document) && qt.sub_core_terms
             UNION ALL
-            SELECT e.id, 4
-            FROM catalog.entities e
-            WHERE cardinality($13::text[]) > 0
-              AND e.kind=$1 AND e.state <> 'deleted'
-              AND catalog.identity_search_text(e.document) LIKE ANY($13::text[])
+            SELECT r.id, 4
+            FROM rev_raw r
+            WHERE EXISTS (
+                  SELECT 1 FROM unnest($11::text[]) qc
+                  CROSS JOIN unnest(string_to_array(r.st, chr(10))) ct
+                  WHERE char_length(ct) >= 2 AND strpos(qc, ct) > 0
+              )
               AND EXISTS (
                   SELECT 1 FROM unnest($11::text[]) qc
-                  CROSS JOIN unnest(catalog.identity_core_titles(e.document)) ct
+                  CROSS JOIN unnest(catalog.identity_core_titles(r.document)) ct
                   WHERE strpos(qc, ct) > 0
               )
             UNION ALL
@@ -346,7 +322,7 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
         SELECT id::text,count(*) OVER ()
         FROM ranked
         ORDER BY best_tier ASC, id ASC
-        LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID, excludeID, pq.Array(approxLikes), pq.Array(approxCores), pq.Array(approxSubCores), pq.Array(approxRevLikes), pq.Array(approxTrgms))
+        LIMIT $6`, in.Kind, string(encoded), manage, userID, in.WorkID, limit+1, in.ReleaseID, in.MediumID, excludeID, pq.Array(plan.Likes), pq.Array(plan.Cores), pq.Array(plan.SubCores), pq.Array(plan.RevLikes), pq.Array(plan.Trgms))
 	}
 	if err != nil {
 		return out, err
@@ -401,4 +377,97 @@ func identityCandidatesFrom(ctx context.Context, q queryer, in IdentityCandidate
 		return out, err
 	}
 	return out, nil
+}
+
+type approximateTitlePlan struct {
+	Cores    []string
+	Likes    []string
+	SubCores []string
+	RevLikes []string
+	Trgms    []string
+}
+
+func buildApproximateTitlePlan(titles []string) approximateTitlePlan {
+	likeEscape := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	plan := approximateTitlePlan{
+		Cores:    []string{},
+		Likes:    []string{},
+		SubCores: []string{},
+		RevLikes: []string{},
+		Trgms:    []string{},
+	}
+	seenCore := map[string]bool{}
+	seenSubCore := map[string]bool{}
+	seenRevLike := map[string]bool{}
+	const maxApproxSubCores = 250
+	for _, rawTitle := range titles {
+		core := identityCoreTitle(rawTitle)
+		runes := []rune(core)
+		n := len(runes)
+		if n < 2 || seenCore[core] {
+			continue
+		}
+		seenCore[core] = true
+		plan.Cores = append(plan.Cores, core)
+		if n >= 3 {
+			plan.Likes = append(plan.Likes, "%"+likeEscape.Replace(core)+"%")
+		}
+		sub4Truncated := false
+		if n <= 14 {
+			subTruncated := false
+			for subLen := 2; subLen < n; subLen++ {
+				for i := 0; i+subLen <= n; i++ {
+					sub := string(runes[i : i+subLen])
+					if seenSubCore[sub] {
+						continue
+					}
+					if len(plan.SubCores) >= maxApproxSubCores {
+						if subLen >= 4 {
+							subTruncated = true
+						}
+						continue
+					}
+					seenSubCore[sub] = true
+					plan.SubCores = append(plan.SubCores, sub)
+				}
+			}
+			if subTruncated && n >= 5 {
+				sub4Truncated = true
+			}
+		} else {
+			for _, subLen := range []int{2, 3, 4} {
+				for i := 0; i+subLen <= n; i++ {
+					sub := string(runes[i : i+subLen])
+					if seenSubCore[sub] {
+						continue
+					}
+					if len(plan.SubCores) >= maxApproxSubCores {
+						if subLen == 4 {
+							sub4Truncated = true
+						}
+						continue
+					}
+					seenSubCore[sub] = true
+					plan.SubCores = append(plan.SubCores, sub)
+				}
+			}
+		}
+		if n > 14 || sub4Truncated {
+			winLen := 5
+			if sub4Truncated {
+				winLen = 4
+			}
+			for i := 0; i+winLen <= n; i++ {
+				pat := "%" + likeEscape.Replace(string(runes[i:i+winLen])) + "%"
+				if !seenRevLike[pat] {
+					seenRevLike[pat] = true
+					plan.RevLikes = append(plan.RevLikes, pat)
+				}
+			}
+		}
+		if n == 2 || n >= 4 {
+			plan.Trgms = append(plan.Trgms, core)
+		}
+	}
+	return plan
 }

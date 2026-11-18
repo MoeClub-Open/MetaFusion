@@ -182,12 +182,33 @@ func (s *Store) RunStorageLifecycle(ctx context.Context, baseURL, secret string)
 	backoff := time.Second
 	bootstrapped := false
 	cursor := ""
+	var lastSweepAt time.Time
+	var lastFullSweepAt time.Time
 	for ctx.Err() == nil {
 		var err error
+		processed := 0
 		if !bootstrapped {
 			cursor, bootstrapped, err = s.bootstrapStorageLifecycle(ctx, c, cursor)
+			if err == nil && bootstrapped {
+				// Force immediate full outbox sweep right after bootstrap completes.
+				backoff = time.Second
+			}
 		} else {
-			err = s.syncStorageLifecycle(ctx, c)
+			now := time.Now().UTC()
+			since := time.Time{}
+			fullSweep := lastFullSweepAt.IsZero() || now.Sub(lastFullSweepAt) >= time.Minute
+			if !fullSweep && !lastSweepAt.IsZero() {
+				since = lastSweepAt.Add(-2 * time.Minute)
+			}
+			processed, err = s.syncStorageLifecycleSince(ctx, c, since)
+			if err == nil {
+				if fullSweep {
+					lastFullSweepAt = now
+				}
+				if processed < 100 {
+					lastSweepAt = now
+				}
+			}
 		}
 		if err != nil && ctx.Err() == nil {
 			log.Printf("storage lifecycle delivery delayed; catalog writes remain available: %v", err)
@@ -195,6 +216,8 @@ func (s *Store) RunStorageLifecycle(ctx context.Context, baseURL, secret string)
 			if backoff > time.Minute {
 				backoff = time.Minute
 			}
+		} else if bootstrapped && processed == 0 {
+			backoff = 2 * time.Second
 		} else {
 			backoff = time.Second
 		}
@@ -209,61 +232,76 @@ func (s *Store) RunStorageLifecycle(ctx context.Context, baseURL, secret string)
 }
 
 func (s *Store) syncStorageLifecycle(ctx context.Context, c *storageLifecycleClient) error {
+	_, err := s.syncStorageLifecycleSince(ctx, c, time.Time{})
+	return err
+}
+
+func (s *Store) syncStorageLifecycleSince(ctx context.Context, c *storageLifecycleClient, since time.Time) (int, error) {
 	conn, err := s.DB.Conn(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer conn.Close()
 	var locked bool
 	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", storageLifecycleLockID).Scan(&locked); err != nil || !locked {
-		return err
+		return 0, err
 	}
 	defer func() {
 		unlockCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", storageLifecycleLockID)
 	}()
-	rows, err := s.DB.QueryContext(ctx, `SELECT id::text,entity_id::text FROM catalog.outbox o
-		WHERE o.type IN ('entity.saved','entity.deleted','entity.merged')
-		AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
-		ORDER BY o.created_at,o.id LIMIT 100`, StorageLifecycleConsumer)
+	var rows *sql.Rows
+	if since.IsZero() {
+		rows, err = s.DB.QueryContext(ctx, `SELECT id::text,entity_id::text FROM catalog.outbox o
+			WHERE o.type LIKE 'entity.%' AND o.type IN ('entity.saved','entity.deleted','entity.merged')
+			AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+			ORDER BY o.created_at,o.id LIMIT 100`, StorageLifecycleConsumer)
+	} else {
+		rows, err = s.DB.QueryContext(ctx, `SELECT id::text,entity_id::text FROM catalog.outbox o
+			WHERE o.type LIKE 'entity.%' AND o.type IN ('entity.saved','entity.deleted','entity.merged') AND o.created_at >= $2
+			AND NOT EXISTS(SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+			ORDER BY o.created_at,o.id LIMIT 100`, StorageLifecycleConsumer, since)
+	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 	byEntity := map[string][]string{}
 	var ids []string
+	eventCount := 0
 	for rows.Next() {
 		var eventID, entityID string
 		if err := rows.Scan(&eventID, &entityID); err != nil {
 			rows.Close()
-			return err
+			return 0, err
 		}
 		if _, found := byEntity[entityID]; !found {
 			ids = append(ids, entityID)
 		}
 		byEntity[entityID] = append(byEntity[entityID], eventID)
+		eventCount++
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return err
+		return 0, err
 	}
 	rows.Close()
 	for _, id := range ids {
 		state, err := s.currentStorageLifecycle(ctx, id)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if err := c.apply(ctx, state); err != nil {
-			return err
+			return 0, err
 		}
 		// The storage operation is idempotent. A failure before this durable ACK
 		// replays it after restart; no in-memory queue can lose the reference fact.
 		if _, err := s.DB.ExecContext(ctx, `INSERT INTO catalog.deliveries(consumer,event_id)
 			SELECT $1,unnest($2::uuid[]) ON CONFLICT DO NOTHING`, StorageLifecycleConsumer, pq.Array(byEntity[id])); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return eventCount, nil
 }
 
 func (s *Store) currentStorageLifecycle(ctx context.Context, id string) (storageLifecycleSnapshot, error) {

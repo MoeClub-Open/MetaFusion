@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,5 +176,103 @@ func TestSearchBangumiClampsOurMax(t *testing.T) {
 	}
 	if out.Limit != 50 || !out.Clamped || len(out.Items) != 50 {
 		t.Fatalf("want our max 50 clamped, got limit=%d clamped=%v items=%d", out.Limit, out.Clamped, len(out.Items))
+	}
+}
+
+func TestQueryExternalSourceCacheSingleflightAndSkipsNonEpisodeTypes(t *testing.T) {
+	var subjectHits atomic.Int32
+	var episodeHits atomic.Int32
+	var personHits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v0/subjects/7", func(w http.ResponseWriter, _ *http.Request) {
+		subjectHits.Add(1)
+		time.Sleep(30 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":7,"type":4,"name":"テストゲーム","name_cn":"测试游戏","summary":"简介","date":"2024-01-05","images":{"large":"https://example.com/cover.jpg"}}`))
+	})
+	mux.HandleFunc("/v0/subjects/8", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":8,"type":2,"name":"テストアニメ","name_cn":"测试动画","summary":"简介","date":"2024-01-05","images":{"large":"https://example.com/cover2.jpg"}}`))
+	})
+	mux.HandleFunc("/v0/subjects/7/persons", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":9,"name":"Alice","type":1,"relation":"原作"}]`))
+	})
+	mux.HandleFunc("/v0/subjects/8/persons", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":9,"name":"Alice","type":1,"relation":"导演"}]`))
+	})
+	mux.HandleFunc("/v0/subjects/7/characters", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("/v0/subjects/8/characters", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("/v0/persons/9", func(w http.ResponseWriter, _ *http.Request) {
+		personHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":9,"name":"Alice","name_cn":"","type":1,"career":["原作"],"summary":"作词家","images":{"large":""}}`))
+	})
+	mux.HandleFunc("/v0/episodes", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("subject_id") == "7" {
+			episodeHits.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(func() {
+		srv.Close()
+		bangumiAPIBase = "https://api.bgm.tv"
+	})
+	bangumiAPIBase = srv.URL
+	outboundLimiters["bangumi"] = newOutboundLimiter(1000, 10)
+
+	s := &Store{}
+	ctx := context.Background()
+	const workers = 6
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			src := ""
+			if idx%2 == 1 {
+				src = "auto"
+			}
+			_, errs[idx] = s.QueryExternalSource(ctx, ExternalSourceQueryRequest{
+				Source: src, Op: "detail", URLOrID: "https://bgm.tv/subject/7", EntityType: "work",
+			})
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+	}
+	if _, err := s.QueryExternalSource(ctx, ExternalSourceQueryRequest{
+		Source: "auto", Op: "detail", URLOrID: "https://bgm.tv/subject/7", EntityType: "work",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := subjectHits.Load(); got != 1 {
+		t.Fatalf("expected singleflight+cache to hit subject 7 once, got %d", got)
+	}
+	if got := episodeHits.Load(); got != 0 {
+		t.Fatalf("expected type=4 game to skip /v0/episodes, got %d hits", got)
+	}
+
+	// A different subject sharing person 9 should reuse bangumiPersonCache.
+	if _, err := s.QueryExternalSource(ctx, ExternalSourceQueryRequest{
+		Source: "bangumi", Op: "detail", URLOrID: "https://bgm.tv/subject/8", EntityType: "work",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := personHits.Load(); got != 1 {
+		t.Fatalf("expected person 9 cache reuse across subjects, got %d hits", got)
 	}
 }
