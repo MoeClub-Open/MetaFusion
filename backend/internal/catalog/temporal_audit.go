@@ -106,9 +106,10 @@ type TemporalMigrationAuditReport struct {
 
 // AuditHistoricalRevisionPictures 扫描存量修订中曾存在但当前实体 pictures[] 已缺失的图片资产/URL。
 func (s *Store) AuditHistoricalRevisionPictures(ctx context.Context, entityIDs []string) ([]HistoricalRevisionPictureCandidate, error) {
-	query := "SELECT e.id::text, e.kind, e.title, e.document, r.version, r.created_at, r.snapshot->'pictures' " +
+	query := "SELECT e.id::text, e.kind, e.title, e.document, r.version, r.created_at, " +
+		"CASE WHEN jsonb_typeof(r.snapshot->'pictures') = 'array' THEN r.snapshot->'pictures' ELSE '[]'::jsonb END " +
 		"FROM catalog.entities e JOIN catalog.revisions r ON r.target_id = e.id::text " +
-		"WHERE e.state = 'active' AND jsonb_typeof(r.snapshot->'pictures') = 'array' AND jsonb_array_length(r.snapshot->'pictures') > 0"
+		"WHERE e.state = 'active' AND jsonb_array_length(CASE WHEN jsonb_typeof(r.snapshot->'pictures') = 'array' THEN r.snapshot->'pictures' ELSE '[]'::jsonb END) > 0"
 	args := []any{}
 	if len(entityIDs) > 0 {
 		query += " AND e.id = ANY($1::uuid[])"
