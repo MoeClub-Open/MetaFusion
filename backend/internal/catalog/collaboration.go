@@ -91,14 +91,14 @@ func workspaceFrom(ctx context.Context, q queryer, id string, u User, lock bool,
 		return w, fmt.Errorf("workspace_archived")
 	}
 	w.Objects = []WorkspaceObject{}
-	rows, err = q.QueryContext(ctx, `SELECT target,target_id::text,base_version,COALESCE(base_document,'null'::jsonb),COALESCE(head_document,'null'::jsonb),COALESCE(document,'null'::jsonb),staged_authors FROM catalog.workspace_objects WHERE workspace_id=$1 ORDER BY target,target_id`, id)
+	rows, err = q.QueryContext(ctx, `SELECT target,target_id::text,base_version,COALESCE(base_document,'null'::jsonb),COALESCE(head_document,'null'::jsonb),COALESCE(document,'null'::jsonb),staged_authors,COALESCE(head_document,'null'::jsonb) IS DISTINCT FROM COALESCE(document,'null'::jsonb) FROM catalog.workspace_objects WHERE workspace_id=$1 ORDER BY target,target_id`, id)
 	if err != nil {
 		return w, err
 	}
 	for rows.Next() {
 		var o WorkspaceObject
 		var authors []byte
-		if err = rows.Scan(&o.Target, &o.ID, &o.BaseVersion, &o.Base, &o.Committed, &o.Document, &authors); err != nil {
+		if err = rows.Scan(&o.Target, &o.ID, &o.BaseVersion, &o.Base, &o.Committed, &o.Document, &authors, &o.Dirty); err != nil {
 			rows.Close()
 			return w, err
 		}
@@ -106,7 +106,6 @@ func workspaceFrom(ctx context.Context, q queryer, id string, u User, lock bool,
 			rows.Close()
 			return w, err
 		}
-		o.Dirty = !equalDocument(o.Committed, o.Document)
 		if o.Dirty {
 			w.DirtyCount++
 		}
@@ -255,6 +254,161 @@ func workspaceMainObject(ctx context.Context, q queryer, target, id string, u Us
 		}
 	}
 	return json.RawMessage(encode(r)), r.Version, nil
+}
+
+type workspaceMainSnapshot struct {
+	Document      json.RawMessage
+	Version       int64
+	DeletedEntity *Entity
+}
+
+func workspaceObjectKey(target, id string) string {
+	return target + ":" + id
+}
+
+// workspaceMainObjectsBatch resolves current main-catalog snapshots for a batch
+// of workspace objects in O(1) SQL queries instead of per-object N+1 lookups.
+func workspaceMainObjectsBatch(ctx context.Context, q queryer, objects []WorkspaceObject, u User) (map[string]workspaceMainSnapshot, error) {
+	out := make(map[string]workspaceMainSnapshot, len(objects))
+	if len(objects) == 0 {
+		return out, nil
+	}
+	entityIDSet := make(map[string]bool, len(objects))
+	relIDSet := make(map[string]bool)
+	for _, o := range objects {
+		if o.Target == "entity" {
+			entityIDSet[o.ID] = true
+		} else {
+			relIDSet[o.ID] = true
+		}
+	}
+
+	relsByID := make(map[string]Relation, len(relIDSet))
+	if len(relIDSet) > 0 {
+		rows, err := q.QueryContext(ctx, `SELECT id::text, document FROM catalog.relations WHERE id = ANY($1::uuid[])`, pq.Array(keysOf(relIDSet)))
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			var raw []byte
+			if err = rows.Scan(&id, &raw); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			var r Relation
+			if err = json.Unmarshal(raw, &r); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			relsByID[id] = r
+			if r.SourceID != "" {
+				entityIDSet[r.SourceID] = true
+			}
+			if r.TargetID != "" {
+				entityIDSet[r.TargetID] = true
+			}
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	entitiesByID := make(map[string]Entity, len(entityIDSet))
+	if len(entityIDSet) > 0 {
+		rows, err := q.QueryContext(ctx, `SELECT id::text, document FROM catalog.entities WHERE id = ANY($1::uuid[])`, pq.Array(keysOf(entityIDSet)))
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			var raw []byte
+			if err = rows.Scan(&id, &raw); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			var e Entity
+			if err = json.Unmarshal(raw, &e); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			entitiesByID[id] = e
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	// Filter track contents in a single batch query for all active visible tracks.
+	visibleTracks := make(map[string]Entity)
+	for _, o := range objects {
+		if o.Target != "entity" {
+			continue
+		}
+		e, ok := entitiesByID[o.ID]
+		if ok && visible(e, &u) && e.State == "active" && e.Kind == "track" && len(e.Contents) > 0 {
+			visibleTracks[e.ID] = e
+		}
+	}
+	if len(visibleTracks) > 0 {
+		if err := filterVisibleTrackContents(ctx, q, visibleTracks, &u); err != nil {
+			return nil, err
+		}
+		for id, e := range visibleTracks {
+			entitiesByID[id] = e
+		}
+	}
+
+	for _, o := range objects {
+		key := workspaceObjectKey(o.Target, o.ID)
+		if _, done := out[key]; done {
+			continue
+		}
+		if o.Target == "entity" {
+			e, ok := entitiesByID[o.ID]
+			if !ok {
+				out[key] = workspaceMainSnapshot{}
+				continue
+			}
+			if !visible(e, &u) || e.State != "active" {
+				snap := workspaceMainSnapshot{Version: e.Version}
+				if e.State == "deleted" {
+					ec := e
+					snap.DeletedEntity = &ec
+				}
+				out[key] = snap
+				continue
+			}
+			out[key] = workspaceMainSnapshot{Document: json.RawMessage(encode(e)), Version: e.Version}
+			continue
+		}
+		r, ok := relsByID[o.ID]
+		if !ok {
+			out[key] = workspaceMainSnapshot{}
+			continue
+		}
+		endpointsVisible := true
+		for _, eid := range []string{r.SourceID, r.TargetID} {
+			e, exists := entitiesByID[eid]
+			if !exists {
+				return nil, sql.ErrNoRows
+			}
+			if !visible(e, &u) || e.State != "active" {
+				endpointsVisible = false
+				break
+			}
+		}
+		if !endpointsVisible {
+			out[key] = workspaceMainSnapshot{Version: r.Version}
+			continue
+		}
+		out[key] = workspaceMainSnapshot{Document: json.RawMessage(encode(r)), Version: r.Version}
+	}
+	return out, nil
 }
 func (s *Store) EditWorkspace(ctx context.Context, id string, in WorkspaceEdit, u User) (Workspace, error) {
 	var out Workspace

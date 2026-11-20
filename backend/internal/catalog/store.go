@@ -177,6 +177,15 @@ func lockRelease(ctx context.Context, tx *sql.Tx, releaseID string) error {
 	return err
 }
 
+func lockReleases(ctx context.Context, tx *sql.Tx, releaseIDs []string) error {
+	if len(releaseIDs) == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1::int, hashtext(rid))
+		FROM unnest($2::text[]) WITH ORDINALITY AS t(rid, ord) ORDER BY ord`, releaseLockClass, pq.Array(releaseIDs))
+	return err
+}
+
 // lockReleaseScope 取本次实体写入所属发行的 M01 锁：release 改 subjects、
 // track 改 contents，同一发行的两类写互斥；不同发行并行。
 // 新建 release（ID 未分配、无人可达）与归属缺失（后继报 parent_required/

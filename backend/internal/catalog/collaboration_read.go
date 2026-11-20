@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/lib/pq"
 )
@@ -67,12 +68,126 @@ func workspacePageFrom(ctx context.Context, q queryer, limit, offset int, u User
 	if err != nil {
 		return out, err
 	}
-	for _, id := range ids {
-		w, err := workspaceFrom(ctx, q, id, u, false, false)
-		if err != nil {
-			return out, err
+	if len(ids) == 0 {
+		return out, nil
+	}
+	items, err := workspacesBatchFrom(ctx, q, ids, u)
+	if err != nil {
+		return out, err
+	}
+	out.Items = items
+	return out, nil
+}
+
+// workspacesBatchFrom loads a page of workspaces in 4 batch queries instead of
+// 4*N sequential queries, preserving exact authorization and item ordering.
+func workspacesBatchFrom(ctx context.Context, q queryer, ids []string, u User) ([]Workspace, error) {
+	byID := make(map[string]*Workspace, len(ids))
+	rows, err := q.QueryContext(ctx, `SELECT id::text,owner_id,name,version,head_commit_id::text,state,created_at,updated_at,base_commit_id::text FROM catalog.workspaces WHERE id = ANY($1::uuid[])`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		w := &Workspace{Members: []string{}, Objects: []WorkspaceObject{}}
+		if err = rows.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Version, &w.HeadCommitID, &w.State, &w.CreatedAt, &w.UpdatedAt, &w.BaseCommitID); err != nil {
+			rows.Close()
+			return nil, err
 		}
-		out.Items = append(out.Items, w)
+		byID[w.ID] = w
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	memberOf := make(map[string]bool, len(ids))
+	rows, err = q.QueryContext(ctx, `SELECT workspace_id::text,user_id FROM catalog.workspace_members WHERE workspace_id = ANY($1::uuid[]) ORDER BY workspace_id,user_id`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var wid, uid string
+		if err = rows.Scan(&wid, &uid); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if w, ok := byID[wid]; ok {
+			w.Members = append(w.Members, uid)
+			if uid == u.ID {
+				memberOf[wid] = true
+			}
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	for _, id := range ids {
+		w, ok := byID[id]
+		if !ok {
+			return nil, sql.ErrNoRows
+		}
+		if w.OwnerID != u.ID && !memberOf[id] && !u.Can(PermissionReviewManage) {
+			return nil, sql.ErrNoRows
+		}
+	}
+
+	rows, err = q.QueryContext(ctx, `SELECT workspace_id::text,target,target_id::text,base_version,COALESCE(base_document,'null'::jsonb),COALESCE(head_document,'null'::jsonb),COALESCE(document,'null'::jsonb),staged_authors,COALESCE(head_document,'null'::jsonb) IS DISTINCT FROM COALESCE(document,'null'::jsonb) FROM catalog.workspace_objects WHERE workspace_id = ANY($1::uuid[]) ORDER BY workspace_id,target,target_id`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var wid string
+		var o WorkspaceObject
+		var authors []byte
+		if err = rows.Scan(&wid, &o.Target, &o.ID, &o.BaseVersion, &o.Base, &o.Committed, &o.Document, &authors, &o.Dirty); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if err = json.Unmarshal(authors, &o.Contributors); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if w, ok := byID[wid]; ok {
+			if o.Dirty {
+				w.DirtyCount++
+			}
+			w.Objects = append(w.Objects, o)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	rows, err = q.QueryContext(ctx, `SELECT workspace_id::text,count(*) FROM catalog.workspace_commits WHERE workspace_id = ANY($1::uuid[]) AND active AND NOT integrated GROUP BY workspace_id`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var wid string
+		var n int64
+		if err = rows.Scan(&wid, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if w, ok := byID[wid]; ok {
+			w.PendingCommits = n
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	out := make([]Workspace, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, *byID[id])
 	}
 	return out, nil
 }
@@ -110,18 +225,16 @@ func collaborationIDs(ctx context.Context, q queryer, query string, args ...any)
 
 func collaborationCommitFrom(ctx context.Context, q queryer, id string) (CollaborationCommit, error) {
 	var c CollaborationCommit
-	err := q.QueryRowContext(ctx, `SELECT id::text,workspace_id::text,parent_id::text,COALESCE(NULLIF(author_snapshot->>'id',''),actor_id),
-		COALESCE(NULLIF(author_snapshot->>'username',''),actor_id),message,kind,created_at,
-		merged_at,merged_by,pull_request_id::text,merge_parent_id::text,snapshot_scope FROM catalog.commits WHERE id=$1`, id).
-		Scan(&c.ID, &c.WorkspaceID, &c.ParentID, &c.Author.ID, &c.Author.Name, &c.Message,
-			&c.Kind, &c.CreatedAt, &c.MergedAt, &c.MergedBy, &c.PullRequestID, &c.MergeParentID, &c.SnapshotScope)
+	err := q.QueryRowContext(ctx, `SELECT c.id::text,c.workspace_id::text,c.parent_id::text,COALESCE(NULLIF(c.author_snapshot->>'id',''),c.actor_id),
+		COALESCE(NULLIF(c.author_snapshot->>'username',''),c.actor_id),c.actor_id,
+		COALESCE(NULLIF(c.author_snapshot->>'committer_name',''),NULLIF(c.author_snapshot->>'username',''),c.actor_id),
+		c.message,c.kind,c.created_at,c.merged_at,c.merged_by,c.pull_request_id::text,c.merge_parent_id::text,c.snapshot_scope,
+		op.operation,op.source_ids
+		FROM catalog.commits c JOIN catalog.commit_operations op ON op.commit_id=c.id WHERE c.id=$1`, id).
+		Scan(&c.ID, &c.WorkspaceID, &c.ParentID, &c.Author.ID, &c.Author.Name, &c.Committer.ID, &c.Committer.Name, &c.Message,
+			&c.Kind, &c.CreatedAt, &c.MergedAt, &c.MergedBy, &c.PullRequestID, &c.MergeParentID, &c.SnapshotScope,
+			&c.Operation, pq.Array(&c.SourceIDs))
 	if err != nil {
-		return c, err
-	}
-	if err = q.QueryRowContext(ctx, `SELECT actor_id,COALESCE(NULLIF(author_snapshot->>'committer_name',''),NULLIF(author_snapshot->>'username',''),actor_id) FROM catalog.commits WHERE id=$1`, id).Scan(&c.Committer.ID, &c.Committer.Name); err != nil {
-		return c, err
-	}
-	if err = q.QueryRowContext(ctx, `SELECT operation,source_ids FROM catalog.commit_operations WHERE commit_id=$1`, id).Scan(&c.Operation, pq.Array(&c.SourceIDs)); err != nil {
 		return c, err
 	}
 	if c.SourceIDs == nil {
@@ -179,13 +292,117 @@ func workspaceCommitsFrom(ctx context.Context, q queryer, id string, pendingOnly
 	if err != nil {
 		return nil, err
 	}
-	out := []CollaborationCommit{}
-	for _, id := range ids {
-		c, err := collaborationCommitFrom(ctx, q, id)
-		if err != nil {
+	return collaborationCommitsBatch(ctx, q, ids)
+}
+
+// collaborationCommitsBatch loads multiple commits in 4 batch queries instead
+// of 6*N sequential queries, preserving the requested ID order.
+func collaborationCommitsBatch(ctx context.Context, q queryer, ids []string) ([]CollaborationCommit, error) {
+	if len(ids) == 0 {
+		return []CollaborationCommit{}, nil
+	}
+	byID := make(map[string]*CollaborationCommit, len(ids))
+	rows, err := q.QueryContext(ctx, `SELECT c.id::text,c.workspace_id::text,c.parent_id::text,COALESCE(NULLIF(c.author_snapshot->>'id',''),c.actor_id),
+		COALESCE(NULLIF(c.author_snapshot->>'username',''),c.actor_id),c.actor_id,
+		COALESCE(NULLIF(c.author_snapshot->>'committer_name',''),NULLIF(c.author_snapshot->>'username',''),c.actor_id),
+		c.message,c.kind,c.created_at,c.merged_at,c.merged_by,c.pull_request_id::text,c.merge_parent_id::text,c.snapshot_scope,
+		op.operation,op.source_ids
+		FROM catalog.commits c JOIN catalog.commit_operations op ON op.commit_id=c.id WHERE c.id = ANY($1::uuid[])`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		c := &CollaborationCommit{ReplacedBy: []string{}, Authors: []CollaborationAuthor{}, Changes: []CommitObject{}}
+		if err = rows.Scan(&c.ID, &c.WorkspaceID, &c.ParentID, &c.Author.ID, &c.Author.Name, &c.Committer.ID, &c.Committer.Name, &c.Message,
+			&c.Kind, &c.CreatedAt, &c.MergedAt, &c.MergedBy, &c.PullRequestID, &c.MergeParentID, &c.SnapshotScope,
+			&c.Operation, pq.Array(&c.SourceIDs)); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		out = append(out, c)
+		if c.SourceIDs == nil {
+			c.SourceIDs = []string{}
+		}
+		byID[c.ID] = c
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	for _, id := range ids {
+		if _, ok := byID[id]; !ok {
+			return nil, sql.ErrNoRows
+		}
+	}
+
+	rows, err = q.QueryContext(ctx, `SELECT original_id::text,replacement_id::text FROM catalog.commit_replacements WHERE original_id = ANY($1::uuid[]) ORDER BY original_id,replacement_id`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var orig, repl string
+		if err = rows.Scan(&orig, &repl); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if c, ok := byID[orig]; ok {
+			c.ReplacedBy = append(c.ReplacedBy, repl)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	rows, err = q.QueryContext(ctx, `SELECT commit_id::text,user_id,COALESCE(NULLIF(name,''),user_id) FROM catalog.commit_authors WHERE commit_id = ANY($1::uuid[]) ORDER BY commit_id,user_id`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var cid string
+		var a CollaborationAuthor
+		if err = rows.Scan(&cid, &a.ID, &a.Name); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if c, ok := byID[cid]; ok {
+			c.Authors = append(c.Authors, a)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	rows, err = q.QueryContext(ctx, `SELECT commit_id::text,target,target_id::text,base_version,
+		COALESCE(base_document,'null'::jsonb),COALESCE(before_document,'null'::jsonb),COALESCE(after_document,'null'::jsonb)
+		FROM catalog.commit_objects WHERE commit_id = ANY($1::uuid[]) ORDER BY commit_id,target,target_id`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var cid string
+		var o CommitObject
+		if err = rows.Scan(&cid, &o.Target, &o.ID, &o.BaseVersion, &o.Base, &o.Before, &o.After); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if c, ok := byID[cid]; ok {
+			c.Changes = append(c.Changes, o)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	out := make([]CollaborationCommit, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, *byID[id])
 	}
 	return out, nil
 }

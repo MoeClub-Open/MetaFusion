@@ -268,6 +268,9 @@ func (s *Store) validateWorkspaceCoverAssets(ctx context.Context, tx *sql.Tx, pl
 		if p.Object.Target != "entity" || rawNull(p.Merged) {
 			continue
 		}
+		if bytes.Equal(bytes.TrimSpace(p.Current), bytes.TrimSpace(p.Merged)) {
+			continue
+		}
 		_, old, err := workspaceCoverAssets(p.Current)
 		if err != nil {
 			return err

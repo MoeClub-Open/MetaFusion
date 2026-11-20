@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -9,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 type workspaceMergeObject struct {
@@ -67,6 +70,9 @@ func workspaceDocumentPatch(base, after json.RawMessage, target string) []Commit
 func workspaceSameFact(a, b json.RawMessage, target string) bool {
 	if rawNull(a) || rawNull(b) {
 		return rawNull(a) && rawNull(b)
+	}
+	if bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b)) {
+		return true
 	}
 	if target == "entity" {
 		var left, right Entity
@@ -142,22 +148,18 @@ func workspaceMergePlan(ctx context.Context, tx *sql.Tx, w Workspace, u User, re
 	used := map[string]bool{}
 	plan := []workspaceMergeObject{}
 	all := []WorkspaceConflict{}
+	mainByObj, err := workspaceMainObjectsBatch(ctx, tx, w.Objects, u)
+	if err != nil {
+		return nil, err
+	}
 	for _, o := range w.Objects {
-		current, version, err := workspaceMainObject(ctx, tx, o.Target, o.ID, u)
-		if err != nil {
-			return nil, err
-		}
+		snap := mainByObj[workspaceObjectKey(o.Target, o.ID)]
+		current, version := snap.Document, snap.Version
 		if o.Target == "entity" && rawNull(current) && version > 0 && !rawNull(o.Committed) && u.Can(PermissionLifecycleManage) {
 			var base Entity
 			_ = json.Unmarshal(o.Base, &base)
-			if base.State == "deleted" {
-				e, err := get(ctx, tx, o.ID)
-				if err != nil {
-					return nil, err
-				}
-				if e.State == "deleted" {
-					current = json.RawMessage(encode(e))
-				}
+			if base.State == "deleted" && snap.DeletedEntity != nil && snap.DeletedEntity.State == "deleted" {
+				current = json.RawMessage(encode(*snap.DeletedEntity))
 			}
 		}
 		merged, conflicts, err := mergeWorkspaceObject(o, current, version)
@@ -342,8 +344,14 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 		}
 	}
 	ctx = context.WithValue(ctx, collaborationReferencesKey{}, plannedEntities)
+	changedSet := make(map[string]bool, len(plan))
 	identityKeys := map[string]bool{}
+	entitiesForIdentityLock := make([]Entity, 0, len(plan))
 	for _, p := range plan {
+		if workspaceSameFact(p.Current, p.Merged, p.Object.Target) {
+			continue
+		}
+		changedSet[workspaceObjectKey(p.Object.Target, p.Object.ID)] = true
 		if p.Object.Target != "entity" {
 			continue
 		}
@@ -355,10 +363,11 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 			if err := json.Unmarshal(raw, &e); err != nil {
 				return err
 			}
-			if err := addIdentityWriteKeys(ctx, tx, e, identityKeys); err != nil {
-				return err
-			}
+			entitiesForIdentityLock = append(entitiesForIdentityLock, e)
 		}
+	}
+	if err := addIdentityWriteKeysBatch(ctx, tx, entitiesForIdentityLock, identityKeys); err != nil {
+		return err
 	}
 	if err := lockIdentityWriteKeys(ctx, tx, identityKeys); err != nil {
 		return err
@@ -371,8 +380,9 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 		return err
 	}
 	releases := map[string]bool{}
+	mediumIDs := map[string]bool{}
 	for _, p := range plan {
-		if p.Object.Target != "entity" || rawNull(p.Merged) {
+		if p.Object.Target != "entity" || rawNull(p.Merged) || !changedSet[workspaceObjectKey(p.Object.Target, p.Object.ID)] {
 			continue
 		}
 		var e Entity
@@ -384,25 +394,55 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 			releases[e.ID] = true
 		}
 		if e.MediumID != "" {
-			var rid string
-			if err := tx.QueryRowContext(ctx, `SELECT release_id FROM catalog.mediums WHERE id=$1`, e.MediumID).Scan(&rid); err == nil {
-				releases[rid] = true
-			} else if !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
+			mediumIDs[e.MediumID] = true
 		}
 	}
-	for _, rid := range sortedMapKeys(releases) {
-		if err := lockRelease(ctx, tx, rid); err != nil {
+	if len(mediumIDs) > 0 {
+		rows, err := tx.QueryContext(ctx, `SELECT release_id::text FROM catalog.mediums WHERE id = ANY($1::uuid[])`, pq.Array(keysOf(mediumIDs)))
+		if err != nil {
 			return err
 		}
+		for rows.Next() {
+			var rid string
+			if err = rows.Scan(&rid); err != nil {
+				rows.Close()
+				return err
+			}
+			if rid != "" {
+				releases[rid] = true
+			}
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+	if err := lockReleases(ctx, tx, sortedMapKeys(releases)); err != nil {
+		return err
 	}
 	plan, err = workspacePlanOrder(plan)
 	if err != nil {
 		return err
 	}
+	commitsByObj := make(map[string][]CollaborationCommit, len(changedSet))
+	for _, c := range commits {
+		if c.Kind != "edit" {
+			continue
+		}
+		seen := make(map[string]bool, len(c.Changes))
+		for _, co := range c.Changes {
+			key := workspaceObjectKey(co.Target, co.ID)
+			if !changedSet[key] || seen[key] {
+				continue
+			}
+			seen[key] = true
+			commitsByObj[key] = append(commitsByObj[key], c)
+		}
+	}
 	for _, p := range plan {
-		if workspaceSameFact(p.Current, p.Merged, p.Object.Target) {
+		key := workspaceObjectKey(p.Object.Target, p.Object.ID)
+		if !changedSet[key] {
 			continue
 		}
 		if !u.Can(PermissionReviewManage) {
@@ -420,7 +460,7 @@ func (s *Store) applyWorkspacePlan(ctx context.Context, tx *sql.Tx, w Workspace,
 			}
 		}
 		contributors := []CollaborationCommit{}
-		for _, c := range commits {
+		for _, c := range commitsByObj[key] {
 			if commitContributesToObject(c, p) {
 				contributors = append(contributors, c)
 			}
@@ -556,14 +596,31 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 	if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_commits SET integrated=true WHERE workspace_id=$1 AND active`, w.ID); err != nil {
 		return out, err
 	}
+	changedObjs := make([]WorkspaceObject, 0)
+	changedKey := make(map[string]bool)
 	for _, p := range plan {
-		current, version := p.Current, p.CurrentVersion
 		if !workspaceSameFact(p.Current, p.Merged, p.Object.Target) {
-			var err error
-			current, version, err = workspaceMainObject(ctx, tx, p.Object.Target, p.Object.ID, u)
-			if err != nil {
-				return out, err
-			}
+			changedObjs = append(changedObjs, p.Object)
+			changedKey[workspaceObjectKey(p.Object.Target, p.Object.ID)] = true
+		}
+	}
+	refreshed, err := workspaceMainObjectsBatch(ctx, tx, changedObjs, u)
+	if err != nil {
+		return out, err
+	}
+	for _, p := range plan {
+		key := workspaceObjectKey(p.Object.Target, p.Object.ID)
+		current, version := p.Current, p.CurrentVersion
+		isChanged := changedKey[key]
+		if isChanged {
+			snap := refreshed[key]
+			current, version = snap.Document, snap.Version
+		}
+		if !isChanged && p.Object.BaseVersion == version &&
+			equalDocument(p.Object.Base, current) &&
+			equalDocument(p.Object.Committed, current) &&
+			equalDocument(p.Object.Document, current) {
+			continue
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE catalog.workspace_objects SET base_version=$4,base_document=$5,head_document=$5,document=$5,updated_at=now() WHERE workspace_id=$1 AND target=$2 AND target_id=$3`, w.ID, p.Object.Target, p.Object.ID, version, nullableJSON(current)); err != nil {
 			return out, err
@@ -617,13 +674,15 @@ func (s *Store) mergeWorkspaceTx(ctx context.Context, tx *sql.Tx, w Workspace, p
 		}
 		out.Workspace = &current
 	}
-	for _, c := range commits {
-		cc, e := collaborationCommitFrom(ctx, tx, c.ID)
-		if e != nil {
-			return out, e
-		}
-		out.Commits = append(out.Commits, cc)
+	commitIDs := make([]string, len(commits))
+	for i, c := range commits {
+		commitIDs[i] = c.ID
 	}
+	reloadedCommits, err := collaborationCommitsBatch(ctx, tx, commitIDs)
+	if err != nil {
+		return out, err
+	}
+	out.Commits = reloadedCommits
 	return out, nil
 }
 func workspacePushReplay(ctx context.Context, tx *sql.Tx, w Workspace, head string, u User) (WorkspacePushResult, bool, error) {
@@ -680,7 +739,7 @@ func workspacePushReplay(ctx context.Context, tx *sql.Tx, w Workspace, head stri
 	return out, true, nil
 }
 func (s *Store) PushWorkspace(ctx context.Context, id string, in WorkspacePush, u User) (WorkspacePushResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	var out WorkspacePushResult
 	err := s.writeCatalog(ctx, func(tx *sql.Tx) error {
@@ -760,7 +819,7 @@ func (s *Store) PushWorkspace(ctx context.Context, id string, in WorkspacePush, 
 	return out, err
 }
 func (s *Store) MergePullRequest(ctx context.Context, id string, in PullRequestMerge, u User) (WorkspacePushResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	var out WorkspacePushResult
 	if !u.Can(PermissionReviewManage) {

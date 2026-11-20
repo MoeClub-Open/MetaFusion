@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"sort"
+
+	"github.com/lib/pq"
 )
 
 func identityWriteDocument(e Entity) map[string]any {
@@ -42,15 +44,48 @@ func addIdentityWriteKeys(ctx context.Context, tx *sql.Tx, e Entity, keys map[st
 	return rows.Err()
 }
 
-func lockIdentityWriteKeys(ctx context.Context, tx *sql.Tx, keys map[string]bool) error {
-	ordered := keysOf(keys)
-	sort.Strings(ordered)
-	for _, key := range ordered {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(740207,hashtext($1))`, key); err != nil {
+// addIdentityWriteKeysBatch computes identity_candidate_terms for a batch of
+// entities in one SQL round-trip instead of N individual queries.
+func addIdentityWriteKeysBatch(ctx context.Context, tx *sql.Tx, entities []Entity, keys map[string]bool) error {
+	if len(entities) == 0 {
+		return nil
+	}
+	docs := make([]string, len(entities))
+	prefixes := make([]string, len(entities))
+	for i, e := range entities {
+		q := commitIdentityQuery(e)
+		docs[i] = encode(identityWriteDocument(e))
+		prefixes[i] = q.Kind + ":" + q.WorkID + ":" + q.ReleaseID + ":" + q.MediumID + ":"
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT t.ord, term
+		FROM unnest($1::text[]) WITH ORDINALITY AS t(doc, ord)
+		CROSS JOIN LATERAL unnest(catalog.identity_candidate_terms(t.doc::jsonb)) AS term`, pq.Array(docs))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ord int
+		var term string
+		if err = rows.Scan(&ord, &term); err != nil {
 			return err
 		}
+		if ord >= 1 && ord <= len(prefixes) {
+			keys[prefixes[ord-1]+term] = true
+		}
 	}
-	return nil
+	return rows.Err()
+}
+
+func lockIdentityWriteKeys(ctx context.Context, tx *sql.Tx, keys map[string]bool) error {
+	ordered := keysOf(keys)
+	if len(ordered) == 0 {
+		return nil
+	}
+	sort.Strings(ordered)
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(740207,hashtext(k))
+		FROM unnest($1::text[]) WITH ORDINALITY AS t(k, ord) ORDER BY ord`, pq.Array(ordered))
+	return err
 }
 
 func lockEntityIdentityWrite(ctx context.Context, tx *sql.Tx, e Entity, u User) error {

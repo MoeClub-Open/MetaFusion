@@ -416,7 +416,14 @@ func (s *Store) WorkspaceVersionStatus(ctx context.Context, wid string, u User) 
 	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM catalog.workspace_commits WHERE workspace_id=$1 AND active AND NOT integrated`, wid).Scan(&out.PendingCommits); err != nil {
 		return out, err
 	}
-	_, err = workspaceMergePlan(ctx, tx, w, u, nil)
+	changedOnly := w
+	changedOnly.Objects = make([]WorkspaceObject, 0, len(w.Objects))
+	for _, o := range w.Objects {
+		if !workspaceSameFact(o.Base, o.Committed, o.Target) {
+			changedOnly.Objects = append(changedOnly.Objects, o)
+		}
+	}
+	_, err = workspaceMergePlan(ctx, tx, changedOnly, u, nil)
 	var conflict *workspaceConflictError
 	if errors.As(err, &conflict) {
 		out.Conflicts = conflict.Conflicts
