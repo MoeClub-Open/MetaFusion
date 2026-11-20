@@ -52,6 +52,9 @@ type Store struct {
 	// 由服务侧透出在 /health：这一项要回答的是"站点可用，但定义是不是没更新"。
 	defStatusMu sync.Mutex
 	defStatus   DefinitionStatus
+	// 公开聚合读缓存：按目录写入令牌校验有效性，多副本一致且避免热点接口反复全表扫描。
+	publicStatsCache readCache[CatalogStats]
+	tagsCache        readCache[[]TagCount]
 }
 type queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row

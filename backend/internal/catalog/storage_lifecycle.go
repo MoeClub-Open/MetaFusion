@@ -196,7 +196,7 @@ func (s *Store) RunStorageLifecycle(ctx context.Context, baseURL, secret string)
 		} else {
 			now := time.Now().UTC()
 			since := time.Time{}
-			fullSweep := lastFullSweepAt.IsZero() || now.Sub(lastFullSweepAt) >= time.Minute
+			fullSweep := lastFullSweepAt.IsZero() || now.Sub(lastFullSweepAt) >= outboxFullSweepInterval
 			if !fullSweep && !lastSweepAt.IsZero() {
 				since = lastSweepAt.Add(-2 * time.Minute)
 			}

@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -159,4 +162,141 @@ func jsonHasError(raw []byte, code string) bool {
 		Error string `json:"error"`
 	}
 	return json.Unmarshal(raw, &body) == nil && body.Error == code
+}
+
+func TestReadCacheCoalescesAndInvalidatesByToken(t *testing.T) {
+	var cache readCache[int]
+	var calls atomic.Int32
+	gate := make(chan struct{})
+	started := make(chan struct{}, 4)
+
+	loader := func(ctx context.Context) (int, error) {
+		n := int(calls.Add(1))
+		started <- struct{}{}
+		<-gate
+		return n * 10, nil
+	}
+
+	const workers = 6
+	results := make([]int, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx], errs[idx] = cache.getOrLoad(context.Background(), "tok-1", loader)
+		}(i)
+	}
+	<-started
+	// Give sibling goroutines time to join the in-flight call.
+	time.Sleep(15 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if calls.Load() != 1 {
+		t.Fatalf("expected single coalesced loader call, got %d", calls.Load())
+	}
+	for i := 0; i < workers; i++ {
+		if errs[i] != nil || results[i] != 10 {
+			t.Fatalf("worker %d got (%d, %v), want (10, nil)", i, results[i], errs[i])
+		}
+	}
+
+	// Same token hits memory cache without calling loader.
+	got, err := cache.getOrLoad(context.Background(), "tok-1", func(context.Context) (int, error) {
+		calls.Add(1)
+		return 999, nil
+	})
+	if err != nil || got != 10 || calls.Load() != 1 {
+		t.Fatalf("expected cache hit (10, calls=1), got (%d, err=%v, calls=%d)", got, err, calls.Load())
+	}
+
+	// Token change invalidates and reloads.
+	got, err = cache.getOrLoad(context.Background(), "tok-2", func(context.Context) (int, error) {
+		calls.Add(1)
+		return 20, nil
+	})
+	if err != nil || got != 20 || calls.Load() != 2 {
+		t.Fatalf("expected reload on token change (20, calls=2), got (%d, err=%v, calls=%d)", got, err, calls.Load())
+	}
+}
+
+func TestReadCacheLeaderCancelDoesNotAbortWaiters(t *testing.T) {
+	var cache readCache[string]
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	defer cancelLeader()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	loader := func(ctx context.Context) (string, error) {
+		close(started)
+		select {
+		case <-release:
+			return "ok", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
+	leaderErr := make(chan error, 1)
+	go func() {
+		_, err := cache.getOrLoad(leaderCtx, "tok", loader)
+		leaderErr <- err
+	}()
+	<-started
+
+	waiterVal := make(chan string, 1)
+	waiterErr := make(chan error, 1)
+	go func() {
+		v, err := cache.getOrLoad(context.Background(), "tok", loader)
+		waiterVal <- v
+		waiterErr <- err
+	}()
+	time.Sleep(10 * time.Millisecond)
+	cancelLeader()
+	if err := <-leaderErr; err != context.Canceled {
+		t.Fatalf("expected leader context.Canceled, got %v", err)
+	}
+	close(release)
+	if err := <-waiterErr; err != nil {
+		t.Fatalf("waiter should succeed despite leader cancel, got %v", err)
+	}
+	if got := <-waiterVal; got != "ok" {
+		t.Fatalf("waiter got %q, want ok", got)
+	}
+}
+
+func TestFilterTagCountsAndCloneCatalogStats(t *testing.T) {
+	all := []TagCount{
+		{Name: "RPG", Count: 50},
+		{Name: "销量100%", Count: 20},
+		{Name: "下划线_标签", Count: 10},
+		{Name: "Action RPG", Count: 5},
+	}
+	if got := filterTagCounts(all, "  rpg ", 10); len(got) != 2 || got[0].Name != "RPG" || got[1].Name != "Action RPG" {
+		t.Fatalf("case-insensitive substring match failed: %+v", got)
+	}
+	if got := filterTagCounts(all, "%", 10); len(got) != 1 || got[0].Name != "销量100%" {
+		t.Fatalf("literal percent match failed: %+v", got)
+	}
+	if got := filterTagCounts(all, "_", 10); len(got) != 1 || got[0].Name != "下划线_标签" {
+		t.Fatalf("literal underscore match failed: %+v", got)
+	}
+	if got := filterTagCounts(all, "", 2); len(got) != 2 || got[0].Name != "RPG" || got[1].Name != "销量100%" {
+		t.Fatalf("limit slice failed: %+v", got)
+	}
+	if got := filterTagCounts(all, "nonexistent", 10); got == nil || len(got) != 0 {
+		t.Fatalf("empty filter result should be non-nil empty slice: %#v", got)
+	}
+
+	src := CatalogStats{
+		EntityCoverageCounts: EntityCoverageCounts{Total: 3},
+		Kinds:                map[string]EntityCoverageCounts{"work": {Total: 3}},
+	}
+	cloned := cloneCatalogStats(src)
+	cloned.Kinds["work"] = EntityCoverageCounts{Total: 999}
+	if src.Kinds["work"].Total != 3 {
+		t.Fatalf("cloneCatalogStats leaked map mutation")
+	}
 }

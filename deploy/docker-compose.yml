@@ -696,6 +696,10 @@ services:
       - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
       - -c
       - random_page_cost=${POSTGRES_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - autovacuum_vacuum_scale_factor=${POSTGRES_AUTOVACUUM_VACUUM_SCALE_FACTOR:-0.05}
+      - -c
+      - autovacuum_analyze_scale_factor=${POSTGRES_AUTOVACUUM_ANALYZE_SCALE_FACTOR:-0.02}
     container_name: metafusion-postgres
     restart: unless-stopped
     environment:

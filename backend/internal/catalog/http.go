@@ -357,45 +357,11 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
-		args := []any{}
-		where := []string{"e.state='active'", "jsonb_typeof(e.document->'attributes'->'tags')='array'"}
-		if q := strings.TrimSpace(c.Query("q")); q != "" {
-			// 与实体搜索同口径：%/_ 由 likeContains 按字面转义。
-			args = append(args, likeContains(q))
-			where = append(where, fmt.Sprintf("t.name ILIKE $%d", len(args)))
-		}
 		limit, _ := strconv.Atoi(c.Query("limit"))
-		if limit <= 0 || limit > 500 {
-			limit = 200
-		}
-		args = append(args, limit)
-		rows, err := s.DB.QueryContext(c.Request.Context(), `
-		SELECT t.name, count(*) AS n
-		FROM catalog.entities e,
-		     jsonb_array_elements_text(e.document->'attributes'->'tags') AS t(name)
-		WHERE `+strings.Join(where, " AND ")+`
-		GROUP BY t.name
-		ORDER BY n DESC, t.name
-		LIMIT $`+strconv.Itoa(len(args)), args...)
+		items, err := s.ListTags(c.Request.Context(), c.Query("q"), limit)
 		if err != nil {
 			// 查询失败不能再回 200 空表：DB 故障看起来会像"库里没有标签"，
 			// 前端标签云与筛选建议会静默变空（错误由 respond 统一成 500/database_error）。
-			respond(c, nil, err)
-			return
-		}
-		defer rows.Close()
-		items := []map[string]any{}
-		for rows.Next() {
-			var name string
-			var n int
-			if err := rows.Scan(&name, &n); err != nil {
-				respond(c, nil, err)
-				return
-			}
-			items = append(items, map[string]any{"name": name, "count": n})
-		}
-		// 迭代中途断连同样要暴露：rows.Err() 才记录 Next 的终止原因。
-		if err := rows.Err(); err != nil {
 			respond(c, nil, err)
 			return
 		}

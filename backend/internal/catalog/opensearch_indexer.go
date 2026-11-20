@@ -15,6 +15,11 @@ import (
 
 const openSearchStateDocID = "metafusion-index-state-" + openSearchIndexGeneration
 
+const (
+	outboxFullSweepInterval = 10 * time.Minute
+	outboxMonitorLookback   = 5 * time.Minute
+)
+
 func (s *Store) RunOpenSearchIndexer(ctx context.Context) {
 	if s.OpenSearch == nil {
 		return
@@ -24,7 +29,7 @@ func (s *Store) RunOpenSearchIndexer(ctx context.Context) {
 	for {
 		now := time.Now().UTC()
 		since := time.Time{}
-		fullSweep := lastFullSweepAt.IsZero() || now.Sub(lastFullSweepAt) >= time.Minute
+		fullSweep := lastFullSweepAt.IsZero() || now.Sub(lastFullSweepAt) >= outboxFullSweepInterval
 		if !fullSweep && !lastSweepAt.IsZero() {
 			since = lastSweepAt.Add(-2 * time.Minute)
 		}
@@ -60,6 +65,8 @@ func (s *Store) RunOpenSearchMonitor(ctx context.Context) {
 	if s.OpenSearch == nil {
 		return
 	}
+	var cleanBefore time.Time
+	var lastFullCheckAt time.Time
 	check := func() {
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
@@ -67,13 +74,30 @@ func (s *Store) RunOpenSearchMonitor(ctx context.Context) {
 		s.OpenSearch.ready.Store(err == nil && initialized)
 		delayed := err != nil
 		if !delayed && s.DB != nil {
+			now := time.Now().UTC()
+			fullCheck := lastFullCheckAt.IsZero() || cleanBefore.IsZero() || now.Sub(lastFullCheckAt) >= outboxFullSweepInterval
 			var backlogDelayed bool
-			dbErr := s.DB.QueryRowContext(probeCtx, `SELECT EXISTS(
-				SELECT 1 FROM catalog.outbox o
-				WHERE o.type LIKE 'entity.%' AND o.created_at < now() - interval '2 minutes'
-				AND NOT EXISTS (SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
-			)`, openSearchConsumer).Scan(&backlogDelayed)
+			var dbErr error
+			if fullCheck {
+				dbErr = s.DB.QueryRowContext(probeCtx, `SELECT EXISTS(
+					SELECT 1 FROM catalog.outbox o
+					WHERE o.type LIKE 'entity.%' AND o.created_at < now() - interval '2 minutes'
+					AND NOT EXISTS (SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+				)`, openSearchConsumer).Scan(&backlogDelayed)
+			} else {
+				dbErr = s.DB.QueryRowContext(probeCtx, `SELECT EXISTS(
+					SELECT 1 FROM catalog.outbox o
+					WHERE o.type LIKE 'entity.%' AND o.created_at >= $2 AND o.created_at < now() - interval '2 minutes'
+					AND NOT EXISTS (SELECT 1 FROM catalog.deliveries d WHERE d.consumer=$1 AND d.event_id=o.id)
+				)`, openSearchConsumer, cleanBefore).Scan(&backlogDelayed)
+			}
 			delayed = dbErr != nil || backlogDelayed
+			if dbErr == nil && !backlogDelayed {
+				cleanBefore = now.Add(-outboxMonitorLookback)
+				if fullCheck {
+					lastFullCheckAt = now
+				}
+			}
 		}
 		s.OpenSearch.indexingDelayed.Store(delayed)
 	}

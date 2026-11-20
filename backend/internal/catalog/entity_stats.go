@@ -1,6 +1,11 @@
 package catalog
 
-import "context"
+import (
+	"context"
+	"strings"
+	"sync"
+	"time"
+)
 
 type EntityCoverageCounts struct {
 	Total        int64 `json:"total"`
@@ -13,9 +18,124 @@ type CatalogStats struct {
 	Kinds map[string]EntityCoverageCounts `json:"kinds"`
 }
 
+type TagCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+const (
+	entityReadCacheMaxAge      = 5 * time.Minute
+	entityReadCacheLoadTimeout = 15 * time.Second
+)
+
+type cacheInflightCall[T any] struct {
+	done chan struct{}
+	val  T
+	err  error
+}
+
+// readCache caches an aggregate read snapshot keyed by a cheap database version
+// token. Concurrent misses for the same token share a single DB query.
+type readCache[T any] struct {
+	mu       sync.RWMutex
+	token    string
+	loadedAt time.Time
+	value    T
+	valid    bool
+	inflight map[string]*cacheInflightCall[T]
+}
+
+func (c *readCache[T]) getOrLoad(ctx context.Context, token string, loader func(context.Context) (T, error)) (T, error) {
+	c.mu.RLock()
+	if c.valid && c.token == token && time.Since(c.loadedAt) < entityReadCacheMaxAge {
+		val := c.value
+		c.mu.RUnlock()
+		return val, nil
+	}
+	c.mu.RUnlock()
+
+	c.mu.Lock()
+	if c.valid && c.token == token && time.Since(c.loadedAt) < entityReadCacheMaxAge {
+		val := c.value
+		c.mu.Unlock()
+		return val, nil
+	}
+	if c.inflight == nil {
+		c.inflight = make(map[string]*cacheInflightCall[T])
+	}
+	call, waiting := c.inflight[token]
+	if !waiting {
+		call = &cacheInflightCall[T]{done: make(chan struct{})}
+		c.inflight[token] = call
+		go func() {
+			loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), entityReadCacheLoadTimeout)
+			defer cancel()
+			val, err := loader(loadCtx)
+			call.val = val
+			call.err = err
+			c.mu.Lock()
+			if err == nil {
+				c.token = token
+				c.value = val
+				c.loadedAt = time.Now()
+				c.valid = true
+			}
+			delete(c.inflight, token)
+			c.mu.Unlock()
+			close(call.done)
+		}()
+	}
+	c.mu.Unlock()
+
+	select {
+	case <-call.done:
+		return call.val, call.err
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	}
+}
+
+// entityReadCacheToken returns a cheap, strictly advancing token using pure
+// index/PK lookups (catalog_head singleton, revisions_pkey MAX, and
+// entities_public_recent top row).
+func (s *Store) entityReadCacheToken(ctx context.Context) (string, error) {
+	var token string
+	err := s.DB.QueryRowContext(ctx, `SELECT
+		COALESCE((SELECT commit_id::text FROM catalog.catalog_head WHERE singleton), '')
+		|| '|' ||
+		COALESCE((SELECT id::text FROM catalog.revisions ORDER BY id DESC LIMIT 1), '0')
+		|| '|' ||
+		COALESCE((SELECT updated_at::text || ':' || id::text FROM catalog.entities WHERE state='active' ORDER BY updated_at DESC, id ASC LIMIT 1), '')`).Scan(&token)
+	return token, err
+}
+
+func cloneCatalogStats(in CatalogStats) CatalogStats {
+	out := CatalogStats{
+		EntityCoverageCounts: in.EntityCoverageCounts,
+		Kinds:                make(map[string]EntityCoverageCounts, len(in.Kinds)),
+	}
+	for k, v := range in.Kinds {
+		out.Kinds[k] = v
+	}
+	return out
+}
+
 // PublicStats aggregates active facts in one database snapshot. It does not
 // expose tombstones, private workspace activity or review queues.
 func (s *Store) PublicStats(ctx context.Context) (CatalogStats, error) {
+	token, err := s.entityReadCacheToken(ctx)
+	if err != nil {
+		return CatalogStats{}, err
+	}
+	stats, err := s.publicStatsCache.getOrLoad(ctx, token, s.loadPublicStats)
+	if err != nil {
+		return CatalogStats{}, err
+	}
+	return cloneCatalogStats(stats), nil
+}
+
+func (s *Store) loadPublicStats(ctx context.Context) (CatalogStats, error) {
 	out := CatalogStats{Kinds: make(map[string]EntityCoverageCounts, len(Kinds))}
 	for _, kind := range Kinds {
 		out.Kinds[kind] = EntityCoverageCounts{}
@@ -40,6 +160,73 @@ func (s *Store) PublicStats(ctx context.Context) (CatalogStats, error) {
 		out.WithTags += counts.WithTags
 	}
 	return out, rows.Err()
+}
+
+// ListTags returns active entity tag frequencies ordered by count descending
+// and tag name ascending, filtered by case-insensitive literal substring q.
+func (s *Store) ListTags(ctx context.Context, q string, limit int) ([]TagCount, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	token, err := s.entityReadCacheToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	all, err := s.tagsCache.getOrLoad(ctx, token, s.loadAllTagCounts)
+	if err != nil {
+		return nil, err
+	}
+	return filterTagCounts(all, q, limit), nil
+}
+
+func (s *Store) loadAllTagCounts(ctx context.Context) ([]TagCount, error) {
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT t.name, count(*) AS n
+		FROM catalog.entities e,
+		     jsonb_array_elements_text(e.document->'attributes'->'tags') AS t(name)
+		WHERE e.state='active' AND jsonb_typeof(e.document->'attributes'->'tags')='array'
+		GROUP BY t.name
+		ORDER BY n DESC, t.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TagCount{}
+	for rows.Next() {
+		var item TagCount
+		if err := rows.Scan(&item.Name, &item.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func filterTagCounts(all []TagCount, q string, limit int) []TagCount {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	q = strings.TrimSpace(q)
+	if q == "" {
+		n := min(limit, len(all))
+		out := make([]TagCount, n)
+		copy(out, all[:n])
+		return out
+	}
+	needle := strings.ToLower(q)
+	out := make([]TagCount, 0, min(limit, len(all)))
+	for _, item := range all {
+		if strings.Contains(strings.ToLower(item.Name), needle) {
+			out = append(out, item)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out
 }
 
 // 状态计数（GET /api/catalog/entities/stats）。
