@@ -104,9 +104,9 @@ func (s *Store) entityReadCacheToken(ctx context.Context) (string, error) {
 	err := s.DB.QueryRowContext(ctx, `SELECT
 		COALESCE((SELECT commit_id::text FROM catalog.catalog_head WHERE singleton), '')
 		|| '|' ||
-		COALESCE((SELECT id::text FROM catalog.revisions ORDER BY id DESC LIMIT 1), '0')
+		COALESCE((SELECT MAX(r.id) FROM catalog.revisions r), 0)::text
 		|| '|' ||
-		COALESCE((SELECT updated_at::text || ':' || id::text FROM catalog.entities WHERE state='active' ORDER BY updated_at DESC, id ASC LIMIT 1), '')`).Scan(&token)
+		COALESCE((SELECT e.updated_at::text || ':' || e.id::text FROM catalog.entities e WHERE e.state='active' ORDER BY e.updated_at DESC, e.id ASC LIMIT 1), '')`).Scan(&token)
 	return token, err
 }
 
