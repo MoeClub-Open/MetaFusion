@@ -155,11 +155,19 @@ KEYS = {
     "STORAGE_SITE_CONCURRENT_UPLOADS": {"readers": [("storage", "internal/config/config.go")], "default": "0 = 不限制", "safe": False, "inject": [("deploy/docker-compose.yml", "storage")]},
     "STORAGE_PENDING_TTL_HOURS": {"readers": [("storage", "internal/config/config.go")], "default": "72", "safe": False, "inject": [("deploy/docker-compose.yml", "storage")]},
     "STORAGE_ORPHAN_RETENTION_DAYS": {"readers": [("storage", "internal/config/config.go")], "default": "7", "safe": False, "inject": [("deploy/docker-compose.yml", "storage")]},
+    "STORAGE_RATE_LIMIT_READ_RPM": {"readers": [("storage", "internal/config/config.go")], "default": "180（0 为不限制）", "safe": True},
+    "STORAGE_RATE_LIMIT_WRITE_RPM": {"readers": [("storage", "internal/config/config.go")], "default": "180（0 为不限制）", "safe": True},
+    "STORAGE_DB_MAX_OPEN_CONNS": {"readers": [("storage", "internal/store/store.go")], "default": "32，限定1–256", "safe": True},
+    "STORAGE_DB_MAX_IDLE_CONNS": {"readers": [("storage", "internal/store/store.go")], "default": "16，限定0–maxOpen", "safe": True},
+    "STORAGE_UPSTREAM_MAX_IDLE_CONNS_PER_HOST": {"readers": [("storage", "internal/config/config.go")], "default": "64", "safe": True},
+    "STORAGE_S3_MAX_IDLE_CONNS_PER_HOST": {"readers": [("storage", "internal/config/config.go")], "default": "128", "safe": True},
 }
 
 # 已退役的编排变量：删掉之后不许再回来（它们是"注入了但全仓零读取"的死重量）。
-for key in ("MCP_PUBLIC_URL", "MCP_API_URL", "MCP_AUTH_URL", "MCP_DATABASE_URL", "MCP_ENCRYPTION_KEY", "MCP_SKILLS_REVISION", "MCP_DOCS_REVISION", "MCP_OBJECT_ORIGINS", "MCP_ALLOWED_ORIGINS", "MCP_SEARCH_PROVIDER", "MCP_SEARCH_URL", "MCP_SEARCH_API_KEY"):
+for key in ("MCP_PUBLIC_URL", "MCP_API_URL", "MCP_AUTH_URL", "MCP_DATABASE_URL", "MCP_ENCRYPTION_KEY", "MCP_SKILLS_REVISION", "MCP_DOCS_REVISION", "MCP_OBJECT_ORIGINS", "MCP_ALLOWED_ORIGINS", "MCP_SEARCH_PROVIDER", "MCP_SEARCH_URL", "MCP_SEARCH_API_KEY", "MCP_RATE_LIMIT_READ_RPM", "MCP_RATE_LIMIT_WRITE_RPM", "MCP_RATE_LIMIT_OAUTH_RPM", "MCP_FILE_CONCURRENCY", "MCP_HTTP_MAX_IDLE_CONNS", "MCP_HTTP_MAX_IDLE_CONNS_PER_HOST", "MCP_HTTP_TIMEOUT_SECONDS"):
     KEYS[key] = {"readers": [("mcp", "internal/server/config.go")], "default": "见 MCP Config 校验", "safe": True}
+KEYS["MCP_DB_MAX_OPEN_CONNS"] = {"readers": [("mcp", "internal/server/store.go")], "default": "32，限定1–256", "safe": True}
+KEYS["MCP_DB_MAX_IDLE_CONNS"] = {"readers": [("mcp", "internal/server/store.go")], "default": "16，限定0–maxOpen", "safe": True}
 
 RETIRED = {
     "REDIS_ADDR": "e13be7c 删除：没有任何代码读缓存地址（Redis 仍随栈启动，接线另批）",
