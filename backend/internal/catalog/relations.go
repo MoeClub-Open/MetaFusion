@@ -560,8 +560,8 @@ func (s *Store) saveRelationTx(ctx context.Context, tx *sql.Tx, input RelationEd
 			if old.Version != input.ExpectedVersion {
 				return errVersionConflict
 			}
-			if old.SourceID != r.SourceID || old.TargetID != r.TargetID || old.Type != r.Type {
-				return fmt.Errorf("immutable_scope")
+			if err := checkRelationImmutableScope(r.ID, *old, r); err != nil {
+				return err
 			}
 			r.Version = old.Version + 1
 		}

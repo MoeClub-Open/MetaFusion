@@ -199,14 +199,24 @@ func TestListFilterOriginalLanguageExact(t *testing.T) {
 // 仅有封面：pictures 非空数组。CASE 保序（WHEN 为真才求 array_length），
 // 缺键/标量/对象走 ELSE=0；不占绑定参数位。
 func TestListFilterHasPicturesGuardsType(t *testing.T) {
+	yes, no := true, false
 	joined, args := listFilterSearchSQL(t, listFilterSearchDefinitions(),
-		ListOptions{HasPictures: true})
+		ListOptions{HasPictures: &yes})
 	if !strings.Contains(joined, "CASE WHEN jsonb_typeof(document->'pictures')='array'") ||
 		!strings.Contains(joined, "ELSE 0 END>0") {
 		t.Fatalf("has_pictures must guard typeof before array_length, got: %s", joined)
 	}
 	if len(args) != 0 {
 		t.Fatalf("has_pictures must not consume bound args, got %v", args)
+	}
+	joinedNo, argsNo := listFilterSearchSQL(t, listFilterSearchDefinitions(),
+		ListOptions{HasPictures: &no})
+	if !strings.Contains(joinedNo, "CASE WHEN jsonb_typeof(document->'pictures')='array'") ||
+		!strings.Contains(joinedNo, "ELSE 0 END=0") {
+		t.Fatalf("has_pictures=0 must guard typeof before array_length=0, got: %s", joinedNo)
+	}
+	if len(argsNo) != 0 {
+		t.Fatalf("has_pictures=0 must not consume bound args, got %v", argsNo)
 	}
 }
 

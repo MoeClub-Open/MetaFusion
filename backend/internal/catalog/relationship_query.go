@@ -93,7 +93,7 @@ func normalizeRelationshipQuery(in RelationshipQueryRequest) (RelationshipQueryR
 		offset = *in.Offset
 	}
 	if limit < 1 || limit > 100 {
-		return in, 0, 0, fmt.Errorf("invalid_limit")
+		return in, 0, 0, errWithDetails("invalid_limit", map[string]any{"max_limit": 100})
 	}
 	if offset < 0 {
 		return in, 0, 0, fmt.Errorf("invalid_offset")
@@ -145,13 +145,18 @@ func validateRelationshipQueryRules(in RelationshipQueryRequest, d Definitions) 
 }
 
 func validateRelationshipRuleCodes(codes []string, d Definitions) error {
-	rules := map[string]bool{}
-	for _, rule := range ReadRelationshipRules(d) {
+	allRules := ReadRelationshipRules(d)
+	rules := make(map[string]bool, len(allRules))
+	examples := make([]string, 0, 2)
+	for _, rule := range allRules {
 		rules[rule.Code] = true
+		if len(examples) < 2 {
+			examples = append(examples, rule.Code)
+		}
 	}
 	for _, code := range codes {
 		if !rules[code] {
-			return fmt.Errorf("invalid_rule_code")
+			return errWithDetails("invalid_rule_code", map[string]any{"rule_code": code, "examples": examples})
 		}
 	}
 	return nil

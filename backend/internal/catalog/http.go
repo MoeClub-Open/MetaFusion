@@ -79,7 +79,15 @@ func respond(c *gin.Context, v any, err error) {
 	auditlog.Fail(c, code)
 	// 错误响应统一为单一 error 字段（值为稳定机器码）；database_error 只透出固定码，
 	// 不附带 SQL 原文。
-	c.JSON(status, gin.H{"error": code})
+	payload := gin.H{"error": code}
+	if status < 500 {
+		for k, val := range errDetails(err) {
+			if k != "error" {
+				payload[k] = val
+			}
+		}
+	}
+	c.JSON(status, payload)
 }
 func body(c *gin.Context, v any) bool {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
@@ -87,7 +95,12 @@ func body(c *gin.Context, v any) bool {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		auditlog.Fail(c, "invalid_payload")
-		c.JSON(400, gin.H{"error": "invalid_payload"})
+		payload := gin.H{"error": "invalid_payload"}
+		const unknownPrefix = `json: unknown field "`
+		if msg := err.Error(); strings.HasPrefix(msg, unknownPrefix) && strings.HasSuffix(msg, `"`) {
+			payload["unknown_field"] = msg[len(unknownPrefix) : len(msg)-1]
+		}
+		c.JSON(400, payload)
 		return false
 	}
 	if dec.Decode(&struct{}{}) != io.EOF {
@@ -379,7 +392,20 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
-		o := ListOptions{Kind: c.Query("kind"), Query: strings.TrimSpace(c.Query("q")), State: c.Query("state"), WorkID: c.Query("work_id"), ContentUnitID: c.Query("content_unit_id"), ReleaseID: c.Query("release_id"), MediumID: c.Query("medium_id"), ParentID: c.Query("parent_id"), Field: strings.TrimSpace(c.Query("field")), Value: c.Query("value"), OriginalLanguage: c.Query("original_language"), HasPictures: c.Query("has_pictures") == "1", Sort: c.Query("sort"), Order: c.Query("order"), Locale: c.Query("locale"), Limit: limit, Offset: offset}
+		var hasPictures *bool
+		switch raw := strings.TrimSpace(c.Query("has_pictures")); raw {
+		case "":
+		case "1":
+			v := true
+			hasPictures = &v
+		case "0":
+			v := false
+			hasPictures = &v
+		default:
+			respond(c, nil, errWithDetails(codeInvalidQueryParam, map[string]any{"field": "has_pictures", "allowed": []string{"0", "1"}}))
+			return
+		}
+		o := ListOptions{Kind: c.Query("kind"), Query: strings.TrimSpace(c.Query("q")), State: c.Query("state"), WorkID: c.Query("work_id"), ContentUnitID: c.Query("content_unit_id"), ReleaseID: c.Query("release_id"), MediumID: c.Query("medium_id"), ParentID: c.Query("parent_id"), Field: strings.TrimSpace(c.Query("field")), Value: c.Query("value"), OriginalLanguage: c.Query("original_language"), HasPictures: hasPictures, Sort: c.Query("sort"), Order: c.Query("order"), Locale: c.Query("locale"), Limit: limit, Offset: offset}
 		o.Values = queryList(c, "values")
 		o.ExcludeField = strings.TrimSpace(c.Query("exclude_field"))
 		o.ExcludeValues = queryList(c, "exclude_values")

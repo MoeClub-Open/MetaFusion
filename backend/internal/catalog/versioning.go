@@ -705,7 +705,7 @@ func (s *Store) versionSaveObject(ctx context.Context, tx *sql.Tx, wid string, o
 					return err
 				}
 				if e.ID != "" && e.ID != o.ID {
-					return fmt.Errorf("immutable_scope")
+					return errWithDetails("immutable_scope", map[string]any{"entity_id": o.ID, "field": "id", "old": o.ID, "new": e.ID})
 				}
 				e.ID = ""
 				e.Version = 0
@@ -728,7 +728,7 @@ func (s *Store) versionSaveObject(ctx context.Context, tx *sql.Tx, wid string, o
 					return err
 				}
 				if r.ID != "" && r.ID != o.ID {
-					return fmt.Errorf("immutable_scope")
+					return errWithDetails("immutable_scope", map[string]any{"relation_id": o.ID, "field": "id", "old": o.ID, "new": r.ID})
 				}
 				r.ID = ""
 				r.Version = 0

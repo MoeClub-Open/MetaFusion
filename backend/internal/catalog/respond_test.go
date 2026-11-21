@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -135,5 +136,37 @@ func TestRespondKeepsDomainCodes(t *testing.T) {
 		if w.Code != 400 || body.Error != tc {
 			t.Errorf("%q: status=%d code=%q", tc, w.Code, body.Error)
 		}
+	}
+}
+
+func TestRespondIncludesStructuredDetailsAndUnknownField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	err := checkImmutableScope("ent-1", Entity{Kind: "medium", ReleaseID: "rel-old"}, Entity{Kind: "medium", ReleaseID: ""})
+	if err == nil || err.Error() != "immutable_scope" {
+		t.Fatalf("expected immutable_scope, got %v", err)
+	}
+	respond(ctx, nil, err)
+	var got map[string]any
+	if decErr := json.Unmarshal(w.Body.Bytes(), &got); decErr != nil {
+		t.Fatalf("decode failed: %v", decErr)
+	}
+	if w.Code != 400 || got["error"] != "immutable_scope" || got["entity_id"] != "ent-1" || got["field"] != "release_id" || got["old"] != "rel-old" || got["new"] != "" {
+		t.Fatalf("unexpected detail payload: %d %+v", w.Code, got)
+	}
+
+	w2 := httptest.NewRecorder()
+	r := gin.New()
+	HTTP{Store: &Store{}}.Register(r)
+	req := httptest.NewRequest("POST", "/api/catalog/entities/batch", strings.NewReader(`{"ids":[],"fields":["id"]}`))
+	req.RemoteAddr = "198.51.100.44:12345"
+	r.ServeHTTP(w2, req)
+	var got2 map[string]any
+	if decErr := json.Unmarshal(w2.Body.Bytes(), &got2); decErr != nil {
+		t.Fatalf("decode batch error failed: %v", decErr)
+	}
+	if w2.Code != 400 || got2["error"] != "invalid_payload" || got2["unknown_field"] != "fields" {
+		t.Fatalf("expected unknown_field=fields, got %d %+v", w2.Code, got2)
 	}
 }

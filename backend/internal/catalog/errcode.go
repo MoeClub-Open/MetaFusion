@@ -25,6 +25,27 @@ import (
 	"github.com/lib/pq"
 )
 
+// apiDetailError attaches structured diagnostic context to a stable domain
+// error code without changing err.Error() or introducing separate responders.
+type apiDetailError struct {
+	code    string
+	details map[string]any
+}
+
+func (e *apiDetailError) Error() string { return e.code }
+
+func errWithDetails(code string, details map[string]any) error {
+	return &apiDetailError{code: code, details: details}
+}
+
+func errDetails(err error) map[string]any {
+	var d *apiDetailError
+	if errors.As(err, &d) && len(d.details) > 0 {
+		return d.details
+	}
+	return nil
+}
+
 // codeInternalError 是"这不是业务错误、是服务端故障"的统一码。
 const codeInternalError = "internal_error"
 

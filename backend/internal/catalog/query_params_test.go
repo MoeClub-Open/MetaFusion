@@ -25,6 +25,10 @@ func TestPostgresEntityListLanguageAndCoverContract(t *testing.T) {
 	if totalCovered != 1 || len(covered) != 1 || covered[0] != withCover.ID {
 		t.Fatalf("has_pictures=1 应只返回有封面条目: ids=%v total=%d", covered, totalCovered)
 	}
+	uncovered, totalUncovered := listIDs(t, engine, "/api/catalog/entities?has_pictures=0&limit=100")
+	if totalUncovered != 1 || len(uncovered) != 1 || uncovered[0] == withCover.ID {
+		t.Fatalf("has_pictures=0 应只返回无封面条目: ids=%v total=%d", uncovered, totalUncovered)
+	}
 	_, totalJa := listIDs(t, engine, "/api/catalog/entities?original_language=ja&limit=100")
 	if totalJa != 1 {
 		t.Fatalf("original_language=ja 应返回 1 条: total=%d", totalJa)
@@ -59,6 +63,7 @@ func TestListRejectsUnsendableQueryParams(t *testing.T) {
 		{"limit blank space", "/api/catalog/entities?limit=%20", codeInvalidLimit},
 		{"limit zero", "/api/catalog/entities?limit=0", codeInvalidLimit},
 		{"limit negative", "/api/catalog/entities?limit=-1", codeInvalidLimit},
+		{"has_pictures invalid", "/api/catalog/entities?has_pictures=x", codeInvalidQueryParam},
 		{"limit over cap", "/api/catalog/entities?limit=101", codeInvalidLimit},
 		{"offset not a number", "/api/catalog/entities?offset=abc", codeInvalidOffset},
 		{"offset negative", "/api/catalog/entities?offset=-1", codeInvalidOffset},

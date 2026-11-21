@@ -158,8 +158,8 @@ func (c *OpenSearchClient) searchPageWithAdultFilter(ctx context.Context, o List
 			}}},
 		}})
 	}
-	if o.HasPictures {
-		filters = append(filters, map[string]any{"term": map[string]any{"has_pictures": true}})
+	if o.HasPictures != nil {
+		filters = append(filters, map[string]any{"term": map[string]any{"has_pictures": *o.HasPictures}})
 	}
 	if o.TagsMode == "all" {
 		for _, tag := range o.Tags {

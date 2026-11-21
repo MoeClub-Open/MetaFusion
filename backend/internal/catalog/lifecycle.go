@@ -92,6 +92,11 @@ func (s *Store) lifecycleTx(ctx context.Context, tx *sql.Tx, id string, input Li
 			if _, err = tx.ExecContext(ctx, "DELETE FROM catalog.relations WHERE source_id=$1 OR target_id=$1", e.ID); err != nil {
 				return err
 			}
+			if e.Kind == "release" {
+				if _, err = tx.ExecContext(ctx, "DELETE FROM catalog.release_subjects WHERE release_id=$1", e.ID); err != nil {
+					return err
+				}
+			}
 		}
 		// 与 Save 同一原则：版本条件进 WHERE，读版本与写入是同一次原子操作。
 		// 事务重试之后也要复核业务版本。

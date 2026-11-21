@@ -73,7 +73,13 @@ func respondCollaboration(c *gin.Context, value any, err error) {
 			status = 403
 		}
 		auditlog.Fail(c, operation.Error())
-		c.JSON(status, gin.H{"error": operation.Error(), "operation": operation.Index, "applied": false})
+		out := gin.H{"error": operation.Error(), "operation": operation.Index, "applied": false}
+		for k, val := range errDetails(operation.Cause) {
+			if k != "error" && k != "operation" && k != "applied" {
+				out[k] = val
+			}
+		}
+		c.JSON(status, out)
 		return
 	}
 	if err != nil {

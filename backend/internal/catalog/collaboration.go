@@ -318,14 +318,15 @@ func workspaceMainObjectsBatch(ctx context.Context, q queryer, objects []Workspa
 
 	entitiesByID := make(map[string]Entity, len(entityIDSet))
 	if len(entityIDSet) > 0 {
-		rows, err := q.QueryContext(ctx, `SELECT id::text, document FROM catalog.entities WHERE id = ANY($1::uuid[])`, pq.Array(keysOf(entityIDSet)))
+		rows, err := q.QueryContext(ctx, `SELECT id::text, document, state, created_by::text FROM catalog.entities WHERE id = ANY($1::uuid[])`, pq.Array(keysOf(entityIDSet)))
 		if err != nil {
 			return nil, err
 		}
+		var contentUnitIDs, expressionIDs, mediumIDs, trackIDs, releaseIDs []string
 		for rows.Next() {
-			var id string
+			var id, state, createdBy string
 			var raw []byte
-			if err = rows.Scan(&id, &raw); err != nil {
+			if err = rows.Scan(&id, &raw, &state, &createdBy); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -334,6 +335,22 @@ func workspaceMainObjectsBatch(ctx context.Context, q queryer, objects []Workspa
 				rows.Close()
 				return nil, err
 			}
+			// Match get() hydration: authoritative columns + structural tables.
+			e.State, e.CreatedBy = state, createdBy
+			switch e.Kind {
+			case "content_unit":
+				contentUnitIDs = append(contentUnitIDs, id)
+			case "expression":
+				expressionIDs = append(expressionIDs, id)
+			case "medium":
+				mediumIDs = append(mediumIDs, id)
+			case "track":
+				e.Contents = []Inclusion{}
+				trackIDs = append(trackIDs, id)
+			case "release":
+				e.Subjects = []Subject{}
+				releaseIDs = append(releaseIDs, id)
+			}
 			entitiesByID[id] = e
 		}
 		if err = rows.Err(); err != nil {
@@ -341,6 +358,158 @@ func workspaceMainObjectsBatch(ctx context.Context, q queryer, objects []Workspa
 			return nil, err
 		}
 		rows.Close()
+
+		if len(contentUnitIDs) > 0 {
+			rows, err = q.QueryContext(ctx, `SELECT id::text, work_id, coalesce(parent_id::text,'') FROM catalog.content_units WHERE id = ANY($1::uuid[])`, pq.Array(contentUnitIDs))
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var id, workID, parentID string
+				if err = rows.Scan(&id, &workID, &parentID); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				e := entitiesByID[id]
+				e.WorkID, e.ParentID = workID, parentID
+				entitiesByID[id] = e
+			}
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			rows.Close()
+		}
+		if len(expressionIDs) > 0 {
+			rows, err = q.QueryContext(ctx, `SELECT id::text, work_id, coalesce(content_unit_id::text,'') FROM catalog.expressions WHERE id = ANY($1::uuid[])`, pq.Array(expressionIDs))
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var id, workID, cuID string
+				if err = rows.Scan(&id, &workID, &cuID); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				e := entitiesByID[id]
+				e.WorkID, e.ContentUnitID = workID, cuID
+				entitiesByID[id] = e
+			}
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			rows.Close()
+		}
+		if len(mediumIDs) > 0 {
+			rows, err = q.QueryContext(ctx, `SELECT id::text, release_id, coalesce(parent_id::text,'') FROM catalog.mediums WHERE id = ANY($1::uuid[])`, pq.Array(mediumIDs))
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var id, releaseID, parentID string
+				if err = rows.Scan(&id, &releaseID, &parentID); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				e := entitiesByID[id]
+				e.ReleaseID, e.ParentID = releaseID, parentID
+				entitiesByID[id] = e
+			}
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			rows.Close()
+		}
+		if len(trackIDs) > 0 {
+			rows, err = q.QueryContext(ctx, `SELECT id::text, medium_id, coalesce(parent_id::text,'') FROM catalog.tracks WHERE id = ANY($1::uuid[])`, pq.Array(trackIDs))
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var id, mediumID, parentID string
+				if err = rows.Scan(&id, &mediumID, &parentID); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				e := entitiesByID[id]
+				e.MediumID, e.ParentID = mediumID, parentID
+				entitiesByID[id] = e
+			}
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			rows.Close()
+
+			rows, err = q.QueryContext(ctx, `SELECT track_id::text, expression_id, position, locator, attributes, sources FROM catalog.track_contents WHERE track_id = ANY($1::uuid[]) ORDER BY track_id, position`, pq.Array(trackIDs))
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var tid string
+				var c Inclusion
+				var loc, attrs, sources []byte
+				if err = rows.Scan(&tid, &c.ExpressionID, &c.Position, &loc, &attrs, &sources); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if err = json.Unmarshal(sources, &c.Sources); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if len(loc) > 0 {
+					if err = json.Unmarshal(loc, &c.Locator); err != nil {
+						rows.Close()
+						return nil, err
+					}
+				}
+				if len(attrs) > 0 {
+					if err = json.Unmarshal(attrs, &c.Attributes); err != nil {
+						rows.Close()
+						return nil, err
+					}
+				}
+				e := entitiesByID[tid]
+				e.Contents = append(e.Contents, c)
+				entitiesByID[tid] = e
+			}
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			rows.Close()
+		}
+		if len(releaseIDs) > 0 {
+			rows, err = q.QueryContext(ctx, `SELECT release_id::text, work_id, role, position, attributes FROM catalog.release_subjects WHERE release_id = ANY($1::uuid[]) ORDER BY release_id, position, work_id`, pq.Array(releaseIDs))
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var rid string
+				var x Subject
+				var attrs []byte
+				if err = rows.Scan(&rid, &x.WorkID, &x.Role, &x.Position, &attrs); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if len(attrs) > 0 {
+					if err = json.Unmarshal(attrs, &x.Attributes); err != nil {
+						rows.Close()
+						return nil, err
+					}
+				}
+				e := entitiesByID[rid]
+				e.Subjects = append(e.Subjects, x)
+				entitiesByID[rid] = e
+			}
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			rows.Close()
+		}
 	}
 
 	// Filter track contents in a single batch query for all active visible tracks.
@@ -560,8 +729,11 @@ func normalizeWorkspaceDocument(raw, current json.RawMessage, target, id string,
 		if err := json.Unmarshal(current, &old); err != nil {
 			return nil, err
 		}
-		if (e.ID != "" && e.ID != id) || e.Kind != old.Kind || e.WorkID != old.WorkID || e.ReleaseID != old.ReleaseID || e.MediumID != old.MediumID {
-			return nil, fmt.Errorf("immutable_scope")
+		if e.ID != "" && e.ID != id {
+			return nil, errWithDetails("immutable_scope", map[string]any{"entity_id": id, "field": "id", "old": id, "new": e.ID})
+		}
+		if err := checkImmutableScope(id, old, e); err != nil {
+			return nil, err
 		}
 		old.MediumFormats = nil
 		out := commitMap(old)
@@ -588,8 +760,11 @@ func normalizeWorkspaceDocument(raw, current json.RawMessage, target, id string,
 	if err := json.Unmarshal(current, &old); err != nil {
 		return nil, err
 	}
-	if (r.ID != "" && r.ID != id) || r.SourceID != old.SourceID || r.TargetID != old.TargetID || r.Type != old.Type {
-		return nil, fmt.Errorf("immutable_scope")
+	if r.ID != "" && r.ID != id {
+		return nil, errWithDetails("immutable_scope", map[string]any{"relation_id": id, "field": "id", "old": id, "new": r.ID})
+	}
+	if err := checkRelationImmutableScope(id, old, r); err != nil {
+		return nil, err
 	}
 	r.ID = id
 	r.Version = old.Version
@@ -737,8 +912,11 @@ func (s *Store) SaveWorkspaceChanges(ctx context.Context, id string, in Workspac
 	// references stable across later saves and commits in the same workspace.
 	for _, op := range in.Operations {
 		if op.Action == "create" {
-			if !commitRef.MatchString(op.Ref) || out.Refs[op.Ref] != "" {
-				return out, fmt.Errorf("invalid_local_reference")
+			if !commitRef.MatchString(op.Ref) {
+				return out, errWithDetails("invalid_local_reference", map[string]any{"ref": op.Ref, "expected_pattern": commitRef.String()})
+			}
+			if out.Refs[op.Ref] != "" {
+				return out, errWithDetails("invalid_local_reference", map[string]any{"ref": op.Ref, "reason": "duplicate_ref"})
 			}
 			out.Refs[op.Ref] = newID()
 		}

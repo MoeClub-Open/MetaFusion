@@ -559,8 +559,8 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 					return err
 				}
 			}
-			if old.Kind != e.Kind || old.WorkID != e.WorkID || old.ReleaseID != e.ReleaseID || old.MediumID != e.MediumID {
-				return fmt.Errorf("immutable_scope")
+			if err = checkImmutableScope(old.ID, old, e); err != nil {
+				return err
 			}
 			e.CreatedBy = old.CreatedBy
 			e.Version = old.Version + 1
@@ -700,12 +700,12 @@ func (s *Store) saveEntityTx(ctx context.Context, tx *sql.Tx, input Edit, u User
 			}
 		}
 		if create || (e.Kind == "release" && encode(old.Subjects) != encode(e.Subjects)) || (e.Kind == "track" && encode(old.Contents) != encode(e.Contents)) {
-			missing, err := undeclaredReleaseSubject(ctx, tx, e)
+			missingRelease, missingWork, missing, err := undeclaredReleaseSubject(ctx, tx, e)
 			if err != nil {
 				return err
 			}
 			if missing {
-				return fmt.Errorf("undeclared_release_subject")
+				return errWithDetails("undeclared_release_subject", map[string]any{"release_id": missingRelease, "work_id": missingWork})
 			}
 		}
 		if err := syncEntityTimelineTx(ctx, tx, e); err != nil {
@@ -756,7 +756,33 @@ func replaceExternalLinksTx(ctx context.Context, tx *sql.Tx, e Entity, deleteExi
 // 限定其发行复核；其余 kind 不触及映射表且归属字段在 Save 内不可变
 // （immutable_scope），跳过复核。语义与原全表 EXISTS 一致——任一发行存在
 // 未声明收录即拒绝，只是不再为一次单实体写入扫描全库。
-func undeclaredReleaseSubject(ctx context.Context, tx *sql.Tx, e Entity) (bool, error) {
+func checkImmutableScope(entityID string, old, next Entity) error {
+	switch {
+	case old.Kind != next.Kind:
+		return errWithDetails("immutable_scope", map[string]any{"entity_id": entityID, "field": "kind", "old": old.Kind, "new": next.Kind})
+	case old.WorkID != next.WorkID:
+		return errWithDetails("immutable_scope", map[string]any{"entity_id": entityID, "field": "work_id", "old": old.WorkID, "new": next.WorkID})
+	case old.ReleaseID != next.ReleaseID:
+		return errWithDetails("immutable_scope", map[string]any{"entity_id": entityID, "field": "release_id", "old": old.ReleaseID, "new": next.ReleaseID})
+	case old.MediumID != next.MediumID:
+		return errWithDetails("immutable_scope", map[string]any{"entity_id": entityID, "field": "medium_id", "old": old.MediumID, "new": next.MediumID})
+	}
+	return nil
+}
+
+func checkRelationImmutableScope(relationID string, old, next Relation) error {
+	switch {
+	case old.SourceID != next.SourceID:
+		return errWithDetails("immutable_scope", map[string]any{"relation_id": relationID, "field": "source_id", "old": old.SourceID, "new": next.SourceID})
+	case old.TargetID != next.TargetID:
+		return errWithDetails("immutable_scope", map[string]any{"relation_id": relationID, "field": "target_id", "old": old.TargetID, "new": next.TargetID})
+	case old.Type != next.Type:
+		return errWithDetails("immutable_scope", map[string]any{"relation_id": relationID, "field": "type", "old": old.Type, "new": next.Type})
+	}
+	return nil
+}
+
+func undeclaredReleaseSubject(ctx context.Context, tx *sql.Tx, e Entity) (string, string, bool, error) {
 	var releaseID, trackID any
 	switch e.Kind {
 	case "release":
@@ -766,19 +792,29 @@ func undeclaredReleaseSubject(ctx context.Context, tx *sql.Tx, e Entity) (bool, 
 	case "medium":
 		releaseID = e.ReleaseID
 	default:
-		return false, nil
+		return "", "", false, nil
 	}
-	var missing bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS(
-	 SELECT 1 FROM catalog.track_contents c
+	var missingRelease, missingWork string
+	err := tx.QueryRowContext(ctx, `SELECT m.release_id::text, x.work_id::text
+	 FROM catalog.track_contents c
 	 JOIN catalog.tracks t ON t.id=c.track_id
+	 JOIN catalog.entities te ON te.id=t.id AND te.state='active'
 	 JOIN catalog.mediums m ON m.id=t.medium_id
+	 JOIN catalog.entities me ON me.id=m.id AND me.state='active'
 	 JOIN catalog.expressions x ON x.id=c.expression_id
+	 JOIN catalog.entities xe ON xe.id=x.id AND xe.state='active'
 	 WHERE ($1::uuid IS NULL OR m.release_id=$1)
 	 AND ($2::uuid IS NULL OR t.id=$2)
 	 AND NOT EXISTS(SELECT 1 FROM catalog.release_subjects s
-	 WHERE s.release_id=m.release_id AND s.work_id=x.work_id))`, releaseID, trackID).Scan(&missing)
-	return missing, err
+	 WHERE s.release_id=m.release_id AND s.work_id=x.work_id)
+	 LIMIT 1`, releaseID, trackID).Scan(&missingRelease, &missingWork)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return missingRelease, missingWork, true, nil
 }
 
 type ListOptions struct {
@@ -800,9 +836,9 @@ type ListOptions struct {
 	// OriginalLanguage 按 document->>'original_language' 精确匹配：八层级通用列，
 	// 探索页侧栏的原语言筛选即它（值如 ja/zh/en，大小写按入库原样比）。
 	OriginalLanguage string
-	// HasPictures 只留有封面的：document->'pictures' 为非空数组。CASE 保序
-	// （WHEN 为真才求 array_length）：缺键/标量/对象走 ELSE=0 按无封面过滤。
-	HasPictures bool
+	// HasPictures 三态筛选：nil 不过滤，true 只留有封面，false 只留无封面。CASE 保序
+	// （WHEN 为真才求 array_length）：缺键/标量/对象走 ELSE=0。
+	HasPictures *bool
 	// Sort / Order 是白名单排序键与方向（见 listSortKeys），Locale 只在 Sort=title
 	// 时参与"取哪个语种的题名"；未知键由 normalizeListSort 拒掉（HTTP 400 invalid_sort），
 	// 不静默退回默认序——静默忽略正是"传了 sort=title 却拿到 updated_at 序列"的成因。
@@ -977,8 +1013,12 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 	if o.OriginalLanguage != "" {
 		add("document->>'original_language'=$%d", o.OriginalLanguage)
 	}
-	if o.HasPictures {
-		parts = append(parts, "(CASE WHEN jsonb_typeof(document->'pictures')='array' THEN jsonb_array_length(document->'pictures') ELSE 0 END>0)")
+	if o.HasPictures != nil {
+		if *o.HasPictures {
+			parts = append(parts, "(CASE WHEN jsonb_typeof(document->'pictures')='array' THEN jsonb_array_length(document->'pictures') ELSE 0 END>0)")
+		} else {
+			parts = append(parts, "(CASE WHEN jsonb_typeof(document->'pictures')='array' THEN jsonb_array_length(document->'pictures') ELSE 0 END=0)")
+		}
 	}
 	if o.Query != "" {
 		return nil, fmt.Errorf("text_query_requires_search")
