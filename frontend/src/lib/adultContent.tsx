@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useAuth } from "./authContext";
 import { fetchApi } from "./api";
+import { ADULT_MODE_CACHE_PREFIX, HOME_FEED_CACHE_PREFIX } from "./sessionHint";
 import { tagCode } from "./definitions";
 
 export type AdultContentMode = "hide" | "blur" | "show";
@@ -45,6 +46,22 @@ function normalizeMode(raw: unknown): AdultContentMode {
   return "blur";
 }
 
+function readCachedAdultMode(userId: string): AdultContentMode | null {
+  if (!userId || typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(ADULT_MODE_CACHE_PREFIX + userId);
+    if (raw === "hide" || raw === "blur" || raw === "show") return raw;
+  } catch {}
+  return null;
+}
+
+function writeCachedAdultMode(userId: string, mode: AdultContentMode): void {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(ADULT_MODE_CACHE_PREFIX + userId, mode);
+  } catch {}
+}
+
 export function ContentPreferenceProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id || "";
@@ -59,13 +76,21 @@ export function ContentPreferenceProvider({ children }: { children: React.ReactN
       setLoadFailed(false);
       return;
     }
-    setLoading(true);
+    const cached = readCachedAdultMode(userId);
+    if (cached) {
+      setMode(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setLoadFailed(false);
     try {
       const data = await fetchApi<{ adult_content_mode?: string }>("/catalog/me/content-preferences");
-      setMode(normalizeMode(data?.adult_content_mode));
+      const resolved = normalizeMode(data?.adult_content_mode);
+      setMode(resolved);
+      writeCachedAdultMode(userId, resolved);
     } catch {
-      setMode("blur");
+      if (!cached) setMode("blur");
       setLoadFailed(true);
     } finally {
       setLoading(false);
@@ -83,9 +108,15 @@ export function ContentPreferenceProvider({ children }: { children: React.ReactN
     });
     const resolved = normalizeMode(res?.adult_content_mode ?? next);
     setMode(resolved);
+    writeCachedAdultMode(userId, resolved);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem(`${HOME_FEED_CACHE_PREFIX}auth`);
+      } catch {}
+    }
     setLoadFailed(false);
     return resolved;
-  }, []);
+  }, [userId]);
 
   return (
     <ContentPreferenceContext.Provider value={{ mode, loading, loadFailed, refresh, updateMode }}>

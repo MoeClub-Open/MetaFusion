@@ -70,6 +70,38 @@ func (s *Store) GetHomePreferences(ctx context.Context, userID string) (HomePref
 	return out, nil
 }
 
+// GetUserFeedPreferences 一次读取用户的首页分区偏好与 18+ 成人内容隐藏标志，
+// 避免 /shelves/feed 在每个货架求值时重复查询同一行 catalog.user_preferences。
+func (s *Store) GetUserFeedPreferences(ctx context.Context, userID string) (HomePreferences, bool, error) {
+	if strings.TrimSpace(userID) == "" || s == nil || s.DB == nil {
+		return emptyHomePreferences(), false, nil
+	}
+	var b []byte
+	var mode string
+	err := s.DB.QueryRowContext(ctx, `SELECT home_shelves, adult_content_mode FROM catalog.user_preferences WHERE user_id=$1`, userID).Scan(&b, &mode)
+	if err == sql.ErrNoRows {
+		return emptyHomePreferences(), false, nil
+	}
+	if err != nil {
+		return emptyHomePreferences(), false, err
+	}
+	if len(b) == 0 {
+		return HomePreferences{}, false, fmt.Errorf("invalid_home_preferences")
+	}
+	var out HomePreferences
+	if err = json.Unmarshal(b, &out); err != nil {
+		return HomePreferences{}, false, err
+	}
+	if out.Order == nil || out.Hidden == nil || out.Sections == nil {
+		return HomePreferences{}, false, fmt.Errorf("invalid_home_preferences")
+	}
+	hideAdult := false
+	if norm, nerr := normalizeAdultContentMode(mode); nerr == nil {
+		hideAdult = norm == AdultContentHide
+	}
+	return out, hideAdult, nil
+}
+
 // SaveHomePreferences 归一化并整份保存偏好。
 //
 // order/hidden 里的未知 slug 不校验、原样保留（旧实现报 unknown_shelf）：偏好属于用户，

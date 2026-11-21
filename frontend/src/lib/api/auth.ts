@@ -237,15 +237,50 @@ export interface SetupStatusResponse {
   total_users: number;
 }
 
-export async function fetchSetupStatus(): Promise<SetupStatusResponse> {
+const SETUP_CACHE_KEY = "mf_setup_initialized_v1";
+let setupInitializedMemo = false;
+let setupStatusPromise: Promise<SetupStatusResponse> | null = null;
+
+export function isSetupInitializedCached(): boolean {
+  if (setupInitializedMemo) return true;
+  if (typeof window === "undefined") return false;
   try {
-    const res = await fetch("/api/setup", { credentials: "same-origin" });
-    if (res.ok) {
-      const data = await res.json();
-      return { is_initialized: !data.needed, has_admin: !data.needed, total_users: 1 };
+    if (window.sessionStorage.getItem(SETUP_CACHE_KEY) === "1") {
+      setupInitializedMemo = true;
+      return true;
     }
   } catch {}
-  return { is_initialized: true, has_admin: true, total_users: 1 };
+  return false;
+}
+
+export async function fetchSetupStatus(): Promise<SetupStatusResponse> {
+  if (isSetupInitializedCached()) {
+    return { is_initialized: true, has_admin: true, total_users: 1 };
+  }
+  if (!setupStatusPromise) {
+    setupStatusPromise = (async () => {
+      try {
+        const res = await fetch("/api/setup", { credentials: "same-origin" });
+        if (res.ok) {
+          const data = await res.json();
+          const initialized = !data.needed;
+          if (initialized) {
+            setupInitializedMemo = true;
+            if (typeof window !== "undefined") {
+              try {
+                window.sessionStorage.setItem(SETUP_CACHE_KEY, "1");
+              } catch {}
+            }
+          }
+          return { is_initialized: initialized, has_admin: initialized, total_users: 1 };
+        }
+      } catch {}
+      return { is_initialized: true, has_admin: true, total_users: 1 };
+    })().finally(() => {
+      setupStatusPromise = null;
+    });
+  }
+  return setupStatusPromise;
 }
 
 export interface PublicAuthSettings {

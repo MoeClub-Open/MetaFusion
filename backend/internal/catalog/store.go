@@ -55,6 +55,8 @@ type Store struct {
 	// 公开聚合读缓存：按目录写入令牌校验有效性，多副本一致且避免热点接口反复全表扫描。
 	publicStatsCache readCache[CatalogStats]
 	tagsCache        readCache[[]TagCount]
+	shelfEvalCache   shelfFeedCache
+	defBytesCache    definitionsResponseCache
 }
 type queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
@@ -979,6 +981,14 @@ func buildFieldPredicate(doc Definitions, field, value string, values []string, 
 		if !ok || !f.Searchable {
 			return "", fmt.Errorf("field_not_searchable")
 		}
+		if field == "creation_form" {
+			if len(values) > 0 {
+				*args = append(*args, pq.Array(values))
+				return fmt.Sprintf("document->'attributes'->>'creation_form' = ANY($%d::text[])", len(*args)), nil
+			}
+			*args = append(*args, value)
+			return fmt.Sprintf("document->'attributes'->>'creation_form'=$%d", len(*args)), nil
+		}
 		if len(values) > 0 {
 			*args = append(*args, field, pq.Array(values))
 			return fmt.Sprintf("document->'attributes'->>$%d = ANY($%d::text[])", len(*args)-1, len(*args)), nil
@@ -990,16 +1000,15 @@ func buildFieldPredicate(doc Definitions, field, value string, values []string, 
 }
 
 func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]any) ([]string, error) {
-	parts := []string{"state NOT IN ('deleted','merged')"}
+	var parts []string
+	if u == nil || !u.Can(PermissionLifecycleManage) {
+		parts = []string{"state='active'"}
+	} else {
+		parts = []string{"state NOT IN ('deleted','merged')"}
+	}
 	add := func(clause string, value any) {
 		*args = append(*args, value)
 		parts = append(parts, fmt.Sprintf(clause, len(*args)))
-	}
-	if u == nil {
-		parts = append(parts, "state='active'")
-	} else if !u.Can(PermissionLifecycleManage) {
-		// 当前仅有 active 与已排除的终态；使用同一主体可见性口径。
-		add("(state='active' OR created_by=$%d)", u.ID)
 	}
 	if o.Kind != "" {
 		add("kind=$%d", o.Kind)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -11,6 +11,7 @@ import { PageContainer, PageShell } from "@/components/ui/PageShell";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { useTitleDisplayOrder } from "@/hooks/useTitleDisplayOrder";
 import { useAuth } from "@/lib/authContext";
+import { HOME_FEED_CACHE_PREFIX, hasSessionHint } from "@/lib/sessionHint";
 import { isAdultEntity, useAdultContentMode } from "@/lib/adultContent";
 import { EntityCard } from "@/components/common/EntityCard";
 import { EntityCardGrid } from "@/components/common/EntityCardGrid";
@@ -44,6 +45,40 @@ type EntityItem = CoverBearing & {
 // 分区定义（含 source：system 只能隐藏、custom 可删除）与图标集见 lib/homeSections.ts。
 type FeedSection = { shelf: ShelfLike; items: EntityItem[]; total?: number };
 
+const HOME_FEED_CACHE_TTL_MS = 60_000;
+
+function homeFeedCacheKey(hasSession: boolean): string {
+  return HOME_FEED_CACHE_PREFIX + (hasSession ? "auth" : "anon");
+}
+
+function readHomeFeedCache(hasSession: boolean): FeedSection[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(homeFeedCacheKey(hasSession));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { sections?: FeedSection[]; savedAt?: number };
+    if (Array.isArray(parsed?.sections) && typeof parsed?.savedAt === "number" && Date.now() - parsed.savedAt < HOME_FEED_CACHE_TTL_MS) {
+      return parsed.sections;
+    }
+  } catch {}
+  return null;
+}
+
+function writeHomeFeedCache(hasSession: boolean, sections: FeedSection[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(homeFeedCacheKey(hasSession), JSON.stringify({ sections, savedAt: Date.now() }));
+  } catch {}
+}
+
+function clearHomeFeedCache(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(homeFeedCacheKey(false));
+    window.sessionStorage.removeItem(homeFeedCacheKey(true));
+  } catch {}
+}
+
 export default function HomePage() {
   const { t, tr, locale } = useI18n();
   const { definitions, kinds } = useDefinitions();
@@ -54,6 +89,9 @@ export default function HomePage() {
   const [sections, setSections] = useState<FeedSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const mountedSessionHintRef = useRef<boolean | null>(null);
+  const hasSectionsRef = useRef(false);
+  const feedRequestIdRef = useRef(0);
   const [customizing, setCustomizing] = useState(false);
   const [prefs, setPrefs] = useState<HomePreferences>(EMPTY_PREFERENCES);
   const [templates, setTemplates] = useState<ShelfLike[]>([]);
@@ -62,26 +100,57 @@ export default function HomePage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const loadFeed = useCallback(async () => {
-    setLoading(true);
+  const loadFeed = useCallback(async (opts?: { silent?: boolean; sessionHint?: boolean }) => {
+    const reqId = ++feedRequestIdRef.current;
+    if (!opts?.silent) setLoading(true);
     setFailed(false);
     try {
       // 统一走 fetchApi：同域 Cookie、语言头与错误处理保持一致。
       // 用 components/catalog 的 api() 只会发 cookie，带身份的偏好不会被识别。
       const r = await fetchApi<{ items: FeedSection[]; covers?: Record<string, ResolvedCover> }>("/catalog/shelves/feed?per_shelf=14");
-      setSections(Array.isArray(r.items) ? r.items.map((section) => ({ ...section, items: withDisplayCovers(section.items, r.covers) })) : []);
+      if (reqId !== feedRequestIdRef.current) return;
+      const next = Array.isArray(r.items) ? r.items.map((section) => ({ ...section, items: withDisplayCovers(section.items, r.covers) })) : [];
+      hasSectionsRef.current = next.length > 0;
+      setSections(next);
+      const cacheSession = opts?.sessionHint ?? hasSessionHint();
+      writeHomeFeedCache(cacheSession, next);
     } catch {
-      setSections([]);
-      setFailed(true);
+      if (reqId !== feedRequestIdRef.current) return;
+      if (!opts?.silent) {
+        hasSectionsRef.current = false;
+        setSections([]);
+        setFailed(true);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === feedRequestIdRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // 不等待 /api/auth/me 完成再发 feed 请求：浏览器会自动随同域请求携带 mf_session Cookie，
+    // 避免登录态多等一整轮串行 RTT；若本地有刚缓存的分区，首帧直接渲染并在后台刷新。
+    const hint = hasSessionHint();
+    mountedSessionHintRef.current = hint;
+    const cached = readHomeFeedCache(hint);
+    if (cached) {
+      hasSectionsRef.current = cached.length > 0;
+      setSections(cached);
+      setLoading(false);
+      void loadFeed({ silent: true, sessionHint: hint });
+    } else {
+      void loadFeed({ sessionHint: hint });
+    }
+  }, [loadFeed]);
+
+  useEffect(() => {
     if (authLoading) return;
-    void loadFeed();
-  }, [authLoading, loadFeed]);
+    const signedIn = Boolean(user);
+    if (mountedSessionHintRef.current !== null && signedIn !== mountedSessionHintRef.current) {
+      mountedSessionHintRef.current = signedIn;
+      clearHomeFeedCache();
+      void loadFeed({ silent: hasSectionsRef.current, sessionHint: signedIn });
+    }
+  }, [authLoading, user, loadFeed]);
 
   // 空分区不展示：推荐位不该出现"0 部作品"这类噪音。
   const visibleSections = useMemo(
@@ -117,8 +186,9 @@ export default function HomePage() {
     setSaveError("");
     try {
       await fetchApi("/catalog/me/home-preferences", { method: "PUT", body: JSON.stringify(payload) });
+      clearHomeFeedCache();
       setCustomizing(false);
-      await loadFeed();
+      await loadFeed({ sessionHint: true });
     } catch (e) {
       // 后端给的是稳定错误码（invalid_slug / too_many_sections …），翻成四语文案再显示。
       setSaveError(localizeCatalogError((e as Error).message, t));
@@ -136,9 +206,10 @@ export default function HomePage() {
         method: "PUT",
         body: JSON.stringify(EMPTY_PREFERENCES),
       });
+      clearHomeFeedCache();
       setPrefs(EMPTY_PREFERENCES);
       setCustomizing(false);
-      await loadFeed();
+      await loadFeed({ sessionHint: true });
     } catch (e) {
       setSaveError(localizeCatalogError((e as Error).message, t));
     } finally {
@@ -146,7 +217,7 @@ export default function HomePage() {
     }
   };
 
-  const showSkeleton = authLoading || loading;
+  const showSkeleton = loading && sections.length === 0;
 
   return (
     <div className="min-h-screen flex flex-col text-text-strong relative overflow-clip ">

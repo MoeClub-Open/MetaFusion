@@ -3,12 +3,16 @@ package catalog
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -319,6 +323,12 @@ func shelfFilter(sh Shelf, args *[]any, alias string) []string {
 			if len(vals) == 0 {
 				continue
 			}
+			// creation_form 使用字面量键以匹配局部表达式索引 entities_active_work_creation_form_updated_idx。
+			if field == "creation_form" {
+				*args = append(*args, pq.Array(vals))
+				parts = append(parts, fmt.Sprintf("%s.document->'attributes'->>'creation_form' = ANY($%d)", alias, len(*args)))
+				continue
+			}
 			*args = append(*args, field, pq.Array(vals))
 			parts = append(parts, fmt.Sprintf("%s.document->'attributes'->>$%d = ANY($%d)", alias, len(*args)-1, len(*args)))
 		}
@@ -355,14 +365,19 @@ func shelfOrderClause(sortKey string) string {
 // 规则里的 fields/vocab_terms/relations 只有服务端能判定，故求值必须在此完成，
 // 前端不再自行近似匹配（那会把非作品实体和无关条目混进推荐）。
 func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User) ([]Entity, error) {
+	hideAdult, err := s.shouldHideAdultContent(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	return s.listShelfItemsWithAdultFlag(ctx, sh, limit, hideAdult)
+}
+
+func (s *Store) listShelfItemsWithAdultFlag(ctx context.Context, sh Shelf, limit int, hideAdult bool) ([]Entity, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 12
 	}
 	args := []any{}
-	where, err := s.shelfVisibilityWhere(ctx, u, &args)
-	if err != nil {
-		return nil, err
-	}
+	where := shelfVisibilityWhereWithAdult(hideAdult)
 	where = append(where, shelfFilter(sh, &args, "e")...)
 
 	order := shelfOrderClause(sh.Sort)
@@ -387,7 +402,8 @@ func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User
 	if err != nil {
 		return nil, err
 	}
-	got, err := s.GetManyVisible(ctx, ids, u)
+	// 货架只收录 state='active' 实体，公开可见口径对全部调用者一致。
+	got, err := s.GetManyVisible(ctx, ids, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -400,35 +416,28 @@ func (s *Store) ListShelfItems(ctx context.Context, sh Shelf, limit int, u *User
 	return out, nil
 }
 
-// shelfVisibilityWhere 构建货架求值共用的可见性条件，排除 deleted / merged。
-// 计数与列表使用同一份条件。
-func (s *Store) shelfVisibilityWhere(ctx context.Context, u *User, args *[]any) ([]string, error) {
-	where := []string{}
-	if u == nil {
-		where = append(where, "e.state='active'")
-	} else if !u.Can(PermissionShelvesManage) {
-		*args = append(*args, u.ID)
-		where = append(where, fmt.Sprintf("(e.state='active' OR e.created_by=$%d)", len(*args)))
-	}
-	where = append(where, "e.state NOT IN ('deleted','merged')")
-	hideAdult, err := s.shouldHideAdultContent(ctx, u)
-	if err != nil {
-		return nil, err
-	}
+// shelfVisibilityWhereWithAdult 构建货架求值共用的可见性条件（state='active' 直接命中局部索引）。
+func shelfVisibilityWhereWithAdult(hideAdult bool) []string {
+	where := []string{"e.state='active'"}
 	if hideAdult {
 		where = append(where, adultExclusionSQL("e"))
 	}
-	return where, nil
+	return where
 }
 
 // CountShelfItems 返回货架规则在当前调用者可见范围内命中的实体总数（不带 LIMIT），
 // 供首页显示真实筛选数量，而不是受限后的 items 条数。
 func (s *Store) CountShelfItems(ctx context.Context, sh Shelf, u *User) (int, error) {
-	args := []any{}
-	where, err := s.shelfVisibilityWhere(ctx, u, &args)
+	hideAdult, err := s.shouldHideAdultContent(ctx, u)
 	if err != nil {
 		return 0, err
 	}
+	return s.countShelfItemsWithAdultFlag(ctx, sh, hideAdult)
+}
+
+func (s *Store) countShelfItemsWithAdultFlag(ctx context.Context, sh Shelf, hideAdult bool) (int, error) {
+	args := []any{}
+	where := shelfVisibilityWhereWithAdult(hideAdult)
 	where = append(where, shelfFilter(sh, &args, "e")...)
 	q := "SELECT count(*) FROM catalog.entities e WHERE " + strings.Join(where, " AND ")
 	var n int
@@ -436,6 +445,273 @@ func (s *Store) CountShelfItems(ctx context.Context, sh Shelf, u *User) (int, er
 		return 0, err
 	}
 	return n, nil
+}
+
+const (
+	shelfFeedCacheTTL        = 30 * time.Second
+	shelfFeedCacheMaxEntries = 256
+)
+
+type shelfFeedEntry struct {
+	items  []Entity
+	total  int
+	covers map[string]DisplayCover
+	loaded time.Time
+}
+
+type shelfFeedCache struct {
+	mu       sync.Mutex
+	token    string
+	entries  map[string]shelfFeedEntry
+	inflight map[string]*cacheInflightCall[shelfFeedEntry]
+}
+
+func shelfEvalCacheKey(sh Shelf, perShelf int, hideAdult bool) string {
+	raw, _ := json.Marshal(struct {
+		Query     ShelfQuery
+		Sort      string
+		PerShelf  int
+		HideAdult bool
+	}{sh.Query, sh.Sort, perShelf, hideAdult})
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:16])
+}
+
+// trimShelfFeedEntity strips heavy unused fields (body, summary, aliases,
+// external_links, extra pictures, non-card attributes) after DisplayCovers
+// resolves, reducing /shelves/feed JSON payload size dramatically.
+func trimShelfFeedEntity(e Entity, sh Shelf) Entity {
+	out := e
+	if len(e.Translations) > 0 {
+		trimmed := make(map[string]Translation, len(e.Translations))
+		for loc, tr := range e.Translations {
+			if tr.Title == "" && !tr.Nonofficial {
+				continue
+			}
+			trimmed[loc] = Translation{
+				Title:       tr.Title,
+				Nonofficial: tr.Nonofficial,
+			}
+		}
+		out.Translations = trimmed
+	}
+	if len(e.Pictures) > 1 {
+		out.Pictures = []Picture{e.Pictures[0]}
+	}
+	if len(e.Attributes) > 0 {
+		keep := map[string]any{}
+		for _, k := range []string{"creation_form", "content_rating", "tags"} {
+			if v, ok := e.Attributes[k]; ok {
+				keep[k] = v
+			}
+		}
+		for k := range sh.Query.Fields {
+			if v, ok := e.Attributes[k]; ok {
+				keep[k] = v
+			}
+		}
+		for k := range sh.Query.VocabTerms {
+			if v, ok := e.Attributes[k]; ok {
+				keep[k] = v
+			}
+		}
+		out.Attributes = keep
+	}
+	out.ExternalLinks = nil
+	out.Contents = nil
+	out.Subjects = nil
+	return out
+}
+
+func (s *Store) getOrEvalShelf(ctx context.Context, token string, sh Shelf, perShelf int, hideAdult bool) (shelfFeedEntry, error) {
+	key := shelfEvalCacheKey(sh, perShelf, hideAdult)
+	c := &s.shelfEvalCache
+
+	c.mu.Lock()
+	if c.token != token {
+		c.token = token
+		c.entries = map[string]shelfFeedEntry{}
+	}
+	if entry, ok := c.entries[key]; ok && time.Since(entry.loaded) < shelfFeedCacheTTL {
+		c.mu.Unlock()
+		return entry, nil
+	}
+	if c.inflight == nil {
+		c.inflight = map[string]*cacheInflightCall[shelfFeedEntry]{}
+	}
+	flightKey := token + "|" + key
+	call, waiting := c.inflight[flightKey]
+	if !waiting {
+		call = &cacheInflightCall[shelfFeedEntry]{done: make(chan struct{})}
+		c.inflight[flightKey] = call
+		go func() {
+			loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), entityReadCacheLoadTimeout)
+			defer cancel()
+
+			var (
+				items []Entity
+				total int
+				ierr  error
+				cerr  error
+				wg    sync.WaitGroup
+			)
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				items, ierr = s.listShelfItemsWithAdultFlag(loadCtx, sh, perShelf, hideAdult)
+			}()
+			go func() {
+				defer wg.Done()
+				total, cerr = s.countShelfItemsWithAdultFlag(loadCtx, sh, hideAdult)
+			}()
+			wg.Wait()
+
+			var entry shelfFeedEntry
+			err := ierr
+			if err == nil {
+				err = cerr
+			}
+			if err == nil {
+				var covers map[string]DisplayCover
+				covers, err = s.DisplayCovers(loadCtx, items, nil)
+				if err == nil {
+					slim := make([]Entity, len(items))
+					for i, it := range items {
+						slim[i] = trimShelfFeedEntity(it, sh)
+					}
+					entry = shelfFeedEntry{
+						items:  slim,
+						total:  total,
+						covers: covers,
+						loaded: time.Now(),
+					}
+				}
+			}
+			call.val = entry
+			call.err = err
+			c.mu.Lock()
+			if err == nil && c.token == token {
+				if c.entries == nil {
+					c.entries = map[string]shelfFeedEntry{}
+				}
+				if len(c.entries) >= shelfFeedCacheMaxEntries {
+					now := time.Now()
+					for k, v := range c.entries {
+						if now.Sub(v.loaded) >= shelfFeedCacheTTL {
+							delete(c.entries, k)
+						}
+					}
+					if len(c.entries) >= shelfFeedCacheMaxEntries {
+						c.entries = map[string]shelfFeedEntry{}
+					}
+				}
+				c.entries[key] = entry
+			}
+			delete(c.inflight, flightKey)
+			c.mu.Unlock()
+			close(call.done)
+		}()
+	}
+	c.mu.Unlock()
+
+	select {
+	case <-call.done:
+		return call.val, call.err
+	case <-ctx.Done():
+		return shelfFeedEntry{}, ctx.Err()
+	}
+}
+
+type ShelfFeedSection struct {
+	Shelf Shelf    `json:"shelf"`
+	Items []Entity `json:"items"`
+	Total int      `json:"total"`
+}
+
+// EvaluateShelfFeed 并发并按目录版本缓存求值全部可见分区，减少首页首屏耗时。
+func (s *Store) EvaluateShelfFeed(ctx context.Context, perShelf int, u *User) ([]ShelfFeedSection, map[string]DisplayCover, error) {
+	if perShelf <= 0 || perShelf > 100 {
+		perShelf = 12
+	}
+	var (
+		shelves   []Shelf
+		prefs     HomePreferences
+		hideAdult bool
+		token     string
+		shErr     error
+		prErr     error
+		tkErr     error
+		wg        sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		shelves, shErr = s.ListShelves(ctx, true)
+	}()
+	go func() {
+		defer wg.Done()
+		token, tkErr = s.entityReadCacheToken(ctx)
+	}()
+	if u != nil && strings.TrimSpace(u.ID) != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			prefs, hideAdult, prErr = s.GetUserFeedPreferences(ctx, u.ID)
+		}()
+	} else {
+		prefs = emptyHomePreferences()
+	}
+	wg.Wait()
+	if shErr != nil {
+		return nil, nil, shErr
+	}
+	if prErr != nil {
+		return nil, nil, prErr
+	}
+	if tkErr != nil {
+		return nil, nil, tkErr
+	}
+	shelves = applyHomePreferences(shelves, prefs)
+	if len(shelves) == 0 {
+		return []ShelfFeedSection{}, map[string]DisplayCover{}, nil
+	}
+	sections := make([]ShelfFeedSection, len(shelves))
+	perCovers := make([]map[string]DisplayCover, len(shelves))
+	errs := make([]error, len(shelves))
+
+	var evalWG sync.WaitGroup
+	sem := make(chan struct{}, 6)
+	for idx, sh := range shelves {
+		evalWG.Add(1)
+		go func(i int, shelf Shelf) {
+			defer evalWG.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			entry, err := s.getOrEvalShelf(ctx, token, shelf, perShelf, hideAdult)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			sections[i] = ShelfFeedSection{Shelf: shelf, Items: entry.items, Total: entry.total}
+			perCovers[i] = entry.covers
+		}(idx, sh)
+	}
+	evalWG.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	covers := map[string]DisplayCover{}
+	for _, cm := range perCovers {
+		for k, v := range cm {
+			if _, exists := covers[k]; !exists {
+				covers[k] = v
+			}
+		}
+	}
+	return sections, covers, nil
 }
 
 // shelfSeeds 是首页货架的默认规则（四语名称）。

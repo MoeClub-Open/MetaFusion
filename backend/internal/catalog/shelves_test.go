@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -146,5 +147,57 @@ func TestCountShelfItemsIgnoresLimit(t *testing.T) {
 	}
 	if got != total {
 		t.Fatalf("total=%d，应 %d", got, total)
+	}
+}
+
+func TestTrimShelfFeedEntityAndCacheKey(t *testing.T) {
+	sh := Shelf{
+		Slug: "custom",
+		Sort: "updated",
+		Query: ShelfQuery{
+			Fields:     map[string][]string{"language": {"ja"}},
+			VocabTerms: map[string][]string{"creation_form": {"tv_anime"}},
+		},
+	}
+	in := Entity{
+		ID:    "11111111-1111-1111-1111-111111111111",
+		Kind:  "work",
+		Title: "Base",
+		Translations: map[string]Translation{
+			"zh-CN": {Title: "译名", Nonofficial: true, Summary: "long summary", Body: "long article body", Aliases: []string{"alias"}},
+		},
+		Attributes: map[string]any{
+			"creation_form":  "tv_anime",
+			"content_rating": "r18",
+			"tags":           []string{"anime"},
+			"language":       "ja",
+			"infobox":        []any{"heavy"},
+		},
+		ExternalLinks: []ExternalLink{{Kind: "bangumi", URL: "https://bgm.tv/subject/1"}},
+		Pictures:      []Picture{{URL: "https://example.test/1.jpg"}, {URL: "https://example.test/2.jpg"}},
+	}
+	trimmed := trimShelfFeedEntity(in, sh)
+	if trimmed.Translations["zh-CN"].Title != "译名" || !trimmed.Translations["zh-CN"].Nonofficial {
+		t.Fatalf("expected title and nonofficial preserved, got %+v", trimmed.Translations["zh-CN"])
+	}
+	if trimmed.Translations["zh-CN"].Body != "" || trimmed.Translations["zh-CN"].Summary != "" || len(trimmed.Translations["zh-CN"].Aliases) != 0 {
+		t.Fatalf("expected heavy translation fields stripped, got %+v", trimmed.Translations["zh-CN"])
+	}
+	if len(trimmed.Pictures) != 1 || trimmed.Pictures[0].URL != "https://example.test/1.jpg" {
+		t.Fatalf("expected only cover picture kept, got %+v", trimmed.Pictures)
+	}
+	if trimmed.ExternalLinks != nil || trimmed.Attributes["infobox"] != nil {
+		t.Fatalf("expected heavy links/infobox stripped, got links=%+v attrs=%+v", trimmed.ExternalLinks, trimmed.Attributes)
+	}
+	if trimmed.Attributes["creation_form"] != "tv_anime" || trimmed.Attributes["content_rating"] != "r18" || trimmed.Attributes["language"] != "ja" {
+		t.Fatalf("expected card and queried attrs preserved, got %+v", trimmed.Attributes)
+	}
+	if shelfEvalCacheKey(sh, 14, false) == shelfEvalCacheKey(sh, 14, true) {
+		t.Fatal("cache key must separate hideAdult states")
+	}
+	var args []any
+	where := strings.Join(shelfFilter(sh, &args, "e"), " AND ")
+	if !strings.Contains(where, "e.document->'attributes'->>'creation_form' = ANY(") {
+		t.Fatalf("expected literal creation_form predicate for partial index match, got %s", where)
 	}
 }

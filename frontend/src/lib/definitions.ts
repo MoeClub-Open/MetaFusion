@@ -218,6 +218,33 @@ let requestSeq = 0;
 let appliedSeq = 0;
 // 订阅者：缓存按版本刷新后逐个通知，已挂载的组件立即拿到新定义，无需整页刷新。
 const listeners = new Set<(defs: DynamicDefinitions | null) => void>();
+const DEFINITIONS_STORAGE_KEY = "mf_definitions_v1";
+const DEFINITIONS_REVALIDATE_MS = 60_000;
+let storageHydrated = false;
+
+function hydrateDefinitionsFromStorage(): void {
+  if (storageHydrated || typeof window === "undefined") return;
+  storageHydrated = true;
+  try {
+    const raw = window.localStorage.getItem(DEFINITIONS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as {
+      etag?: string;
+      document?: DynamicDefinitions;
+      kinds?: KindMap;
+      relationship_rules?: RelationshipRule[];
+      savedAt?: number;
+    };
+    if (!parsed?.document || !parsed?.kinds || !Array.isArray(parsed?.relationship_rules)) return;
+    cachedKinds = parsed.kinds;
+    cachedRelationshipRules = parsed.relationship_rules;
+    cachedRulesSignature = JSON.stringify(parsed.relationship_rules);
+    cachedVersion = String(parsed.etag ?? "");
+    cachedETag = cachedVersion || null;
+    cachedDefinitions = parsed.document;
+    loadedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : 0;
+  } catch {}
+}
 
 async function loadDefinitions(): Promise<DynamicDefinitions | null> {
   const seq = ++requestSeq;
@@ -243,14 +270,29 @@ async function loadDefinitions(): Promise<DynamicDefinitions | null> {
     cachedRulesSignature = rulesSignature;
     listeners.forEach((notify) => notify(cachedDefinitions));
   }
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(
+        DEFINITIONS_STORAGE_KEY,
+        JSON.stringify({
+          etag: version,
+          document: data.document,
+          kinds: data.kinds,
+          relationship_rules: rules,
+          savedAt: loadedAt,
+        }),
+      );
+    } catch {}
+  }
   return cachedDefinitions;
 }
 
 export async function fetchDefinitions(): Promise<DynamicDefinitions | null> {
+  hydrateDefinitionsFromStorage();
   if (cachedDefinitions) {
     // stale-while-revalidate：先返回缓存，后台按版本校验；发布新版本后
     // 下一次进入页面即刷新并通知订阅组件，不阻塞渲染。
-    if (!revalidating && Date.now() - loadedAt > 30_000) {
+    if (!revalidating && Date.now() - loadedAt > DEFINITIONS_REVALIDATE_MS) {
       revalidating = true;
       loadDefinitions().finally(() => {
         revalidating = false;

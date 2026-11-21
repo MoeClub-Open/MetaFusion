@@ -4,6 +4,8 @@
 // 提示只用来省请求，不代表身份；真正的身份仍以 /api/auth/me 为准。
 export const SESSION_COOKIE_NAME = "mf_session";
 export const SESSION_HINT_COOKIE_NAME = "mf_has_session";
+export const HOME_FEED_CACHE_PREFIX = "mf_home_feed_v1:";
+export const ADULT_MODE_CACHE_PREFIX = "mf_adult_mode_v1:";
 
 export function hasSessionHint(): boolean {
   if (typeof document === "undefined") return false;
@@ -13,4 +15,14 @@ export function hasSessionHint(): boolean {
 export function clearSessionHint(): void {
   if (typeof document === "undefined") return;
   document.cookie = `${SESSION_HINT_COOKIE_NAME}=; path=/; max-age=0; samesite=lax`;
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(`${HOME_FEED_CACHE_PREFIX}auth`);
+    for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+      const k = window.sessionStorage.key(i);
+      if (k && k.startsWith(ADULT_MODE_CACHE_PREFIX)) {
+        window.sessionStorage.removeItem(k);
+      }
+    }
+  } catch {}
 }

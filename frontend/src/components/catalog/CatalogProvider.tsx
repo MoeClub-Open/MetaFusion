@@ -1,7 +1,59 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api, Capability } from "./api";
+import { fetchSetupStatus } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
+
+const CAPABILITIES_CACHE_KEY = "mf_capabilities_v1";
+const CAPABILITIES_TTL_MS = 5 * 60_000;
+let cachedModules: Capability[] | null = null;
+let cachedModulesAt = 0;
+let capabilitiesInflight: Promise<Capability[]> | null = null;
+
+function readStoredCapabilities(): Capability[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(CAPABILITIES_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { modules?: Capability[]; savedAt?: number };
+    if (Array.isArray(parsed?.modules) && typeof parsed?.savedAt === "number" && Date.now() - parsed.savedAt < CAPABILITIES_TTL_MS) {
+      return parsed.modules;
+    }
+  } catch {}
+  return null;
+}
+
+async function loadCapabilitiesDedup(force = false): Promise<Capability[]> {
+  if (!force) {
+    if (cachedModules && Date.now() - cachedModulesAt < CAPABILITIES_TTL_MS) {
+      return cachedModules;
+    }
+    const stored = readStoredCapabilities();
+    if (stored) {
+      cachedModules = stored;
+      cachedModulesAt = Date.now();
+      return stored;
+    }
+  }
+  if (!capabilitiesInflight) {
+    capabilitiesInflight = api<{ modules: Capability[] }>("/capabilities")
+      .then((res) => {
+        const list = Array.isArray(res?.modules) ? res.modules : [];
+        cachedModules = list;
+        cachedModulesAt = Date.now();
+        if (typeof window !== "undefined") {
+          try {
+            window.sessionStorage.setItem(CAPABILITIES_CACHE_KEY, JSON.stringify({ modules: list, savedAt: cachedModulesAt }));
+          } catch {}
+        }
+        return list;
+      })
+      .finally(() => {
+        capabilitiesInflight = null;
+      });
+  }
+  return capabilitiesInflight;
+}
 
 // 目录页的共享上下文只保留非定义职责：模块开关与实例初始化状态。
 // 定义（fields/relations/vocabularies…）的唯一来源是 lib/definitions.ts 的
@@ -23,33 +75,28 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState("");
 
-  const refresh = async () => {
+  const refresh = async (force = false) => {
     const results = await Promise.allSettled([
-      api<{ modules: Capability[] }>("/capabilities"),
-      api<{ needed: boolean }>("/setup"),
+      loadCapabilitiesDedup(force),
+      fetchSetupStatus(),
     ]);
-    // 能力探测失败会让依赖模块的分节整块消失（如社区分节）：必须说清是实例连不上，
-    // 而不是"这个功能不存在"，并留一个重试入口。
     if (results[0].status === "fulfilled") {
-      // 契约漂移防御：/capabilities 少了 modules（或它不是数组）时，绝不能让 undefined 进 state——
-      // 消费方（详情页、定义编辑器）是**渲染路径**上的 .some()/.map()，抛一次就是整页白屏。
-      // 取不到就落回空列表，等价于"没有可用子系统"，页面自然降级而不是崩掉。
-      setModules(Array.isArray(results[0].value?.modules) ? results[0].value.modules : []);
+      setModules(results[0].value);
       setError("");
     } else setError((results[0].reason as Error).message);
-    setSetup(results[1].status === "fulfilled" && results[1].value.needed);
+    setSetup(results[1].status === "fulfilled" && !results[1].value.is_initialized);
   };
 
   useEffect(() => {
-    void refresh();
+    void refresh(false);
   }, []);
 
   return (
-    <Context.Provider value={{ modules, setup, refresh }}>
+    <Context.Provider value={{ modules, setup, refresh: () => refresh(true) }}>
       {error && (
         <div role="alert" className="p-3 bg-red-500/10 border border-red-500/20 text-danger text-xs font-mono text-center">
           {t("catalog.connectionError")}
-          <button onClick={refresh} className="ml-2 underline">{t("catalog.retry")}</button>
+          <button onClick={() => void refresh(true)} className="ml-2 underline">{t("catalog.retry")}</button>
         </div>
       )}
       {children}

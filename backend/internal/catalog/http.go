@@ -356,7 +356,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, err)
 			return
 		}
-		respondCached(c, gin.H{"etag": v.ETag, "document": v.Document, "updated_at": v.UpdatedAt, "kinds": KindNameRecords(), "relationship_rules": ReadRelationshipRules(v.Document)}, nil, true)
+		s.respondCachedDefinitions(c, v)
 	})
 	// 标签聚合：标签不是独立字典表，而是散落在各实体的 attributes.tags 中。
 	// jsonb_array_elements_text 展开数组就地统计频次，供前端标签云与筛选建议；
@@ -786,40 +786,9 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 	// 匿名与未设置偏好者按 sort_order 默认序，且只有 system。
 	cat.GET("/shelves/feed", func(c *gin.Context) {
 		perShelf, _ := strconv.Atoi(c.Query("per_shelf"))
-		shelves, err := s.ListShelves(c.Request.Context(), true)
-		if err != nil {
-			respond(c, nil, err)
-			return
-		}
-		prefs := HomePreferences{}
-		if u := user(c); u != nil {
-			prefs, err = s.GetHomePreferences(c.Request.Context(), u.ID)
-			if err != nil {
-				respond(c, nil, err)
-				return
-			}
-		}
-		shelves = applyHomePreferences(shelves, prefs)
-		out := make([]gin.H, 0, len(shelves))
-		coverItems := []Entity{}
-		for _, sh := range shelves {
-			items, ierr := s.ListShelfItems(c.Request.Context(), sh, perShelf, user(c))
-			if ierr != nil {
-				respond(c, nil, ierr)
-				return
-			}
-			// total 是该规则在当前调用者可见范围内命中的真实总数（不受 per_shelf 限制），
-			// 供首页数量徽标显示实际筛选结果。
-			total, cerr := s.CountShelfItems(c.Request.Context(), sh, user(c))
-			if cerr != nil {
-				respond(c, nil, cerr)
-				return
-			}
-			out = append(out, gin.H{"shelf": sh, "items": items, "total": total})
-			coverItems = append(coverItems, items...)
-		}
-		covers, err := s.DisplayCovers(c.Request.Context(), coverItems, user(c))
-		respond(c, gin.H{"items": out, "covers": covers}, err)
+		u := user(c)
+		sections, covers, err := s.EvaluateShelfFeed(c.Request.Context(), perShelf, u)
+		respondCached(c, gin.H{"items": sections, "covers": covers}, err, u == nil)
 	})
 	// 个人首页偏好读：需登录，未登录返回 401（与 required("") 语义一致，
 	// 不再用匿名 404 误导前端走“未找到”分支）。sections 为"覆盖 + 自建"列表，

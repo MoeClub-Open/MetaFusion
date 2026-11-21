@@ -275,10 +275,10 @@ func TestListFilterMultiValuesAndExclusion(t *testing.T) {
 		ExcludeField:  "creation_form",
 		ExcludeValues: []string{"song"},
 	})
-	if !strings.Contains(joined, "document->'attributes'->>$2 = ANY($3::text[])") {
+	if !strings.Contains(joined, "document->'attributes'->>'creation_form' = ANY($2::text[])") {
 		t.Fatalf("values should compile to ANY($n::text[]), got: %s", joined)
 	}
-	if !strings.Contains(joined, "NOT COALESCE((document->'attributes'->>$4 = ANY($5::text[])), false)") {
+	if !strings.Contains(joined, "NOT COALESCE((document->'attributes'->>'creation_form' = ANY($3::text[])), false)") {
 		t.Fatalf("exclude_field should guard NULL with NOT COALESCE, got: %s (args=%v)", joined, args)
 	}
 

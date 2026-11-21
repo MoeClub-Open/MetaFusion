@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -69,6 +70,29 @@ func ifNoneMatchHit(values []string, etag string) bool {
 	return false
 }
 
+func computeJSONETag(scope string, raw []byte) string {
+	h := sha256.New()
+	_, _ = h.Write([]byte(scope))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write(raw)
+	return `"` + hex.EncodeToString(h.Sum(nil)) + `"`
+}
+
+func writeCachedJSON(c *gin.Context, raw []byte, etag string, public bool) {
+	if public {
+		c.Header("Cache-Control", "public, no-cache")
+	} else {
+		c.Header("Cache-Control", "private, no-cache")
+		appendVary(c, "Cookie", "Authorization")
+	}
+	c.Header("ETag", etag)
+	if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && ifNoneMatchHit(c.Request.Header.Values("If-None-Match"), etag) {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
 func respondCached(c *gin.Context, v any, err error, public bool) {
 	if err != nil {
 		respond(c, nil, err)
@@ -80,22 +104,42 @@ func respondCached(c *gin.Context, v any, err error, public bool) {
 		return
 	}
 	scope := "public"
-	if public {
-		c.Header("Cache-Control", "public, no-cache")
-	} else {
+	if !public {
 		scope = viewerCacheScope(user(c))
-		c.Header("Cache-Control", "private, no-cache")
-		appendVary(c, "Cookie", "Authorization")
 	}
-	h := sha256.New()
-	_, _ = h.Write([]byte(scope))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write(raw)
-	etag := `"` + hex.EncodeToString(h.Sum(nil)) + `"`
-	c.Header("ETag", etag)
-	if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && ifNoneMatchHit(c.Request.Header.Values("If-None-Match"), etag) {
-		c.Status(http.StatusNotModified)
+	writeCachedJSON(c, raw, computeJSONETag(scope, raw), public)
+}
+
+// definitionsResponseCache caches the pre-marshaled JSON bytes and public ETag
+// for /api/catalog/definitions keyed by the published definition ETag.
+type definitionsResponseCache struct {
+	mu      sync.RWMutex
+	defETag string
+	httpTag string
+	raw     []byte
+}
+
+func (s *Store) respondCachedDefinitions(c *gin.Context, v DefinitionConfig) {
+	s.defBytesCache.mu.RLock()
+	if s.defBytesCache.defETag == v.ETag && len(s.defBytesCache.raw) > 0 {
+		raw, etag := s.defBytesCache.raw, s.defBytesCache.httpTag
+		s.defBytesCache.mu.RUnlock()
+		writeCachedJSON(c, raw, etag, true)
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	s.defBytesCache.mu.RUnlock()
+
+	payload := map[string]any{"etag": v.ETag, "document": v.Document, "updated_at": v.UpdatedAt, "kinds": KindNameRecords(), "relationship_rules": ReadRelationshipRules(v.Document)}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		respond(c, nil, err)
+		return
+	}
+	etag := computeJSONETag("public", raw)
+	s.defBytesCache.mu.Lock()
+	s.defBytesCache.defETag = v.ETag
+	s.defBytesCache.httpTag = etag
+	s.defBytesCache.raw = raw
+	s.defBytesCache.mu.Unlock()
+	writeCachedJSON(c, raw, etag, true)
 }

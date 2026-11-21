@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/authContext";
-import { fetchSetupStatus } from "@/lib/api";
+import { fetchSetupStatus, isSetupInitializedCached } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isEditEntry } from "@/lib/entityRoutes";
 
@@ -23,16 +23,13 @@ function isProtectedPath(pathname: string | null): boolean {
   return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-let cachedSetupStatus: { is_initialized: boolean } | null = null;
-let setupStatusRequest: ReturnType<typeof fetchSetupStatus> | null = null;
-
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
 
-  const [setupChecked, setSetupChecked] = useState(cachedSetupStatus !== null);
+  const [setupChecked, setSetupChecked] = useState(false);
   // `/catalog/[id]?edit=1` 不在受保护前缀里，但它就是编辑器入口，门槛必须与 /new 一致。
   // 查询串只能在客户端读（见下面重定向里的说明），故先按 false 渲染一帧，挂载后并入同一判定；
   // EntityEditor 的未登录空态带登录链接，这一帧不再是死胡同。
@@ -45,17 +42,16 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
   useEffect(() => {
     // 首次检测系统是否完成 OOBE 初始化
-    if (cachedSetupStatus && cachedSetupStatus.is_initialized) {
+    if (isSetupInitializedCached()) {
+      setSetupChecked(true);
       if (pathname === "/setup") {
         router.replace("/home");
       }
       return;
     }
 
-    setupStatusRequest ||= fetchSetupStatus();
-    setupStatusRequest
+    fetchSetupStatus()
       .then((status) => {
-        cachedSetupStatus = status;
         if (!status.is_initialized) {
           // 系统未初始化且当前不在 /setup，则强制跳转 /setup
           if (pathname !== "/setup") {

@@ -2,7 +2,7 @@
 
 export { displayNameOf, ApiError, fetchApi } from "./api/client";
 export type { User } from "./api/client";
-export { fetchInviteLedger, createInviteCode, fetchSetupStatus, fetchAuthSettings, normalizeSessionUser } from "./api/auth";
+export { fetchInviteLedger, createInviteCode, fetchSetupStatus, isSetupInitializedCached, fetchAuthSettings, normalizeSessionUser } from "./api/auth";
 export { fetchOAuthGrants, revokeOAuthGrant } from "./api/auth";
 export { fetchPersonalAccessTokens, createPersonalAccessToken, revokePersonalAccessToken, updatePersonalAccessToken, deletePersonalAccessToken, updateOwnProfile } from "./api/auth";
 export { fetchPrivacySettings, updatePrivacySettings } from "./api/auth";
