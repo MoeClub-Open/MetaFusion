@@ -145,6 +145,9 @@ func validateRelationshipQueryRules(in RelationshipQueryRequest, d Definitions) 
 }
 
 func validateRelationshipRuleCodes(codes []string, d Definitions) error {
+	if len(codes) == 0 {
+		return nil
+	}
 	allRules := ReadRelationshipRules(d)
 	rules := make(map[string]bool, len(allRules))
 	examples := make([]string, 0, 2)

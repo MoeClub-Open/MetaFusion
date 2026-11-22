@@ -108,6 +108,32 @@ func TestEntityLinksQueryPrunesBranchesByClassAndRule(t *testing.T) {
 	}
 }
 
+func TestEntityLinksQueryPrunesThirdPartyReferences(t *testing.T) {
+	id := uuid.NewString()
+	d := Definitions{
+		Fields: map[string]Field{
+			"speaker": {Type: "entity", Kinds: []string{"agent"}},
+			"scenes": {Type: "list", Items: &Field{Type: "group", Fields: map[string]Field{
+				"work":  {Type: "entity", Kinds: []string{"work"}},
+				"agent": {Type: "entity", Kinds: []string{"agent"}},
+			}}},
+			"other_work": {Type: "entity", Kinds: []string{"work"}},
+		},
+		Relations: map[string]RelationDefinition{
+			"recorded": {Fields: []string{"speaker", "scenes"}},
+			"other":    {Fields: []string{"other_work"}},
+		},
+	}
+	args := []any{id, false, uuid.Nil.String(), 2, 0, "incoming", nil, nil}
+	sql := entityLinksQuery(d, id, relationshipFilters{
+		Direction: "incoming", SubjectKind: "work", RuleCodes: []string{"relation:recorded"},
+	}, &args)
+	want := encode(map[string]any{"scenes": []any{map[string]any{"work": id}}})
+	if len(args) != 9 || args[8] != want || !strings.Contains(sql, "r.source_id=$1::uuid OR r.target_id=$1::uuid") {
+		t.Fatalf("must keep direct endpoints and only the possible nested third-party reference: args=%v sql=%s", args, sql)
+	}
+}
+
 func TestEntityLinksHTTPFilterValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

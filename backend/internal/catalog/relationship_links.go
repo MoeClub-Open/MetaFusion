@@ -274,13 +274,17 @@ func entityLinksFrom(ctx context.Context, q queryer, id string, limit, offset in
 	const window = 200
 	seen, dbOffset := 0, 0
 	batchSize := window
+	if offset == 0 && !filters.ActiveOnly && filters.AsOf == "" {
+		batchSize = min(window, limit+1)
+	}
 	if sqlPaginatedRelationshipFilters(filters) {
 		seen, dbOffset, batchSize = offset, offset, limit+1
 	}
 	refCache := relationshipReferenceCache{entities: map[string]Entity{}, known: map[string]bool{}}
+	args := []any{id, manage, userID, batchSize, dbOffset, filters.Direction, pq.Array(filters.RuleCodes), pq.Array(filters.PeerKinds)}
+	query := entityLinksQuery(defs.Document, id, filters, &args)
 	for len(page.Items) <= limit {
-		args := []any{id, manage, userID, batchSize, dbOffset, filters.Direction, pq.Array(filters.RuleCodes), pq.Array(filters.PeerKinds)}
-		query := entityLinksQuery(defs.Document, id, filters, &args)
+		args[3], args[4] = batchSize, dbOffset
 		rows, err := q.QueryContext(ctx, query, args...)
 		if err != nil {
 			return page, err
@@ -415,6 +419,9 @@ func entityLinksFrom(ctx context.Context, q queryer, id string, limit, offset in
 			break
 		}
 		dbOffset += len(candidates)
+		// If validation rejected rows in the first small window, scan larger
+		// windows to fill the visible page without repeatedly running the query.
+		batchSize = window
 	}
 	return page, nil
 }
@@ -425,7 +432,7 @@ func entityLinksFrom(ctx context.Context, q queryer, id string, limit, offset in
 func entityLinksQuery(d Definitions, id string, filters relationshipFilters, args *[]any) string {
 	recordReferences := func(column string, f Field) string {
 		clauses := []string{}
-		for _, pattern := range relationshipReferencePatterns(f, id) {
+		for _, pattern := range relationshipReferencePatternsForKind(f, id, filters.SubjectKind) {
 			*args = append(*args, encode(pattern))
 			clauses = append(clauses, column+" @> $"+strconv.Itoa(len(*args))+"::jsonb")
 		}
@@ -490,9 +497,12 @@ func entityLinksQuery(d Definitions, id string, filters relationshipFilters, arg
 		condition := "false"
 		if filters.Direction != "outgoing" {
 			patterns := map[string]bool{}
-			for _, rule := range d.Relations {
+			for ruleCode, rule := range d.Relations {
+				if len(filters.RuleCodes) > 0 && !contains(filters.RuleCodes, "relation:"+ruleCode) {
+					continue
+				}
 				for _, code := range rule.Fields {
-					for _, value := range relationshipReferencePatterns(d.Fields[code], id) {
+					for _, value := range relationshipReferencePatternsForKind(d.Fields[code], id, filters.SubjectKind) {
 						patterns[encode(map[string]any{code: value})] = true
 					}
 				}
@@ -524,13 +534,20 @@ func entityLinksQuery(d Definitions, id string, filters relationshipFilters, arg
 }
 
 func relationshipReferencePatterns(f Field, id string) []any {
+	return relationshipReferencePatternsForKind(f, id, "")
+}
+
+func relationshipReferencePatternsForKind(f Field, id, kind string) []any {
 	switch f.Type {
 	case "entity":
+		if kind != "" && !contains(f.Kinds, kind) {
+			return nil
+		}
 		return []any{id}
 	case "group":
 		out := []any{}
 		for _, code := range sortedFieldKeys(f) {
-			for _, pattern := range relationshipReferencePatterns(f.Fields[code], id) {
+			for _, pattern := range relationshipReferencePatternsForKind(f.Fields[code], id, kind) {
 				out = append(out, map[string]any{code: pattern})
 			}
 		}
@@ -538,7 +555,7 @@ func relationshipReferencePatterns(f Field, id string) []any {
 	case "list":
 		if f.Items != nil {
 			out := []any{}
-			for _, pattern := range relationshipReferencePatterns(*f.Items, id) {
+			for _, pattern := range relationshipReferencePatternsForKind(*f.Items, id, kind) {
 				out = append(out, []any{pattern})
 			}
 			return out
@@ -628,9 +645,9 @@ func (c *relationshipReferenceCache) validate(id string, kinds []string) error {
 }
 
 func fixedLinkClass(code string) (string, bool) {
-	for _, rule := range fixedRelationshipRules() {
-		if rule.Code == code {
-			return rule.Class, true
+	for _, branch := range fixedEntityLinkBranches {
+		if branch.code == code {
+			return branch.class, true
 		}
 	}
 	return "", false

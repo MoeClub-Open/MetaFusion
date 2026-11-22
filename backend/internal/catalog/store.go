@@ -826,9 +826,6 @@ type ListOptions struct {
 	ExcludeValues                                                                          []string
 	// IDs 过滤指定的一批实体 UUID（1-100）；未显式指定 sort 时按传入顺序返回。
 	IDs []string
-	// SearchIDs 是 OpenSearch 提供的候选 ID 顺序。它仅由 HTTP 列表处理器内部填写，
-	// 最终查询仍用数据库可见性和筛选谓词收口，不作为外部参数暴露。
-	SearchIDs []string
 	// Kinds 命中任一结构层级。
 	Kinds []string
 	// Tags 按 TagsMode（any / all，默认 any）过滤 attributes.tags，走 jsonb 容器包含，
@@ -1000,6 +997,21 @@ func buildFieldPredicate(doc Definitions, field, value string, values []string, 
 }
 
 func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]any) ([]string, error) {
+	parts, err := compileListFilter(ctx, s, o, u, args)
+	if err != nil {
+		return nil, err
+	}
+	hideAdult, err := s.shouldHideAdultContent(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if hideAdult {
+		parts = append(parts, adultExclusionSQL(""))
+	}
+	return parts, nil
+}
+
+func compileListFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]any) ([]string, error) {
 	var parts []string
 	if u == nil || !u.Can(PermissionLifecycleManage) {
 		parts = []string{"state='active'"}
@@ -1036,12 +1048,13 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 		*args = append(*args, pq.Array(o.IDs))
 		parts = append(parts, fmt.Sprintf("id = ANY($%d::uuid[])", len(*args)))
 	}
-	if len(o.SearchIDs) > 0 {
-		*args = append(*args, pq.Array(o.SearchIDs))
-		parts = append(parts, fmt.Sprintf("id = ANY($%d::uuid[])", len(*args)))
-	}
 	if o.WorkID != "" {
-		add("(id IN(SELECT id FROM catalog.content_units WHERE work_id=$%[1]d) OR id IN(SELECT id FROM catalog.expressions WHERE work_id=$%[1]d) OR id IN(SELECT release_id FROM catalog.release_subjects WHERE work_id=$%[1]d))", o.WorkID)
+		// One semi-join lets PostgreSQL start from the indexed work members.
+		add(`id IN (
+			SELECT id FROM catalog.content_units WHERE work_id=$%[1]d
+			UNION ALL SELECT id FROM catalog.expressions WHERE work_id=$%[1]d
+			UNION ALL SELECT release_id FROM catalog.release_subjects WHERE work_id=$%[1]d
+		)`, o.WorkID)
 	}
 	if o.ReleaseID != "" {
 		add("id IN(SELECT id FROM catalog.mediums WHERE release_id=$%d)", o.ReleaseID)
@@ -1108,13 +1121,6 @@ func listFilter(ctx context.Context, s *Store, o ListOptions, u *User, args *[]a
 			parts = append(parts, "("+strings.Join(ors, join)+")")
 		}
 	}
-	hideAdult, err := s.shouldHideAdultContent(ctx, u)
-	if err != nil {
-		return nil, err
-	}
-	if hideAdult {
-		parts = append(parts, adultExclusionSQL(""))
-	}
 	return parts, nil
 }
 
@@ -1127,8 +1133,12 @@ func (s *Store) Count(ctx context.Context, o ListOptions, u *User) (int64, error
 	if err != nil {
 		return 0, err
 	}
+	return s.countEntities(ctx, strings.Join(parts, " AND "), args)
+}
+
+func (s *Store) countEntities(ctx context.Context, filter string, args []any) (int64, error) {
 	var n int64
-	err = s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.entities WHERE "+strings.Join(parts, " AND "), args...).Scan(&n)
+	err := s.DB.QueryRowContext(ctx, "SELECT count(*) FROM catalog.entities WHERE "+filter, args...).Scan(&n)
 	return n, err
 }
 
@@ -1200,10 +1210,6 @@ func entityListOrderClause(o ListOptions, args *[]any) (string, error) {
 			// 导致整页 500；脏串按 0 排而不中断列表）。
 			return "CASE WHEN document->>'position' ~ '^-?[0-9]+$' THEN (document->>'position')::int ELSE 0 END, updated_at DESC, id", nil
 		}
-		if len(o.SearchIDs) > 0 {
-			*args = append(*args, pq.Array(o.SearchIDs))
-			return fmt.Sprintf("array_position($%d::uuid[], id), id", len(*args)), nil
-		}
 		if len(o.IDs) > 0 {
 			*args = append(*args, pq.Array(o.IDs))
 			return fmt.Sprintf("array_position($%d::uuid[], id), id", len(*args)), nil
@@ -1228,6 +1234,27 @@ func (s *Store) List(ctx context.Context, o ListOptions, u *User) ([]Entity, err
 	if err != nil {
 		return nil, err
 	}
+	return s.listEntities(ctx, o, u, strings.Join(parts, " AND "), args)
+}
+
+// ListWithTotal shares a filter and viewer preferences while retaining
+// separate list and count plans, so LIMIT can use an ordered index.
+func (s *Store) ListWithTotal(ctx context.Context, o ListOptions, u *User) ([]Entity, int64, error) {
+	var args []any
+	parts, err := listFilter(ctx, s, o, u, &args)
+	if err != nil {
+		return nil, 0, err
+	}
+	filter := strings.Join(parts, " AND ")
+	items, err := s.listEntities(ctx, o, u, filter, args)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.countEntities(ctx, filter, args)
+	return items, total, err
+}
+
+func (s *Store) listEntities(ctx context.Context, o ListOptions, u *User, filter string, args []any) ([]Entity, error) {
 	if o.Limit <= 0 || o.Limit > 100 {
 		o.Limit = 50
 	}
@@ -1239,7 +1266,7 @@ func (s *Store) List(ctx context.Context, o ListOptions, u *User) ([]Entity, err
 		return nil, err
 	}
 	args = append(args, o.Limit, o.Offset)
-	rows, err := s.DB.QueryContext(ctx, "SELECT id FROM catalog.entities WHERE "+strings.Join(parts, " AND ")+fmt.Sprintf(" ORDER BY "+orderClause+" LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
+	rows, err := s.DB.QueryContext(ctx, "SELECT id FROM catalog.entities WHERE "+filter+fmt.Sprintf(" ORDER BY "+orderClause+" LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}

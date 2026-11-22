@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const (
@@ -325,7 +326,9 @@ func (s *Store) Search(ctx context.Context, o ListOptions, u *User, rawCursor st
 	// Validate published field paths with exactly the same rules as browsing.
 	validation := o
 	validation.Query = ""
-	if _, err := listFilter(ctx, s, validation, u, &[]any{}); err != nil {
+	var args []any
+	parts, err := compileListFilter(ctx, s, validation, u, &args)
+	if err != nil {
 		return out, err
 	}
 	identity := "anonymous"
@@ -335,6 +338,9 @@ func (s *Store) Search(ctx context.Context, o ListOptions, u *User, rawCursor st
 	hideAdult, err := s.shouldHideAdultContent(ctx, u)
 	if err != nil {
 		return out, err
+	}
+	if hideAdult {
+		parts = append(parts, adultExclusionSQL(""))
 	}
 	bound := o
 	bound.Offset = 0
@@ -376,13 +382,9 @@ func (s *Store) Search(ctx context.Context, o ListOptions, u *User, rawCursor st
 	}
 	out.Total = page.Total
 	// Only the requested page reaches PostgreSQL, never a 10,000-ID candidate set.
-	validation.SearchIDs = page.IDs
 	if len(page.IDs) > 0 {
-		args := []any{}
-		parts, err := listFilter(ctx, s, validation, u, &args)
-		if err != nil {
-			return out, err
-		}
+		args = append(args, pq.Array(page.IDs))
+		parts = append(parts, fmt.Sprintf("id = ANY($%d::uuid[])", len(args)))
 		rows, err := s.DB.QueryContext(ctx, "SELECT id::text FROM catalog.entities WHERE "+strings.Join(parts, " AND "), args...)
 		if err != nil {
 			return out, err

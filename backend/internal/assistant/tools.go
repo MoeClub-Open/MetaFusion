@@ -305,11 +305,7 @@ func executeCatalogTool(ctx context.Context, s *catalog.Store, u catalog.User, n
 		if in.Cursor != "" {
 			return nil, errors.New("invalid_search_cursor")
 		}
-		items, err := s.List(ctx, o, &u)
-		if err != nil {
-			return nil, err
-		}
-		total, err := s.Count(ctx, o, &u)
+		items, total, err := s.ListWithTotal(ctx, o, &u)
 		if err != nil {
 			return nil, err
 		}

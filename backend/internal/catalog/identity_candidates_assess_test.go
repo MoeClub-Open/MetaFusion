@@ -538,9 +538,9 @@ func TestPostgresReleaseMediumFormatsAndNonofficialCandidates(t *testing.T) {
 	if got.MediumFormats["cd"] != 2 || got.MediumFormats["bd"] != 1 {
 		t.Fatalf("Get medium_formats mismatch: %+v", got.MediumFormats)
 	}
-	listed, err := f.s.List(ctx, ListOptions{Kind: "release", WorkID: work.ID}, nil)
-	if err != nil || len(listed) != 1 || listed[0].MediumFormats["cd"] != 2 || listed[0].MediumFormats["bd"] != 1 {
-		t.Fatalf("List medium_formats mismatch: %+v %v", listed, err)
+	listed, total, err := f.s.ListWithTotal(ctx, ListOptions{Kind: "release", WorkID: work.ID}, nil)
+	if err != nil || total != 1 || len(listed) != 1 || listed[0].MediumFormats["cd"] != 2 || listed[0].MediumFormats["bd"] != 1 {
+		t.Fatalf("List medium_formats or total mismatch: %+v total=%d err=%v", listed, total, err)
 	}
 	var storedHasMediumFormats bool
 	if err := f.s.DB.QueryRowContext(ctx, `SELECT document ? 'medium_formats' FROM catalog.entities WHERE id=$1`, rel.ID).Scan(&storedHasMediumFormats); err != nil || storedHasMediumFormats {

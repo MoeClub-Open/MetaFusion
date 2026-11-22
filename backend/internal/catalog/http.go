@@ -458,12 +458,7 @@ func (h HTTP) registerGroup(api *gin.RouterGroup) {
 			respond(c, nil, fmt.Errorf("invalid_search_cursor"))
 			return
 		}
-		items, err := s.List(c.Request.Context(), o, requestUser)
-		if err != nil {
-			respond(c, nil, err)
-			return
-		}
-		total, err := s.Count(c.Request.Context(), o, requestUser)
+		items, total, err := s.ListWithTotal(c.Request.Context(), o, requestUser)
 		if err != nil {
 			respond(c, nil, err)
 			return
